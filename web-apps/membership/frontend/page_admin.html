@@ -62,6 +62,7 @@
   <div class="tabs">
     <button class="tab active" onclick="showTab('pending')">Pending Renewals</button>
     <button class="tab" onclick="showTab('unmatched')">Unmatched Payments</button>
+    <button class="tab" onclick="showTab('payment-proofs')">Payment Proofs</button>
     <button class="tab" onclick="showTab('config')">Config</button>
   </div>
 
@@ -80,6 +81,12 @@
   <div class="panel" id="panel-unmatched">
     <button class="refresh-btn" style="margin-bottom:16px;" onclick="loadUnmatched()">↻ Refresh</button>
     <div id="unmatched-list"><div class="empty-state">Loading…</div></div>
+  </div>
+
+  <!-- Payment Proofs -->
+  <div class="panel" id="panel-payment-proofs">
+    <button class="refresh-btn" style="margin-bottom:16px;" onclick="loadPaymentProofs()">↻ Refresh</button>
+    <div id="payment-proofs-list"><div class="empty-state">Loading…</div></div>
   </div>
 
   <!-- Config -->
@@ -147,7 +154,7 @@
   function showTab(name) {
     console.log('[MMR][admin] showTab:', name);
     document.querySelectorAll('.tab').forEach(function(t, i) {
-      var names = ['pending', 'unmatched', 'config'];
+      var names = ['pending', 'unmatched', 'payment-proofs', 'config'];
       t.classList.toggle('active', names[i] === name);
     });
     document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
@@ -161,6 +168,49 @@
 
   function esc(str) {
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function loadPaymentProofs() {
+    console.log('[MMR][admin] loadPaymentProofs, adminEmail:', adminEmail);
+    var el = document.getElementById('payment-proofs-list');
+    el.innerHTML = '<div class="empty-state">Loading…</div>';
+    callApi('getPaymentProofs', { adminEmail: adminEmail })
+      .then(function(data) {
+        var proofs = data.proofs || [];
+        console.log('[MMR][admin] getPaymentProofs returned', proofs.length, 'proofs');
+        if (!proofs.length) { el.innerHTML = '<div class="empty-state">No payment proofs found.</div>'; return; }
+        el.innerHTML = proofs.map(function(p) {
+          var ocrButton = `<button class="btn btn-secondary" onclick="runOcr('${esc(p.eventId)}')">Run OCR</button>`;
+          return '<div class="card" id="pp-' + esc(p.eventId) + '">' +
+            '<h3>' + esc(p.payerName || 'Unknown') + ' &mdash; ' + esc(p.eventName) + ' $' + esc(p.amount) + '</h3>' +
+            '<div class="meta">' + esc(p.eventId) + ' &bull; ' + new Date(p.timestamp).toLocaleString() + ' &bull; ' + statusBadge(p.status) + '</div>' +
+            '<div class="detail-grid">' +
+            '<div class="detail-item"><label>Member ID</label><span>' + esc(p.memberId) + '</span></div>' +
+            '<div class="detail-item"><label>Email</label><span>' + esc(p.email) + '</span></div>' +
+            '<div class="detail-item"><label>Screenshot File ID</label><span>' + esc(p.screenshotFileId) + '</span></div>' +
+            '<div class="detail-item"><label>GDrive File Path</label><span>' + (p.gdriveFilePath ? `<a href="${p.gdriveFilePath}" target="_blank">Open</a>` : 'N/A') + '</span></div>' +
+            '<div class="detail-item"><label>OCR Text</label><pre>' + esc(p.ocrText) + '</pre></div>' +
+            '<div class="detail-item"><label>OCR Timestamp</label><span>' + esc(p.ocrTimestamp) + '</span></div>' +
+            '</div>' + ocrButton + '</div>';
+        }).join('');
+      })
+      .catch(function(err) {
+        console.error('[MMR][admin] getPaymentProofs error:', err && err.message);
+        el.innerHTML = '<div class="empty-state">Error: ' + esc(err && err.message) + '</div>';
+      });
+  }
+
+  function runOcr(eventId) {
+    console.log('[MMR][admin] runOcr eventId:', eventId);
+    showGlobalMsg('Running OCR for ' + eventId + '...', 'success');
+    callApi('runOcrForPaymentProof', { adminEmail: adminEmail, eventId: eventId })
+      .then(function() {
+        showGlobalMsg('OCR completed for ' + eventId, 'success');
+        loadPaymentProofs();
+      })
+      .catch(function(err) {
+        showGlobalMsg('OCR failed for ' + eventId + ': ' + (err && err.message), 'error');
+      });
   }
 
   function loadPending() {
@@ -306,6 +356,7 @@
   } else {
     loadPending();
     loadUnmatched();
+    loadPaymentProofs();
     loadConfig();
   }
 </script>

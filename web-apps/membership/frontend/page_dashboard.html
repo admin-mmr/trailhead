@@ -90,6 +90,7 @@
       </div>
       <div class="actions">
         <a href="?page=renewal" class="btn btn-primary">Renew Membership</a>
+        <a href="#" id="paymentProofBtn" class="btn btn-secondary">Submit Payment Proof</a>
         <a href="?page=admin" class="btn btn-admin" id="adminBtn" style="display:none;">Admin Panel</a>
       </div>
     </div>
@@ -213,6 +214,8 @@
     document.getElementById('joinYear').textContent = member.joinYear || '—';
     document.getElementById('memberType').textContent = member.type || '—';
     document.getElementById('district').textContent = member.district || '—';
+
+    document.getElementById('paymentProofBtn').href = '?page=payment_proof&memberId=' + member.memberID;
 
     // ---- Profile confirmation card ----
     renderProfileCard(member);

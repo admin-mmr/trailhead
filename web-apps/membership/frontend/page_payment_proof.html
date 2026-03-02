@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Misty Mountain Runners — Submit Payment Proof</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
+    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar h1 { font-size: 18px; font-weight: 700; }
+    .topbar a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.85; }
+    .container { max-width: 560px; margin: 32px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 28px; margin-bottom: 20px; }
+    h2 { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 24px; }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; background: #fff; }
+    textarea { min-height: 80px; }
+    .btn { padding: 12px 24px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn-primary { background: #2d7d46; color: #fff; width: 100%; text-align: center; }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
+    .msg.success { background: #e8f5e9; color: #2d7d46; display: block; }
+    .msg.error { background: #fdecea; color: #c62828; display: block; }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <h1>🏃 Misty Mountain Runners</h1>
+  <a href="?page=dashboard">← Dashboard</a>
+</div>
+
+<div class="container">
+  <div class="card" id="formCard">
+    <h2>Submit Payment Proof</h2>
+    <div id="msg" class="msg"></div>
+
+    <div class="field">
+      <label>Payment For</label>
+      <select id="eventName"></select>
+    </div>
+    <div class="field">
+      <label>Amount</label>
+      <input type="number" id="amount" placeholder="e.g. 30" />
+    </div>
+    <div class="field">
+      <label>Payment Date</label>
+      <input type="date" id="paymentDate" />
+    </div>
+    <div class="field">
+      <label>Payer Name</label>
+      <input type="text" id="payerName" placeholder="Name on the account used for payment" />
+    </div>
+    <div class="field">
+      <label>Last 4 Digits of Confirmation/Transaction #</label>
+      <input type="text" id="last4Digits" placeholder="e.g. 5678" maxlength="4" />
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="notes" placeholder="Anything else we should know?"></textarea>
+    </div>
+    <div class="field">
+      <label>Confirmation Screenshot (optional)</label>
+      <input type="file" id="screenshot" accept="image/*" />
+    </div>
+
+    <button class="btn btn-primary" id="submitBtn" onclick="submitProof()">Submit</button>
+  </div>
+</div>
+
+<script>
+  console.log('[MMR][payment_proof] page script started');
+  var appBaseUrl = '__SCRIPT_URL__';
+  const SESSION_ID = Math.random().toString(36).slice(2);
+  let member = null;
+
+  function callApi(fn, payload) {
+    console.log('[MMR][payment_proof] callApi:', fn);
+    return new Promise((resolve, reject) => {
+      const req = { requestId: Math.random().toString(36).slice(2), payload };
+      google.script.run
+        .withSuccessHandler(r => {
+          const res = JSON.parse(r);
+          if (res.ok) resolve(res.payload);
+          else reject(new Error(res.errorMessage));
+        })
+        .withFailureHandler(err => reject(err))
+        [fn](JSON.stringify(req));
+    });
+  }
+
+  function showMsg(text, type) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'msg ' + type;
+    el.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result.toString().split(',')[1]);
+      reader.onerror = error => reject(error);
+    });
+  }
+
+  async function submitProof() {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+
+    try {
+      const fileInput = document.getElementById('screenshot');
+      let screenshotBase64 = null;
+      if (fileInput.files.length > 0) {
+        screenshotBase64 = await fileToBase64(fileInput.files[0]);
+      }
+
+      const payload = {
+        memberID: member ? member.memberID : '',
+        email: member ? member.email : '',
+        eventName: document.getElementById('eventName').value,
+        amount: document.getElementById('amount').value,
+        paymentDate: document.getElementById('paymentDate').value,
+        payerName: document.getElementById('payerName').value.trim(),
+        last4Digits: document.getElementById('last4Digits').value.trim(),
+        notes: document.getElementById('notes').value.trim(),
+        screenshot: screenshotBase64,
+        sessionID: SESSION_ID,
+      };
+
+      await callApi('submitPaymentProof', payload);
+      
+      document.getElementById('formCard').innerHTML = `
+        <div class="msg success" style="text-align:center;">
+          <h2>✅ Success!</h2>
+          <p>Your payment proof has been submitted for review. We will notify you once it is processed.</p>
+          <a href="${appBaseUrl}?page=dashboard" class="btn btn-primary" style="margin-top: 16px;">Back to Dashboard</a>
+        </div>
+      `;
+
+    } catch (err) {
+      showMsg(err.message || 'An error occurred during submission.', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+    }
+  }
+
+  function getUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    const eventName = params.get('eventName');
+    const amount = params.get('amount');
+    if (eventName) {
+      const select = document.getElementById('eventName');
+      // Check if this option already exists
+      let optionExists = false;
+      for (let i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === eventName) {
+          optionExists = true;
+          break;
+        }
+      }
+      if (!optionExists) {
+        const option = document.createElement('option');
+        option.value = eventName;
+        option.textContent = eventName;
+        select.appendChild(option);
+      }
+      select.value = eventName;
+      select.disabled = true;
+    }
+    if (amount) {
+      const amountInput = document.getElementById('amount');
+      amountInput.value = amount;
+      amountInput.readOnly = true;
+    }
+  }
+
+  // Initial data loading
+  document.addEventListener('DOMContentLoaded', async () => {
+    try {
+      const cached = sessionStorage.getItem('member');
+      if (cached) {
+        member = JSON.parse(cached);
+      }
+
+      const { events } = await callApi('getPaymentConfirmationEvents', {});
+      const select = document.getElementById('eventName');
+      select.innerHTML = events.map(e => `<option value="${e.name}">${e.name} - ${e.description}</option>`).join('');
+      
+      getUrlParams(); // Pre-fill from URL
+
+      document.getElementById('paymentDate').valueAsDate = new Date();
+
+    } catch (err) {
+      showMsg('Failed to load page data. Please refresh.', 'error');
+    }
+  });
+</script>
+</body>
+</html>

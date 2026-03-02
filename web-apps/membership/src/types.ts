@@ -190,3 +190,18 @@ interface RejectRenewalPayload {
   adminEmail: string;
   notes: string;
 }
+
+interface PaymentProof {
+  eventID: string;
+  timestamp: string;
+  memberID: string;
+  email: string;
+  eventName: string;
+  amount: number;
+  paymentDate: string;
+  payerName: string;
+  last4Digits: string;
+  notes: string;
+  screenshotFileId: string;
+  status: 'Pending Review' | 'Approved' | 'Rejected';
+}

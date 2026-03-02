@@ -18,6 +18,8 @@ const SHEET_NAMES = {
   CONFIG: 'Config',
   ACTIVITY_LOG: 'WebApp-ActivityLog',
   FETCH_GMAIL: 'Active',
+  PAYMENT_EVENTS: 'Payment Confirmation Events',
+  PAYMENT_PROOFS: 'Payment-Proofs',
 };
 
 // Sheets that live in the Fetch-Gmail spreadsheet (all others are in the membership spreadsheet)
@@ -142,6 +144,33 @@ const CFG_COL = {
   DESCRIPTION: 2,
 };
 
+// Payment Confirmation Events column indices (0-based)
+const PCE_COL = {
+  EVENT_NAME: 0,
+  DESCRIPTION: 1,
+  CONFIRMATION_METHOD: 2,
+};
+
+// Payment-Proofs column indices (0-based)
+const PP_COL = {
+  EVENT_ID: 0,
+  TIMESTAMP: 1,
+  MEMBER_ID: 2,
+  EMAIL: 3,
+  EVENT_NAME: 4,
+  AMOUNT: 5,
+  PAYMENT_DATE: 6,
+  PAYER_NAME: 7,
+  LAST_4_DIGITS: 8,
+  NOTES: 9,
+  SCREENSHOT_FILE_ID: 10,
+  STATUS: 11,
+  GDRIVE_FILE_PATH: 12,
+  OCR_TEXT: 13,
+  OCR_TIMESTAMP: 14,
+};
+
+
 // ============================================================
 // Sheet headers for auto-creation (new sheets only)
 // Existing sheets (Membership Master, Fetch-Gmail) must already exist.
@@ -171,6 +200,14 @@ const SHEET_HEADERS: Record<string, string[]> = {
     'LogID', 'Timestamp', 'SessionID', 'MemberID', 'Email',
     'EventID', 'Action', 'State', 'ErrorCode', 'ErrorMessage',
   ],
+  [SHEET_NAMES.PAYMENT_EVENTS]: [
+    'Event Name', 'Description', 'Confirmation Method',
+  ],
+  [SHEET_NAMES.PAYMENT_PROOFS]: [
+    'EventID', 'Timestamp', 'MemberID', 'Email', 'EventName', 'Amount',
+    'PaymentDate', 'PayerName', 'Last4Digits', 'Notes', 'ScreenshotFileID', 'Status',
+    'GDrive File Path', 'OCR Text', 'OCR Timestamp',
+  ],
 };
 
 // Default Config values seeded on first creation
@@ -178,13 +215,27 @@ const DEFAULT_CONFIG_ROWS: string[][] = [
   ['Individual_Price',       '30',                      'Price for individual membership'],
   ['Family_Price',           '50',                      'Price for family membership'],
   ['Payment_Methods',        'Zelle,Venmo,PayPal',      'Comma-separated accepted payment methods'],
+  ['Zelle_Handle',           'zelle@example.com',       'Zelle payment handle'],
+  ['Venmo_Handle',           '@venmo-user',             'Venmo payment handle'],
+  ['PayPal_Handle',          'paypal@example.com',      'PayPal payment handle'],
   ['Reminder_Days_Before',   '30',                      'Days before expiry to send reminder'],
   ['Membership_Renewal_Years','1',                      'Years added per renewal'],
   ['OTP_Valid_Hours',        '24',                      'Hours before OTP expires'],
   ['OTP_Cleanup_Days',       '7',                       'Days before used/expired OTPs are deleted'],
   ['Admin_Emails',           'admin@mmrunners.org',     'Comma-separated admin email addresses'],
   ['App_Base_Url',           '',                        'Deployed web app URL (set after first deploy)'],
+  ['Payment_Proof_Folder_Id','',                        'Google Drive folder ID for payment proofs'],
+  ['Zelle_QR_Code_File_Id',  '',                        'Google Drive file ID for Zelle QR code image'],
+  ['Venmo_QR_Code_File_Id',  '',                        'Google Drive file ID for Venmo QR code image'],
 ];
+
+// Default Payment Events values seeded on first creation
+const DEFAULT_PAYMENT_EVENTS_ROWS: string[][] = [
+  ['Individual/Family Membership', 'Confirm your payment for membership renewal', 'Match with payment history'],
+  ['Upgrade to Family Membership', 'Confirm your payment for upgrading to family membership', 'Match with payment history'],
+  ['Other Payment', 'Confirm your other payments related to membership', 'Manual review'],
+];
+
 
 // ============================================================
 // Spreadsheet + Config helpers
@@ -206,9 +257,11 @@ function getSheet(name: string): GoogleAppsScript.Spreadsheet.Sheet {
     sheet.appendRow(headers);
     // Freeze header row
     sheet.setFrozenRows(1);
-    // Seed default Config values
+    // Seed default values
     if (name === SHEET_NAMES.CONFIG) {
       DEFAULT_CONFIG_ROWS.forEach(row => sheet!.appendRow(row));
+    } else if (name === SHEET_NAMES.PAYMENT_EVENTS) {
+      DEFAULT_PAYMENT_EVENTS_ROWS.forEach(row => sheet!.appendRow(row));
     }
   }
 

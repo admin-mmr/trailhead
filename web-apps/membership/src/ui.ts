@@ -4,21 +4,44 @@
 // ============================================================
 
 // Route ?page= to the matching HTML template
-function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput {
+function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput | GoogleAppsScript.Base.Blob {
   try {
+
+    console.log('mmr:doGet called, parameters =', JSON.stringify(e.parameter));
+    console.log('mmr:doGet page =', e.parameter.page);
+
     const page = (e && e.parameter && e.parameter['page']) || 'login';
-    const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember'];
-    const safePage = allowedPages.includes(page) ? page : 'login';
-    const fileName = `page_${safePage}`;
-    console.log(`doGet: serving "${fileName}", page param="${page}"`);
-    let scriptUrl = '';
-    try { scriptUrl = ScriptApp.getService().getUrl(); } catch (_) {}
-    const raw = HtmlService.createHtmlOutputFromFile(fileName).getContent();
-    const content = raw.replace('__SCRIPT_URL__', scriptUrl);
-    console.log(`doGet: content length=${content.length}, scriptUrl=${scriptUrl}`);
-    return HtmlService.createHtmlOutput(content)
-      .setTitle('Misty Mountain Runners — Membership')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    console.log('mmr:doGet serving page =', page);
+
+    if (page === 'image') {
+      const fileId = e.parameter['id'];
+      return serveImage(fileId);
+    }
+
+    try {
+      const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember', 'payment_proof', 'payment', 'image'];
+      const safePage = allowedPages.includes(page) ? page : 'login';
+      const fileName = `page_${safePage}`;
+      console.log(`doGet: serving "${fileName}", page param="${page}"`);
+      let scriptUrl = '';
+      try { scriptUrl = ScriptApp.getService().getUrl(); } catch (_) {}
+      console.log('mmr:doGet SCRIPTURL =', scriptUrl);
+      const raw = HtmlService.createHtmlOutputFromFile(fileName).getContent();
+      const content = raw.replace('__SCRIPT_URL__', scriptUrl);
+      console.log(`doGet: content length=${content.length}, scriptUrl=${scriptUrl}`);
+      const output = HtmlService.createHtmlOutput(content)
+        .setTitle('Misty Mountain Runners — Membership')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      console.log('mmr:doGet output created successfully for page =', page);  
+      return output;
+
+    } catch (er: any) {
+      console.error('mmr:doGet ERROR for page =', page, 'error =', String(er));
+      return HtmlService.createHtmlOutput(
+        `<h2 style="color:red;font-family:sans-serif;">Server Error in doGet for ${page}</h2><pre>${String(er)}</pre>`
+      );
+    }
+
   } catch (err: any) {
     console.error('doGet error:', String(err));
     return HtmlService.createHtmlOutput(

@@ -303,7 +303,49 @@ function rowToFetchGmailRow(row: any[], rowIndex: number): FetchGmailRow {
 }
 
 function markGmailPaymentProcessed(rowIndex: number, eventID: string): void {
+
   const sheet = getSheet(SHEET_NAMES.FETCH_GMAIL);
+
   sheet.getRange(rowIndex, FG_COL.PROCESSED + 1).setValue(true);
+
   sheet.getRange(rowIndex, FG_COL.WEBAPP_EVENT_ID + 1).setValue(eventID);
+
 }
+
+
+
+function appendPaymentProof(proof: PaymentProof): void {
+
+  const sheet = getSheet(SHEET_NAMES.PAYMENT_PROOFS);
+
+  sheet.appendRow([
+
+    proof.eventID,
+
+    proof.timestamp,
+
+    proof.memberID,
+
+    proof.email,
+
+    proof.eventName,
+
+    proof.amount,
+
+    proof.paymentDate,
+
+    proof.payerName,
+
+    proof.last4Digits,
+
+    proof.notes,
+
+    proof.screenshotFileId,
+
+    proof.status,
+
+  ]);
+
+}
+
+

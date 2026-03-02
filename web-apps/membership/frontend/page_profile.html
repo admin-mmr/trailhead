@@ -188,9 +188,10 @@
           sessionStorage.setItem('member', JSON.stringify(data.member));
           loadProfile(data.member);
         }
-        showMsg('Profile updated successfully!', 'success');
-        btn.disabled = false;
-        btn.textContent = 'Save Changes';
+        showMsg('Profile updated successfully! Redirecting…', 'success');
+        setTimeout(() => {
+          window.top.location.href = appBaseUrl + '?page=dashboard';
+        }, 1000);
       })
       .catch(err => {
         console.error('[MMR][profile] updateMemberProfile error:', err && err.message);

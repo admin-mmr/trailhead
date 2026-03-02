@@ -115,6 +115,10 @@
   }
 
   function onContinueClick() {
+    var continueBtn = document.getElementById('continueBtn');
+    continueBtn.disabled = true;
+    continueBtn.textContent = 'Continuing...';
+
     var url = appBaseUrl + '?page=' + pendingPage;
     console.log('[MMR][login] navigating to:', url);
     window.top.location.href = url;
