@@ -17,48 +17,60 @@
     .welcome { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     .member-id { font-size: 13px; color: #888; margin-bottom: 20px; }
     .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
-    .status-active { background: #e8f5e9; color: #2d7d46; }
-    .status-inactive { background: #fdecea; color: #c62828; }
-    .status-expiring { background: #fff8e1; color: #f57c00; }
+    .status-active    { background: #e8f5e9; color: #2d7d46; }
+    .status-inactive  { background: #fdecea; color: #c62828; }
+    .status-expiring  { background: #fff8e1; color: #f57c00; }
+    .status-urgent    { background: #fdecea; color: #c62828; }
     .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .info-item label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 2px; }
     .info-item span { font-size: 15px; color: #1a1a1a; font-weight: 500; }
     .expiry-date { font-size: 18px; font-weight: 700; }
-    .expiry-date.expired { color: #c62828; }
+    .expiry-date.expired  { color: #c62828; }
     .expiry-date.expiring { color: #f57c00; }
-    .expiry-date.active { color: #2d7d46; }
-    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .expiry-date.active   { color: #2d7d46; }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
     .btn { padding: 11px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
-    .btn-primary { background: #2d7d46; color: #fff; }
+    .btn-primary   { background: #2d7d46; color: #fff; }
     .btn-primary:hover { background: #235f36; }
     .btn-secondary { background: #fff; color: #2d7d46; border: 1.5px solid #2d7d46; }
     .btn-secondary:hover { background: #f0f8f2; }
-    .btn-admin { background: #5c35a8; color: #fff; }
+    .btn-admin     { background: #5c35a8; color: #fff; }
     .btn-admin:hover { background: #4a2b8a; }
+    /* Profile confirm card */
+    .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-bottom: 16px; }
+    .profile-row label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 2px; }
+    .profile-row span { font-size: 14px; color: #1a1a1a; }
+    .profile-row span.empty { color: #bbb; font-style: italic; }
+    .profile-warning { background: #fff3e0; border: 1px solid #ffb74d; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #e65100; margin-bottom: 14px; }
+    /* Family card */
     .family-list { list-style: none; }
     .family-list li { padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; color: #333; }
     .family-list li:last-child { border-bottom: none; }
+    .family-upgrade { color: #555; font-size: 14px; line-height: 1.6; margin-bottom: 14px; }
     #loading { text-align: center; padding: 60px; color: #888; }
     #content { display: none; }
   </style>
 </head>
 <body>
+
 <div class="topbar">
   <h1>🏃 Misty Mountain Runners</h1>
   <div style="display:flex;gap:20px;align-items:center;">
     <a href="?page=profile">Profile</a>
-    <a href="?page=login" onclick="logout()">Sign Out</a>
+    <a href="?page=login" id="signOutLink">Sign Out</a>
   </div>
 </div>
 
 <div class="container">
   <div id="loading">Loading your profile…</div>
   <div id="content">
+
+    <!-- Status card -->
     <div class="card">
       <div class="welcome" id="welcomeName"></div>
       <div class="member-id" id="memberMeta"></div>
       <span class="status-badge" id="statusBadge"></span>
-      <div class="info-grid" style="margin-bottom:20px;">
+      <div class="info-grid" style="margin-bottom:0;">
         <div class="info-item">
           <label>Membership Expires</label>
           <span class="expiry-date" id="expiryDate">—</span>
@@ -77,58 +89,110 @@
         </div>
       </div>
       <div class="actions">
-        <a href="?page=profile" class="btn btn-secondary">Update Profile</a>
         <a href="?page=renewal" class="btn btn-primary">Renew Membership</a>
         <a href="?page=admin" class="btn btn-admin" id="adminBtn" style="display:none;">Admin Panel</a>
       </div>
     </div>
 
-    <div class="card" id="familyCard" style="display:none;">
-      <h2>Family Members</h2>
-      <ul class="family-list" id="familyList"></ul>
+    <!-- Profile confirmation card -->
+    <div class="card" id="profileCard">
+      <h2>Is your information correct?</h2>
+      <div id="profileWarning" class="profile-warning" style="display:none;">
+        Some fields are empty — please update your profile.
+      </div>
+      <div class="profile-grid" id="profileGrid"></div>
+      <a href="?page=profile" class="btn btn-secondary">Update Profile</a>
     </div>
+
+    <!-- Family card -->
+    <div class="card" id="familyCard" style="display:none;">
+      <h2 id="familyCardTitle">Family Members</h2>
+      <div id="familyCardBody"></div>
+    </div>
+
   </div>
 </div>
 
 <script>
+  console.log('[MMR][dashboard] page script started, location:', window.location.href);
+  var appBaseUrl = '__SCRIPT_URL__';
+  console.log('[MMR][dashboard] appBaseUrl:', appBaseUrl);
+
+  // Navigate all relative ?page= links through window.top with absolute URL
+  document.addEventListener('click', function(e) {
+    var a = e.target.closest('a[href]');
+    if (a) {
+      var h = a.getAttribute('href');
+      if (h && h.charAt(0) === '?') {
+        e.preventDefault();
+        console.log('[MMR][dashboard] nav click to:', h);
+        window.top.location.href = appBaseUrl + h;
+      }
+    }
+  });
+
+  // Sign-out: clear sessionStorage before navigating
+  document.getElementById('signOutLink').addEventListener('click', function() {
+    console.log('[MMR][dashboard] signing out, clearing sessionStorage');
+    sessionStorage.removeItem('member');
+  });
+
   const SESSION_ID = Math.random().toString(36).slice(2);
   let currentMember = null;
 
   function callApi(fn, payload) {
+    console.log('[MMR][dashboard] callApi:', fn, JSON.stringify(payload));
     return new Promise((resolve, reject) => {
       const req = { requestId: Math.random().toString(36).slice(2), payload };
       google.script.run
-        .withSuccessHandler(r => { const res = JSON.parse(r); if (res.ok) resolve(res.payload); else reject(new Error(res.errorMessage)); })
-        .withFailureHandler(err => reject(err))
+        .withSuccessHandler(r => {
+          const res = JSON.parse(r);
+          console.log('[MMR][dashboard]', fn, 'success:', JSON.stringify(res.payload || res));
+          if (res.ok) resolve(res.payload);
+          else reject(new Error(res.errorMessage));
+        })
+        .withFailureHandler(err => {
+          console.error('[MMR][dashboard]', fn, 'failure:', err);
+          reject(err);
+        })
         [fn](JSON.stringify(req));
     });
-  }
-
-  function logout() {
-    sessionStorage.removeItem('member');
   }
 
   function getDaysUntilExpiry(expirationStr) {
     if (!expirationStr) return -9999;
     const exp = new Date(expirationStr);
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     return Math.floor((exp - today) / (1000 * 60 * 60 * 24));
   }
 
   function renderMember(member, familyMembers) {
     currentMember = member;
-    document.getElementById('welcomeName').textContent =
-      `Welcome, ${member.firstName || member.email}!`;
-    document.getElementById('memberMeta').textContent =
-      `${member.memberID}${member.familyID ? ' · Family ' + member.familyID : ''}`;
+    console.log('[MMR][dashboard] renderMember memberID:', member.memberID, '| status:', member.status, '| type:', member.type);
 
+    document.getElementById('welcomeName').textContent =
+      'Welcome, ' + (member.firstName || member.email) + '!';
+    document.getElementById('memberMeta').textContent =
+      member.memberID + (member.familyID ? ' · Family ' + member.familyID : '');
+
+    // ---- Status badge & expiry color ----
     const days = getDaysUntilExpiry(member.expiration);
     const badgeEl = document.getElementById('statusBadge');
     const expiryEl = document.getElementById('expiryDate');
+    console.log('[MMR][dashboard] expiration:', member.expiration, '| days until expiry:', days);
 
-    if (member.status === 'active') {
-      if (days <= 30) {
-        badgeEl.textContent = 'Expiring Soon';
+    if (member.status === 'active' || member.status === 'Active') {
+      if (days < 0) {
+        badgeEl.textContent = 'Expired';
+        badgeEl.className = 'status-badge status-urgent';
+        expiryEl.className = 'expiry-date expired';
+      } else if (days <= 7) {
+        badgeEl.textContent = 'Expiring Very Soon';
+        badgeEl.className = 'status-badge status-urgent';
+        expiryEl.className = 'expiry-date expired';
+      } else if (days <= 42) {
+        badgeEl.textContent = 'Expiring Soon — within 6 weeks';
         badgeEl.className = 'status-badge status-expiring';
         expiryEl.className = 'expiry-date expiring';
       } else {
@@ -150,46 +214,138 @@
     document.getElementById('memberType').textContent = member.type || '—';
     document.getElementById('district').textContent = member.district || '—';
 
-    // Show admin button if admin
-    callApi('getConfig', { adminEmail: member.email }).then(() => {
-      document.getElementById('adminBtn').style.display = 'inline-block';
-    }).catch(() => {});
+    // ---- Profile confirmation card ----
+    renderProfileCard(member);
 
-    // Family members
-    if (familyMembers && familyMembers.length > 1) {
-      const list = document.getElementById('familyList');
-      list.innerHTML = '';
-      familyMembers.forEach(fm => {
-        if (fm.memberID !== member.memberID) {
-          const li = document.createElement('li');
-          li.textContent = `${fm.firstName} ${fm.lastName} (${fm.memberID})`;
-          list.appendChild(li);
-        }
+    // ---- Family card ----
+    renderFamilyCard(member, familyMembers || []);
+
+    // ---- Admin button (non-blocking) ----
+    callApi('getConfig', { adminEmail: member.email, caller: 'dashboard-admin-check' })
+      .then(() => {
+        console.log('[MMR][dashboard] admin check: user IS admin');
+        document.getElementById('adminBtn').style.display = 'inline-block';
+      })
+      .catch(err => {
+        console.log('[MMR][dashboard] admin check: not admin or error:', err && err.message);
       });
-      document.getElementById('familyCard').style.display = 'block';
-    }
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = 'block';
   }
 
-  // Load member from session or fetch from server
+  function renderProfileCard(member) {
+    var fields = [
+      { label: 'First Name',  value: member.firstName },
+      { label: 'Last Name',   value: member.lastName },
+      { label: 'Email',       value: member.email },
+      { label: 'Phone',       value: member.phoneNumber },
+      { label: 'WeChat ID',   value: member.wechatID },
+      { label: 'District',    value: member.district },
+    ];
+    var anyEmpty = !member.firstName || !member.lastName || !member.phoneNumber;
+    document.getElementById('profileWarning').style.display = anyEmpty ? 'block' : 'none';
+
+    var grid = document.getElementById('profileGrid');
+    grid.innerHTML = '';
+    fields.forEach(function(f) {
+      var div = document.createElement('div');
+      div.className = 'profile-row';
+      var lbl = document.createElement('label');
+      lbl.textContent = f.label;
+      var val = document.createElement('span');
+      if (f.value) {
+        val.textContent = f.value;
+      } else {
+        val.textContent = 'Not set';
+        val.className = 'empty';
+      }
+      div.appendChild(lbl);
+      div.appendChild(val);
+      grid.appendChild(div);
+    });
+  }
+
+  function renderFamilyCard(member, familyMembers) {
+    var card = document.getElementById('familyCard');
+    var body = document.getElementById('familyCardBody');
+    var title = document.getElementById('familyCardTitle');
+    var memberType = (member.type || '').trim();
+
+    if (memberType === 'Individual' || !memberType) {
+      // Offer upgrade CTA
+      title.textContent = 'Upgrade to Family Membership';
+      body.innerHTML = '';
+      var p = document.createElement('p');
+      p.className = 'family-upgrade';
+      p.textContent = 'Add family members under one membership. Renew with a Family plan to get everyone covered.';
+      var btn = document.createElement('a');
+      btn.href = '?page=renewal';
+      btn.className = 'btn btn-secondary';
+      btn.textContent = 'Renew as Family →';
+      body.appendChild(p);
+      body.appendChild(btn);
+      card.style.display = 'block';
+    } else if (memberType === 'Family') {
+      title.textContent = 'Family Members';
+      body.innerHTML = '';
+      // Other family members (exclude self)
+      var others = (familyMembers || []).filter(function(fm) { return fm.memberID !== member.memberID; });
+      if (others.length > 0) {
+        var ul = document.createElement('ul');
+        ul.className = 'family-list';
+        others.forEach(function(fm) {
+          var li = document.createElement('li');
+          li.textContent = (fm.firstName || '') + ' ' + (fm.lastName || '') + ' (' + fm.memberID + ')';
+          ul.appendChild(li);
+        });
+        body.appendChild(ul);
+      } else {
+        var p2 = document.createElement('p');
+        p2.style.color = '#888';
+        p2.style.fontSize = '14px';
+        p2.textContent = 'You\'re on a Family plan. No linked family members yet.';
+        body.appendChild(p2);
+      }
+      card.style.display = 'block';
+    } else {
+      card.style.display = 'none';
+    }
+  }
+
+  // ---- Load member from sessionStorage or server ----
   const cached = sessionStorage.getItem('member');
   if (cached) {
     try {
       const m = JSON.parse(cached);
+      console.log('[MMR][dashboard] loaded member from sessionStorage:', m.memberID);
       renderMember(m, []);
-    } catch (_) {}
+    } catch (e) {
+      console.error('[MMR][dashboard] failed to parse cached member:', e);
+    }
   }
 
-  callApi('getOrCreateMemberProfile', { email: '', sessionID: SESSION_ID })
-    .then(data => renderMember(data.member, data.familyMembers || []))
-    .catch(() => {
-      document.getElementById('loading').textContent = 'Session expired. ';
-      const a = document.createElement('a');
-      a.href = '?page=login';
-      a.textContent = 'Sign in again';
-      document.getElementById('loading').appendChild(a);
+  var memberEmail = '';
+  if (cached) {
+    try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {}
+  }
+  console.log('[MMR][dashboard] calling getOrCreateMemberProfile with email:', memberEmail);
+
+  callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID })
+    .then(function(data) {
+      console.log('[MMR][dashboard] getOrCreateMemberProfile success, memberID:', data.member && data.member.memberID);
+      sessionStorage.setItem('member', JSON.stringify(data.member));
+      renderMember(data.member, data.familyMembers || []);
+    })
+    .catch(function(err) {
+      console.error('[MMR][dashboard] getOrCreateMemberProfile failed:', err && err.message);
+      if (!cached) {
+        // No cached member and server failed — show session-expired message
+        var loadingEl = document.getElementById('loading');
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = 'Session expired. <a href="?page=login" style="color:#2d7d46;">Sign in again</a>';
+      }
+      // If we had cached member, we already rendered — don't blank the page
     });
 </script>
 </body>

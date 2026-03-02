@@ -31,8 +31,8 @@
     .instructions-box h3 { font-size: 15px; font-weight: 700; color: #2d7d46; margin-bottom: 10px; }
     .instructions-box ol { padding-left: 20px; color: #333; font-size: 14px; line-height: 1.7; }
     .instructions-box .memo-tip { margin-top: 12px; background: #fff; border-left: 3px solid #2d7d46; padding: 10px 14px; border-radius: 4px; font-size: 13px; color: #444; }
-    .btn { padding: 12px 24px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; }
-    .btn-primary { background: #2d7d46; color: #fff; width: 100%; }
+    .btn { padding: 12px 24px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn-primary { background: #2d7d46; color: #fff; width: 100%; text-align: center; }
     .btn-primary:hover { background: #235f36; }
     .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn-secondary { background: #fff; color: #555; border: 1.5px solid #ccc; }
@@ -145,6 +145,23 @@
 </div>
 
 <script>
+  console.log('[MMR][renewal] page script started, location:', window.location.href);
+  var appBaseUrl = '__SCRIPT_URL__';
+  console.log('[MMR][renewal] appBaseUrl:', appBaseUrl);
+
+  // Navigate all relative ?page= links through window.top with absolute URL
+  document.addEventListener('click', function(e) {
+    var a = e.target.closest('a[href]');
+    if (a) {
+      var h = a.getAttribute('href');
+      if (h && h.charAt(0) === '?') {
+        e.preventDefault();
+        console.log('[MMR][renewal] nav click to:', h);
+        window.top.location.href = appBaseUrl + h;
+      }
+    }
+  });
+
   const SESSION_ID = Math.random().toString(36).slice(2);
   let member = null;
   let selectedType = 'Individual';
@@ -170,11 +187,20 @@
   };
 
   function callApi(fn, payload) {
+    console.log('[MMR][renewal] callApi:', fn, JSON.stringify(payload));
     return new Promise((resolve, reject) => {
       const req = { requestId: Math.random().toString(36).slice(2), payload };
       google.script.run
-        .withSuccessHandler(r => { const res = JSON.parse(r); if (res.ok) resolve(res.payload); else reject(new Error(res.errorMessage)); })
-        .withFailureHandler(err => reject(err))
+        .withSuccessHandler(r => {
+          const res = JSON.parse(r);
+          console.log('[MMR][renewal]', fn, 'success:', JSON.stringify(res.payload || res));
+          if (res.ok) resolve(res.payload);
+          else reject(new Error(res.errorMessage));
+        })
+        .withFailureHandler(err => {
+          console.error('[MMR][renewal]', fn, 'failure:', err);
+          reject(err);
+        })
         [fn](JSON.stringify(req));
     });
   }
@@ -187,6 +213,7 @@
   }
 
   function selectType(type) {
+    console.log('[MMR][renewal] selectType:', type);
     selectedType = type;
     document.getElementById('opt-individual').classList.toggle('selected', type === 'Individual');
     document.getElementById('opt-family').classList.toggle('selected', type === 'Family');
@@ -205,21 +232,23 @@
 
   function goToStep2() {
     const method = document.getElementById('paymentMethod').value;
-    document.getElementById('instrTitle').textContent = `How to Pay via ${method}`;
+    console.log('[MMR][renewal] goToStep2, method:', method, 'type:', selectedType);
+    document.getElementById('instrTitle').textContent = 'How to Pay via ' + method;
     const steps = PAYMENT_INSTRUCTIONS[method] || [];
     const ol = document.getElementById('instrSteps');
-    ol.innerHTML = steps.map(s => `<li>${s}</li>`).join('');
+    ol.innerHTML = steps.map(function(s) { return '<li>' + s + '</li>'; }).join('');
     const mid = member ? member.memberID : 'your Member ID';
     document.getElementById('memoMemberID').textContent = mid;
-    document.getElementById('memoExample').textContent = `${mid} 2026 membership`;
+    document.getElementById('memoExample').textContent = mid + ' ' + new Date().getFullYear() + ' membership';
     document.getElementById('step1').style.display = 'none';
     document.getElementById('step2').style.display = '';
     document.getElementById('step3').style.display = 'none';
   }
 
   function goToStep3() {
+    console.log('[MMR][renewal] goToStep3, price:', getPrice());
     document.getElementById('amount').value = getPrice();
-    if (member) document.getElementById('memoField').value = `${member.memberID} ${new Date().getFullYear()} membership`;
+    if (member) document.getElementById('memoField').value = member.memberID + ' ' + new Date().getFullYear() + ' membership';
     document.getElementById('step2').style.display = 'none';
     document.getElementById('step3').style.display = '';
   }
@@ -233,6 +262,7 @@
     if (!memoField) return showMsg('Please enter the memo you used.');
     if (!amount || amount <= 0) return showMsg('Please enter a valid amount.');
 
+    console.log('[MMR][renewal] submitRenewal memberID:', member && member.memberID, '| type:', selectedType, '| amount:', amount);
     const btn = document.getElementById('submitBtn');
     btn.disabled = true;
     btn.textContent = 'Submitting…';
@@ -241,44 +271,71 @@
       memberId: member ? member.memberID : '',
       email: member ? member.email : '',
       membershipType: selectedType,
-      amount,
+      amount: amount,
       paymentMethod: document.getElementById('paymentMethod').value,
-      payerName,
-      memoField,
+      payerName: payerName,
+      memoField: memoField,
       last4Digits: document.getElementById('last4Digits').value.trim() || undefined,
       sessionID: SESSION_ID,
     })
-    .then(() => {
+    .then(function() {
+      console.log('[MMR][renewal] submitRenewalRequest success');
       document.getElementById('step3').style.display = 'none';
       document.getElementById('stepDone').style.display = '';
     })
-    .catch(err => {
+    .catch(function(err) {
+      console.error('[MMR][renewal] submitRenewalRequest error:', err && err.message);
       showMsg(err.message || 'Submission failed. Please try again.');
       btn.disabled = false;
       btn.textContent = 'Submit →';
     });
   }
 
-  // Init: load member + config
+  // ---- Init: load member from session + fetch fresh from server ----
   const cached = sessionStorage.getItem('member');
-  if (cached) { try { member = JSON.parse(cached); } catch (_) {} }
+  if (cached) {
+    try {
+      member = JSON.parse(cached);
+      console.log('[MMR][renewal] loaded member from sessionStorage:', member.memberID);
+    } catch (e) {
+      console.error('[MMR][renewal] failed to parse cached member:', e);
+    }
+  }
 
-  callApi('getOrCreateMemberProfile', { email: '', sessionID: SESSION_ID })
-    .then(data => { member = data.member; })
-    .catch(() => { window.location.href = '?page=login'; });
+  var memberEmail = member ? (member.email || '') : '';
+  console.log('[MMR][renewal] calling getOrCreateMemberProfile with email:', memberEmail);
 
-  callApi('getConfig', { adminEmail: '' })
-    .then(data => {
+  callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID })
+    .then(function(data) {
+      console.log('[MMR][renewal] getOrCreateMemberProfile success, memberID:', data.member && data.member.memberID);
+      member = data.member;
+      sessionStorage.setItem('member', JSON.stringify(member));
+    })
+    .catch(function(err) {
+      console.error('[MMR][renewal] getOrCreateMemberProfile failed:', err && err.message);
+      if (!member) {
+        // No cached member — show error
+        showMsg('Session expired. Please sign in again.');
+      }
+    });
+
+  console.log('[MMR][renewal] calling getConfig with caller: renewal-page-init');
+  callApi('getConfig', { adminEmail: memberEmail, caller: 'renewal-page-init' })
+    .then(function(data) {
+      console.log('[MMR][renewal] getConfig success, keys:', Object.keys(data.config || {}).length);
       config = data.config || {};
       const ip = config['Individual_Price'];
       const fp = config['Family_Price'];
       if (ip) document.getElementById('price-individual').textContent = '$' + ip;
       if (fp) document.getElementById('price-family').textContent = '$' + fp;
-      const methods = (config['Payment_Methods'] || 'Zelle,Venmo,PayPal').split(',').map(m => m.trim());
+      const methods = (config['Payment_Methods'] || 'Zelle,Venmo,PayPal').split(',').map(function(m) { return m.trim(); });
       const sel = document.getElementById('paymentMethod');
-      sel.innerHTML = methods.map(m => `<option value="${m}">${m}</option>`).join('');
+      sel.innerHTML = methods.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
     })
-    .catch(() => {});
+    .catch(function(err) {
+      console.log('[MMR][renewal] getConfig failed (non-admin or error):', err && err.message);
+      // Non-fatal — use hardcoded defaults
+    });
 </script>
 </body>
 </html>

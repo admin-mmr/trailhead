@@ -7,13 +7,16 @@
 function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput {
   try {
     const page = (e && e.parameter && e.parameter['page']) || 'login';
-    const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin'];
+    const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember'];
     const safePage = allowedPages.includes(page) ? page : 'login';
     const fileName = `page_${safePage}`;
     console.log(`doGet: serving "${fileName}", page param="${page}"`);
-    const output = HtmlService.createHtmlOutputFromFile(fileName);
-    console.log(`doGet: content length=${output.getContent().length}`);
-    return output
+    let scriptUrl = '';
+    try { scriptUrl = ScriptApp.getService().getUrl(); } catch (_) {}
+    const raw = HtmlService.createHtmlOutputFromFile(fileName).getContent();
+    const content = raw.replace('__SCRIPT_URL__', scriptUrl);
+    console.log(`doGet: content length=${content.length}, scriptUrl=${scriptUrl}`);
+    return HtmlService.createHtmlOutput(content)
       .setTitle('Misty Mountain Runners — Membership')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (err: any) {

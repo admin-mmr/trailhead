@@ -21,7 +21,7 @@
     input[readonly] { background: #f9f9f9; color: #888; cursor: default; }
     .hint { font-size: 12px; color: #999; margin-top: 4px; }
     .actions { display: flex; gap: 12px; margin-top: 24px; }
-    .btn { padding: 11px 24px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn { padding: 11px 24px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
     .btn-primary { background: #2d7d46; color: #fff; }
     .btn-primary:hover { background: #235f36; }
     .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -29,7 +29,10 @@
     .btn-secondary:hover { background: #f5f5f5; }
     .msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
     .msg.success { background: #e8f5e9; color: #2d7d46; display: block; }
-    .msg.error { background: #fdecea; color: #c62828; display: block; }
+    .msg.error   { background: #fdecea; color: #c62828; display: block; }
+    #errorView { display: none; text-align: center; padding: 40px 0; }
+    #errorView p { color: #c62828; font-size: 15px; margin-bottom: 16px; }
+    #formView { display: block; }
   </style>
 </head>
 <body>
@@ -40,60 +43,97 @@
 
 <div class="container">
   <div class="card">
-    <h2>Update Profile</h2>
-    <div id="msg" class="msg"></div>
 
-    <div class="field">
-      <label>Email</label>
-      <input type="email" id="email" readonly />
-    </div>
-    <div class="field">
-      <label>Member ID</label>
-      <input type="text" id="memberID" readonly />
-    </div>
-    <div class="field">
-      <label>First Name</label>
-      <input type="text" id="firstName" placeholder="First name" />
-    </div>
-    <div class="field">
-      <label>Last Name</label>
-      <input type="text" id="lastName" placeholder="Last name" />
-    </div>
-    <div class="field">
-      <label>Phone Number</label>
-      <input type="tel" id="phoneNumber" placeholder="e.g. 917-555-1234" />
-    </div>
-    <div class="field">
-      <label>WeChat ID</label>
-      <input type="text" id="wechatID" placeholder="WeChat username (optional)" />
-    </div>
-    <div class="field">
-      <label>District</label>
-      <input type="text" id="district" placeholder="e.g. Queens, Brooklyn" />
-    </div>
-    <div class="field">
-      <label>Join Year</label>
-      <input type="number" id="joinYear" placeholder="e.g. 2019" min="2000" max="2099" />
-      <div class="hint">Year you first joined the club. You may edit this.</div>
+    <!-- Error state (shown if profile fails to load and no session cache) -->
+    <div id="errorView">
+      <p id="errorMsg">Could not load your profile.</p>
+      <a href="?page=login" class="btn btn-primary">Sign in again</a>
     </div>
 
-    <div class="actions">
-      <button class="btn btn-primary" id="saveBtn" onclick="saveProfile()">Save Changes</button>
-      <a href="?page=dashboard" class="btn btn-secondary">Cancel</a>
+    <!-- Profile form -->
+    <div id="formView">
+      <h2>Update Profile</h2>
+      <div id="msg" class="msg"></div>
+
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="email" readonly />
+      </div>
+      <div class="field">
+        <label>Member ID</label>
+        <input type="text" id="memberID" readonly />
+      </div>
+      <div class="field">
+        <label>First Name</label>
+        <input type="text" id="firstName" placeholder="First name" />
+      </div>
+      <div class="field">
+        <label>Last Name</label>
+        <input type="text" id="lastName" placeholder="Last name" />
+      </div>
+      <div class="field">
+        <label>Phone Number</label>
+        <input type="tel" id="phoneNumber" placeholder="e.g. 917-555-1234" />
+      </div>
+      <div class="field">
+        <label>WeChat ID</label>
+        <input type="text" id="wechatID" placeholder="WeChat username (optional)" />
+      </div>
+      <div class="field">
+        <label>District</label>
+        <input type="text" id="district" placeholder="e.g. Queens, Brooklyn" />
+      </div>
+      <div class="field">
+        <label>Join Year</label>
+        <input type="number" id="joinYear" placeholder="e.g. 2019" min="2000" max="2099" />
+        <div class="hint">Year you first joined the club. You may edit this.</div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="saveBtn" onclick="saveProfile()">Save Changes</button>
+        <a href="?page=dashboard" class="btn btn-secondary">Cancel</a>
+      </div>
     </div>
+
   </div>
 </div>
 
 <script>
+  console.log('[MMR][profile] page script started, location:', window.location.href);
+  var appBaseUrl = '__SCRIPT_URL__';
+  console.log('[MMR][profile] appBaseUrl:', appBaseUrl);
+
+  // Navigate all relative ?page= links through window.top with absolute URL
+  document.addEventListener('click', function(e) {
+    var a = e.target.closest('a[href]');
+    if (a) {
+      var h = a.getAttribute('href');
+      if (h && h.charAt(0) === '?') {
+        e.preventDefault();
+        console.log('[MMR][profile] nav click to:', h);
+        window.top.location.href = appBaseUrl + h;
+      }
+    }
+  });
+
   const SESSION_ID = Math.random().toString(36).slice(2);
   let currentMemberID = null;
 
   function callApi(fn, payload) {
+    console.log('[MMR][profile] callApi:', fn, JSON.stringify(payload));
     return new Promise((resolve, reject) => {
       const req = { requestId: Math.random().toString(36).slice(2), payload };
       google.script.run
-        .withSuccessHandler(r => { const res = JSON.parse(r); if (res.ok) resolve(res.payload); else reject(new Error(res.errorMessage)); })
-        .withFailureHandler(err => reject(err))
+        .withSuccessHandler(r => {
+          const res = JSON.parse(r);
+          console.log('[MMR][profile]', fn, 'success:', JSON.stringify(res.payload || res));
+          if (res.ok) resolve(res.payload);
+          else reject(new Error(res.errorMessage));
+        })
+        .withFailureHandler(err => {
+          console.error('[MMR][profile]', fn, 'failure:', err);
+          reject(err);
+        })
         [fn](JSON.stringify(req));
     });
   }
@@ -104,16 +144,24 @@
     el.className = 'msg ' + type;
   }
 
+  function showError(msg) {
+    console.error('[MMR][profile] showError:', msg);
+    document.getElementById('errorMsg').textContent = msg || 'Could not load your profile.';
+    document.getElementById('formView').style.display = 'none';
+    document.getElementById('errorView').style.display = 'block';
+  }
+
   function loadProfile(member) {
+    console.log('[MMR][profile] loadProfile memberID:', member.memberID);
     currentMemberID = member.memberID;
-    document.getElementById('email').value = member.email || '';
-    document.getElementById('memberID').value = member.memberID || '';
-    document.getElementById('firstName').value = member.firstName || '';
-    document.getElementById('lastName').value = member.lastName || '';
+    document.getElementById('email').value       = member.email       || '';
+    document.getElementById('memberID').value    = member.memberID    || '';
+    document.getElementById('firstName').value   = member.firstName   || '';
+    document.getElementById('lastName').value    = member.lastName    || '';
     document.getElementById('phoneNumber').value = member.phoneNumber || '';
-    document.getElementById('wechatID').value = member.wechatID || '';
-    document.getElementById('district').value = member.district || '';
-    document.getElementById('joinYear').value = member.joinYear || '';
+    document.getElementById('wechatID').value    = member.wechatID    || '';
+    document.getElementById('district').value    = member.district    || '';
+    document.getElementById('joinYear').value    = member.joinYear    || '';
   }
 
   function saveProfile() {
@@ -122,35 +170,68 @@
     btn.disabled = true;
     btn.textContent = 'Saving…';
 
-    callApi('updateMemberProfile', {
-      memberID: currentMemberID,
-      firstName: document.getElementById('firstName').value.trim(),
-      lastName: document.getElementById('lastName').value.trim(),
+    const updates = {
+      memberID:    currentMemberID,
+      firstName:   document.getElementById('firstName').value.trim(),
+      lastName:    document.getElementById('lastName').value.trim(),
       phoneNumber: document.getElementById('phoneNumber').value.trim(),
-      wechatID: document.getElementById('wechatID').value.trim(),
-      district: document.getElementById('district').value.trim(),
-      joinYear: document.getElementById('joinYear').value.trim(),
-    })
-    .then(data => {
-      if (data.member) {
-        sessionStorage.setItem('member', JSON.stringify(data.member));
-        loadProfile(data.member);
-      }
-      showMsg('Profile updated successfully!', 'success');
-    })
-    .catch(err => showMsg(err.message || 'Failed to save. Please try again.', 'error'))
-    .finally(() => { btn.disabled = false; btn.textContent = 'Save Changes'; });
+      wechatID:    document.getElementById('wechatID').value.trim(),
+      district:    document.getElementById('district').value.trim(),
+      joinYear:    document.getElementById('joinYear').value.trim(),
+    };
+    console.log('[MMR][profile] saveProfile for memberID:', currentMemberID);
+
+    callApi('updateMemberProfile', updates)
+      .then(data => {
+        console.log('[MMR][profile] updateMemberProfile success');
+        if (data.member) {
+          sessionStorage.setItem('member', JSON.stringify(data.member));
+          loadProfile(data.member);
+        }
+        showMsg('Profile updated successfully!', 'success');
+        btn.disabled = false;
+        btn.textContent = 'Save Changes';
+      })
+      .catch(err => {
+        console.error('[MMR][profile] updateMemberProfile error:', err && err.message);
+        showMsg(err.message || 'Failed to save. Please try again.', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Save Changes';
+      });
   }
 
-  // Load from session or server
+  // ---- Load from session or server ----
   const cached = sessionStorage.getItem('member');
   if (cached) {
-    try { loadProfile(JSON.parse(cached)); } catch (_) {}
+    try {
+      const m = JSON.parse(cached);
+      console.log('[MMR][profile] loaded member from sessionStorage:', m.memberID);
+      loadProfile(m);
+    } catch (e) {
+      console.error('[MMR][profile] failed to parse cached member:', e);
+    }
   }
 
-  callApi('getOrCreateMemberProfile', { email: '', sessionID: SESSION_ID })
-    .then(data => { loadProfile(data.member); sessionStorage.setItem('member', JSON.stringify(data.member)); })
-    .catch(() => { window.location.href = '?page=login'; });
+  var memberEmail = '';
+  if (cached) {
+    try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {}
+  }
+  console.log('[MMR][profile] calling getOrCreateMemberProfile with email:', memberEmail);
+
+  callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID })
+    .then(function(data) {
+      console.log('[MMR][profile] getOrCreateMemberProfile success, memberID:', data.member && data.member.memberID);
+      sessionStorage.setItem('member', JSON.stringify(data.member));
+      loadProfile(data.member);
+    })
+    .catch(function(err) {
+      console.error('[MMR][profile] getOrCreateMemberProfile failed:', err && err.message);
+      if (!cached) {
+        // No cached data at all — show error card, don't navigate
+        showError('Session expired or profile not found. Please sign in again.');
+      }
+      // If we had cached member already rendered, don't blank the page
+    });
 </script>
 </body>
 </html>

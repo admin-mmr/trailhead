@@ -1,6 +1,6 @@
 # Misty Mountain Runners Membership Web App — Product Requirements Document
 
-_Last updated: 2026-03-02_
+_Last updated: 2026-03-02 (rev 2)_
 
 ---
 
@@ -65,6 +65,16 @@ Non-goals for MVP:
 - `HtmlService.createHtmlOutputFromFile()` serves each template. Routing via `?page=` query parameter in `doGet(e)`.
 - `google.script.run` on the frontend calls server functions. Use `withSuccessHandler` / `withFailureHandler`.
 
+### 2.4 GAS Iframe Navigation (Important)
+
+GAS web apps are served inside a **cross-origin iframe** (at `script.googleusercontent.com`). This creates two navigation constraints:
+
+1. **Relative URLs are wrong**: `window.location.href = '?page=dashboard'` resolves against the inner iframe's domain (`googleusercontent.com`), not the GAS app URL. Always use absolute URLs: `window.top.location.href = appBaseUrl + '?page=dashboard'`.
+
+2. **`window.top` requires user gesture**: The iframe sandbox has `allow-top-navigation-by-user-activation`. Calling `window.top.location.href` from an async callback (e.g., after `google.script.run` success) fails with "no user activation". **Solution**: after async auth success, show a "Continue →" button; navigate from the button's click handler (a genuine user gesture).
+
+3. **`appBaseUrl` injection**: `doGet` injects the real GAS URL server-side by replacing the placeholder `__SCRIPT_URL__` with `ScriptApp.getService().getUrl()` before serving each HTML template. This gives every page the correct absolute base URL at load time without any async calls.
+
 ---
 
 ## 3. User Roles & Core Flows
@@ -86,8 +96,8 @@ Flow:
 2. GAS uses `Session.getActiveUser().getEmail()` (requires deploying as "Execute as: User accessing the web app").
 3. If email is `@gmail.com`, treat as authenticated.
 4. Look up email in Membership Master:
-   - Found → load member record, proceed to dashboard.
-   - Not found → create new inactive member with new MemberID, prompt to complete profile.
+   - **Found (returning member)** → update `LastLoginDate`, return `{ member, isNewMember: false }`. Frontend stores member in `sessionStorage`, shows "Welcome back, [name]!" with "Continue to Dashboard →" button.
+   - **Not found (new member)** → return `{ isNewMember: true, email }` (**do not create a record yet**). Frontend stores `pending_email` in `sessionStorage`, shows "Register as New Member →" button → routes to `/newmember` page.
 
 #### 3.2.2 Email OTP Login
 
@@ -100,8 +110,14 @@ Flow:
 4. Sends OTP via `MailApp.sendEmail`.
 5. User enters OTP on site.
 6. System verifies: matching Email+OTPCode, not expired, not Used.
-7. If valid: mark Used=TRUE, proceed to same profile lookup as Google OAuth.
+7. If valid: mark Used=TRUE. Look up email in Membership Master:
+   - **Found** → same returning-member path as Google OAuth above.
+   - **Not found** → same new-member path as Google OAuth above.
 8. Cleanup: scheduled script deletes OTP rows older than `OTP_Cleanup_Days` (default 7).
+
+**Key design note**: Auth functions (`handleGoogleLogin`, `verifyEmailOtp`) never auto-create member records. Record creation happens only when the user explicitly submits the New Member registration form (`createNewMember`). This prevents ghost/incomplete records.
+
+**Post-auth navigation**: both auth flows show a "Continue" button rather than navigating automatically. This is required because async API callbacks do not have user activation, and `window.top.location.href` (needed to break out of the GAS iframe) requires a user gesture (see §2.4).
 
 ### 3.3 Member Profile & Family Flows
 

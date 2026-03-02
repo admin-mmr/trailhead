@@ -16,6 +16,7 @@ function auditLog(
   }
 ): void {
   try {
+    console.log('[mmr][audit]', action, JSON.stringify(details));
     const sheet = getSheet(SHEET_NAMES.ACTIVITY_LOG);
     sheet.appendRow([
       generateLogID(),

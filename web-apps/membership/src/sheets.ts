@@ -84,16 +84,15 @@ function findMembersByFamilyID(familyID: string): Array<{ member: Member; rowInd
 function generateMemberID(): string {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
   const data = sheet.getDataRange().getValues();
-  let maxNum = 0;
+  const used = new Set<number>();
   for (let i = 1; i < data.length; i++) {
-    const id = String(data[i][MM_COL.MEMBER_ID]);
-    const match = id.match(/^A(\d+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
-    }
+    const m = String(data[i][MM_COL.MEMBER_ID]).match(/^A(\d{4})$/);
+    if (m) used.add(parseInt(m[1], 10));
   }
-  return `A${String(maxNum + 1).padStart(4, '0')}`;
+  for (let n = 1; n <= 9999; n++) {
+    if (!used.has(n)) return 'A' + String(n).padStart(4, '0');
+  }
+  throw new Error('No available member IDs (A0001–A9999 all in use).');
 }
 
 function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {

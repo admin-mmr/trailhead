@@ -32,14 +32,18 @@ function getUnmatchedPayments(jsonRequest: string): string {
 }
 
 function getConfig(jsonRequest: string): string {
-  const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string }>;
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string; caller?: string }>;
   try {
+    console.log('[mmr][getConfig] called by:', req.payload.caller || 'unknown', '| adminEmail:', req.payload.adminEmail);
     if (!isAdmin(req.payload.adminEmail)) {
+      console.log('[mmr][getConfig] FORBIDDEN for:', req.payload.adminEmail);
       return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
     }
     const config = getConfigMap();
+    console.log('[mmr][getConfig] returning', Object.keys(config).length, 'config keys');
     return jsonOk(req.requestId, { config });
   } catch (e: any) {
+    console.error('[mmr][getConfig] error:', String(e));
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }

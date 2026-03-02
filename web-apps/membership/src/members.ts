@@ -1,23 +1,37 @@
 // ============================================================
 // Member profile management
 // Depends on: config.ts, sheets.ts, logger.ts
-// Exposed GAS functions: getOrCreateMemberProfile, updateMemberProfile
-// Internal: getOrCreateMemberByEmail (used by auth.ts)
+// Exposed GAS functions: getOrCreateMemberProfile, updateMemberProfile, createNewMember
 // ============================================================
 
 function getOrCreateMemberProfile(jsonRequest: string): string {
-  const req = JSON.parse(jsonRequest) as ApiRequest<LoginPayload>;
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ email?: string; sessionID?: string }>;
   const { payload } = req;
   try {
-    const email = payload.email.trim().toLowerCase();
-    const result = getOrCreateMemberByEmail(email);
-    // Optionally load family members for display
+    // Prefer server-side Google session email; fall back to payload email for OTP users
+    const sessionEmail = Session.getActiveUser().getEmail();
+    const resolvedEmail = (sessionEmail || payload.email || '').trim().toLowerCase();
+    console.log('[mmr][getOrCreateMemberProfile] session email:', sessionEmail, '| payload email:', payload.email, '| resolved:', resolvedEmail);
+
+    if (!resolvedEmail) {
+      return jsonError(req.requestId, 'AUTH_REQUIRED', 'No email available. Please sign in again.');
+    }
+
+    const result = findMemberByEmail(resolvedEmail);
+    if (!result) {
+      console.log('[mmr][getOrCreateMemberProfile] member not found for:', resolvedEmail);
+      return jsonError(req.requestId, 'NOT_FOUND', 'Member not found. Please sign in again.');
+    }
+
+    console.log('[mmr][getOrCreateMemberProfile] found member:', result.member.memberID);
     let familyMembers: Member[] = [];
     if (result.member.familyID) {
       familyMembers = findMembersByFamilyID(result.member.familyID).map(r => r.member);
+      console.log('[mmr][getOrCreateMemberProfile] family members:', familyMembers.length);
     }
     return jsonOk(req.requestId, { member: result.member, familyMembers });
   } catch (e: any) {
+    console.error('[mmr][getOrCreateMemberProfile] error:', String(e));
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
@@ -26,6 +40,7 @@ function updateMemberProfile(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<UpdateProfilePayload>;
   const { payload } = req;
   try {
+    console.log('[mmr][updateMemberProfile] memberID:', payload.memberID);
     const result = findMemberByID(payload.memberID);
     if (!result) return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
 
@@ -41,42 +56,70 @@ function updateMemberProfile(jsonRequest: string): string {
     if (payload.district !== undefined) updates['DISTRICT'] = payload.district.trim();
     if (payload.joinYear !== undefined) updates['JOIN_YEAR'] = payload.joinYear.trim();
 
+    console.log('[mmr][updateMemberProfile] updating fields:', Object.keys(updates));
     updateMemberRow(result.rowIndex, updates);
     auditLog('PROFILE_UPDATE', { memberID: payload.memberID, state: payload });
 
     const updated = findMemberByID(payload.memberID);
+    console.log('[mmr][updateMemberProfile] update complete for:', payload.memberID);
     return jsonOk(req.requestId, { member: updated?.member });
   } catch (e: any) {
+    console.error('[mmr][updateMemberProfile] error:', String(e));
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
 
-// Internal: find or create a member record by email.
-// Called by auth.ts after successful authentication.
-function getOrCreateMemberByEmail(email: string): { member: Member; rowIndex: number } {
-  const existing = findMemberByEmail(email);
-  if (existing) return existing;
+// Called by the new-member registration page after form submission.
+function createNewMember(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{
+    email: string;
+    firstName: string;
+    lastName: string;
+    phoneNumber?: string;
+    district?: string;
+    sessionID?: string;
+  }>;
+  const { payload } = req;
+  try {
+    const email = payload.email.trim().toLowerCase();
+    console.log('[mmr][createNewMember] called for email:', email);
 
-  // Create new inactive member
-  const memberID = generateMemberID();
-  const now = new Date().toISOString();
-  const currentYear = String(new Date().getFullYear());
+    // Guard: don't create a duplicate
+    const existing = findMemberByEmail(email);
+    if (existing) {
+      console.log('[mmr][createNewMember] member already exists:', existing.member.memberID);
+      return jsonOk(req.requestId, { member: existing.member, alreadyExisted: true });
+    }
 
-  const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
-  const newRow: any[] = new Array(23).fill('');
-  newRow[MM_COL.MEMBER_ID] = memberID;
-  newRow[MM_COL.STATUS] = 'not active';
-  newRow[MM_COL.CREATED] = now;
-  newRow[MM_COL.EMAIL] = email;
-  newRow[MM_COL.TYPE] = 'Individual';
-  newRow[MM_COL.LAST_UPDATED] = now;
-  newRow[MM_COL.JOIN_YEAR] = currentYear;
-  newRow[MM_COL.LAST_LOGIN_DATE] = now;
-  sheet.appendRow(newRow);
+    const memberID = generateMemberID();
+    const now = new Date().toISOString();
+    const currentYear = String(new Date().getFullYear());
 
-  auditLog('MEMBER_CREATED', { memberID, email });
+    const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
+    const newRow: any[] = new Array(23).fill('');
+    newRow[MM_COL.MEMBER_ID] = memberID;
+    newRow[MM_COL.STATUS] = 'not active';
+    newRow[MM_COL.CREATED] = now;
+    newRow[MM_COL.EMAIL] = email;
+    newRow[MM_COL.FIRST_NAME] = payload.firstName.trim();
+    newRow[MM_COL.LAST_NAME] = (payload.lastName || '').trim();
+    newRow[MM_COL.TYPE] = 'Individual';
+    newRow[MM_COL.PHONE_NUMBER] = (payload.phoneNumber || '').trim();
+    newRow[MM_COL.DISTRICT] = (payload.district || '').trim();
+    newRow[MM_COL.JOIN_YEAR] = currentYear;
+    newRow[MM_COL.LAST_UPDATED] = now;
+    newRow[MM_COL.PROFILE_LAST_UPDATED] = now;
+    newRow[MM_COL.LAST_LOGIN_DATE] = now;
+    sheet.appendRow(newRow);
 
-  const created = findMemberByEmail(email);
-  if (!created) throw new Error('Failed to create member record.');
-  return created;
+    console.log('[mmr][createNewMember] created member ID:', memberID, 'for:', email);
+    auditLog('MEMBER_CREATED', { memberID, email, sessionID: payload.sessionID });
+
+    const created = findMemberByEmail(email);
+    if (!created) throw new Error('Failed to retrieve newly created member record.');
+    return jsonOk(req.requestId, { member: created.member });
+  } catch (e: any) {
+    console.error('[mmr][createNewMember] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
 }

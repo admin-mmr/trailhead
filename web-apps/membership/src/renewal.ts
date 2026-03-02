@@ -9,6 +9,7 @@ function submitRenewalRequest(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<RenewalSubmitPayload>;
   const { payload } = req;
   try {
+    console.log('[mmr][submitRenewalRequest] memberID:', payload.memberId, '| type:', payload.membershipType, '| amount:', payload.amount, '| method:', payload.paymentMethod);
     auditLog('RENEWAL_FORM_OPEN', {
       memberID: payload.memberId,
       email: payload.email,
@@ -57,6 +58,7 @@ function submitRenewalRequest(jsonRequest: string): string {
 
 function reconcileWebAppWithGmail(_jsonRequest?: string): string {
   try {
+    console.log('[mmr][reconcileWebAppWithGmail] starting reconciliation');
     const pendingEvents = getPendingWebAppEvents().filter(e => e.status === 'Pending');
     const gmailPayments = getUnmatchedGmailPayments();
     let matchCount = 0;
@@ -81,8 +83,10 @@ function reconcileWebAppWithGmail(_jsonRequest?: string): string {
       }
     }
 
+    console.log('[mmr][reconcileWebAppWithGmail] done, matches:', matchCount);
     return jsonOk('reconcile', { matchCount });
   } catch (e: any) {
+    console.error('[mmr][reconcileWebAppWithGmail] error:', String(e));
     return jsonError('reconcile', 'INTERNAL_ERROR', String(e));
   }
 }
@@ -123,6 +127,7 @@ function approveRenewal(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<ApproveRenewalPayload>;
   const { payload } = req;
   try {
+    console.log('[mmr][approveRenewal] eventID:', payload.eventID, '| admin:', payload.adminEmail);
     const found = findWebAppEvent(payload.eventID);
     if (!found) return jsonError(req.requestId, 'NOT_FOUND', 'Event not found.');
     const event = found.event;
@@ -225,8 +230,10 @@ function approveRenewal(jsonRequest: string): string {
       email: event.email,
     });
 
+    console.log('[mmr][approveRenewal] approved, periodEnd:', periodEnd, '| members updated:', membersToUpdate.length);
     return jsonOk(req.requestId, { message: 'Renewal approved.', periodEnd });
   } catch (e: any) {
+    console.error('[mmr][approveRenewal] error:', String(e));
     auditLog('ERROR', { eventID: payload.eventID, errorMessage: String(e) });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
@@ -236,6 +243,7 @@ function rejectRenewal(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<RejectRenewalPayload>;
   const { payload } = req;
   try {
+    console.log('[mmr][rejectRenewal] eventID:', payload.eventID, '| admin:', payload.adminEmail);
     const found = findWebAppEvent(payload.eventID);
     if (!found) return jsonError(req.requestId, 'NOT_FOUND', 'Event not found.');
 
