@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Misty Mountain Runners — Profile</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
+    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar h1 { font-size: 18px; font-weight: 700; }
+    .topbar a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.85; }
+    .topbar a:hover { opacity: 1; }
+    .container { max-width: 520px; margin: 32px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 28px; }
+    h2 { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 24px; }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    input { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
+    input:focus { outline: none; border-color: #2d7d46; box-shadow: 0 0 0 2px rgba(45,125,70,0.15); }
+    input[readonly] { background: #f9f9f9; color: #888; cursor: default; }
+    .hint { font-size: 12px; color: #999; margin-top: 4px; }
+    .actions { display: flex; gap: 12px; margin-top: 24px; }
+    .btn { padding: 11px 24px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: #2d7d46; color: #fff; }
+    .btn-primary:hover { background: #235f36; }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary { background: #fff; color: #555; border: 1.5px solid #ccc; }
+    .btn-secondary:hover { background: #f5f5f5; }
+    .msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
+    .msg.success { background: #e8f5e9; color: #2d7d46; display: block; }
+    .msg.error { background: #fdecea; color: #c62828; display: block; }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <h1>🏃 Misty Mountain Runners</h1>
+  <a href="?page=dashboard">← Dashboard</a>
+</div>
+
+<div class="container">
+  <div class="card">
+    <h2>Update Profile</h2>
+    <div id="msg" class="msg"></div>
+
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="email" readonly />
+    </div>
+    <div class="field">
+      <label>Member ID</label>
+      <input type="text" id="memberID" readonly />
+    </div>
+    <div class="field">
+      <label>First Name</label>
+      <input type="text" id="firstName" placeholder="First name" />
+    </div>
+    <div class="field">
+      <label>Last Name</label>
+      <input type="text" id="lastName" placeholder="Last name" />
+    </div>
+    <div class="field">
+      <label>Phone Number</label>
+      <input type="tel" id="phoneNumber" placeholder="e.g. 917-555-1234" />
+    </div>
+    <div class="field">
+      <label>WeChat ID</label>
+      <input type="text" id="wechatID" placeholder="WeChat username (optional)" />
+    </div>
+    <div class="field">
+      <label>District</label>
+      <input type="text" id="district" placeholder="e.g. Queens, Brooklyn" />
+    </div>
+    <div class="field">
+      <label>Join Year</label>
+      <input type="number" id="joinYear" placeholder="e.g. 2019" min="2000" max="2099" />
+      <div class="hint">Year you first joined the club. You may edit this.</div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="saveBtn" onclick="saveProfile()">Save Changes</button>
+      <a href="?page=dashboard" class="btn btn-secondary">Cancel</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SESSION_ID = Math.random().toString(36).slice(2);
+  let currentMemberID = null;
+
+  function callApi(fn, payload) {
+    return new Promise((resolve, reject) => {
+      const req = { requestId: Math.random().toString(36).slice(2), payload };
+      google.script.run
+        .withSuccessHandler(r => { const res = JSON.parse(r); if (res.ok) resolve(res.payload); else reject(new Error(res.errorMessage)); })
+        .withFailureHandler(err => reject(err))
+        [fn](JSON.stringify(req));
+    });
+  }
+
+  function showMsg(text, type) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'msg ' + type;
+  }
+
+  function loadProfile(member) {
+    currentMemberID = member.memberID;
+    document.getElementById('email').value = member.email || '';
+    document.getElementById('memberID').value = member.memberID || '';
+    document.getElementById('firstName').value = member.firstName || '';
+    document.getElementById('lastName').value = member.lastName || '';
+    document.getElementById('phoneNumber').value = member.phoneNumber || '';
+    document.getElementById('wechatID').value = member.wechatID || '';
+    document.getElementById('district').value = member.district || '';
+    document.getElementById('joinYear').value = member.joinYear || '';
+  }
+
+  function saveProfile() {
+    if (!currentMemberID) return showMsg('Profile not loaded. Please refresh.', 'error');
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    callApi('updateMemberProfile', {
+      memberID: currentMemberID,
+      firstName: document.getElementById('firstName').value.trim(),
+      lastName: document.getElementById('lastName').value.trim(),
+      phoneNumber: document.getElementById('phoneNumber').value.trim(),
+      wechatID: document.getElementById('wechatID').value.trim(),
+      district: document.getElementById('district').value.trim(),
+      joinYear: document.getElementById('joinYear').value.trim(),
+    })
+    .then(data => {
+      if (data.member) {
+        sessionStorage.setItem('member', JSON.stringify(data.member));
+        loadProfile(data.member);
+      }
+      showMsg('Profile updated successfully!', 'success');
+    })
+    .catch(err => showMsg(err.message || 'Failed to save. Please try again.', 'error'))
+    .finally(() => { btn.disabled = false; btn.textContent = 'Save Changes'; });
+  }
+
+  // Load from session or server
+  const cached = sessionStorage.getItem('member');
+  if (cached) {
+    try { loadProfile(JSON.parse(cached)); } catch (_) {}
+  }
+
+  callApi('getOrCreateMemberProfile', { email: '', sessionID: SESSION_ID })
+    .then(data => { loadProfile(data.member); sessionStorage.setItem('member', JSON.stringify(data.member)); })
+    .catch(() => { window.location.href = '?page=login'; });
+</script>
+</body>
+</html>

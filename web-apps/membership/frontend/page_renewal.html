@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Misty Mountain Runners — Renew Membership</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
+    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar h1 { font-size: 18px; font-weight: 700; }
+    .topbar a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.85; }
+    .container { max-width: 560px; margin: 32px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 28px; margin-bottom: 20px; }
+    h2 { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
+    .step-label { font-size: 12px; font-weight: 600; color: #2d7d46; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    input, select { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; background: #fff; }
+    input:focus, select:focus { outline: none; border-color: #2d7d46; box-shadow: 0 0 0 2px rgba(45,125,70,0.15); }
+    .hint { font-size: 12px; color: #888; margin-top: 4px; }
+    .radio-group { display: flex; gap: 12px; }
+    .radio-option { flex: 1; border: 2px solid #e0e0e0; border-radius: 10px; padding: 14px; cursor: pointer; text-align: center; transition: border-color 0.2s; }
+    .radio-option:hover { border-color: #2d7d46; }
+    .radio-option.selected { border-color: #2d7d46; background: #f0f8f2; }
+    .radio-option input { display: none; }
+    .radio-option .opt-title { font-weight: 700; font-size: 15px; color: #1a1a1a; }
+    .radio-option .opt-price { font-size: 20px; font-weight: 800; color: #2d7d46; margin: 4px 0; }
+    .radio-option .opt-desc { font-size: 12px; color: #777; }
+    .instructions-box { background: #f0f8f2; border: 1px solid #c8e6c9; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+    .instructions-box h3 { font-size: 15px; font-weight: 700; color: #2d7d46; margin-bottom: 10px; }
+    .instructions-box ol { padding-left: 20px; color: #333; font-size: 14px; line-height: 1.7; }
+    .instructions-box .memo-tip { margin-top: 12px; background: #fff; border-left: 3px solid #2d7d46; padding: 10px 14px; border-radius: 4px; font-size: 13px; color: #444; }
+    .btn { padding: 12px 24px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: #2d7d46; color: #fff; width: 100%; }
+    .btn-primary:hover { background: #235f36; }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary { background: #fff; color: #555; border: 1.5px solid #ccc; }
+    .msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
+    .msg.error { background: #fdecea; color: #c62828; display: block; }
+    .success-card { text-align: center; padding: 40px 24px; }
+    .success-icon { font-size: 52px; margin-bottom: 16px; }
+    .success-card h2 { font-size: 22px; margin-bottom: 10px; }
+    .success-card p { color: #555; font-size: 15px; line-height: 1.6; margin-bottom: 20px; }
+    #step1 { } #step2 { display:none; } #step3 { display:none; } #stepDone { display:none; }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <h1>🏃 Misty Mountain Runners</h1>
+  <a href="?page=dashboard">← Dashboard</a>
+</div>
+
+<div class="container">
+  <div id="msg" class="msg"></div>
+
+  <!-- Step 1: Select type and payment method -->
+  <div class="card" id="step1">
+    <div class="step-label">Step 1 of 3</div>
+    <h2>Choose Your Membership</h2>
+    <div class="field" style="margin-top:18px;">
+      <label>Membership Type</label>
+      <div class="radio-group" id="typeOptions">
+        <div class="radio-option selected" id="opt-individual" onclick="selectType('Individual')">
+          <div class="opt-title">Individual</div>
+          <div class="opt-price" id="price-individual">$30</div>
+          <div class="opt-desc">For one member</div>
+        </div>
+        <div class="radio-option" id="opt-family" onclick="selectType('Family')">
+          <div class="opt-title">Family</div>
+          <div class="opt-price" id="price-family">$50</div>
+          <div class="opt-desc">All family members</div>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Payment Method</label>
+      <select id="paymentMethod">
+        <option value="Zelle">Zelle</option>
+        <option value="Venmo">Venmo</option>
+        <option value="PayPal">PayPal</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="goToStep2()">Continue →</button>
+  </div>
+
+  <!-- Step 2: Payment instructions -->
+  <div class="card" id="step2">
+    <div class="step-label">Step 2 of 3</div>
+    <h2>Send Your Payment</h2>
+    <p style="color:#555;font-size:14px;margin-bottom:18px;">Complete your payment using the instructions below, then come back to confirm.</p>
+    <div class="instructions-box">
+      <h3 id="instrTitle">How to Pay via Zelle</h3>
+      <ol id="instrSteps"></ol>
+      <div class="memo-tip">
+        <strong>Memo tip:</strong> Include your <strong id="memoMemberID"></strong> and name in the memo so we can match your payment.
+        <br>Example: <em id="memoExample"></em>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <button class="btn btn-secondary" onclick="goToStep1()">← Back</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="goToStep3()">I've Sent Payment →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Confirm payment -->
+  <div class="card" id="step3">
+    <div class="step-label">Step 3 of 3</div>
+    <h2>Confirm Your Payment</h2>
+    <p style="color:#555;font-size:14px;margin-bottom:18px;">Enter the details from your payment confirmation so we can verify it.</p>
+
+    <div class="field">
+      <label>Payer Name <span style="color:#c62828;">*</span></label>
+      <input type="text" id="payerName" placeholder="Name on your Zelle/Venmo/PayPal account" />
+    </div>
+    <div class="field">
+      <label>Memo You Used <span style="color:#c62828;">*</span></label>
+      <input type="text" id="memoField" placeholder="e.g. A0201 2026 membership" />
+    </div>
+    <div class="field">
+      <label>Last 4 Digits of Transaction (optional)</label>
+      <input type="text" id="last4Digits" placeholder="e.g. 5678" maxlength="4" inputmode="numeric" />
+      <div class="hint">Helps us match your payment faster.</div>
+    </div>
+    <div class="field">
+      <label>Amount</label>
+      <input type="number" id="amount" min="1" step="1" />
+    </div>
+
+    <div style="display:flex;gap:12px;">
+      <button class="btn btn-secondary" onclick="goToStep2()">← Back</button>
+      <button class="btn btn-primary" id="submitBtn" style="flex:1;" onclick="submitRenewal()">Submit →</button>
+    </div>
+  </div>
+
+  <!-- Done -->
+  <div class="card" id="stepDone">
+    <div class="success-card">
+      <div class="success-icon">✅</div>
+      <h2>Payment Submitted!</h2>
+      <p>Thank you! We'll verify your payment and activate your membership within 1–2 business days. You'll receive a confirmation email when it's approved.</p>
+      <a href="?page=dashboard" class="btn btn-primary" style="display:inline-block;text-decoration:none;">Back to Dashboard</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SESSION_ID = Math.random().toString(36).slice(2);
+  let member = null;
+  let selectedType = 'Individual';
+  let config = {};
+
+  const PAYMENT_INSTRUCTIONS = {
+    Zelle: [
+      'Open your banking app and go to Zelle.',
+      'Send payment to the club\'s Zelle handle (shown in Config).',
+      'Include your Member ID and name in the memo field.'
+    ],
+    Venmo: [
+      'Open the Venmo app.',
+      'Search for the club\'s Venmo handle.',
+      'Enter the amount and add your Member ID and name in the note.',
+      'Make sure the payment is set to the correct visibility.'
+    ],
+    PayPal: [
+      'Go to paypal.com or open the PayPal app.',
+      'Send payment (Friends & Family if available) to the club\'s PayPal email.',
+      'Include your Member ID and name in the note field.'
+    ]
+  };
+
+  function callApi(fn, payload) {
+    return new Promise((resolve, reject) => {
+      const req = { requestId: Math.random().toString(36).slice(2), payload };
+      google.script.run
+        .withSuccessHandler(r => { const res = JSON.parse(r); if (res.ok) resolve(res.payload); else reject(new Error(res.errorMessage)); })
+        .withFailureHandler(err => reject(err))
+        [fn](JSON.stringify(req));
+    });
+  }
+
+  function showMsg(text) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'msg error';
+    el.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function selectType(type) {
+    selectedType = type;
+    document.getElementById('opt-individual').classList.toggle('selected', type === 'Individual');
+    document.getElementById('opt-family').classList.toggle('selected', type === 'Family');
+  }
+
+  function getPrice() {
+    if (selectedType === 'Family') return parseInt(config['Family_Price'] || '50');
+    return parseInt(config['Individual_Price'] || '30');
+  }
+
+  function goToStep1() {
+    document.getElementById('step1').style.display = '';
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step3').style.display = 'none';
+  }
+
+  function goToStep2() {
+    const method = document.getElementById('paymentMethod').value;
+    document.getElementById('instrTitle').textContent = `How to Pay via ${method}`;
+    const steps = PAYMENT_INSTRUCTIONS[method] || [];
+    const ol = document.getElementById('instrSteps');
+    ol.innerHTML = steps.map(s => `<li>${s}</li>`).join('');
+    const mid = member ? member.memberID : 'your Member ID';
+    document.getElementById('memoMemberID').textContent = mid;
+    document.getElementById('memoExample').textContent = `${mid} 2026 membership`;
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = '';
+    document.getElementById('step3').style.display = 'none';
+  }
+
+  function goToStep3() {
+    document.getElementById('amount').value = getPrice();
+    if (member) document.getElementById('memoField').value = `${member.memberID} ${new Date().getFullYear()} membership`;
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step3').style.display = '';
+  }
+
+  function submitRenewal() {
+    const payerName = document.getElementById('payerName').value.trim();
+    const memoField = document.getElementById('memoField').value.trim();
+    const amount = parseFloat(document.getElementById('amount').value);
+
+    if (!payerName) return showMsg('Please enter the payer name.');
+    if (!memoField) return showMsg('Please enter the memo you used.');
+    if (!amount || amount <= 0) return showMsg('Please enter a valid amount.');
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+
+    callApi('submitRenewalRequest', {
+      memberId: member ? member.memberID : '',
+      email: member ? member.email : '',
+      membershipType: selectedType,
+      amount,
+      paymentMethod: document.getElementById('paymentMethod').value,
+      payerName,
+      memoField,
+      last4Digits: document.getElementById('last4Digits').value.trim() || undefined,
+      sessionID: SESSION_ID,
+    })
+    .then(() => {
+      document.getElementById('step3').style.display = 'none';
+      document.getElementById('stepDone').style.display = '';
+    })
+    .catch(err => {
+      showMsg(err.message || 'Submission failed. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Submit →';
+    });
+  }
+
+  // Init: load member + config
+  const cached = sessionStorage.getItem('member');
+  if (cached) { try { member = JSON.parse(cached); } catch (_) {} }
+
+  callApi('getOrCreateMemberProfile', { email: '', sessionID: SESSION_ID })
+    .then(data => { member = data.member; })
+    .catch(() => { window.location.href = '?page=login'; });
+
+  callApi('getConfig', { adminEmail: '' })
+    .then(data => {
+      config = data.config || {};
+      const ip = config['Individual_Price'];
+      const fp = config['Family_Price'];
+      if (ip) document.getElementById('price-individual').textContent = '$' + ip;
+      if (fp) document.getElementById('price-family').textContent = '$' + fp;
+      const methods = (config['Payment_Methods'] || 'Zelle,Venmo,PayPal').split(',').map(m => m.trim());
+      const sel = document.getElementById('paymentMethod');
+      sel.innerHTML = methods.map(m => `<option value="${m}">${m}</option>`).join('');
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>

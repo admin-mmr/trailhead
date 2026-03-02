@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Misty Mountain Runners — Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f0f5; min-height: 100vh; }
+    .topbar { background: #5c35a8; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar h1 { font-size: 18px; font-weight: 700; }
+    .topbar a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.85; }
+    .container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; }
+    .tab { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: #777; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+    .tab.active { color: #5c35a8; border-bottom-color: #5c35a8; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card { background: #fff; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); padding: 24px; margin-bottom: 16px; }
+    .card h3 { font-size: 15px; font-weight: 700; color: #333; margin-bottom: 4px; }
+    .meta { font-size: 12px; color: #888; margin-bottom: 14px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; margin-bottom: 16px; }
+    .detail-item label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.4px; display: block; }
+    .detail-item span { font-size: 14px; color: #333; font-weight: 500; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .badge-pending { background: #fff3e0; color: #e65100; }
+    .badge-matched { background: #e3f2fd; color: #1565c0; }
+    .badge-approved { background: #e8f5e9; color: #2d7d46; }
+    .badge-rejected { background: #fdecea; color: #c62828; }
+    .btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-approve { background: #2d7d46; color: #fff; }
+    .btn-approve:hover { background: #235f36; }
+    .btn-reject { background: #fdecea; color: #c62828; border: 1px solid #f5c6cb; }
+    .btn-reject:hover { background: #f5c6cb; }
+    .btn-reconcile { background: #5c35a8; color: #fff; padding: 10px 20px; border-radius: 8px; }
+    .btn-reconcile:hover { background: #4a2b8a; }
+    .action-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .notes-input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+    .config-table { width: 100%; border-collapse: collapse; }
+    .config-table th { text-align: left; font-size: 12px; color: #888; text-transform: uppercase; padding: 8px 10px; border-bottom: 2px solid #f0f0f0; }
+    .config-table td { padding: 10px 10px; border-bottom: 1px solid #f5f5f5; font-size: 14px; vertical-align: middle; }
+    .config-table input { border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 10px; font-size: 14px; width: 100%; }
+    .config-table input:focus { border-color: #5c35a8; outline: none; }
+    .btn-save-config { background: #5c35a8; color: #fff; font-size: 12px; padding: 5px 12px; }
+    .empty-state { text-align: center; padding: 40px; color: #aaa; font-size: 15px; }
+    .refresh-btn { background: none; border: 1px solid #ccc; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; color: #666; }
+    .refresh-btn:hover { background: #f5f5f5; }
+    #globalMsg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; display: none; }
+    #globalMsg.success { background: #e8f5e9; color: #2d7d46; display: block; }
+    #globalMsg.error { background: #fdecea; color: #c62828; display: block; }
+  </style>
+</head>
+<body>
+<div class="topbar">
+  <h1>🛡️ Admin Panel — Misty Mountain Runners</h1>
+  <a href="?page=dashboard">← Dashboard</a>
+</div>
+
+<div class="container">
+  <div id="globalMsg"></div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('pending')">Pending Renewals</button>
+    <button class="tab" onclick="showTab('unmatched')">Unmatched Payments</button>
+    <button class="tab" onclick="showTab('config')">Config</button>
+  </div>
+
+  <!-- Pending Renewals -->
+  <div class="panel active" id="panel-pending">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div>
+        <button class="btn-reconcile btn" onclick="reconcile()">⚡ Auto-Reconcile</button>
+        <button class="refresh-btn" style="margin-left:8px;" onclick="loadPending()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="pending-list"><div class="empty-state">Loading…</div></div>
+  </div>
+
+  <!-- Unmatched Payments -->
+  <div class="panel" id="panel-unmatched">
+    <button class="refresh-btn" style="margin-bottom:16px;" onclick="loadUnmatched()">↻ Refresh</button>
+    <div id="unmatched-list"><div class="empty-state">Loading…</div></div>
+  </div>
+
+  <!-- Config -->
+  <div class="panel" id="panel-config">
+    <div class="card">
+      <table class="config-table">
+        <thead>
+          <tr><th>Key</th><th>Value</th><th>Description</th><th></th></tr>
+        </thead>
+        <tbody id="config-body"><tr><td colspan="4" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SESSION_ID = Math.random().toString(36).slice(2);
+  let adminEmail = '';
+  let configData = {};
+
+  function callApi(fn, payload) {
+    return new Promise((resolve, reject) => {
+      const req = { requestId: Math.random().toString(36).slice(2), payload };
+      google.script.run
+        .withSuccessHandler(r => { const res = JSON.parse(r); if (res.ok) resolve(res.payload); else reject(new Error(res.errorMessage)); })
+        .withFailureHandler(err => reject(err))
+        [fn](JSON.stringify(req));
+    });
+  }
+
+  function showGlobalMsg(text, type) {
+    const el = document.getElementById('globalMsg');
+    el.textContent = text;
+    el.className = type;
+    setTimeout(() => { el.className = ''; el.style.display = 'none'; }, 4000);
+  }
+
+  function showTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      const names = ['pending', 'unmatched', 'config'];
+      t.classList.toggle('active', names[i] === name);
+    });
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+  }
+
+  function statusBadge(status) {
+    const cls = { Pending: 'badge-pending', Matched: 'badge-matched', Approved: 'badge-approved', Rejected: 'badge-rejected' }[status] || '';
+    return `<span class="badge ${cls}">${status}</span>`;
+  }
+
+  function loadPending() {
+    const el = document.getElementById('pending-list');
+    el.innerHTML = '<div class="empty-state">Loading…</div>';
+    callApi('getPendingEvents', { adminEmail })
+      .then(data => {
+        const events = data.events || [];
+        if (!events.length) { el.innerHTML = '<div class="empty-state">No pending renewals. 🎉</div>'; return; }
+        el.innerHTML = events.map(ev => `
+          <div class="card" id="ev-${ev.eventID}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div>
+                <h3>${ev.payerName || 'Unknown'} &mdash; ${ev.membershipType} $${ev.amount}</h3>
+                <div class="meta">${ev.eventID} &bull; ${new Date(ev.timestamp).toLocaleString()} &bull; ${statusBadge(ev.status)}</div>
+              </div>
+            </div>
+            <div class="detail-grid">
+              <div class="detail-item"><label>Member ID</label><span>${ev.memberID}</span></div>
+              <div class="detail-item"><label>Email</label><span>${ev.email}</span></div>
+              <div class="detail-item"><label>Payment Method</label><span>${ev.paymentMethod}</span></div>
+              <div class="detail-item"><label>Last 4 Digits</label><span>${ev.last4Digits || '—'}</span></div>
+              <div class="detail-item"><label>Memo</label><span>${ev.memoField}</span></div>
+              <div class="detail-item"><label>Matched Transaction</label><span>${ev.matchedTransactionNumber || '—'}</span></div>
+            </div>
+            ${ev.status !== 'Approved' && ev.status !== 'Rejected' ? `
+              <input class="notes-input" id="notes-${ev.eventID}" placeholder="Notes (optional)" />
+              <div class="action-row">
+                <button class="btn btn-approve" onclick="approve('${ev.eventID}')">✓ Approve</button>
+                <button class="btn btn-reject" onclick="reject('${ev.eventID}')">✗ Reject</button>
+              </div>
+            ` : `<div style="font-size:13px;color:#888;">Processed by ${ev.adminApprover} on ${ev.approvalDate}</div>`}
+          </div>
+        `).join('');
+      })
+      .catch(err => { el.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`; });
+  }
+
+  function loadUnmatched() {
+    const el = document.getElementById('unmatched-list');
+    el.innerHTML = '<div class="empty-state">Loading…</div>';
+    callApi('getUnmatchedPayments', { adminEmail })
+      .then(data => {
+        const payments = data.payments || [];
+        if (!payments.length) { el.innerHTML = '<div class="empty-state">No unmatched payments.</div>'; return; }
+        el.innerHTML = payments.map(p => `
+          <div class="card">
+            <h3>${p.sender} &mdash; $${p.amount} via ${p.source}</h3>
+            <div class="meta">${p.transactionDate || p.timestamp}</div>
+            <div class="detail-grid">
+              <div class="detail-item"><label>Memo</label><span>${p.memo}</span></div>
+              <div class="detail-item"><label>Original Memo</label><span>${p.originalMemo || '—'}</span></div>
+              <div class="detail-item"><label>Transaction #</label><span>${p.transactionNumber || '—'}</span></div>
+              <div class="detail-item"><label>Message ID</label><span>${p.messageId || '—'}</span></div>
+            </div>
+          </div>
+        `).join('');
+      })
+      .catch(err => { el.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`; });
+  }
+
+  function loadConfig() {
+    callApi('getConfig', { adminEmail })
+      .then(data => {
+        configData = data.config || {};
+        const body = document.getElementById('config-body');
+        body.innerHTML = Object.entries(configData).map(([key, value]) => `
+          <tr>
+            <td><strong>${key}</strong></td>
+            <td><input type="text" id="cfg-${key}" value="${value}" /></td>
+            <td style="color:#999;font-size:13px;"></td>
+            <td><button class="btn btn-save-config" onclick="saveConfig('${key}')">Save</button></td>
+          </tr>
+        `).join('');
+      })
+      .catch(err => { document.getElementById('config-body').innerHTML = `<tr><td colspan="4">Error: ${err.message}</td></tr>`; });
+  }
+
+  function approve(eventID) {
+    const notes = document.getElementById('notes-' + eventID)?.value || '';
+    callApi('approveRenewal', { eventID, adminEmail, notes })
+      .then(() => { showGlobalMsg('Renewal approved!', 'success'); loadPending(); })
+      .catch(err => showGlobalMsg('Error: ' + err.message, 'error'));
+  }
+
+  function reject(eventID) {
+    const notes = document.getElementById('notes-' + eventID)?.value || '';
+    if (!notes) return showGlobalMsg('Please add a note explaining the rejection.', 'error');
+    callApi('rejectRenewal', { eventID, adminEmail, notes })
+      .then(() => { showGlobalMsg('Renewal rejected.', 'success'); loadPending(); })
+      .catch(err => showGlobalMsg('Error: ' + err.message, 'error'));
+  }
+
+  function reconcile() {
+    showGlobalMsg('Running reconciliation…', 'success');
+    callApi('reconcileWebAppWithGmail', {})
+      .then(data => { showGlobalMsg(`Done! ${data.matchCount} payment(s) matched.`, 'success'); loadPending(); })
+      .catch(err => showGlobalMsg('Error: ' + err.message, 'error'));
+  }
+
+  function saveConfig(key) {
+    const value = document.getElementById('cfg-' + key)?.value || '';
+    callApi('updateConfigEntry', { adminEmail, key, value })
+      .then(() => showGlobalMsg(`Saved: ${key}`, 'success'))
+      .catch(err => showGlobalMsg('Error: ' + err.message, 'error'));
+  }
+
+  // Init
+  const cached = sessionStorage.getItem('member');
+  if (cached) {
+    try { adminEmail = JSON.parse(cached).email || ''; } catch (_) {}
+  }
+
+  if (!adminEmail) {
+    document.querySelector('.container').innerHTML = '<div class="card" style="text-align:center;padding:40px;">Not authorized. <a href="?page=login">Sign in</a></div>';
+  } else {
+    loadPending();
+    loadUnmatched();
+    loadConfig();
+  }
+</script>
+</body>
+</html>
