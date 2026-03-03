@@ -4,7 +4,7 @@
 
 interface Member {
   memberID: string;          // Axxxx
-  status: 'active' | 'not active';
+  status: 'active' | 'not active' | 'expired';
   created: string;
   expiration: string;
   email: string;
@@ -29,19 +29,23 @@ interface Member {
   notes: string;
 }
 
+/// ADD this type
+type PaymentIntent = 'Individual Renewal' | 'Family Renewal' | 'Family Upgrade';
+
+// UPDATE WebAppEvent — replace membershipType with paymentIntent
 interface WebAppEvent {
   eventID: string;
-  eventType: 'MembershipRenewal' | 'MembershipSignup';
+  eventType: string;
   timestamp: string;
   memberID: string;
   email: string;
-  membershipType: 'Individual' | 'Family';
+  paymentIntent: PaymentIntent;   // ← was membershipType: string
   amount: number;
-  paymentMethod: 'Zelle' | 'Venmo' | 'PayPal';
+  paymentMethod: string;
   payerName: string;
   memoField: string;
   last4Digits: string;
-  familyMemberEmails: string;  // comma-separated
+  familyMemberEmails: string;
   status: 'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Error';
   matchedMessageId: string;
   matchedTransactionNumber: string;
@@ -50,13 +54,43 @@ interface WebAppEvent {
   notes: string;
 }
 
+// UPDATE PaymentHistoryItem — replace membershipType with paymentIntent
+interface PaymentHistoryItem {
+  paymentID: string;
+  eventID: string;
+  paymentDate: string;
+  amount: number;
+  paymentIntent: PaymentIntent;   // ← was membershipType
+  paymentMethod: string;
+  payerName: string;
+  periodStart: string;
+  periodEnd: string;
+  source: string;
+  notes: string;
+}
+
+// ADD RenewalSubmitPayload — replace old payload interface
+interface RenewalSubmitPayload {
+  memberId: string;
+  email: string;
+  paymentIntent: PaymentIntent;   // ← was membershipType
+  amount: number;
+  paymentMethod: string;
+  payerName: string;
+  memoField: string;
+  last4Digits?: string;
+  familyMemberEmails?: string;
+  sessionID: string;
+}
+
+
 interface PaymentRecord {
   paymentID: string;
   eventID: string;
   memberID: string;
   paymentDate: string;
   amount: number;
-  membershipType: string;
+  paymentIntent: string;
   paymentMethod: string;
   payerName: string;
   memoField: string;
@@ -179,19 +213,6 @@ interface UpdateProfilePayload {
   joinYear?: string;
 }
 
-interface RenewalSubmitPayload {
-  memberId: string;
-  email: string;
-  membershipType: 'Individual' | 'Family';
-  amount: number;
-  paymentMethod: 'Zelle' | 'Venmo' | 'PayPal';
-  payerName: string;
-  memoField: string;
-  last4Digits?: string;
-  familyMemberEmails?: string[];
-  sessionID: string;
-}
-
 interface ApproveRenewalPayload {
   eventID: string;
   adminEmail: string;
@@ -217,4 +238,15 @@ interface PaymentProof {
   notes: string;
   screenshotFileId: string;
   status: 'Pending Review' | 'Approved' | 'Rejected';
+}
+
+interface WebAppEventSummary {
+  eventID:             string;
+  eventType:           string;
+  timestamp:           string;
+  paymentIntent:       string;
+  amount:              number;
+  paymentMethod:       string;
+  status:              'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Error';
+  notes:               string;
 }

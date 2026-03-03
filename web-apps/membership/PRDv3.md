@@ -518,7 +518,8 @@ When an admin approves a `WebApp-Events` row, the logic branches on `PaymentInte
 | `profile` | `page_profile.html` |
 | `renewal` | `page_renewal.html` |
 | `payment` | `page_payment.html` |
-| `paymentproof` | `page_paymentproof.html` |
+| `payment_proof` | `page_payment_proof.html` |
+| `payment_history` | `page_payment_history.html` |
 | `newmember` | `page_newmember.html` |
 | `admin` | `page_admin.html` |
 

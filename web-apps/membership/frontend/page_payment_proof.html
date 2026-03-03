@@ -28,7 +28,10 @@
 <body>
 <div class="topbar">
   <h1>🏃 Misty Mountain Runners</h1>
-  <a href="?page=dashboard">← Dashboard</a>
+  <!-- ✅ CORRECT — absolute URL, window.top, from direct onclick -->
+  <button onclick="window.top.location.href = appBaseUrl + '?page=dashboard'">
+    ← Dashboard
+  </button>
 </div>
 
 <div class="container">

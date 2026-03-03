@@ -19,12 +19,22 @@ function generateLogID(): string {
 
 // ---- Membership Master ----
 
+function deriveStatus(expirationStr: string): Member['status'] {
+  if (!expirationStr || expirationStr.trim() === '') return 'not active';
+  const exp = new Date(expirationStr);
+  if (isNaN(exp.getTime())) return 'not active';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return exp >= today ? 'active' : 'expired';
+}
+
 function rowToMember(row: any[]): Member {
+  const expiration = String(row[MM_COL.EXPIRATION] ?? '');
   return {
     memberID: String(row[MM_COL.MEMBER_ID] ?? ''),
-    status: String(row[MM_COL.STATUS] ?? '') as Member['status'],
+    status: deriveStatus(expiration),          // ← calculated, not read from sheet
     created: String(row[MM_COL.CREATED] ?? ''),
-    expiration: String(row[MM_COL.EXPIRATION] ?? ''),
+    expiration,
     email: String(row[MM_COL.EMAIL] ?? ''),
     firstName: String(row[MM_COL.FIRST_NAME] ?? ''),
     lastName: String(row[MM_COL.LAST_NAME] ?? ''),
@@ -46,6 +56,7 @@ function rowToMember(row: any[]): Member {
     notes: String(row[MM_COL.NOTES] ?? ''),
   };
 }
+
 
 function findMemberByEmail(email: string): { member: Member; rowIndex: number } | null {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
@@ -95,6 +106,20 @@ function generateMemberID(): string {
   throw new Error('No available member IDs (A0001–A9999 all in use).');
 }
 
+function generateFamilyID(): string {
+  const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
+  const data = sheet.getDataRange().getValues();
+  const used = new Set<number>();
+  for (let i = 1; i < data.length; i++) {
+    const m = String(data[i][MM_COL.FAMILY_ID]).match(/^B(\d{3})$/);
+    if (m) used.add(parseInt(m[1], 10));
+  }
+  for (let n = 1; n <= 999; n++) {
+    if (!used.has(n)) return 'B' + String(n).padStart(3, '0');
+  }
+  throw new Error('No available family IDs B001–B999 all in use.');
+}
+
 function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
   for (const [colKey, value] of Object.entries(updates)) {
@@ -114,7 +139,7 @@ function rowToWebAppEvent(row: any[]): WebAppEvent {
     timestamp: String(row[WE_COL.TIMESTAMP] ?? ''),
     memberID: String(row[WE_COL.MEMBER_ID] ?? ''),
     email: String(row[WE_COL.EMAIL] ?? ''),
-    membershipType: String(row[WE_COL.MEMBERSHIP_TYPE] ?? '') as WebAppEvent['membershipType'],
+    paymentIntent: String(row[WE_COL.PAYMENT_INTENT] ?? '') as WebAppEvent['paymentIntent'],
     amount: Number(row[WE_COL.AMOUNT] ?? 0),
     paymentMethod: String(row[WE_COL.PAYMENT_METHOD] ?? '') as WebAppEvent['paymentMethod'],
     payerName: String(row[WE_COL.PAYER_NAME] ?? ''),
@@ -139,7 +164,7 @@ function appendWebAppEvent(event: Omit<WebAppEvent, 'eventID'>): string {
     event.timestamp,
     event.memberID,
     event.email,
-    event.membershipType,
+    event.paymentIntent,
     event.amount,
     event.paymentMethod,
     event.payerName,
@@ -197,7 +222,7 @@ function appendPaymentRecord(record: Omit<PaymentRecord, 'paymentID'>): string {
     record.memberID,
     record.paymentDate,
     record.amount,
-    record.membershipType,
+    record.paymentIntent,
     record.paymentMethod,
     record.payerName,
     record.memoField,
@@ -239,7 +264,7 @@ function findValidOtp(email: string, otpCode: string): { rowIndex: number } | nu
     if (
       rowEmail === email.toLowerCase() &&
       rowCode === otpCode &&
-      !used &&
+    //  !used && // allow reuse of OTP until expiry to avoid user frustration with multiple attempts
       now <= expiresAt
     ) {
       return { rowIndex: i + 1 };
@@ -348,4 +373,52 @@ function appendPaymentProof(proof: PaymentProof): void {
 
 }
 
+function getPaymentHistoryByMemberID(memberID: string): PaymentHistoryItem[] {
+  const sheet = getSheet(SHEET_NAMES.PAYMENT_HISTORY);
+  if (!sheet) return [];
+
+  const rows = sheet.getDataRange().getValues();
+  const headers = rows[0];
+
+  // Column index helpers — adjust names to match your actual sheet headers
+  const col = (name: string) => headers.indexOf(name);
+
+  return rows.slice(1)
+    .filter(row => row[col('MemberID')] === memberID)
+    .map(row => ({
+      paymentID:     String(row[col('PaymentID')]     || ''),
+      eventID:       String(row[col('EventID')]       || ''),
+      paymentDate:   String(row[col('PaymentDate')]   || ''),
+      amount:        Number(row[col('Amount')]        || 0),
+      paymentIntent: String(row[col('PaymentIntent')] || '') as PaymentHistoryItem['paymentIntent'],
+      paymentMethod: String(row[col('PaymentMethod')] || ''),
+      payerName:     String(row[col('PayerName')]     || ''),
+      periodStart:   String(row[col('PeriodStart')]   || ''),
+      periodEnd:     String(row[col('PeriodEnd')]     || ''),
+      source:        String(row[col('Source')]        || ''),
+      notes:         String(row[col('Notes')]         || ''),
+    }));
+}
+
+function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
+  const sheet = getSheet(SHEET_NAMES.WEBAPP_EVENTS);
+  if (!sheet) return [];
+
+  const rows = sheet.getDataRange().getValues();
+  const headers = rows[0];
+  const col = (name: string) => headers.indexOf(name);
+
+  return rows.slice(1)
+    .filter(row => row[col('MemberID')] === memberID)
+    .map(row => ({
+      eventID:       String(row[col('EventID')]       || ''),
+      eventType:     String(row[col('EventType')]     || ''),
+      timestamp:     String(row[col('Timestamp')]     || ''),
+      paymentIntent: String(row[col('PaymentIntent')] || ''),
+      amount:        Number(row[col('Amount')]        || 0),
+      paymentMethod: String(row[col('PaymentMethod')] || ''),
+      status:        String(row[col('Status')]        || '') as WebAppEventSummary['status'],
+      notes:         String(row[col('Notes')]         || ''),
+    }));
+}
 

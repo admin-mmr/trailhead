@@ -19,7 +19,7 @@ function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutp
     }
 
     try {
-      const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember', 'payment_proof', 'payment', 'image'];
+      const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember', 'payment_proof', 'payment', 'image', 'payment_history'];
       const safePage = allowedPages.includes(page) ? page : 'login';
       const fileName = `page_${safePage}`;
       console.log(`doGet: serving "${fileName}", page param="${page}"`);

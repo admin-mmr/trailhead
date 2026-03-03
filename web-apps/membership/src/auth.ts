@@ -4,6 +4,7 @@
 // Exposed GAS functions: handleGoogleLogin, requestEmailOtp, verifyEmailOtp
 // ============================================================
 
+
 function handleGoogleLogin(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<LoginPayload>;
   const { payload } = req;

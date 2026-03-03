@@ -60,7 +60,7 @@ const WE_COL = {
   TIMESTAMP: 2,
   MEMBER_ID: 3,
   EMAIL: 4,
-  MEMBERSHIP_TYPE: 5,
+  PAYMENT_INTENT: 5,
   AMOUNT: 6,
   PAYMENT_METHOD: 7,
   PAYER_NAME: 8,
@@ -179,14 +179,14 @@ const PP_COL = {
 const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_NAMES.WEBAPP_EVENTS]: [
     'EventID', 'EventType', 'Timestamp', 'MemberID', 'Email',
-    'MembershipType', 'Amount', 'PaymentMethod', 'PayerName', 'MemoField',
+    'PaymentIntent', 'Amount', 'PaymentMethod', 'PayerName', 'MemoField',
     'Last4Digits', 'FamilyMemberEmails', 'Status',
     'MatchedMessageId', 'MatchedTransactionNumber',
     'AdminApprover', 'ApprovalDate', 'Notes',
   ],
   [SHEET_NAMES.PAYMENT_HISTORY]: [
     'PaymentID', 'EventID', 'MemberID', 'PaymentDate', 'Amount',
-    'MembershipType', 'PaymentMethod', 'PayerName', 'MemoField',
+    'PaymentIntent', 'PaymentMethod', 'PayerName', 'MemoField',
     'Last4Digits', 'TransactionReference', 'PeriodStart', 'PeriodEnd',
     'ProcessedBy', 'ProcessedDate', 'Source', 'Notes',
   ],
@@ -212,26 +212,28 @@ const SHEET_HEADERS: Record<string, string[]> = {
 
 // Default Config values seeded on first creation
 const DEFAULT_CONFIG_ROWS: string[][] = [
-  ['Individual_Price',       '30',                      'Price for individual membership'],
-  ['Family_Price',           '50',                      'Price for family membership'],
-  ['Payment_Methods',        'Zelle,Venmo,PayPal',      'Comma-separated accepted payment methods'],
-  ['Zelle_Handle',           'zelle@example.com',       'Zelle payment handle'],
-  ['Venmo_Handle',           '@venmo-user',             'Venmo payment handle'],
-  ['PayPal_Handle',          'paypal@example.com',      'PayPal payment handle'],
-  ['Reminder_Days_Before',   '30',                      'Days before expiry to send reminder'],
-  ['Membership_Renewal_Years','1',                      'Years added per renewal'],
-  ['OTP_Valid_Hours',        '24',                      'Hours before OTP expires'],
-  ['OTP_Cleanup_Days',       '7',                       'Days before used/expired OTPs are deleted'],
-  ['Admin_Emails',           'admin@mmrunners.org',     'Comma-separated admin email addresses'],
-  ['App_Base_Url',           '',                        'Deployed web app URL (set after first deploy)'],
-  ['Payment_Proof_Folder_Id','',                        'Google Drive folder ID for payment proofs'],
-  ['Zelle_QR_Code_File_Id',  '',                        'Google Drive file ID for Zelle QR code image'],
-  ['Venmo_QR_Code_File_Id',  '',                        'Google Drive file ID for Venmo QR code image'],
+  ['IndividualPrice',        '30',                      'Price for individual membership'],
+  ['FamilyPrice',            '50',                      'Price for family membership'],
+  ['FamilyUpgradePrice',     '20',                      'Price for family membership'],
+  ['PaymentMethods',         'Zelle,Venmo,PayPal',      'Comma-separated accepted payment methods'],
+  ['ZelleHandle',            'zelle@example.com',       'Zelle payment handle'],
+  ['VenmoHandle',            '@venmo-user',             'Venmo payment handle'],
+  ['PayPalHandle',           'paypal@example.com',      'PayPal payment handle'],
+  ['ReminderDaysBefore',     '30',                      'Days before expiry to send reminder'],
+  ['MembershipRenewalYears', '1',                       'Years added per renewal'],
+  ['OTPValidHours',          '24',                      'Hours before OTP expires'],
+  ['OTPCleanupDays',         '7',                       'Days before used/expired OTPs are deleted'],
+  ['AdminEmails',            'admin@mmrunners.org',     'Comma-separated admin email addresses'],
+  ['AppBaseUrl',             '',                        'Deployed web app URL (set after first deploy)'],
+  ['PaymentProofFolderId',   '',                        'Google Drive folder ID for payment proofs'],
+  ['ZelleQRCodeFileId',      '',                        'Google Drive file ID for Zelle QR code image'],
+  ['VenmoQRCodeFileId',      '',                        'Google Drive file ID for Venmo QR code image'],
 ];
 
 // Default Payment Events values seeded on first creation
 const DEFAULT_PAYMENT_EVENTS_ROWS: string[][] = [
-  ['Individual/Family Membership', 'Confirm your payment for membership renewal', 'Match with payment history'],
+  ['Individual Membership', 'Confirm your payment for individual membership renewal', 'Match with payment history'],
+  ['Family Membership', 'Confirm your payment for family membership renewal', 'Match with payment history'],
   ['Upgrade to Family Membership', 'Confirm your payment for upgrading to family membership', 'Match with payment history'],
   ['Other Payment', 'Confirm your other payments related to membership', 'Manual review'],
 ];

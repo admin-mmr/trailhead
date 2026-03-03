@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Payment History — Misty Mountain Runners</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5; min-height: 100vh; padding: 24px 16px;
+    }
+    .card {
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 28px 24px; max-width: 640px; margin: 0 auto;
+    }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: #2d7d46; font-size: 14px; font-weight: 500;
+      cursor: pointer; border: none; background: none;
+      padding: 0; margin-bottom: 20px; text-decoration: none;
+    }
+    .back-link:hover { text-decoration: underline; }
+    h2 { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .member-id { font-size: 13px; color: #888; margin-bottom: 24px; }
+
+    /* Section headers */
+    .section-title {
+      font-size: 13px; font-weight: 700; color: #555;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin: 24px 0 12px;
+    }
+
+    /* Event / payment rows */
+    .row-card {
+      border: 1px solid #eee; border-radius: 10px;
+      padding: 14px 16px; margin-bottom: 10px;
+    }
+    .row-card:last-child { margin-bottom: 0; }
+    .row-top {
+      display: flex; justify-content: space-between;
+      align-items: flex-start; gap: 8px;
+    }
+    .row-intent {
+      font-size: 14px; font-weight: 600; color: #1a1a1a;
+    }
+    .row-amount {
+      font-size: 14px; font-weight: 700; color: #2d7d46;
+      white-space: nowrap;
+    }
+    .row-meta {
+      font-size: 12px; color: #888; margin-top: 5px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .row-meta span::before { content: '· '; }
+    .row-meta span:first-child::before { content: ''; }
+
+    /* Status badges */
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 20px; white-space: nowrap;
+    }
+    .badge-approved  { background: #e8f5e9; color: #2d7d46; }
+    .badge-pending   { background: #fff8e1; color: #f57c00; }
+    .badge-matched   { background: #e3f2fd; color: #1565c0; }
+    .badge-rejected  { background: #fdecea; color: #c62828; }
+    .badge-error     { background: #fdecea; color: #c62828; }
+
+    /* Period bar for confirmed payments */
+    .period-bar {
+      margin-top: 8px; font-size: 12px; color: #555;
+      background: #f0f8f2; border-radius: 6px;
+      padding: 6px 10px;
+    }
+
+    /* Pending explanation box */
+    .pending-explainer {
+      background: #fff8e1; border: 1px solid #ffe082;
+      border-radius: 10px; padding: 14px 16px; margin-bottom: 16px;
+      font-size: 13px; color: #5d4037; line-height: 1.6;
+    }
+    .pending-explainer strong { color: #e65100; }
+
+    .empty { text-align: center; color: #aaa; font-size: 14px; padding: 32px 0; }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block; width: 20px; height: 20px;
+      border: 3px solid #ddd; border-top-color: #2d7d46;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      margin: 40px auto; display: block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="card">
+  <button class="back-link" onclick="goToDashboard()">← Dashboard</button>
+
+  <h2>🧾 Payment History</h2>
+  <div class="member-id" id="member-id-display"></div>
+
+  <div id="loading"><div class="spinner"></div></div>
+  <div id="content" style="display:none"></div>
+</div>
+
+<script>
+  var appBaseUrl = '__SCRIPT_URL__';
+  var SESSION_ID = Math.random().toString(36).slice(2);
+
+  function goToDashboard() {
+    window.top.location.href = appBaseUrl + '?page=dashboard';
+  }
+
+  function callApi(fn, payload) {
+    return new Promise(function(resolve, reject) {
+      var req = { requestId: Math.random().toString(36).slice(2), payload: payload };
+      google.script.run
+        .withSuccessHandler(function(r) {
+          var res = JSON.parse(r);
+          if (res.ok) resolve(res.payload);
+          else reject(new Error(res.errorMessage));
+        })
+        .withFailureHandler(function(err) { reject(err); })
+        [fn](JSON.stringify(req));
+    });
+  }
+
+  function badgeCls(status) {
+    return 'badge badge-' + (status || 'pending').toLowerCase();
+  }
+
+  function fmt(dateStr) {
+    if (!dateStr) return '—';
+    var d = new Date(dateStr);
+    return isNaN(d) ? dateStr : d.toLocaleDateString('en-US', {
+      year: 'numeric', month: 'short', day: 'numeric'
+    });
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                          .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function renderEvents(events) {
+    // Pending/Matched events — shown at top with explanation
+    var pending = events.filter(function(e) {
+      return e.status === 'Pending' || e.status === 'Matched';
+    });
+    var past = events.filter(function(e) {
+      return e.status === 'Approved' || e.status === 'Rejected' || e.status === 'Error';
+    });
+    return { pending: pending, past: past };
+  }
+
+  function buildPendingHTML(pending) {
+    if (!pending.length) return '';
+    var html = '<div class="section-title">⏳ Awaiting Admin Approval</div>';
+    html += '<div class="pending-explainer">';
+    html += '<strong>Why is my membership status unchanged?</strong><br/>';
+    html += 'Your payment submission is received and under review. ';
+    html += 'Once an admin verifies the payment, your status will be updated automatically. ';
+    html += 'This usually takes 1–3 business days.';
+    html += '</div>';
+    pending.forEach(function(e) {
+      html += '<div class="row-card">';
+      html += '<div class="row-top">';
+      html += '<span class="row-intent">' + esc(e.paymentIntent) + '</span>';
+      html += '<span>' +
+        '<span class="' + badgeCls(e.status) + '">' + esc(e.status) + '</span>' +
+        '</span>';
+      html += '</div>';
+      html += '<div class="row-meta">';
+      html += '<span>$' + esc(e.amount) + '</span>';
+      html += '<span>' + esc(e.paymentMethod) + '</span>';
+      html += '<span>Submitted ' + fmt(e.timestamp) + '</span>';
+      if (e.status === 'Matched') {
+        html += '<span>✓ Payment located in bank records</span>';
+      }
+      html += '</div>';
+      if (e.notes) {
+        html += '<div class="row-meta" style="margin-top:4px;color:#c0392b;">' +
+          '<span>' + esc(e.notes) + '</span></div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
+
+  function buildConfirmedHTML(payments) {
+    if (!payments.length) return '<div class="empty">No confirmed payments yet.</div>';
+    var html = '<div class="section-title">✅ Confirmed Payments</div>';
+    payments.forEach(function(p) {
+      html += '<div class="row-card">';
+      html += '<div class="row-top">';
+      html += '<span class="row-intent">' + esc(p.paymentIntent) + '</span>';
+      html += '<span class="row-amount">$' + esc(p.amount) + '</span>';
+      html += '</div>';
+      html += '<div class="row-meta">';
+      html += '<span>' + esc(p.paymentMethod) + '</span>';
+      html += '<span>' + fmt(p.paymentDate) + '</span>';
+      html += '<span>' + esc(p.payerName) + '</span>';
+      if (p.source) html += '<span>' + esc(p.source) + '</span>';
+      html += '</div>';
+      if (p.periodStart && p.periodEnd) {
+        html += '<div class="period-bar">📅 Coverage: ' +
+          fmt(p.periodStart) + ' → ' + fmt(p.periodEnd) + '</div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
+
+  function buildRejectedHTML(past) {
+    var rejected = past.filter(function(e) {
+      return e.status === 'Rejected' || e.status === 'Error';
+    });
+    if (!rejected.length) return '';
+    var html = '<div class="section-title">❌ Rejected / Error</div>';
+    rejected.forEach(function(e) {
+      html += '<div class="row-card">';
+      html += '<div class="row-top">';
+      html += '<span class="row-intent">' + esc(e.paymentIntent) + '</span>';
+      html += '<span class="' + badgeCls(e.status) + '">' + esc(e.status) + '</span>';
+      html += '</div>';
+      html += '<div class="row-meta">';
+      html += '<span>$' + esc(e.amount) + '</span>';
+      html += '<span>' + fmt(e.timestamp) + '</span>';
+      html += '</div>';
+      if (e.notes) {
+        html += '<div class="row-meta" style="margin-top:4px;color:#c62828;">' +
+          '<span>Note: ' + esc(e.notes) + '</span></div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
+
+  // ── Load data ────────────────────────────────────────────────
+  var member = null;
+  try { member = JSON.parse(sessionStorage.getItem('member') || 'null'); } catch(_) {}
+
+  if (!member || !member.email) {
+    window.top.location.href = appBaseUrl + '?page=login';
+  } else {
+    document.getElementById('member-id-display').textContent =
+      'Member ID: ' + (member.memberID || '—');
+
+    callApi('getMemberPaymentHistory', {
+      email: member.email,
+      sessionID: SESSION_ID
+    })
+    .then(function(data) {
+      document.getElementById('loading').style.display = 'none';
+      var content = document.getElementById('content');
+      content.style.display = 'block';
+
+      var split = renderEvents(data.events || []);
+      var html = '';
+
+      // 1. Pending submissions (with explainer)
+      html += buildPendingHTML(split.pending);
+
+      // 2. Confirmed payments
+      html += buildConfirmedHTML(data.payments || []);
+
+      // 3. Rejected / errors
+      html += buildRejectedHTML(split.past);
+
+      content.innerHTML = html || '<div class="empty">No payment activity found.</div>';
+    })
+    .catch(function(err) {
+      document.getElementById('loading').style.display = 'none';
+      var content = document.getElementById('content');
+      content.style.display = 'block';
+      content.innerHTML = '<div class="empty" style="color:#c62828;">Failed to load: ' +
+        esc(err.message) + '</div>';
+    });
+  }
+</script>
+</body>
+</html>

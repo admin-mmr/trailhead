@@ -235,7 +235,7 @@
           }
           return '<div class="card" id="ev-' + esc(ev.eventID) + '">' +
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-            '<div><h3>' + esc(ev.payerName || 'Unknown') + ' &mdash; ' + esc(ev.membershipType) + ' $' + esc(ev.amount) + '</h3>' +
+            '<div><h3>' + esc(ev.payerName || 'Unknown') + ' &mdash; ' + esc(ev.paymentIntent) + ' $' + esc(ev.amount) + '</h3>' +
             '<div class="meta">' + esc(ev.eventID) + ' &bull; ' + new Date(ev.timestamp).toLocaleString() + ' &bull; ' + statusBadge(ev.status) + '</div></div></div>' +
             '<div class="detail-grid">' +
             '<div class="detail-item"><label>Member ID</label><span>' + esc(ev.memberID) + '</span></div>' +
@@ -304,6 +304,13 @@
   }
 
   function approve(eventID) {
+    // Warn admin if this is a Family Upgrade for an inactive member
+    const ev = eventsCache[eventID];  // keep a local cache when loadPending() runs
+    if (ev?.paymentIntent === 'Family Upgrade' && ev?.memberStatus !== 'active') {
+      showGlobalMsg('⚠️ Warning: Member is not active. Family Upgrade requires active Individual membership.', 'error');
+      return;
+    }
+    
     var notesEl = document.getElementById('notes-' + eventID);
     var notes = notesEl ? notesEl.value : '';
     console.log('[MMR][admin] approve eventID:', eventID, '| notes:', notes);

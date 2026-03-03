@@ -40,7 +40,6 @@ function getOrCreateMemberProfile(jsonRequest: string): string {
   }
 }
 
-
 function updateMemberProfile(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<UpdateProfilePayload>;
   const { payload } = req;
@@ -128,3 +127,35 @@ function createNewMember(jsonRequest: string): string {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
+
+function getMemberPaymentHistory(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string; sessionID: string }>;
+  const { payload } = req;
+  try {
+    const email = payload.email.trim().toLowerCase();
+
+    // 1. Get memberID from Membership Master
+    const found = findMemberByEmail(email);
+    if (!found) {
+      return jsonError(req.requestId, 'MEMBER_NOT_FOUND', 'Member not found.');
+    }
+    const memberID = found.member.memberID;
+
+    // 2. Load approved Payment-History rows for this member
+    const payments = getPaymentHistoryByMemberID(memberID);
+
+    // 3. Load ALL WebApp-Events rows for this member (Pending/Matched/Approved/Rejected)
+    const events = getWebAppEventsByMemberID(memberID);
+
+    auditLog('PAYMENT_HISTORY_VIEW', { sessionID: payload.sessionID, memberID });
+
+    return jsonOk(req.requestId, {
+      memberID,
+      payments,   // confirmed Payment-History rows
+      events,     // all submission events including pending ones
+    });
+  } catch (e: any) {
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+

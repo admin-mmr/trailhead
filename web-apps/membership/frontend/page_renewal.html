@@ -70,6 +70,34 @@
     }
   });
 
+function buildOptions(memberType) {
+  // Brand-new / never paid: offer both full tiers, no upgrade
+  if (memberType === 'not active' || !memberType) {
+    return [
+      { intent: 'Individual Renewal', label: 'Individual Membership – $30', amount: 30 },
+      { intent: 'Family Renewal',     label: 'Family Membership – $50',     amount: 50 },
+    ];
+  }
+  // Existing individual: renew as individual, or pay delta to upgrade to family
+  if (memberType === 'Individual') {
+    return [
+      { intent: 'Individual Renewal', label: 'Renew Individual Membership – $30',       amount: 30 },
+      { intent: 'Family Upgrade',     label: 'Upgrade to Family – $20 (delta only)',     amount: 20 },
+    ];
+  }
+  // Existing family member: only family renewal available
+  if (memberType === 'Family') {
+    return [
+      { intent: 'Family Renewal', label: 'Renew Family Membership – $50', amount: 50 },
+    ];
+  }
+  // Fallback — unknown type, offer both full tiers safely
+  return [
+    { intent: 'Individual Renewal', label: 'Individual Membership – $30', amount: 30 },
+    { intent: 'Family Renewal',     label: 'Family Membership – $50',     amount: 50 },
+  ];
+}
+
   let selectedType = 'Individual';
   let config = {};
 

@@ -84,6 +84,10 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     #dbg { font-size: 11px; color: #bbb; margin-top: 12px; text-align: center; }
+
+    /* not show Google loginn for now since it requires extra setup and isn't the primary path in the current codebase */
+    #googleBtn, #googleSpinner, .divider { display: none; }
+
   </style>
 </head>
 <body>
@@ -98,14 +102,14 @@
     <p class="subtitle">Sign in or register</p>
     <div id="msg-email" class="msg"></div>
 
-    <button class="btn btn-google" id="googleBtn" onclick="loginWithGoogle()">
+    <button class="btn btn-google" id="googleBtn" onclick="loginWithGoogle()" style="display:none;">
       <img src="https://www.google.com/favicon.ico"
            style="width:16px;height:16px;vertical-align:middle;margin-right:8px;" />
       Sign in with Google
     </button>
     <span id="googleSpinner" style="display:none;"><span class="spinner"></span></span>
 
-    <div class="divider">or sign in with email</div>
+    <div class="divider"  style="display:none;">or sign in with email</div>
 
     <input type="email" id="emailInput"
            placeholder="your@email.com"
@@ -473,12 +477,11 @@
   // ── Init: redirect if already logged in ─────────────────────
   var cached = sessionStorage.getItem('member');
   if (cached) {
-    try {
-      var m = JSON.parse(cached);
-      if (m && m.memberID) {
-        window.top.location.href = appBaseUrl + '?page=dashboard';
-      }
-    } catch(_) {}
+    var btn = document.getElementById('continueBtn');
+    btn.style.display = 'block';
+    btn.onclick = function() {
+      window.top.location.href = appBaseUrl + '?page=dashboard';
+    };
   }
 </script>
 </body>

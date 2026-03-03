@@ -9,7 +9,7 @@ function submitRenewalRequest(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<RenewalSubmitPayload>;
   const { payload } = req;
   try {
-    console.log('[mmr][submitRenewalRequest] memberID:', payload.memberId, '| type:', payload.membershipType, '| amount:', payload.amount, '| method:', payload.paymentMethod);
+    console.log('[mmr][submitRenewalRequest] memberID:', payload.memberId, '| type:', payload.paymentIntent, '| amount:', payload.amount, '| method:', payload.paymentMethod);
     auditLog('RENEWAL_FORM_OPEN', {
       memberID: payload.memberId,
       email: payload.email,
@@ -21,13 +21,13 @@ function submitRenewalRequest(jsonRequest: string): string {
       timestamp: new Date().toISOString(),
       memberID: payload.memberId,
       email: payload.email,
-      membershipType: payload.membershipType,
+      paymentIntent: payload.paymentIntent,   // 'Individual Renewal' | 'Family Renewal' | 'Family Upgrade'
       amount: payload.amount,
       paymentMethod: payload.paymentMethod,
       payerName: payload.payerName,
       memoField: payload.memoField,
       last4Digits: payload.last4Digits ?? '',
-      familyMemberEmails: (payload.familyMemberEmails ?? []).join(','),
+      familyMemberEmails: payload.familyMemberEmails ?? '',
       status: 'Pending',
       matchedMessageId: '',
       matchedTransactionNumber: '',
@@ -125,36 +125,75 @@ function findGmailMatch(event: WebAppEvent, gmailRows: FetchGmailRow[]): FetchGm
 
 function approveRenewal(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<ApproveRenewalPayload>;
-  const { payload } = req;
+  const payload = req.payload;
   try {
-    console.log('[mmr][approveRenewal] eventID:', payload.eventID, '| admin:', payload.adminEmail);
     const found = findWebAppEvent(payload.eventID);
     if (!found) return jsonError(req.requestId, 'NOT_FOUND', 'Event not found.');
+
     const event = found.event;
-
-    const renewalYears = parseInt(getConfigValue('Membership_Renewal_Years'), 10) || 1;
+    const renewalYears = parseInt(getConfigValue('MembershipRenewalYears'), 10) || 1;
     const today = new Date();
+    const intent = event.paymentIntent as PaymentIntent;
 
-    // Determine members to update (family or individual)
-    let membersToUpdate: Array<{ member: Member; rowIndex: number }> = [];
-    if (event.membershipType === 'Family') {
+    // ── Branch C: Family Upgrade ──────────────────────────────────────
+    if (intent === 'Family Upgrade') {
       const primary = findMemberByID(event.memberID);
-      if (primary?.member.familyID) {
-        membersToUpdate = findMembersByFamilyID(primary.member.familyID);
+      if (!primary) return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
+      if (primary.member.status !== 'active') {
+        return jsonError(req.requestId, 'INVALID_STATE',
+          'Family upgrade requires an active Individual membership first.');
       }
-    }
-    if (membersToUpdate.length === 0) {
-      const m = findMemberByID(event.memberID);
-      if (m) membersToUpdate = [m];
-    }
-    if (membersToUpdate.length === 0) {
-      return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
+      // Assign FamilyID if blank
+      let familyID = primary.member.familyID;
+      if (!familyID) {
+        familyID = generateFamilyID();
+        updateMemberRow(primary.rowIndex, { FAMILYID: familyID });
+      }
+      // Set Type → Family, do NOT change Expiration
+      updateMemberRow(primary.rowIndex, { TYPE: 'Family' });
+
+      const periodStart = primary.member.expiration
+        ? new Date(primary.member.expiration).toISOString().split('T')[0]
+        : today.toISOString().split('T')[0];
+      const periodEnd = primary.member.expiration
+        ? new Date(primary.member.expiration).toISOString().split('T')[0]
+        : periodStart;
+
+      appendPaymentRecord({ ...baseRecord(event, payload), paymentIntent: intent,
+        periodStart, periodEnd });
+      updateWebAppEventRow(found.rowIndex, { STATUS: 'Approved',
+        ADMINAPPROVER: payload.adminEmail, APPROVALDATE: new Date().toISOString(),
+        NOTES: payload.notes ?? '' });
+      auditLog('UPGRADEAPPROVED', { eventID: event.eventID, memberID: event.memberID });
+      return jsonOk(req.requestId, { message: 'Family upgrade approved.', periodEnd });
     }
 
-    // Compute new expiration: max(today + years, current expiration + years)
+    // ── Branch B: Family Renewal ──────────────────────────────────────
+    // ── Branch A: Individual Renewal ─────────────────────────────────
+    // (shared expiration logic for both)
+    let membersToUpdate: Array<{ rowIndex: number; member: Member }> = [];
+
+    if (intent === 'Family Renewal') {
+      const primary = findMemberByID(event.memberID);
+      if (!primary) return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
+      // Assign FamilyID if blank
+      if (!primary.member.familyID) {
+        const newFamilyID = generateFamilyID();
+        updateMemberRow(primary.rowIndex, { FAMILYID: newFamilyID });
+        primary.member.familyID = newFamilyID;
+      }
+      membersToUpdate = findMembersByFamilyID(primary.member.familyID);
+      if (membersToUpdate.length === 0) membersToUpdate = [primary];
+    } else {
+      // Individual Renewal
+      const m = findMemberByID(event.memberID);
+      if (!m) return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
+      membersToUpdate = [m];
+    }
+
+    // Compute newExpiration = max(today + N years, currentExpiration)
     let newExpiration = new Date(today);
     newExpiration.setFullYear(newExpiration.getFullYear() + renewalYears);
-
     for (const { member } of membersToUpdate) {
       if (member.expiration) {
         const current = new Date(member.expiration);
@@ -169,75 +208,48 @@ function approveRenewal(jsonRequest: string): string {
     const now = new Date().toISOString();
     const periodStart = today.toISOString().split('T')[0];
     const periodEnd = newExpiration.toISOString().split('T')[0];
+    const memberType = intent === 'Family Renewal' ? 'Family' : 'Individual';
 
-    // Update all members in scope
-    for (const { rowIndex, member } of membersToUpdate) {
+    for (const { rowIndex } of membersToUpdate) {
       updateMemberRow(rowIndex, {
-        STATUS: 'active',
-        EXPIRATION: periodEnd,
-        MEMBERSHIP_FEE_PAID: event.amount,
-        PAYMENT_DATE: now,
-        PAYMENT_TRANSACTION: event.matchedTransactionNumber || event.last4Digits || '',
-        LAST_UPDATED: now,
+        STATUS: 'active', EXPIRATION: periodEnd, TYPE: memberType,
+        MEMBERSHIPFEEPAID: event.amount, PAYMENTDATE: now,
+        PAYMENTTRANSACTION: event.matchedTransactionNumber || event.last4Digits,
+        LASTUPDATED: now,
       });
-
-      // Email notification (non-critical)
-      if (member.email) {
-        try {
-          MailApp.sendEmail({
-            to: member.email,
-            subject: 'Misty Mountain Runners — Membership Renewed',
-            body:
-              `Hi ${member.firstName || 'Member'},\n\n` +
-              `Your membership has been renewed and is active through ${periodEnd}.\n\n` +
-              `Thank you for your support!\n\nMisty Mountain Runners`,
-          });
-        } catch (_) { /* non-critical — log only */ }
-      }
     }
 
-    // Write Payment-History record
-    appendPaymentRecord({
-      eventID: event.eventID,
-      memberID: event.memberID,
-      paymentDate: now,
-      amount: event.amount,
-      membershipType: event.membershipType,
-      paymentMethod: event.paymentMethod,
-      payerName: event.payerName,
-      memoField: event.memoField,
-      last4Digits: event.last4Digits,
-      transactionReference: event.matchedTransactionNumber,
-      periodStart,
-      periodEnd,
-      processedBy: payload.adminEmail,
-      processedDate: now,
-      source: 'WebApp',
-      notes: payload.notes ?? '',
-    });
+    appendPaymentRecord({ ...baseRecord(event, payload), paymentIntent: intent,
+      periodStart, periodEnd });
+    updateWebAppEventRow(found.rowIndex, { STATUS: 'Approved',
+      ADMINAPPROVER: payload.adminEmail, APPROVALDATE: now,
+      NOTES: payload.notes ?? '' });
+    auditLog('RENEWALAPPROVED', { eventID: event.eventID, memberID: event.memberID,
+      email: event.email });
 
-    // Mark event as Approved
-    updateWebAppEventRow(found.rowIndex, {
-      STATUS: 'Approved',
-      ADMIN_APPROVER: payload.adminEmail,
-      APPROVAL_DATE: now,
-      NOTES: payload.notes ?? '',
-    });
-
-    auditLog('RENEWAL_APPROVED', {
-      eventID: event.eventID,
-      memberID: event.memberID,
-      email: event.email,
-    });
-
-    console.log('[mmr][approveRenewal] approved, periodEnd:', periodEnd, '| members updated:', membersToUpdate.length);
     return jsonOk(req.requestId, { message: 'Renewal approved.', periodEnd });
+
   } catch (e: any) {
-    console.error('[mmr][approveRenewal] error:', String(e));
     auditLog('ERROR', { eventID: payload.eventID, errorMessage: String(e) });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
+
+// Helper to avoid repeating shared Payment-History fields
+function baseRecord(event: WebAppEvent, payload: ApproveRenewalPayload) {
+  return {
+    eventID: event.eventID, memberID: event.memberID,
+    paymentDate: new Date().toISOString().split('T')[0],
+    amount: event.amount, paymentMethod: event.paymentMethod,
+    payerName: event.payerName, memoField: event.memoField,
+    last4Digits: event.last4Digits,
+    transactionReference: event.matchedTransactionNumber,
+    processedBy: payload.adminEmail,
+    processedDate: new Date().toISOString(),
+    source: 'WebApp', notes: payload.notes ?? '',
+  };
+}
+
 
 function rejectRenewal(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<RejectRenewalPayload>;
@@ -260,4 +272,17 @@ function rejectRenewal(jsonRequest: string): string {
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
+}
+
+function testApproveRenewal() {
+  const req = JSON.stringify({
+    requestId: 'test-003',
+    payload: {
+      eventID: 'EV-test-003',
+      adminEmail: 'cathylin@gmail.com',
+      notes: 'Manual test approval'
+    }
+  });
+  const result = approveRenewal(req);
+  console.log('approveRenewal result:', result);
 }

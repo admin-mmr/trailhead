@@ -803,7 +803,7 @@ clasp deploy --description "MMR Membership MVP"
 
 
 ---
-## File: `PRD_CC.md`
+## File: `PRDv2.md`
 ---
 
 ```markdown
@@ -1279,6 +1279,741 @@ Full renewal scenario:
 
 
 ---
+## File: `PRDv3.md`
+---
+
+```markdown
+# Misty Mountain Runners Membership Web App — Product Requirements Document
+
+_Last updated: 2026-03-02 (rev 3)_
+
+---
+
+## 1. Product Overview & Goals
+
+### 1.1 Objective
+
+Build a membership web application for Misty Mountain Runners that:
+
+- Manages member authentication via email OTP (primary) for all members.
+- Displays and updates member profiles and family groupings.
+- Handles membership renewals and Individual→Family upgrades paid externally (Zelle, Venmo, PayPal).
+- Matches bank/payment emails (from Gmail) to member submissions.
+- Maintains clean Payment History for reporting and audit.
+
+The app runs on **Google Apps Script (GAS)** with Google Sheets as the data store, managed via **CLASP** and GitHub.
+
+### 1.2 Scope — Phase 1 (MVP)
+
+In scope:
+- Authentication: Email OTP for all members (Gmail and non-Gmail).
+- Member self-service: view membership status/expiration, edit profile, submit payment proof.
+- Membership payments: Individual Renewal, Family Renewal, and Family Upgrade — all paid externally via Zelle/Venmo/PayPal; member submits proof, admin approves.
+- Data integration: Membership Master as source of truth; Fetch-Gmail payment data for reconciliation.
+- Logging: detailed activity log for debugging and audit.
+
+Non-goals for MVP:
+- Google OAuth login (removed — OTP only for consistency).
+- NYRR leaderboard/ranking, training plans, discount codes.
+- Event registration beyond membership fees.
+
+---
+
+## 2. Tech Stack & Architecture
+
+### 2.1 Tech Stack
+
+- **Backend**: Google Apps Script (GAS), deployed as a web app.
+- **Frontend**: HTML/CSS + vanilla JavaScript, served via `HtmlService`. Multi-template approach (separate HTML per view).
+- **Data Store**: Google Sheets:
+  - `Membership-Master-Main-3` (existing) as primary member database.
+  - New sheets: `WebApp-Events`, `Payment-History`, `Auth-OTP`, `Config`, `WebApp-ActivityLog`.
+  - Existing `Fetch-Gmail` sheet for Zelle/Venmo/PayPal payment data.
+- **Language & Tooling**:
+  - TypeScript with `strict: true`.
+  - Build via `tsc` to `dist/` directory.
+  - CLASP's `rootDir` points to `dist/` for `clasp push`.
+- **Version Control**: GitHub repository, deployed via CLASP.
+
+### 2.2 Architectural Principles
+
+- **Separation of concerns**: backend handles business logic and persistence; frontend calls backend via typed API functions.
+- **API contract**: all frontend-to-backend communication uses JSON strings. Every exposed GAS function has signature: `functionName(jsonRequest: string): string`.
+- **No magic numbers**: all pricing, timing, and config values read from Config sheet.
+- **Multiple small `.ts` files** organized by layer.
+- **Existing IDs preserved**: FamilyID (`Bxxx`) and MemberID (`Axxxx`) — no new ID systems.
+- **Trust payload email**: `getOrCreateMemberProfile` and all post-auth functions use `payload.email` exclusively. Do NOT use `Session.getActiveUser().getEmail()` after login — GAS may resolve to the script owner's account rather than the accessing user's account.
+
+### 2.3 GAS-Specific Constraints
+
+- All functions exposed to frontend must be in global scope (GAS does not support ES modules at runtime).
+- TypeScript compiles to JS files that CLASP pushes. Use a bundler or manual global exports.
+- `HtmlService.createHtmlOutputFromFile()` serves each template. Routing via `?page=` query parameter in `doGet(e)`.
+- `google.script.run` on the frontend calls server functions. Use `withSuccessHandler` / `withFailureHandler`.
+
+### 2.4 GAS Iframe Navigation (Important)
+
+GAS web apps are served inside a **cross-origin iframe** at `script.googleusercontent.com`. Two constraints:
+
+1. **Relative URLs are wrong**: `window.location.href = '?page=dashboard'` resolves against the inner iframe domain. Always use absolute URLs: `window.top.location.href = appBaseUrl + '?page=dashboard'`.
+
+2. **`window.top` requires user gesture**: The iframe sandbox has `allow-top-navigation-by-user-activation`. Calling `window.top.location.href` from an async callback fails silently. **Solution**: after async auth success, show a "Continue →" button; navigate from the button's click handler.
+
+3. **`appBaseUrl` injection**: `doGet` injects the real GAS URL server-side by replacing the placeholder `__SCRIPT_URL__` with `ScriptApp.getService().getUrl()` before serving each HTML template. URL params are injected as `__URL_PARAMS__` (JSON-serialized `e.parameter`).
+
+### 2.5 Session & Identity Model
+
+- After login, the member object is stored in `sessionStorage` as `member`.
+- All post-auth API calls pass `payload.email` (from `sessionStorage`) to identify the caller.
+- The backend trusts `payload.email` — it does NOT re-resolve identity via `Session.getActiveUser()` in any function other than the initial `handleGoogleLogin` (if enabled).
+- The dashboard calls `getOrCreateMemberProfile` on load to refresh the cached member. If the server returns a different `memberID` than what is in `sessionStorage`, the frontend discards the server response and keeps the cached session (guard against admin-account fallback).
+
+---
+
+## 3. User Roles & Core Flows
+
+### 3.1 Roles
+
+- **Member**: club runner or family member. Can log in, view/update profile, submit membership payments, view status.
+- **Admin**: board/operations volunteers. Approve payments, adjust Config, monitor events and activity logs.
+- **System**: background/reconciliation scripts that auto-match payments and update history.
+
+### 3.2 Authentication — Email OTP (All Members)
+
+All members authenticate via Email OTP regardless of email domain.
+The flow uses a **lookup-first** design: the database is checked before
+any OTP is sent, so users with mistyped emails never receive a code.
+
+#### State 1 — Email Entry
+
+1. User enters email address and clicks "Continue →".
+2. Frontend calls `lookupEmail(email)`.
+3. Backend queries Membership Master by email (case-insensitive).
+   - **Found** → go to State 2A (returning member).
+   - **Not found** → go to State 2B-ask (new member intent check).
+
+#### State 2A — Returning Member
+
+4. Frontend shows: "Welcome back, [firstName] ([memberID])!"
+5. User may already have a valid code in their inbox (valid for
+   `OTP_Valid_Hours`). They can:
+   - Type an existing code directly, or
+   - Click "Send Me a New Code" → frontend calls `requestEmailOtp`.
+6. User enters the 6-digit code → frontend calls `verifyEmailOtp`.
+7. Backend verifies: Email + OTPCode match, not expired, `Used=FALSE`.
+8. On success: mark `Used=TRUE`, update `LastLoginDate`, return
+   `{ member, isNewMember: false }`.
+   Frontend stores `member` in `sessionStorage`. Shows
+   "Continue to Dashboard →" button.
+9. On failure: show inline error, stay on State 2A (loop until correct).
+
+#### State 2B-ask — New Member Intent
+
+4. Frontend shows: "No account found for [email]. Are you a new member?"
+5. Two choices:
+   - **"Yes — Register Me →"**: frontend calls `requestEmailOtp` → OTP
+     sent → move to State 2B-verify.
+   - **"← No, go back and change email"**: return to State 1,
+     clear email field.
+
+#### State 2B-verify — New Member OTP
+
+6. User enters the 6-digit code → frontend calls `verifyEmailOtp`.
+7. Backend verifies: Email + OTPCode match, not expired, `Used=FALSE`.
+8. On success: mark `Used=TRUE`, return `{ isNewMember: true, email }`
+   (do **not** create a member record yet).
+   Frontend stores `pending_email` in `sessionStorage`. Shows
+   "Continue to Registration →" button.
+9. On failure: show inline error, stay on State 2B-verify (loop).
+10. "Resend Code" button available → calls `requestEmailOtp` again.
+
+#### OTP Cleanup
+
+A scheduled script deletes `Auth-OTP` rows older than `OTP_Cleanup_Days`
+(default 7 days).
+
+**Key design principles:**
+- `lookupEmail` returns only `firstName` and `memberID` — never
+  expiration, status, payment data, or any sensitive field.
+- OTP is never sent to an unrecognized email unless the user explicitly
+  confirms they intend to register. This prevents code spam on typos.
+- `verifyEmailOtp` never auto-creates member records. Record creation
+  only happens when the user explicitly submits the New Member
+  registration form (`createNewMember`). This prevents ghost/incomplete
+  records.
+- After verification, both paths show a "Continue" button rather than
+  navigating automatically. This is required because async API callbacks
+  lack user activation, and `window.top.location.href` (needed to break
+  out of the GAS iframe) requires a user gesture (see §2.4).
+
+
+### 3.3 Member Profile & Family Flows
+
+#### 3.3.1 MemberID Generation (A0001–A9999)
+
+When creating a new member (email not found in Membership Master):
+- Scan all existing `MemberID` values, parse numeric part after `A`.
+- Find first unused integer from 1–9999, format as 4 digits (e.g., `A0201`).
+- Set `Status = "not active"`, `Type = "Individual"` by default.
+
+#### 3.3.2 FamilyID Generation (B001–B999)
+
+When a member's `Type` changes to `"Family"` and they have no `FamilyID`:
+- Scan all existing `FamilyID` values, parse numeric part after `B`.
+- Find first unused integer from 1–999, format as 3 digits (e.g., `B036`).
+- Store the new `FamilyID` on that member's row.
+
+#### 3.3.3 Profile Retrieval
+
+After authentication:
+1. Query Membership Master by email.
+2. If found, load: `MemberID`, `Status`, `Expiration`, `Email`, `First Name`, `Last Name`, `Type`, `FamilyID`, `Gender`, `WeChatID`, `District`, `Membership Fee Paid`, `Payment Date`, `Payment Transaction`, `Created`, `JoinYear`, `PhoneNumber`, `LastLoginDate`, `ProfileLastUpdated`.
+3. Optionally return family members sharing the same `FamilyID`.
+4. If not found: create new row with new `MemberID`, `Status="not active"`, `Type="Individual"`, `JoinYear=current year` (editable). Prompt to complete profile.
+
+#### 3.3.4 Profile Editing
+
+Members can update: `FirstName`, `LastName`, `PhoneNumber`, `WeChatID`, `District`, `JoinYear`, `Type`.
+
+- `Type` is editable (Individual / Family) to support upgrade flows.
+- When `Type` changes to `"Family"` and `FamilyID` is blank, system auto-assigns a new `FamilyID` (§3.3.2).
+- Backend updates the matching row and sets `ProfileLastUpdated`.
+
+#### 3.3.5 Family Semantics
+
+- `Type="Family"` with a non-blank `FamilyID` means membership applies to all members sharing that `FamilyID`.
+- When a Family renewal is approved, `Expiration` is updated for all rows with the same `FamilyID`.
+- A Family Upgrade approval changes `Type` to `"Family"` and assigns a `FamilyID` without changing expiration (already active from the underlying Individual membership).
+
+---
+
+## 4. Membership Status & Type Model
+
+### 4.1 Two Independent Dimensions
+
+Every member has exactly two dimensions tracked on their Membership Master row:
+
+| Dimension | Column | Possible Values |
+|---|---|---|
+| **Membership Type** | `Type` | `Individual` · `Family` |
+| **Membership Status** | `Status` | `active` · `expired` · `not active` |
+
+`pending` is **not stored** on the member row. It is **derived at display time** by checking for open `WebApp-Events` rows with `Status = "Pending"` or `"Matched"` for that member. This avoids sync drift between the events log and the master record.
+
+### 4.2 Status Definitions
+
+| Status | Meaning | Written By |
+|---|---|---|
+| `not active` | Never had a confirmed paid membership. Brand-new or legacy record with no payment history. | New member creation |
+| `expired` | Was previously `active`; `Expiration` date is now in the past. | Nightly expiry-check job |
+| `active` | Has a confirmed, non-expired membership. | `approveRenewal` after successful payment confirmation |
+
+**Rule**: `Status` on Membership Master is only written by `approveRenewal` (→ `active`) and a scheduled expiry-check job (→ `expired`). It is never set to `pending`.
+
+### 4.3 Payment Intent Types
+
+`WebApp-Events` uses a `PaymentIntent` column (replacing the old `MembershipType` field) to precisely describe what the payment covers:
+
+| `PaymentIntent` | Meaning | Expected Amount | Effect on Approval |
+|---|---|---|---|
+| `Individual Renewal` | Renewing as individual member | `Individual_Price` ($30) | Set `Type=Individual`, extend `Expiration` for this member |
+| `Family Renewal` | Full family membership payment | `Family_Price` ($50) | Set `Type=Family`, assign/use `FamilyID`, extend `Expiration` for all family members |
+| `Family Upgrade` | Delta payment to upgrade from Individual→Family | `Family_Upgrade_Price` ($20) | Set `Type=Family`, assign `FamilyID` if blank — do NOT change `Expiration` |
+
+### 4.4 All Status/Type Combinations — Truth Table
+
+| # | Scenario | `Type` (stored) | `Status` (stored) | Open `WebApp-Events`? | Dashboard Display | Available Actions |
+|---|---|---|---|---|---|---|
+| 1 | Individual, membership expired | `Individual` | `expired` | No | 🔴 Expired · Individual | Renew as Individual; Upgrade to Family |
+| 2 | Family, membership expired | `Family` | `expired` | No | 🔴 Expired · Family | Renew as Family |
+| 3 | Individual, $30 submitted, not confirmed | `Individual` | `expired` or `not active` | Yes — `Individual Renewal` | 🟡 Payment Pending · Individual Renewal | View submission; contact admin |
+| 4 | Family, $50 submitted, not confirmed | `Family` | `expired` or `not active` | Yes — `Family Renewal` | 🟡 Payment Pending · Family Renewal | View submission; contact admin |
+| 5 | Upgrading to Family, $30 submitted, not confirmed | `Individual` | `expired` or `not active` | Yes — `Individual Renewal` | 🟡 Payment Pending · Upgrade in progress | View submission |
+| 6 | Upgrading to Family, $30 confirmed only ⚠️ | `Individual` | `active` | No | 🟠 Active Individual · Upgrade incomplete | Submit $20 Family Upgrade payment |
+| 7 | Upgrading to Family, $20 upgrade submitted, not confirmed | `Individual` | `active` | Yes — `Family Upgrade` | 🟡 Payment Pending · Family Upgrade | View submission |
+| 8 | Family, $50 confirmed | `Family` | `active` | No | 🟢 Active · Family | Renew; View family members |
+| 9 | Individual, $30 confirmed | `Individual` | `active` | No | 🟢 Active · Individual | Renew; Upgrade to Family |
+| 10 | Family, $30 + $20 both confirmed | `Family` | `active` | No | 🟢 Active · Family | Renew; View family members |
+
+> **Case 6 note**: When an individual payment is confirmed but a family upgrade has not yet been submitted, the member is actively Individual. The dashboard shows a prompt to complete the family upgrade by submitting the $20 delta payment.
+
+### 4.5 Dashboard Status Resolution Logic (Frontend)
+
+The dashboard resolves display status in this order:
+
+1. Call getOpenPaymentEvents(memberID) → check WebApp-Events for
+Status = "Pending" or "Matched" for this member.
+→ If found: show yellow "Payment Pending" badge + PaymentIntent label.
+2. Otherwise, use stored member.Status + member.Type:
+active   + Individual → green "Active · Individual"
+active   + Family     → green "Active · Family"
+expired  + Individual → red "Expired · Individual"
+expired  + Family     → red "Expired · Family"
+not active            → grey "Not Active"
+3. Special case — active Individual with no pending upgrade event:
+→ Show orange "Upgrade to Family" prompt if member.Type = Individual
+and member.Status = active.
+
+## 5. Data Model — Google Sheets
+
+### 5.1 Membership Master (Existing)
+
+Sheet: `Membership-Master-Main-3`
+
+Existing columns: `MemberID` (Axxxx), `Status` (active / not active / expired), `Created`, `Expiration`, `Email`, `First Name`, `Last Name`, `Type` (Individual / Family), `FamilyID` (Bxxx), `Gender`, `WeChatID`, `District`, `WebApp`, `Payment CheckInfo`, `Last Updated`, `Membership Fee Paid`, `Payment Date`, `Payment Transaction`.
+
+New columns (append at end):
+- `JoinYear` (string YYYY) — auto-derived from earliest membership year or Created date; member can override.
+- `PhoneNumber` (string).
+- `LastLoginDate` (datetime).
+- `ProfileLastUpdated` (datetime).
+- `Notes` (string — admin/system notes).
+
+**Status values** (updated): `active` · `expired` · `not active`.
+- `active`: confirmed non-expired membership.
+- `expired`: previously active; expiration date has passed.
+- `not active`: never had a confirmed payment.
+
+### 5.2 WebApp-Events
+
+Sheet: `WebApp-Events`
+
+Purpose: log of all payment submissions and signup events from the web app.
+
+Columns:
+- `EventID` — unique id (`EV-[timestamp]-[random]`).
+- `EventType` — `"MembershipRenewal"` or `"MembershipSignup"`.
+- `Timestamp` — submission time.
+- `MemberID` — submitter's MemberID.
+- `Email` — submitter email.
+- `PaymentIntent` — **`"Individual Renewal"`**, **`"Family Renewal"`**, or **`"Family Upgrade"`** (replaces old `MembershipType` for submissions).
+- `Amount` — numeric.
+- `PaymentMethod` — `"Zelle"`, `"Venmo"`, or `"PayPal"`.
+- `PayerName` — string.
+- `MemoField` — string.
+- `Last4Digits` — string (optional).
+- `FamilyMemberEmails` — comma-separated (optional).
+- `Status` — `"Pending"` · `"Matched"` · `"Approved"` · `"Rejected"` · `"Error"`.
+- `MatchedMessageId` — MessageId from Fetch Gmail when matched.
+- `MatchedTransactionNumber` — TransactionNumber from Fetch Gmail when matched.
+- `AdminApprover` — admin email who approved/rejected.
+- `ApprovalDate` — approval timestamp.
+- `Notes` — string.
+
+### 5.3 Payment-History
+
+Sheet: `Payment-History`
+
+Purpose: canonical log of all confirmed/processed payments.
+
+Columns:
+- `PaymentID` — unique id.
+- `EventID` — link to `WebApp-Events.EventID` (if web-driven).
+- `MemberID` — primary member.
+- `PaymentDate` — date payment was accounted.
+- `Amount` — numeric.
+- `PaymentIntent` — `"Individual Renewal"` · `"Family Renewal"` · `"Family Upgrade"`.
+- `PaymentMethod` — `"Zelle"`, `"Venmo"`, `"PayPal"`, `"Check"`, etc.
+- `PayerName` — from bank/submitter.
+- `MemoField` — original memo.
+- `Last4Digits` — last four of transaction number.
+- `TransactionReference` — TransactionNumber from Gmail sheet.
+- `PeriodStart` — membership coverage start.
+- `PeriodEnd` — membership coverage end.
+- `ProcessedBy` — `"System"` or admin email.
+- `ProcessedDate` — datetime row was created.
+- `Source` — `"WebApp"`, `"Gmail-Auto"`, `"Manual-Admin"`.
+- `Notes` — string.
+
+### 5.4 Auth-OTP
+
+Sheet: `Auth-OTP`
+
+Columns: `Email`, `OTPCode`, `CreatedAt`, `ExpiresAt`, `Used` (boolean), `IPAddress` (optional).
+
+Cleanup: scheduled script deletes rows where `CreatedAt` is older than `OTP_Cleanup_Days`.
+
+### 5.5 Config
+
+Sheet: `Config`
+
+Columns: `Key`, `Value`, `Description`.
+
+Keys (exact names as they appear in the sheet):
+
+| Key | Default Value | Description |
+|---|---|---|
+| `IndividualPrice` | `30` | Price for individual membership |
+| `FamilyPrice` | `50` | Price for family membership |
+| `FamilyUpgradePrice` | `20` | Delta price to upgrade Individual → Family |
+| `PaymentMethods` | `Zelle,Venmo,PayPal` | Comma-separated accepted payment methods |
+| `ReminderDaysBefore` | `30` | Days before expiry to send renewal reminder |
+| `MembershipRenewalYears` | `1` | Years added per renewal |
+| `OTPValidHours` | `24` | Hours before OTP expires |
+| `OTPCleanupDays` | `7` | Days before used/expired OTPs are deleted |
+| `AdminEmails` | `admin@mmrunners.org` | Comma-separated admin email addresses |
+| `AppBaseUrl` | _(set after first deploy)_ | Deployed GAS web app URL |
+| `ZelleHandle` | `runningmmr@gmail.com` | Zelle payment handle shown to members |
+| `VenmoHandle` | `@MistyMountainRunners` | Venmo payment handle shown to members |
+| `PayPalHandle` | `runningmmr@gmail.com` | PayPal payment handle shown to members |
+| `ZelleQRCodeFileId` | `1rcOOnmejgV0QH2f3NSDhiHP7wfJYqFKY` | Google Drive file ID for Zelle QR code image |
+| `VenmoQRCodeFileId` | `1JNcOT2ZqUI5D3Dyw8o9ZWy8NrLz2UU77` | Google Drive file ID for Venmo QR code image |
+| `PaymentProofFolderId` | `1I-FR4iTC8649XBzFSplyG2XARNBHwflz` | Google Drive folder ID where payment proof screenshots are stored |
+
+### 5.6 WebApp-ActivityLog
+
+Sheet: `WebApp-ActivityLog`
+
+Columns: `LogID`, `Timestamp`, `SessionID`, `MemberID`, `Email`, `EventID` (optional), `Action`, `State` (JSON snippet), `ErrorCode` (optional), `ErrorMessage` (optional).
+
+Action codes: `LOGIN_START`, `LOGIN_SUCCESS`,
+`EMAIL_LOOKUP` (fired by `lookupEmail` for every email check found or not found. Useful for debugging wrong-email attempts), `EMAIL_LOOKUP_NOT_FOUND` (fired specifically when `lookupEmail` finds no matching row. Distinct from `EMAIL_LOOKUP` to allow easy filtering of unrecognized-email patterns in the activity log),
+`OTP_REQUESTED`, `OTP_VERIFY_SUCCESS`, `OTP_VERIFY_FAIL`,
+`RENEWAL_FORM_OPEN`, `RENEWAL_SUBMIT`,
+`RECONCILE_MATCH_FOUND`, `RENEWAL_APPROVED`, `UPGRADE_APPROVED`,
+`ERROR`
+
+
+### 5.7 Fetch-Gmail (Existing)
+
+Sheet: `Fetch-Gmail-data-in-Google-Spreadsheet-Active-4`
+
+Existing columns: `TimeStamp`, `Sender`, `Amount`, `Memo`, `TransactionDate`, `TransactionNumber`, `MessageId`, `Subject`, `Original Memo`, `Notes`, `Processed`, `Source` (Zelle/Venmo/PayPal).
+
+New column:
+- `WebAppEventID` — links each matched payment to `WebApp-Events.EventID`.
+
+---
+
+## 6. API Design & Modules
+
+### 6.1 API Envelope
+
+```ts
+interface ApiRequest<TPayload> {
+  requestId: string;
+  actorEmail?: string;
+  payload: TPayload;
+}
+
+interface ApiResponseSuccess<TPayload> {
+  ok: true;
+  requestId: string;
+  payload: TPayload;
+}
+
+interface ApiResponseError {
+  ok: false;
+  requestId: string;
+  errorCode: string;
+  errorMessage: string;
+}
+```
+
+Frontend helper `callApi(functionName, payload)` wraps in `ApiRequest`, calls `google.script.run`, parses response.
+
+### 6.2 Backend Modules (`src/`)
+
+- **`config.ts`** — spreadsheet ID, sheet names, column indices (enums). Functions: `getConfigMap()`, `getConfigValue(key)`, `setConfigValue(key, value)`.
+- **`types.ts`** — all shared interfaces: `Member`, `WebAppEvent`, `PaymentRecord`, `OtpRecord`, `ConfigMap`, `ActivityLogEntry`, `ApiRequest<T>`, `ApiResponseSuccess<T>`, `ApiResponseError`. `Member.status` type: `'active' | 'expired' | 'not active'`. `WebAppEvent.paymentIntent` type: `'Individual Renewal' | 'Family Renewal' | 'Family Upgrade'`.
+- **`sheets.ts`** — helpers for reading/writing rows, mapping rows ↔ typed objects.
+- **`auth.ts`** — Three exposed functions:
+  - `lookupEmail(jsonRequest)`: pre-OTP email lookup. Queries Membership
+    Master by email; returns `{ found: true, firstName, memberID }` or
+    `{ found: false }`. Never returns sensitive fields (status,
+    expiration, payment data). Logs `EMAIL_LOOKUP` activity. No OTP
+    is generated or sent.
+  - `requestEmailOtp(jsonRequest)`: generates a 6-digit OTP, writes to
+    `Auth-OTP`, sends via `MailApp.sendEmail`. Logs `OTP_REQUESTED`.
+  - `verifyEmailOtp(jsonRequest)`: validates Email + OTPCode, checks
+    expiry and `Used` flag. On success marks `Used=TRUE`, looks up
+    Membership Master, returns `{ member, isNewMember }`. Logs
+    `OTP_VERIFY_SUCCESS` or `OTP_VERIFY_FAIL`. Does NOT auto-create
+    member records.
+- **`members.ts`** — `getOrCreateMemberProfile(jsonRequest)`, `updateMemberProfile(jsonRequest)`, `createNewMember(jsonRequest)`. Uses `payload.email` exclusively (never `Session.getActiveUser()`). Profile update supports `Type` field change + auto FamilyID assignment.
+- **`renewal.ts`** — `submitRenewalRequest(jsonRequest)`, `reconcileWebAppWithGmail(jsonRequest?)`, `approveRenewal(jsonRequest)`, `rejectRenewal(jsonRequest)`. Approval logic branches on `PaymentIntent` (see §7.1).
+- **`admin.ts`** — `getPendingEvents(jsonRequest)`, `getUnmatchedPayments(jsonRequest)`, `getConfig(jsonRequest)`, `updateConfigEntry(jsonRequest)`, `getPaymentProofs(jsonRequest)`. All gated by `Admin_Emails` config check.
+- **`ui.ts`** — `doGet(e)`: routes `?page=` to HTML template; injects `__SCRIPT_URL__` and `__URL_PARAMS__` (serialized `e.parameter`).
+- **`logger.ts`** — `auditLog(action, details)` appends to `WebApp-ActivityLog`.
+
+---
+
+## 7. Renewal \& Reconciliation Algorithms
+
+### 7.1 `approveRenewal` — Three-Branch Logic
+
+When an admin approves a `WebApp-Events` row, the logic branches on `PaymentIntent`:
+
+#### Branch A: `Individual Renewal`
+
+1. Load member row by `MemberID`.
+2. Compute `newExpiration = max(today + Membership_Renewal_Years, currentExpiration)`.
+3. Set `member.Type = "Individual"`.
+4. Set `member.Status = "active"`, `member.Expiration = newExpiration`.
+5. Update `Membership Fee Paid`, `Payment Date`, `Payment Transaction`, `Last Updated`.
+6. Insert `Payment-History` row with `PaymentIntent = "Individual Renewal"`.
+7. Log `RENEWAL_APPROVED`.
+
+#### Branch B: `Family Renewal`
+
+1. Load member row by `MemberID`.
+2. If `member.FamilyID` is blank → generate new `FamilyID` (§3.3.2).
+3. Compute `newExpiration = max(today + Membership_Renewal_Years, currentExpiration)`.
+4. Set `member.Type = "Family"` on all members with this `FamilyID`.
+5. Set `member.Status = "active"`, `member.Expiration = newExpiration` for all family members.
+6. Insert `Payment-History` row with `PaymentIntent = "Family Renewal"`.
+7. Log `RENEWAL_APPROVED`.
+
+#### Branch C: `Family Upgrade`
+
+1. Load member row by `MemberID`.
+2. **Validate**: `member.Status` must be `"active"`. If not → reject with note: _"Family upgrade requires an active Individual membership first."_
+3. If `member.FamilyID` is blank → generate new `FamilyID` (§3.3.2).
+4. Set `member.Type = "Family"`. **Do NOT change `Expiration`** — keep existing active period.
+5. Insert `Payment-History` row with `PaymentIntent = "Family Upgrade"`, `PeriodStart/PeriodEnd` matching existing expiration.
+6. Log `UPGRADE_APPROVED`.
+
+### 7.2 Reconciliation with Fetch-Gmail
+
+1. Load `WebApp-Events` where `EventType="MembershipRenewal"` and `Status="Pending"` or `"Matched"`.
+2. Load `Fetch-Gmail` rows where `Processed` is blank or `FALSE`.
+3. For each pending event:
+    - If `Last4Digits` provided: exact match on `TransactionNumber` + `Amount`.
+    - Else fuzzy match: `Amount` match, `Source` matches `PaymentMethod`, date within ±3 days, `PayerName ≈ Sender` (case-insensitive), `Memo` or `Original Memo` contains `MemberID` or member name.
+4. On match:
+    - `WebApp-Events`: `Status="Matched"`, set `MatchedMessageId`, `MatchedTransactionNumber`.
+    - `Fetch-Gmail`: `Processed=TRUE`, `WebAppEventID=EventID`.
+    - Log `RECONCILE_MATCH_FOUND`.
+5. Admin calls `approveRenewal` → runs §7.1 branch logic → `Status="Approved"`.
+6. No match: keep `Pending` or set `Error`. Expose in admin UI for manual linking.
+
+---
+
+## 8. Frontend — Multi-Template Views
+
+### 8.1 Routing
+
+`doGet(e)` reads `e.parameter.page` and serves:
+
+
+| `?page=` | Template |
+| :-- | :-- |
+| _(none)_ / `login` | `page_login.html` |
+| `dashboard` | `page_dashboard.html` |
+| `profile` | `page_profile.html` |
+| `renewal` | `page_renewal.html` |
+| `payment` | `page_payment.html` |
+| `payment_proof` | `page_payment_proof.html` |
+| `payment_history` | `page_payment_history.html` |
+| `newmember` | `page_newmember.html` |
+| `admin` | `page_admin.html` |
+
+### 8.2 Login View (`page_login.html`)
+
+Four sequential states rendered in a single card (mutually exclusive
+display — only one visible at a time):
+
+**State 1 — Email entry**
+- Email input field (with Enter-key support).
+- "Continue →" primary button → calls `lookupEmail`.
+- "Sign in with Google" button above a divider (Google OAuth path,
+  skips all OTP states and goes directly to the Continue button).
+- Spinner on the button while the lookup is in flight.
+
+**State 2A — Returning member**
+- Green result box: "👋 Welcome back, [firstName]! · Member ID: [memberID]"
+- OTP input (6-digit, `inputmode=numeric`, `autocomplete=one-time-code`).
+- "Verify Code →" primary button → calls `verifyEmailOtp`.
+- "Send Me a New Code" outline button → calls `requestEmailOtp`; shows
+  inline success message "✓ Code sent to [email]" on success.
+- "← Try a different email" ghost link → resets to State 1.
+- Inline error message below OTP input on failed verify (stays in State 2A).
+
+**State 2B-ask — New member intent**
+- Blue result box: "✉️ No account found · [email]"
+- "Are you a new member?" prompt text.
+- "Yes — Register Me →" primary button → calls `requestEmailOtp`,
+  then transitions to State 2B-verify on success.
+- "← No, go back and change email" ghost link → resets to State 1.
+
+**State 2B-verify — New member OTP**
+- Blue result box: "✉️ Verify your email · Code sent to [email]"
+- OTP input (same attributes as State 2A).
+- "Verify Code →" primary button → calls `verifyEmailOtp`.
+- "Resend Code" outline button → calls `requestEmailOtp` again.
+- "← Go back" ghost link → returns to State 2B-ask.
+- Inline error message on failed verify (stays in State 2B-verify).
+
+**Final — Continue**
+- Summary result box (green for returning, blue for new member).
+- Single "Continue to Dashboard →" or "Continue to Registration →"
+  button — navigates via `window.top.location.href` from the click
+  handler (user-gesture requirement, see §2.4).
+
+**General rules:**
+- Each state has its own message div — errors never bleed across states.
+- Failed OTP attempts loop in-place; the email and state are never reset
+  on a bad code.
+- If `sessionStorage` already contains a valid `member` object on page
+  load, skip to dashboard immediately.
+- `appBaseUrl` is injected server-side as `__SCRIPT_URL__` by `doGet`.
+
+### 8.3 Dashboard View (`page_dashboard.html`)
+
+Displays:
+
+- Member name, `MemberID`, `FamilyID` (if any), `Type`.
+- Computed status badge (see §4.5 resolution logic):
+    - 🟡 Yellow "Payment Pending · [PaymentIntent]" — if open `WebApp-Events` row exists.
+    - 🟢 Green "Active · [Individual|Family]" — if `status=active` and no pending events.
+    - 🔴 Red "Expired · [Individual|Family]" — if `status=expired`.
+    - ⚪ Grey "Not Active" — if `status=not active`.
+    - 🟠 Orange upgrade prompt — if `status=active`, `type=Individual`, no pending upgrade event.
+- Expiration date (color-coded: red if expired, orange if within `Reminder_Days_Before` days).
+- `JoinYear`.
+- Action buttons contextual by status:
+    - Always: "Update Profile", "Submit Payment Proof".
+    - If expired or not active: "Renew Membership".
+    - If active Individual: "Renew Membership", "Upgrade to Family".
+    - If active Family: "Renew Membership".
+    - If admin: "Admin Panel".
+
+
+### 8.4 Profile View (`page_profile.html`)
+
+Editable fields: `First Name`, `Last Name`, `PhoneNumber`, `WeChatID`, `District`, `JoinYear`, **`Type`** (Individual / Family).
+
+- Email is read-only.
+- Changing `Type` to `Family` triggers FamilyID assignment on save.
+- After save: redirect to dashboard.
+
+
+### 8.5 Renewal View (`page_renewal.html`)
+
+Membership type options shown based on current `Type`:
+
+
+| Current `Type` | Options shown |
+| :-- | :-- |
+| `Individual` | Individual Renewal (\$30) · Family Upgrade (\$20) |
+| `Family` | Family Renewal (\$50) |
+| `not active` / new | Individual Renewal (\$30) · Family Renewal (\$50) |
+
+- Prices read from Config (`Individual_Price`, `Family_Price`, `Family_Upgrade_Price`).
+- Payment method selector from `Payment_Methods` config.
+- Instructions for each payment method (handles, QR codes from Config).
+- "Continue to Submit Proof →" button leads to `page_payment.html` with pre-filled `paymentIntent` and `amount`.
+
+
+### 8.6 Payment Proof View (`page_paymentproof.html`)
+
+Fields:
+
+- `PaymentIntent` (pre-filled from URL params, read-only if pre-filled).
+- `Amount` (pre-filled, editable for exceptions).
+- `Payment Date`.
+- `Payer Name`.
+- `Last 4 Digits` (optional).
+- `Notes` (optional).
+- `Screenshot` file upload (optional, stored in Drive).
+
+On submit: calls `submitPaymentProof(jsonRequest)`. Member sees confirmation.
+
+### 8.7 Admin View (`page_admin.html`)
+
+Gated: checks `Admin_Emails` config on load. Non-admins see "Not authorized."
+
+Tabs:
+
+- **Pending Renewals**: lists `WebApp-Events` with `Status=Pending/Matched`. Shows `PaymentIntent`, amount, member details, matched payment. Approve / Reject with notes.
+- **Unmatched Payments**: shows `Fetch-Gmail` rows with `Processed=FALSE`. Manual linking.
+- **Payment Proofs**: lists payment proof submissions. Run OCR button.
+- **Config**: editable key/value pairs. All changes logged.
+
+---
+
+## 9. Testing
+
+### 9.1 Tooling
+
+Jest + ts-jest + TypeScript.
+
+### 9.2 Unit Tests
+
+- `config.test.ts` — reading/writing Config, `Family_Upgrade_Price` default.
+- `sheets.test.ts` — mapping rows to `Member`, `WebAppEvent` (with `PaymentIntent`), `PaymentRecord`.
+- `renewal.test.ts`:
+    - Individual Renewal: expiration extended, `Type=Individual`, `Status=active`.
+    - Family Renewal: expiration extended for all family members, `Type=Family`.
+    - Family Upgrade: `Type=Family`, FamilyID assigned, expiration unchanged.
+    - Family Upgrade rejected if member is not `active`.
+- `auth.test.ts` — OTP creation, expiry, verification, cleanup.
+  **New `lookupEmail` cases:**
+  - Returns `{ found: false }` for an email not in Membership Master.
+  - Returns `{ found: true, firstName, memberID }` for a known email;
+    asserts that `status`, `expiration`, and `paymentDate` are
+    **absent** from the response (sensitive field guard).
+  - Returns `INVALID_EMAIL` error for a malformed email string
+    (no `@`, empty string).
+  - Logs `EMAIL_LOOKUP` action on every call.
+  - Logs `EMAIL_LOOKUP_NOT_FOUND` action specifically when not found.
+- `members.test.ts` — profile creation, profile update with `Type` change + FamilyID auto-assignment.
+
+
+### 9.3 Integration Tests (Mocked Sheets)
+
+- **Full Individual Renewal**: WebApp-Events submission → reconcile with Fetch-Gmail → `approveRenewal` → assert `Status=active`, `Type=Individual`, `Expiration` extended, `Payment-History` row written.
+- **Full Family Renewal**: same flow → assert all family members updated.
+- **Family Upgrade**: active Individual submits \$20 → approve → assert `Type=Family`, `FamilyID` assigned, `Expiration` unchanged.
+- **Family Upgrade Guard**: inactive member submits \$20 → approve → assert rejection with error note.
+
+---
+
+## 10. CLASP Setup \& Implementation Plan
+
+### 10.1 CLASP Setup
+
+1. Create Apps Script project bound to the Google Sheet.
+2. Install CLASP: `npm install -g @google/clasp && clasp login`.
+3. `clasp create --type webapp --title "MMRunners Membership" --rootDir dist`.
+4. Configure `tsconfig.json`: `outDir: "dist"`, `strict: true`, `types: ["google-apps-script"]`.
+5. Build and deploy: `npm run build && clasp push && clasp deploy`.
+6. Update `Config.AppBaseUrl` with deployment URL.
+
+### 10.2 Implementation Steps
+
+1. **Scaffold**: `src/`, `frontend/`, `tests/`, `tsconfig.json`, `package.json`, `jest.config.js`, `.clasp.json`.
+2. **Types \& Config**: update `types.ts` (`Member.status` expanded, `WebAppEvent.paymentIntent` added), `config.ts`, `sheets.ts`.
+3. **Auth module**: Email OTP only in `auth.ts`. Remove/disable Google OAuth path.
+4. **Members module**: `members.ts` — use `payload.email` only; add `Type` field to `updateMemberProfile`; auto-assign `FamilyID` on type change.
+5. **Renewal module**: `renewal.ts` — `submitRenewalRequest` uses `PaymentIntent`; `approveRenewal` implements three-branch logic (§7.1).
+6. **Admin module**: `admin.ts` — gate all endpoints by `Admin_Emails`; expose `PaymentIntent` in pending events list.
+7. **Frontend**: update `page_renewal.html` (contextual options by type), `page_dashboard.html` (status resolution logic §4.5), `page_profile.html` (add `Type` field).
+8. **Logger**: `auditLog` helper in `logger.ts`; add `UPGRADE_APPROVED` action code.
+9. **Tests**: unit + integration per §9.
+```
+
+***
+
+This is the complete updated `PRDv2.md`. Key changes from rev 2:[^1]
+
+- **Auth**: OTP-only (Google OAuth removed as primary path per current codebase)
+- **Section 4**: Full membership status × type model with all 10 cases, status definitions, and `PaymentIntent` types
+- **Section 5**: `WebApp-Events` and `Payment-History` use `PaymentIntent` instead of `MembershipType`; `Config` gets `Family_Upgrade_Price`; `Member.status` expanded to 3 values
+- **Section 6**: `members.ts` note on never using `Session.getActiveUser()` post-login; session identity model documented
+- **Section 7**: Three-branch `approveRenewal` logic with the Family Upgrade guard
+- **Section 8**: Contextual renewal options by member type; dashboard status resolution order; admin gating noted
+- **Section 9**: New test cases for all three `PaymentIntent` branches and the upgrade guard
+
+
+<div align="center">⁂</div>
+```
+
+
+```
+
+
+---
 ## File: `TODO.md`
 ---
 
@@ -1580,7 +2315,7 @@ Full renewal scenario:
           }
           return '<div class="card" id="ev-' + esc(ev.eventID) + '">' +
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-            '<div><h3>' + esc(ev.payerName || 'Unknown') + ' &mdash; ' + esc(ev.membershipType) + ' $' + esc(ev.amount) + '</h3>' +
+            '<div><h3>' + esc(ev.payerName || 'Unknown') + ' &mdash; ' + esc(ev.paymentIntent) + ' $' + esc(ev.amount) + '</h3>' +
             '<div class="meta">' + esc(ev.eventID) + ' &bull; ' + new Date(ev.timestamp).toLocaleString() + ' &bull; ' + statusBadge(ev.status) + '</div></div></div>' +
             '<div class="detail-grid">' +
             '<div class="detail-item"><label>Member ID</label><span>' + esc(ev.memberID) + '</span></div>' +
@@ -1649,6 +2384,13 @@ Full renewal scenario:
   }
 
   function approve(eventID) {
+    // Warn admin if this is a Family Upgrade for an inactive member
+    const ev = eventsCache[eventID];  // keep a local cache when loadPending() runs
+    if (ev?.paymentIntent === 'Family Upgrade' && ev?.memberStatus !== 'active') {
+      showGlobalMsg('⚠️ Warning: Member is not active. Family Upgrade requires active Individual membership.', 'error');
+      return;
+    }
+    
     var notesEl = document.getElementById('notes-' + eventID);
     var notes = notesEl ? notesEl.value : '';
     console.log('[MMR][admin] approve eventID:', eventID, '| notes:', notes);
@@ -1754,6 +2496,18 @@ Full renewal scenario:
     .btn-secondary:hover { background: #f0f8f2; }
     .btn-admin     { background: #5c35a8; color: #fff; }
     .btn-admin:hover { background: #4a2b8a; }
+    /* Payment History — outlined slate/grey ghost button */
+.btn-ghost {
+  background: #fff;
+  color: #555;
+  border: 1.5px solid #ccc;
+}
+.btn-ghost:hover {
+  background: #f5f5f5;
+  border-color: #aaa;
+  color: #333;
+}
+
     /* Profile confirm card */
     .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-bottom: 16px; }
     .profile-row label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 2px; }
@@ -1809,6 +2563,7 @@ Full renewal scenario:
       <div class="actions">
         <a href="?page=renewal" class="btn btn-primary">Renew Membership</a>
         <a href="#" id="paymentProofBtn" class="btn btn-secondary">Submit Payment Proof</a>
+        <a href="#" id="paymentHistoryBtn" class="btn btn-ghost">Payment History</a>
         <a href="?page=admin" class="btn btn-admin" id="adminBtn" style="display:none;">Admin Panel</a>
       </div>
     </div>
@@ -1934,6 +2689,7 @@ Full renewal scenario:
     document.getElementById('district').textContent = member.district || '—';
 
     document.getElementById('paymentProofBtn').href = '?page=payment_proof&memberId=' + member.memberID;
+    document.getElementById('paymentHistoryBtn').href = '?page=payment_history&memberId=' + member.memberID;
 
     // ---- Profile confirmation card ----
     renderProfileCard(member);
@@ -2054,20 +2810,30 @@ Full renewal scenario:
 
   callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID })
     .then(function(data) {
-      console.log('[MMR][dashboard] getOrCreateMemberProfile success, memberID:', data.member && data.member.memberID);
+      console.log('[MMR][dashboard] getOrCreateMemberProfile success, memberID:', data.member?.memberID);
+
+      // ⚠️ Only trust the server result if memberID matches what's cached.
+      // If they differ, the server resolved to the wrong account (e.g. admin@mmrunners.org).
+      // In that case, keep the cached session and discard the server response.
+      if (cached && data.member.memberID !== currentMember?.memberID) {
+        console.warn('[MMR][dashboard] server returned different memberID (' + data.member.memberID +
+          ') than cached (' + currentMember?.memberID + ') — ignoring server result.');
+        return;
+      }
+
       sessionStorage.setItem('member', JSON.stringify(data.member));
-      renderMember(data.member, data.familyMembers || []);
+      renderMember(data.member, data.familyMembers);
     })
     .catch(function(err) {
-      console.error('[MMR][dashboard] getOrCreateMemberProfile failed:', err && err.message);
+      console.error('[MMR][dashboard] getOrCreateMemberProfile failed:', err.message);
       if (!cached) {
-        // No cached member and server failed — show session-expired message
         var loadingEl = document.getElementById('loading');
         loadingEl.style.display = 'block';
-        loadingEl.innerHTML = 'Session expired. <a href="?page=login" style="color:#2d7d46;">Sign in again</a>';
+        loadingEl.innerHTML = 'Session expired. <a href="?page=login" style="color:#2d7d46">Sign in again</a>';
       }
       // If we had cached member, we already rendered — don't blank the page
     });
+
 </script>
 </body>
 </html>
@@ -2088,220 +2854,482 @@ Full renewal scenario:
   <title>Misty Mountain Runners — Login</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.10); padding: 40px 36px; width: 100%; max-width: 420px; }
-    .logo { text-align: center; margin-bottom: 8px; font-size: 32px; }
-    h1 { text-align: center; font-size: 20px; color: #1a1a1a; margin-bottom: 4px; }
-    .subtitle { text-align: center; color: #666; font-size: 14px; margin-bottom: 32px; }
-    .divider { border: none; border-top: 1px solid #e5e5e5; margin: 24px 0; }
-    .btn { display: block; width: 100%; padding: 12px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; text-align: center; text-decoration: none; }
-    .btn-google { background: #4285F4; color: #fff; margin-bottom: 8px; }
-    .btn-google:hover { background: #357ae8; }
-    .btn-primary { background: #2d7d46; color: #fff; }
-    .btn-primary:hover { background: #235f36; }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .section-label { font-size: 13px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; margin-bottom: 16px; }
-    input { display: block; width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; margin-bottom: 12px; }
-    input:focus { outline: none; border-color: #2d7d46; box-shadow: 0 0 0 2px rgba(45,125,70,0.15); }
-    .msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; display: none; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .card {
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+      padding: 40px 32px; width: 100%; max-width: 400px;
+    }
+    .logo { text-align: center; font-size: 40px; margin-bottom: 8px; }
+    .app-title { text-align: center; font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .subtitle { text-align: center; font-size: 14px; color: #777; margin-bottom: 28px; }
+
+    /* Messages */
+    .msg { font-size: 14px; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; display: none; }
     .msg.success { background: #e8f5e9; color: #2d7d46; display: block; }
-    .msg.error { background: #fdecea; color: #c62828; display: block; }
-    #otpStep2 { display: none; }
-    .spinner { display: none; text-align: center; color: #666; font-size: 14px; margin: 8px 0; }
-    /* Continue button (shown after successful login) */
-    #continueSection { display: none; margin-top: 16px; }
-    .continue-msg { font-size: 15px; color: #333; text-align: center; margin-bottom: 12px; }
-    .continue-msg strong { color: #2d7d46; }
+    .msg.error   { background: #fdecea; color: #c62828; display: block; }
+    .msg.info    { background: #e3f2fd; color: #1565c0; display: block; }
+
+    /* Inputs */
+    input[type="email"], input[type="text"] {
+      width: 100%; padding: 13px 14px;
+      border: 1.5px solid #ddd; border-radius: 10px;
+      font-size: 15px; margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #2d7d46; outline: none; }
+
+    /* Buttons */
+    .btn {
+      width: 100%; padding: 13px;
+      border-radius: 10px; border: none;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: background 0.2s;
+      margin-bottom: 10px;
+    }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-primary   { background: #2d7d46; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #235f36; }
+    .btn-google    { background: #fff; color: #333; border: 1.5px solid #ddd; }
+    .btn-google:hover:not(:disabled) { background: #f5f5f5; }
+    .btn-outline   { background: #fff; color: #2d7d46; border: 1.5px solid #2d7d46; }
+    .btn-outline:hover:not(:disabled) { background: #f0f8f2; }
+    .btn-ghost {
+      background: none; border: none; color: #888;
+      font-size: 13px; cursor: pointer; padding: 4px 0;
+      text-decoration: underline; width: auto; margin-bottom: 0;
+    }
+    .btn-ghost:hover { color: #444; }
+
+    .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: #bbb; font-size: 13px; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #eee; }
+
+    /* Result boxes */
+    .result-box {
+      border-radius: 10px; padding: 18px 16px; margin-bottom: 20px; text-align: center;
+    }
+    .result-box.returning { background: #e8f5e9; border: 1px solid #a5d6a7; }
+    .result-box.new-member { background: #e3f2fd; border: 1px solid #90caf9; }
+    .result-box .result-icon { font-size: 28px; margin-bottom: 6px; }
+    .result-box h3 { font-size: 17px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .result-box p  { font-size: 13px; color: #555; line-height: 1.5; }
+
+    /* OTP sub-section */
+    .otp-section { margin-top: 20px; border-top: 1px solid #f0f0f0; padding-top: 20px; }
+    .otp-section label { font-size: 13px; color: #555; display: block; margin-bottom: 6px; }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #dbg { font-size: 11px; color: #bbb; margin-top: 12px; text-align: center; }
+
+    /* not show Google loginn for now since it requires extra setup and isn't the primary path in the current codebase */
+    #googleBtn, #googleSpinner, .divider { display: none; }
+
   </style>
 </head>
 <body>
-<!-- DEBUG: visible even if CSS fails -->
-<p id="dbg" style="position:fixed;top:0;left:0;z-index:9999;background:yellow;color:black;font-size:13px;padding:4px 8px;font-family:monospace;">HTML rendered. JS not yet run.</p>
-
 <div class="card">
   <div class="logo">🏃</div>
-  <h1>Misty Mountain Runners</h1>
- <!-- <p class="subtitle">Member Portal</p> -->
-  <p class="subtitle">Enter your email to receive a login code</p>
+  <div class="app-title">Misty Mountain Runners</div>
 
-  <div id="msg" class="msg"></div>
+  <!-- ═══════════════════════════════════════════
+       STATE 1: Email entry + Google sign-in
+  ════════════════════════════════════════════ -->
+  <div id="state-email">
+    <p class="subtitle">Sign in or register</p>
+    <div id="msg-email" class="msg"></div>
 
-  <!-- Login forms (hidden after success) -->
-  <div id="loginForms">
-    <!-- Google OAuth -->
-   <!-- Don't show Google OAuth for now. add display:none to wrapper div -->
-    <div id="googleSection" style="display:none"> 
-      <div class="section-label">Google account members</div>
-      <button class="btn btn-google" id="googleBtn" onclick="loginWithGoogle()">Sign in with Google</button>
-      <div class="spinner" id="googleSpinner">Signing in…</div>
+    <button class="btn btn-google" id="googleBtn" onclick="loginWithGoogle()" style="display:none;">
+      <img src="https://www.google.com/favicon.ico"
+           style="width:16px;height:16px;vertical-align:middle;margin-right:8px;" />
+      Sign in with Google
+    </button>
+    <span id="googleSpinner" style="display:none;"><span class="spinner"></span></span>
 
-      <hr class="divider" />
+    <div class="divider"  style="display:none;">or sign in with email</div>
+
+    <input type="email" id="emailInput"
+           placeholder="your@email.com"
+           onkeydown="if(event.key==='Enter') checkEmail()" />
+    <button class="btn btn-primary" id="checkEmailBtn" onclick="checkEmail()">
+      Continue →
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       STATE 2A: Returning member found
+  ════════════════════════════════════════════ -->
+  <div id="state-returning" style="display:none">
+    <div class="result-box returning">
+      <div class="result-icon">👋</div>
+      <h3>Welcome back, <span id="returning-name"></span>!</h3>
+      <p>Member ID: <strong id="returning-memberid"></strong></p>
     </div>
-    <!-- Email OTP -->
-    <!-- <div class="section-label">Non-Google account members</div> -->
-    <div class="section-label">Sign in with Email Code</div>
-    <div id="otpStep1">
-      <input type="email" id="emailInput" placeholder="Your email address" />
-      <button class="btn btn-primary" id="sendOtpBtn" onclick="sendOtp()">Send Login Code</button>
-    </div>
-    <div id="otpStep2">
-      <p style="font-size:14px;color:#555;margin-bottom:12px;">Enter the 6-digit code sent to <strong id="emailDisplay"></strong></p>
-      <input type="text" id="otpInput" placeholder="6-digit code" maxlength="6" inputmode="numeric" />
-      <button class="btn btn-primary" id="verifyOtpBtn" onclick="verifyOtp()">Verify Code</button>
-      <button style="background:none;border:none;color:#2d7d46;cursor:pointer;font-size:13px;margin-top:8px;display:block;width:100%;" onclick="resetOtpForm()">← Try a different email</button>
+
+    <div id="msg-returning" class="msg"></div>
+
+    <div class="otp-section">
+      <label>Enter your one-time login code, or request a new one.</label>
+      <input type="text" id="otpInput-returning"
+             placeholder="6-digit code" maxlength="6"
+             inputmode="numeric" autocomplete="one-time-code"
+             onkeydown="if(event.key==='Enter') verifyOtp('returning')" />
+      <button class="btn btn-primary" id="verifyBtn-returning"
+              onclick="verifyOtp('returning')">
+        Verify Code →
+      </button>
+      <button class="btn btn-outline" id="sendBtn-returning"
+              onclick="sendOtp('returning')">
+        Send Me a New Code
+      </button>
+      <button class="btn-ghost" onclick="goBack()">← Try a different email</button>
     </div>
   </div>
 
-  <!-- Continue section (shown after successful auth, requires user click for top-frame navigation) -->
-  <div id="continueSection">
-    <p class="continue-msg" id="continueMsg"></p>
-    <button class="btn btn-primary" id="continueBtn" onclick="onContinueClick()">Continue →</button>
+  <!-- ═══════════════════════════════════════════
+       STATE 2B: Email not found — ask intent
+  ════════════════════════════════════════════ -->
+  <div id="state-new-ask" style="display:none">
+    <div class="result-box new-member">
+      <div class="result-icon">✉️</div>
+      <h3>No account found</h3>
+      <p>We don't have a record for<br/><strong id="new-ask-email"></strong></p>
+    </div>
+
+    <div id="msg-new-ask" class="msg"></div>
+    <p style="font-size:14px;color:#444;margin-bottom:16px;text-align:center;">
+      Are you a new member?
+    </p>
+
+    <button class="btn btn-primary" id="newMemberYesBtn"
+            onclick="startNewMemberOtp()">
+      Yes — Register Me →
+    </button>
+    <button class="btn-ghost" style="display:block;text-align:center;width:100%;margin-top:4px;"
+            onclick="goBack()">
+      ← No, go back and change email
+    </button>
   </div>
+
+  <!-- ═══════════════════════════════════════════
+       STATE 2B-verify: New member OTP entry
+  ════════════════════════════════════════════ -->
+  <div id="state-new-verify" style="display:none">
+    <div class="result-box new-member">
+      <div class="result-icon">✉️</div>
+      <h3>Verify your email</h3>
+      <p>Code sent to<br/><strong id="new-verify-email"></strong></p>
+    </div>
+
+    <div id="msg-new-verify" class="msg"></div>
+
+    <div class="otp-section">
+      <label>Enter the 6-digit code from your inbox.</label>
+      <input type="text" id="otpInput-new"
+             placeholder="6-digit code" maxlength="6"
+             inputmode="numeric" autocomplete="one-time-code"
+             onkeydown="if(event.key==='Enter') verifyOtp('new')" />
+      <button class="btn btn-primary" id="verifyBtn-new"
+              onclick="verifyOtp('new')">
+        Verify Code →
+      </button>
+      <button class="btn btn-outline" id="sendBtn-new"
+              onclick="sendOtp('new')">
+        Resend Code
+      </button>
+      <button class="btn-ghost" onclick="goBack()">← Go back</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       FINAL: Continue button (after OTP verified)
+  ════════════════════════════════════════════ -->
+  <div id="state-continue" style="display:none">
+    <div id="continue-msg" style="margin-bottom:20px;"></div>
+    <button class="btn btn-primary" id="continueBtn" onclick="onContinueClick()">
+      Continue →
+    </button>
+  </div>
+
+  <div id="dbg"></div>
 </div>
 
 <script>
-  console.log('[MMR][login] page script started, location:', window.location.href);
-  document.getElementById('dbg').textContent = 'JS running...';
+  console.log('[MMR][login] page loaded, location:', window.location.href);
   var appBaseUrl = '__SCRIPT_URL__';
-  var pendingPage = 'dashboard'; // page to navigate to on Continue click
-  const SESSION_ID = Math.random().toString(36).slice(2);
-  console.log('[MMR][login] appBaseUrl:', appBaseUrl, '| sessionID:', SESSION_ID);
+  var SESSION_ID = Math.random().toString(36).slice(2);
+  var pendingPage = 'dashboard';
+  var currentEmail = '';
 
-  // ── WeChat / WebView detection ───────────────────────────
-  const ua = navigator.userAgent.toLowerCase();
-  const isWeChat = /micromessenger/.test(ua);
-  const isWebView = /wv/.test(ua) || /(iphone|ipod|ipad).*applewebkit(?!.*safari)/i.test(ua);
-
-  if (isWeChat || isWebView) {
-    console.log('[MMR][login] WeChat/WebView detected');
-    const msg = document.getElementById('msg');
-    msg.innerHTML = isWeChat
-      ? '⚠️ <strong>请在浏览器中打开以获得最佳体验。</strong><br>' +
-        '点击右上角 <strong>···</strong> → <strong>"在浏览器中打开"</strong>'
-      : '⚠️ <strong>Please open in Safari or Chrome for best experience.</strong>';
-    msg.className = 'msg error';
-    msg.style.display = 'block';
-  }
-  // ── End WeChat detection ──────────────────────────────────
-
-  function showMsg(text, type) {
-    const el = document.getElementById('msg');
-    el.textContent = text;
-    el.className = 'msg ' + type;
-  }
+  // ── Utilities ──────────────────────────────────────────────
 
   function callApi(fn, payload) {
     console.log('[MMR][login] callApi:', fn, JSON.stringify(payload));
-    return new Promise((resolve, reject) => {
-      const req = { requestId: Math.random().toString(36).slice(2), payload };
+    return new Promise(function(resolve, reject) {
+      var req = { requestId: Math.random().toString(36).slice(2), payload: payload };
       google.script.run
-        .withSuccessHandler(r => {
-          const res = JSON.parse(r);
-          console.log('[MMR][login] callApi success:', fn, JSON.stringify(res));
+        .withSuccessHandler(function(r) {
+          var res = JSON.parse(r);
+          console.log('[MMR][login]', fn, 'response:', JSON.stringify(res.payload || res));
           if (res.ok) resolve(res.payload);
           else reject(new Error(res.errorMessage));
         })
-        .withFailureHandler(err => {
-          console.error('[MMR][login] callApi failure:', fn, err);
+        .withFailureHandler(function(err) {
+          console.error('[MMR][login]', fn, 'failure:', err);
           reject(err);
         })
         [fn](JSON.stringify(req));
     });
   }
 
-  function showContinue(message, page) {
+  function showMsg(id, text, type) {
+    var el = document.getElementById('msg-' + id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'msg ' + type;
+  }
+  function clearMsg(id) {
+    var el = document.getElementById('msg-' + id);
+    if (el) el.className = 'msg';
+  }
+
+  function showState(name) {
+    var states = ['email', 'returning', 'new-ask', 'new-verify', 'continue'];
+    states.forEach(function(s) {
+      var el = document.getElementById('state-' + s);
+      if (el) el.style.display = (s === name) ? 'block' : 'none';
+    });
+    document.getElementById('dbg').textContent = 'State: ' + name;
+  }
+
+  function goBack() {
+    currentEmail = '';
+    document.getElementById('emailInput').value = '';
+    document.getElementById('otpInput-returning').value = '';
+    document.getElementById('otpInput-new').value = '';
+    document.getElementById('checkEmailBtn').disabled = false;
+    clearMsg('email');
+    showState('email');
+    document.getElementById('emailInput').focus();
+  }
+
+  // ── Google OAuth ───────────────────────────────────────────
+
+  function loginWithGoogle() {
+    document.getElementById('googleBtn').disabled = true;
+    document.getElementById('googleSpinner').style.display = 'inline';
+    callApi('handleGoogleLogin', { email: '', sessionID: SESSION_ID })
+      .then(function(data) {
+        document.getElementById('googleSpinner').style.display = 'none';
+        if (data.isNewMember) {
+          sessionStorage.setItem('pending_email', data.email);
+          showContinue(
+            '<div class="result-box new-member"><div class="result-icon">✅</div>' +
+            '<h3>Email verified</h3><p>New member registration for<br/><strong>' +
+            esc(data.email) + '</strong></p></div>',
+            'newmember'
+          );
+        } else {
+          sessionStorage.setItem('member', JSON.stringify(data.member));
+          showContinue(
+            '<div class="result-box returning"><div class="result-icon">✅</div>' +
+            '<h3>Welcome back, ' + esc(data.member.firstName || data.member.email) + '!</h3>' +
+            '<p>Signed in with Google</p></div>',
+            'dashboard'
+          );
+        }
+      })
+      .catch(function(err) {
+        document.getElementById('googleSpinner').style.display = 'none';
+        document.getElementById('googleBtn').disabled = false;
+        showMsg('email', err.message || 'Google sign-in failed. Try email login.', 'error');
+      });
+  }
+
+  // ── STATE 1 → STATE 2: Check email in database ─────────────
+
+  function checkEmail() {
+    var email = document.getElementById('emailInput').value.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return showMsg('email', 'Please enter a valid email address.', 'error');
+    }
+    currentEmail = email;
+    clearMsg('email');
+    var btn = document.getElementById('checkEmailBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Checking…';
+
+    callApi('lookupEmail', { email: email, sessionID: SESSION_ID })
+      .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = 'Continue →';
+        if (data.found) {
+          // Returning member
+          document.getElementById('returning-name').textContent =
+            data.firstName || email;
+          document.getElementById('returning-memberid').textContent =
+            data.memberID || '';
+          clearMsg('returning');
+          showState('returning');
+          document.getElementById('otpInput-returning').focus();
+        } else {
+          // Not found — ask if new member
+          document.getElementById('new-ask-email').textContent = email;
+          clearMsg('new-ask');
+          showState('new-ask');
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Continue →';
+        showMsg('email', err.message || 'Could not check email. Please try again.', 'error');
+      });
+  }
+
+  // ── OTP Send ────────────────────────────────────────────────
+
+  function sendOtp(context) {
+    // context: 'returning' | 'new'
+    var btnId = 'sendBtn-' + context;
+    var msgId = context === 'returning' ? 'returning' : 'new-verify';
+    var btn = document.getElementById(btnId);
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Sending…';
+    clearMsg(msgId);
+
+    callApi('requestEmailOtp', { email: currentEmail, sessionID: SESSION_ID })
+      .then(function() {
+        btn.disabled = false;
+        btn.textContent = context === 'returning' ? 'Send Me a New Code' : 'Resend Code';
+        showMsg(msgId, '✓ Code sent to ' + currentEmail + '. Check your inbox.', 'success');
+        var inputId = context === 'returning' ? 'otpInput-returning' : 'otpInput-new';
+        document.getElementById(inputId).focus();
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = context === 'returning' ? 'Send Me a New Code' : 'Resend Code';
+        showMsg(msgId, err.message || 'Failed to send code. Please try again.', 'error');
+      });
+  }
+
+  // ── New member: "Yes, register me" → send OTP then show verify ──
+
+  function startNewMemberOtp() {
+    var btn = document.getElementById('newMemberYesBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Sending code…';
+    clearMsg('new-ask');
+
+    callApi('requestEmailOtp', { email: currentEmail, sessionID: SESSION_ID })
+      .then(function() {
+        btn.disabled = false;
+        btn.textContent = 'Yes — Register Me →';
+        document.getElementById('new-verify-email').textContent = currentEmail;
+        clearMsg('new-verify');
+        showState('new-verify');
+        document.getElementById('otpInput-new').focus();
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Yes — Register Me →';
+        showMsg('new-ask', err.message || 'Failed to send code. Please try again.', 'error');
+      });
+  }
+
+  // ── OTP Verify ──────────────────────────────────────────────
+
+  function verifyOtp(context) {
+    // context: 'returning' | 'new'
+    var inputId = context === 'returning' ? 'otpInput-returning' : 'otpInput-new';
+    var btnId   = context === 'returning' ? 'verifyBtn-returning' : 'verifyBtn-new';
+    var msgId   = context === 'returning' ? 'returning' : 'new-verify';
+    var otpCode = document.getElementById(inputId).value.trim();
+
+    if (!otpCode || otpCode.length < 6) {
+      return showMsg(msgId, 'Please enter the 6-digit code.', 'error');
+    }
+
+    var btn = document.getElementById(btnId);
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Verifying…';
+    clearMsg(msgId);
+
+    callApi('verifyEmailOtp', { email: currentEmail, otpCode: otpCode, sessionID: SESSION_ID })
+      .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = 'Verify Code →';
+        if (data.isNewMember) {
+          sessionStorage.setItem('pending_email', data.email);
+          showContinue(
+            '<div class="result-box new-member"><div class="result-icon">✅</div>' +
+            '<h3>Email verified!</h3>' +
+            '<p>Let\'s set up your account for<br/><strong>' + esc(data.email) + '</strong></p></div>',
+            'newmember'
+          );
+        } else {
+          sessionStorage.setItem('member', JSON.stringify(data.member));
+          showContinue(
+            '<div class="result-box returning"><div class="result-icon">✅</div>' +
+            '<h3>Welcome back, ' + esc(data.member.firstName || data.member.email) + '!</h3>' +
+            '<p>Member ID: <strong>' + esc(data.member.memberID) + '</strong></p></div>',
+            'dashboard'
+          );
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Verify Code →';
+        showMsg(msgId, err.message || 'Invalid or expired code. Please try again.', 'error');
+      });
+  }
+
+  // ── Final continue state ────────────────────────────────────
+
+  function showContinue(msgHtml, page) {
     pendingPage = page;
-    document.getElementById('loginForms').style.display = 'none';
-    document.getElementById('continueMsg').innerHTML = message;
-    document.getElementById('continueSection').style.display = 'block';
-    document.getElementById('dbg').textContent = 'Auth done. Waiting for Continue click.';
+    document.getElementById('continue-msg').innerHTML = msgHtml;
+    var label = page === 'dashboard'  ? 'Continue to Dashboard →'
+              : page === 'newmember'  ? 'Continue to Registration →'
+              : 'Continue →';
+    document.getElementById('continueBtn').textContent = label;
+    showState('continue');
   }
 
   function onContinueClick() {
-    var continueBtn = document.getElementById('continueBtn');
-    continueBtn.disabled = true;
-    continueBtn.textContent = 'Continuing...';
-
+    var btn = document.getElementById('continueBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Loading…';
     var url = appBaseUrl + '?page=' + pendingPage;
     console.log('[MMR][login] navigating to:', url);
     window.top.location.href = url;
   }
 
-  function loginWithGoogle() {
-    document.getElementById('googleBtn').disabled = true;
-    document.getElementById('googleSpinner').style.display = 'block';
-    callApi('handleGoogleLogin', { email: '', sessionID: SESSION_ID })
-      .then(data => {
-        console.log('[MMR][login] Google login response - isNewMember:', data.isNewMember,
-          '| email:', data.email || (data.member && data.member.email),
-          '| memberID:', data.member && data.member.memberID);
-        document.getElementById('googleSpinner').style.display = 'none';
-        if (data.isNewMember) {
-          sessionStorage.setItem('pending_email', data.email);
-          showContinue('✅ Email verified: <strong>' + data.email + '</strong><br>We don\'t have a record for this email yet. Click below to register.', 'newmember');
-        } else {
-          sessionStorage.setItem('member', JSON.stringify(data.member));
-          showContinue('✅ Welcome back, <strong>' + (data.member.firstName || data.member.email) + '</strong>! Click below to go to your dashboard.', 'dashboard');
-        }
-      })
-      .catch(err => {
-        console.error('[MMR][login] Google login error:', err.message);
-        showMsg(err.message || 'Google login failed. Please try email login.', 'error');
-        document.getElementById('googleBtn').disabled = false;
-        document.getElementById('googleSpinner').style.display = 'none';
-      });
+  // ── HTML escape ─────────────────────────────────────────────
+  function esc(str) {
+    return String(str || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function sendOtp() {
-    const email = document.getElementById('emailInput').value.trim();
-    if (!email) return showMsg('Please enter your email address.', 'error');
-    console.log('[MMR][login] OTP requested for:', email);
-    document.getElementById('sendOtpBtn').disabled = true;
-    callApi('requestEmailOtp', { email, sessionID: SESSION_ID })
-      .then(() => {
-        document.getElementById('emailDisplay').textContent = email;
-        document.getElementById('otpStep1').style.display = 'none';
-        document.getElementById('otpStep2').style.display = 'block';
-        showMsg('Code sent! Check your inbox.', 'success');
-      })
-      .catch(err => {
-        console.error('[MMR][login] OTP send error:', err.message);
-        showMsg(err.message || 'Failed to send code. Please try again.', 'error');
-        document.getElementById('sendOtpBtn').disabled = false;
-      });
-  }
-
-  function verifyOtp() {
-    const email = document.getElementById('emailInput').value.trim();
-    const otpCode = document.getElementById('otpInput').value.trim();
-    if (!otpCode) return showMsg('Please enter the code.', 'error');
-    console.log('[MMR][login] OTP verify for:', email, '| code length:', otpCode.length);
-    document.getElementById('verifyOtpBtn').disabled = true;
-    callApi('verifyEmailOtp', { email, otpCode, sessionID: SESSION_ID })
-      .then(data => {
-        console.log('[MMR][login] OTP verify response - isNewMember:', data.isNewMember,
-          '| email:', data.email || (data.member && data.member.email),
-          '| memberID:', data.member && data.member.memberID);
-        if (data.isNewMember) {
-          sessionStorage.setItem('pending_email', data.email);
-          showContinue('✅ Email verified: <strong>' + data.email + '</strong><br>We don\'t have a record for this email yet. Click below to register.', 'newmember');
-        } else {
-          sessionStorage.setItem('member', JSON.stringify(data.member));
-          showContinue('✅ Welcome back, <strong>' + (data.member.firstName || data.member.email) + '</strong>! Click below to go to your dashboard.', 'dashboard');
-        }
-      })
-      .catch(err => {
-        console.error('[MMR][login] OTP verify error:', err.message);
-        showMsg(err.message || 'Invalid or expired code.', 'error');
-        document.getElementById('verifyOtpBtn').disabled = false;
-      });
-  }
-
-  function resetOtpForm() {
-    document.getElementById('otpStep1').style.display = 'block';
-    document.getElementById('otpStep2').style.display = 'none';
-    document.getElementById('sendOtpBtn').disabled = false;
-    document.getElementById('msg').className = 'msg';
+  // ── Init: redirect if already logged in ─────────────────────
+  var cached = sessionStorage.getItem('member');
+  if (cached) {
+    var btn = document.getElementById('continueBtn');
+    btn.style.display = 'block';
+    btn.onclick = function() {
+      window.top.location.href = appBaseUrl + '?page=dashboard';
+    };
   }
 </script>
 </body>
@@ -2713,6 +3741,299 @@ Full renewal scenario:
 
 
 ---
+## File: `frontend/page_payment_history.html`
+---
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Payment History — Misty Mountain Runners</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5; min-height: 100vh; padding: 24px 16px;
+    }
+    .card {
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 28px 24px; max-width: 640px; margin: 0 auto;
+    }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: #2d7d46; font-size: 14px; font-weight: 500;
+      cursor: pointer; border: none; background: none;
+      padding: 0; margin-bottom: 20px; text-decoration: none;
+    }
+    .back-link:hover { text-decoration: underline; }
+    h2 { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .member-id { font-size: 13px; color: #888; margin-bottom: 24px; }
+
+    /* Section headers */
+    .section-title {
+      font-size: 13px; font-weight: 700; color: #555;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin: 24px 0 12px;
+    }
+
+    /* Event / payment rows */
+    .row-card {
+      border: 1px solid #eee; border-radius: 10px;
+      padding: 14px 16px; margin-bottom: 10px;
+    }
+    .row-card:last-child { margin-bottom: 0; }
+    .row-top {
+      display: flex; justify-content: space-between;
+      align-items: flex-start; gap: 8px;
+    }
+    .row-intent {
+      font-size: 14px; font-weight: 600; color: #1a1a1a;
+    }
+    .row-amount {
+      font-size: 14px; font-weight: 700; color: #2d7d46;
+      white-space: nowrap;
+    }
+    .row-meta {
+      font-size: 12px; color: #888; margin-top: 5px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .row-meta span::before { content: '· '; }
+    .row-meta span:first-child::before { content: ''; }
+
+    /* Status badges */
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 20px; white-space: nowrap;
+    }
+    .badge-approved  { background: #e8f5e9; color: #2d7d46; }
+    .badge-pending   { background: #fff8e1; color: #f57c00; }
+    .badge-matched   { background: #e3f2fd; color: #1565c0; }
+    .badge-rejected  { background: #fdecea; color: #c62828; }
+    .badge-error     { background: #fdecea; color: #c62828; }
+
+    /* Period bar for confirmed payments */
+    .period-bar {
+      margin-top: 8px; font-size: 12px; color: #555;
+      background: #f0f8f2; border-radius: 6px;
+      padding: 6px 10px;
+    }
+
+    /* Pending explanation box */
+    .pending-explainer {
+      background: #fff8e1; border: 1px solid #ffe082;
+      border-radius: 10px; padding: 14px 16px; margin-bottom: 16px;
+      font-size: 13px; color: #5d4037; line-height: 1.6;
+    }
+    .pending-explainer strong { color: #e65100; }
+
+    .empty { text-align: center; color: #aaa; font-size: 14px; padding: 32px 0; }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block; width: 20px; height: 20px;
+      border: 3px solid #ddd; border-top-color: #2d7d46;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      margin: 40px auto; display: block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="card">
+  <button class="back-link" onclick="goToDashboard()">← Dashboard</button>
+
+  <h2>🧾 Payment History</h2>
+  <div class="member-id" id="member-id-display"></div>
+
+  <div id="loading"><div class="spinner"></div></div>
+  <div id="content" style="display:none"></div>
+</div>
+
+<script>
+  var appBaseUrl = '__SCRIPT_URL__';
+  var SESSION_ID = Math.random().toString(36).slice(2);
+
+  function goToDashboard() {
+    window.top.location.href = appBaseUrl + '?page=dashboard';
+  }
+
+  function callApi(fn, payload) {
+    return new Promise(function(resolve, reject) {
+      var req = { requestId: Math.random().toString(36).slice(2), payload: payload };
+      google.script.run
+        .withSuccessHandler(function(r) {
+          var res = JSON.parse(r);
+          if (res.ok) resolve(res.payload);
+          else reject(new Error(res.errorMessage));
+        })
+        .withFailureHandler(function(err) { reject(err); })
+        [fn](JSON.stringify(req));
+    });
+  }
+
+  function badgeCls(status) {
+    return 'badge badge-' + (status || 'pending').toLowerCase();
+  }
+
+  function fmt(dateStr) {
+    if (!dateStr) return '—';
+    var d = new Date(dateStr);
+    return isNaN(d) ? dateStr : d.toLocaleDateString('en-US', {
+      year: 'numeric', month: 'short', day: 'numeric'
+    });
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                          .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function renderEvents(events) {
+    // Pending/Matched events — shown at top with explanation
+    var pending = events.filter(function(e) {
+      return e.status === 'Pending' || e.status === 'Matched';
+    });
+    var past = events.filter(function(e) {
+      return e.status === 'Approved' || e.status === 'Rejected' || e.status === 'Error';
+    });
+    return { pending: pending, past: past };
+  }
+
+  function buildPendingHTML(pending) {
+    if (!pending.length) return '';
+    var html = '<div class="section-title">⏳ Awaiting Admin Approval</div>';
+    html += '<div class="pending-explainer">';
+    html += '<strong>Why is my membership status unchanged?</strong><br/>';
+    html += 'Your payment submission is received and under review. ';
+    html += 'Once an admin verifies the payment, your status will be updated automatically. ';
+    html += 'This usually takes 1–3 business days.';
+    html += '</div>';
+    pending.forEach(function(e) {
+      html += '<div class="row-card">';
+      html += '<div class="row-top">';
+      html += '<span class="row-intent">' + esc(e.paymentIntent) + '</span>';
+      html += '<span>' +
+        '<span class="' + badgeCls(e.status) + '">' + esc(e.status) + '</span>' +
+        '</span>';
+      html += '</div>';
+      html += '<div class="row-meta">';
+      html += '<span>$' + esc(e.amount) + '</span>';
+      html += '<span>' + esc(e.paymentMethod) + '</span>';
+      html += '<span>Submitted ' + fmt(e.timestamp) + '</span>';
+      if (e.status === 'Matched') {
+        html += '<span>✓ Payment located in bank records</span>';
+      }
+      html += '</div>';
+      if (e.notes) {
+        html += '<div class="row-meta" style="margin-top:4px;color:#c0392b;">' +
+          '<span>' + esc(e.notes) + '</span></div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
+
+  function buildConfirmedHTML(payments) {
+    if (!payments.length) return '<div class="empty">No confirmed payments yet.</div>';
+    var html = '<div class="section-title">✅ Confirmed Payments</div>';
+    payments.forEach(function(p) {
+      html += '<div class="row-card">';
+      html += '<div class="row-top">';
+      html += '<span class="row-intent">' + esc(p.paymentIntent) + '</span>';
+      html += '<span class="row-amount">$' + esc(p.amount) + '</span>';
+      html += '</div>';
+      html += '<div class="row-meta">';
+      html += '<span>' + esc(p.paymentMethod) + '</span>';
+      html += '<span>' + fmt(p.paymentDate) + '</span>';
+      html += '<span>' + esc(p.payerName) + '</span>';
+      if (p.source) html += '<span>' + esc(p.source) + '</span>';
+      html += '</div>';
+      if (p.periodStart && p.periodEnd) {
+        html += '<div class="period-bar">📅 Coverage: ' +
+          fmt(p.periodStart) + ' → ' + fmt(p.periodEnd) + '</div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
+
+  function buildRejectedHTML(past) {
+    var rejected = past.filter(function(e) {
+      return e.status === 'Rejected' || e.status === 'Error';
+    });
+    if (!rejected.length) return '';
+    var html = '<div class="section-title">❌ Rejected / Error</div>';
+    rejected.forEach(function(e) {
+      html += '<div class="row-card">';
+      html += '<div class="row-top">';
+      html += '<span class="row-intent">' + esc(e.paymentIntent) + '</span>';
+      html += '<span class="' + badgeCls(e.status) + '">' + esc(e.status) + '</span>';
+      html += '</div>';
+      html += '<div class="row-meta">';
+      html += '<span>$' + esc(e.amount) + '</span>';
+      html += '<span>' + fmt(e.timestamp) + '</span>';
+      html += '</div>';
+      if (e.notes) {
+        html += '<div class="row-meta" style="margin-top:4px;color:#c62828;">' +
+          '<span>Note: ' + esc(e.notes) + '</span></div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
+
+  // ── Load data ────────────────────────────────────────────────
+  var member = null;
+  try { member = JSON.parse(sessionStorage.getItem('member') || 'null'); } catch(_) {}
+
+  if (!member || !member.email) {
+    window.top.location.href = appBaseUrl + '?page=login';
+  } else {
+    document.getElementById('member-id-display').textContent =
+      'Member ID: ' + (member.memberID || '—');
+
+    callApi('getMemberPaymentHistory', {
+      email: member.email,
+      sessionID: SESSION_ID
+    })
+    .then(function(data) {
+      document.getElementById('loading').style.display = 'none';
+      var content = document.getElementById('content');
+      content.style.display = 'block';
+
+      var split = renderEvents(data.events || []);
+      var html = '';
+
+      // 1. Pending submissions (with explainer)
+      html += buildPendingHTML(split.pending);
+
+      // 2. Confirmed payments
+      html += buildConfirmedHTML(data.payments || []);
+
+      // 3. Rejected / errors
+      html += buildRejectedHTML(split.past);
+
+      content.innerHTML = html || '<div class="empty">No payment activity found.</div>';
+    })
+    .catch(function(err) {
+      document.getElementById('loading').style.display = 'none';
+      var content = document.getElementById('content');
+      content.style.display = 'block';
+      content.innerHTML = '<div class="empty" style="color:#c62828;">Failed to load: ' +
+        esc(err.message) + '</div>';
+    });
+  }
+</script>
+</body>
+</html>
+
+```
+
+
+---
 ## File: `frontend/page_payment_proof.html`
 ---
 
@@ -2747,7 +4068,10 @@ Full renewal scenario:
 <body>
 <div class="topbar">
   <h1>🏃 Misty Mountain Runners</h1>
-  <a href="?page=dashboard">← Dashboard</a>
+  <!-- ✅ CORRECT — absolute URL, window.top, from direct onclick -->
+  <button onclick="window.top.location.href = appBaseUrl + '?page=dashboard'">
+    ← Dashboard
+  </button>
 </div>
 
 <div class="container">
@@ -3272,6 +4596,35 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   });
+
+function buildOptions(memberType) {
+  // Brand-new / never paid: offer both full tiers, no upgrade
+  if (memberType === 'not active' || !memberType) {
+    return [
+      { intent: 'Individual Renewal', label: 'Individual Membership – $30', amount: 30 },
+      { intent: 'Family Renewal',     label: 'Family Membership – $50',     amount: 50 },
+    ];
+  }
+  // Existing individual: renew as individual, or pay delta to upgrade to family
+  if (memberType === 'Individual') {
+    return [
+      { intent: 'Individual Renewal', label: 'Renew Individual Membership – $30',       amount: 30 },
+      { intent: 'Family Upgrade',     label: 'Upgrade to Family – $20 (delta only)',     amount: 20 },
+    ];
+  }
+  // Existing family member: only family renewal available
+  if (memberType === 'Family') {
+    return [
+      { intent: 'Family Renewal', label: 'Renew Family Membership – $50', amount: 50 },
+    ];
+  }
+  // Fallback — unknown type, offer both full tiers safely
+  return [
+    { intent: 'Individual Renewal', label: 'Individual Membership – $30', amount: 30 },
+    { intent: 'Family Renewal',     label: 'Family Membership – $50',     amount: 50 },
+  ];
+}
+
 
   let selectedType = 'Individual';
   let config = {};
@@ -10425,6 +11778,7 @@ function isAdmin(email: string): boolean {
 // Exposed GAS functions: handleGoogleLogin, requestEmailOtp, verifyEmailOtp
 // ============================================================
 
+
 function handleGoogleLogin(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<LoginPayload>;
   const { payload } = req;
@@ -10450,6 +11804,39 @@ function handleGoogleLogin(jsonRequest: string): string {
   } catch (e: any) {
     console.error('[mmr][handleGoogleLogin] error:', String(e));
     auditLog('ERROR', { sessionID: payload.sessionID, email: payload.email, errorMessage: String(e) });
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
+// New: lightweight pre-OTP lookup — returns firstName + memberID if found, no auth required.
+// Does NOT expose sensitive fields (status, expiration, payment data).
+function lookupEmail(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string; sessionID: string }>;
+  const { payload } = req;
+  try {
+    const email = payload.email.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return jsonError(req.requestId, 'INVALID_EMAIL', 'Invalid email address.');
+    }
+    console.log('[mmr][lookupEmail] looking up:', email);
+    auditLog('EMAIL_LOOKUP', { sessionID: payload.sessionID, email });
+
+    const existing = findMemberByEmail(email);
+    if (!existing) {
+      console.log('[mmr][lookupEmail] not found:', email);
+      return jsonOk(req.requestId, { found: false });
+    }
+
+    const { member } = existing;
+    console.log('[mmr][lookupEmail] found memberID:', member.memberID);
+    // Return only non-sensitive fields sufficient for the welcome message
+    return jsonOk(req.requestId, {
+      found: true,
+      firstName: member.firstName || '',
+      memberID: member.memberID,
+    });
+  } catch (e: any) {
+    console.error('[mmr][lookupEmail] error:', String(e));
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
@@ -10599,7 +11986,7 @@ const WE_COL = {
   TIMESTAMP: 2,
   MEMBER_ID: 3,
   EMAIL: 4,
-  MEMBERSHIP_TYPE: 5,
+  PAYMENT_INTENT: 5,
   AMOUNT: 6,
   PAYMENT_METHOD: 7,
   PAYER_NAME: 8,
@@ -10718,14 +12105,14 @@ const PP_COL = {
 const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_NAMES.WEBAPP_EVENTS]: [
     'EventID', 'EventType', 'Timestamp', 'MemberID', 'Email',
-    'MembershipType', 'Amount', 'PaymentMethod', 'PayerName', 'MemoField',
+    'PaymentIntent', 'Amount', 'PaymentMethod', 'PayerName', 'MemoField',
     'Last4Digits', 'FamilyMemberEmails', 'Status',
     'MatchedMessageId', 'MatchedTransactionNumber',
     'AdminApprover', 'ApprovalDate', 'Notes',
   ],
   [SHEET_NAMES.PAYMENT_HISTORY]: [
     'PaymentID', 'EventID', 'MemberID', 'PaymentDate', 'Amount',
-    'MembershipType', 'PaymentMethod', 'PayerName', 'MemoField',
+    'PaymentIntent', 'PaymentMethod', 'PayerName', 'MemoField',
     'Last4Digits', 'TransactionReference', 'PeriodStart', 'PeriodEnd',
     'ProcessedBy', 'ProcessedDate', 'Source', 'Notes',
   ],
@@ -10751,26 +12138,28 @@ const SHEET_HEADERS: Record<string, string[]> = {
 
 // Default Config values seeded on first creation
 const DEFAULT_CONFIG_ROWS: string[][] = [
-  ['Individual_Price',       '30',                      'Price for individual membership'],
-  ['Family_Price',           '50',                      'Price for family membership'],
-  ['Payment_Methods',        'Zelle,Venmo,PayPal',      'Comma-separated accepted payment methods'],
-  ['Zelle_Handle',           'zelle@example.com',       'Zelle payment handle'],
-  ['Venmo_Handle',           '@venmo-user',             'Venmo payment handle'],
-  ['PayPal_Handle',          'paypal@example.com',      'PayPal payment handle'],
-  ['Reminder_Days_Before',   '30',                      'Days before expiry to send reminder'],
-  ['Membership_Renewal_Years','1',                      'Years added per renewal'],
-  ['OTP_Valid_Hours',        '24',                      'Hours before OTP expires'],
-  ['OTP_Cleanup_Days',       '7',                       'Days before used/expired OTPs are deleted'],
-  ['Admin_Emails',           'admin@mmrunners.org',     'Comma-separated admin email addresses'],
-  ['App_Base_Url',           '',                        'Deployed web app URL (set after first deploy)'],
-  ['Payment_Proof_Folder_Id','',                        'Google Drive folder ID for payment proofs'],
-  ['Zelle_QR_Code_File_Id',  '',                        'Google Drive file ID for Zelle QR code image'],
-  ['Venmo_QR_Code_File_Id',  '',                        'Google Drive file ID for Venmo QR code image'],
+  ['IndividualPrice',        '30',                      'Price for individual membership'],
+  ['FamilyPrice',            '50',                      'Price for family membership'],
+  ['FamilyUpgradePrice',     '20',                      'Price for family membership'],
+  ['PaymentMethods',         'Zelle,Venmo,PayPal',      'Comma-separated accepted payment methods'],
+  ['ZelleHandle',            'zelle@example.com',       'Zelle payment handle'],
+  ['VenmoHandle',            '@venmo-user',             'Venmo payment handle'],
+  ['PayPalHandle',           'paypal@example.com',      'PayPal payment handle'],
+  ['ReminderDaysBefore',     '30',                      'Days before expiry to send reminder'],
+  ['MembershipRenewalYears', '1',                       'Years added per renewal'],
+  ['OTPValidHours',          '24',                      'Hours before OTP expires'],
+  ['OTPCleanupDays',         '7',                       'Days before used/expired OTPs are deleted'],
+  ['AdminEmails',            'admin@mmrunners.org',     'Comma-separated admin email addresses'],
+  ['AppBaseUrl',             '',                        'Deployed web app URL (set after first deploy)'],
+  ['PaymentProofFolderId',   '',                        'Google Drive folder ID for payment proofs'],
+  ['ZelleQRCodeFileId',      '',                        'Google Drive file ID for Zelle QR code image'],
+  ['VenmoQRCodeFileId',      '',                        'Google Drive file ID for Venmo QR code image'],
 ];
 
 // Default Payment Events values seeded on first creation
 const DEFAULT_PAYMENT_EVENTS_ROWS: string[][] = [
-  ['Individual/Family Membership', 'Confirm your payment for membership renewal', 'Match with payment history'],
+  ['Individual Membership', 'Confirm your payment for individual membership renewal', 'Match with payment history'],
+  ['Family Membership', 'Confirm your payment for family membership renewal', 'Match with payment history'],
   ['Upgrade to Family Membership', 'Confirm your payment for upgrading to family membership', 'Match with payment history'],
   ['Other Payment', 'Confirm your other payments related to membership', 'Manual review'],
 ];
@@ -10936,14 +12325,18 @@ function auditLog(
 // Exposed GAS functions: getOrCreateMemberProfile, updateMemberProfile, createNewMember
 // ============================================================
 
+// ✅ AFTER — trust the payload email only
 function getOrCreateMemberProfile(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<{ email?: string; sessionID?: string }>;
-  const { payload } = req;
+  const payload = req.payload;
   try {
-    // Prefer server-side Google session email; fall back to payload email for OTP users
-    const sessionEmail = Session.getActiveUser().getEmail();
-    const resolvedEmail = (sessionEmail || payload.email || '').trim().toLowerCase();
-    console.log('[mmr][getOrCreateMemberProfile] session email:', sessionEmail, '| payload email:', payload.email, '| resolved:', resolvedEmail);
+    // Auth already validated at login (handleGoogleLogin / verifyEmailOtp).
+    // Trust the payload email directly — do NOT use Session.getActiveUser()
+    // here, as GAS may resolve to the script owner's account instead of
+    // the actual user when called from a loaded page.
+    const resolvedEmail = (payload.email || '').trim().toLowerCase();
+    console.log('[mmr] getOrCreateMemberProfile payload email:', payload.email,
+      'resolved:', resolvedEmail);
 
     if (!resolvedEmail) {
       return jsonError(req.requestId, 'AUTH_REQUIRED', 'No email available. Please sign in again.');
@@ -10951,19 +12344,19 @@ function getOrCreateMemberProfile(jsonRequest: string): string {
 
     const result = findMemberByEmail(resolvedEmail);
     if (!result) {
-      console.log('[mmr][getOrCreateMemberProfile] member not found for:', resolvedEmail);
+      console.log('[mmr] getOrCreateMemberProfile member not found for', resolvedEmail);
       return jsonError(req.requestId, 'NOT_FOUND', 'Member not found. Please sign in again.');
     }
 
-    console.log('[mmr][getOrCreateMemberProfile] found member:', result.member.memberID);
+    console.log('[mmr] getOrCreateMemberProfile found member', result.member.memberID);
     let familyMembers: Member[] = [];
     if (result.member.familyID) {
       familyMembers = findMembersByFamilyID(result.member.familyID).map(r => r.member);
-      console.log('[mmr][getOrCreateMemberProfile] family members:', familyMembers.length);
     }
+    console.log('[mmr] getOrCreateMemberProfile family members:', familyMembers.length);
     return jsonOk(req.requestId, { member: result.member, familyMembers });
   } catch (e: any) {
-    console.error('[mmr][getOrCreateMemberProfile] error:', String(e));
+    console.error('[mmr] getOrCreateMemberProfile error', String(e));
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
@@ -11055,6 +12448,38 @@ function createNewMember(jsonRequest: string): string {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
+
+function getMemberPaymentHistory(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string; sessionID: string }>;
+  const { payload } = req;
+  try {
+    const email = payload.email.trim().toLowerCase();
+
+    // 1. Get memberID from Membership Master
+    const found = findMemberByEmail(email);
+    if (!found) {
+      return jsonError(req.requestId, 'MEMBER_NOT_FOUND', 'Member not found.');
+    }
+    const memberID = found.member.memberID;
+
+    // 2. Load approved Payment-History rows for this member
+    const payments = getPaymentHistoryByMemberID(memberID);
+
+    // 3. Load ALL WebApp-Events rows for this member (Pending/Matched/Approved/Rejected)
+    const events = getWebAppEventsByMemberID(memberID);
+
+    auditLog('PAYMENT_HISTORY_VIEW', { sessionID: payload.sessionID, memberID });
+
+    return jsonOk(req.requestId, {
+      memberID,
+      payments,   // confirmed Payment-History rows
+      events,     // all submission events including pending ones
+    });
+  } catch (e: any) {
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
 
 ```
 
@@ -11226,7 +12651,7 @@ function submitRenewalRequest(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<RenewalSubmitPayload>;
   const { payload } = req;
   try {
-    console.log('[mmr][submitRenewalRequest] memberID:', payload.memberId, '| type:', payload.membershipType, '| amount:', payload.amount, '| method:', payload.paymentMethod);
+    console.log('[mmr][submitRenewalRequest] memberID:', payload.memberId, '| type:', payload.paymentIntent, '| amount:', payload.amount, '| method:', payload.paymentMethod);
     auditLog('RENEWAL_FORM_OPEN', {
       memberID: payload.memberId,
       email: payload.email,
@@ -11238,13 +12663,13 @@ function submitRenewalRequest(jsonRequest: string): string {
       timestamp: new Date().toISOString(),
       memberID: payload.memberId,
       email: payload.email,
-      membershipType: payload.membershipType,
+      paymentIntent: payload.paymentIntent,   // 'Individual Renewal' | 'Family Renewal' | 'Family Upgrade'
       amount: payload.amount,
       paymentMethod: payload.paymentMethod,
       payerName: payload.payerName,
       memoField: payload.memoField,
       last4Digits: payload.last4Digits ?? '',
-      familyMemberEmails: (payload.familyMemberEmails ?? []).join(','),
+      familyMemberEmails: payload.familyMemberEmails ?? '',
       status: 'Pending',
       matchedMessageId: '',
       matchedTransactionNumber: '',
@@ -11342,36 +12767,75 @@ function findGmailMatch(event: WebAppEvent, gmailRows: FetchGmailRow[]): FetchGm
 
 function approveRenewal(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<ApproveRenewalPayload>;
-  const { payload } = req;
+  const payload = req.payload;
   try {
-    console.log('[mmr][approveRenewal] eventID:', payload.eventID, '| admin:', payload.adminEmail);
     const found = findWebAppEvent(payload.eventID);
     if (!found) return jsonError(req.requestId, 'NOT_FOUND', 'Event not found.');
+
     const event = found.event;
-
-    const renewalYears = parseInt(getConfigValue('Membership_Renewal_Years'), 10) || 1;
+    const renewalYears = parseInt(getConfigValue('MembershipRenewalYears'), 10) || 1;
     const today = new Date();
+    const intent = event.paymentIntent as PaymentIntent;
 
-    // Determine members to update (family or individual)
-    let membersToUpdate: Array<{ member: Member; rowIndex: number }> = [];
-    if (event.membershipType === 'Family') {
+    // ── Branch C: Family Upgrade ──────────────────────────────────────
+    if (intent === 'Family Upgrade') {
       const primary = findMemberByID(event.memberID);
-      if (primary?.member.familyID) {
-        membersToUpdate = findMembersByFamilyID(primary.member.familyID);
+      if (!primary) return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
+      if (primary.member.status !== 'active') {
+        return jsonError(req.requestId, 'INVALID_STATE',
+          'Family upgrade requires an active Individual membership first.');
       }
-    }
-    if (membersToUpdate.length === 0) {
-      const m = findMemberByID(event.memberID);
-      if (m) membersToUpdate = [m];
-    }
-    if (membersToUpdate.length === 0) {
-      return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
+      // Assign FamilyID if blank
+      let familyID = primary.member.familyID;
+      if (!familyID) {
+        familyID = generateFamilyID();
+        updateMemberRow(primary.rowIndex, { FAMILYID: familyID });
+      }
+      // Set Type → Family, do NOT change Expiration
+      updateMemberRow(primary.rowIndex, { TYPE: 'Family' });
+
+      const periodStart = primary.member.expiration
+        ? new Date(primary.member.expiration).toISOString().split('T')[0]
+        : today.toISOString().split('T')[0];
+      const periodEnd = primary.member.expiration
+        ? new Date(primary.member.expiration).toISOString().split('T')[0]
+        : periodStart;
+
+      appendPaymentRecord({ ...baseRecord(event, payload), paymentIntent: intent,
+        periodStart, periodEnd });
+      updateWebAppEventRow(found.rowIndex, { STATUS: 'Approved',
+        ADMINAPPROVER: payload.adminEmail, APPROVALDATE: new Date().toISOString(),
+        NOTES: payload.notes ?? '' });
+      auditLog('UPGRADEAPPROVED', { eventID: event.eventID, memberID: event.memberID });
+      return jsonOk(req.requestId, { message: 'Family upgrade approved.', periodEnd });
     }
 
-    // Compute new expiration: max(today + years, current expiration + years)
+    // ── Branch B: Family Renewal ──────────────────────────────────────
+    // ── Branch A: Individual Renewal ─────────────────────────────────
+    // (shared expiration logic for both)
+    let membersToUpdate: Array<{ rowIndex: number; member: Member }> = [];
+
+    if (intent === 'Family Renewal') {
+      const primary = findMemberByID(event.memberID);
+      if (!primary) return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
+      // Assign FamilyID if blank
+      if (!primary.member.familyID) {
+        const newFamilyID = generateFamilyID();
+        updateMemberRow(primary.rowIndex, { FAMILYID: newFamilyID });
+        primary.member.familyID = newFamilyID;
+      }
+      membersToUpdate = findMembersByFamilyID(primary.member.familyID);
+      if (membersToUpdate.length === 0) membersToUpdate = [primary];
+    } else {
+      // Individual Renewal
+      const m = findMemberByID(event.memberID);
+      if (!m) return jsonError(req.requestId, 'NOT_FOUND', 'Member not found.');
+      membersToUpdate = [m];
+    }
+
+    // Compute newExpiration = max(today + N years, currentExpiration)
     let newExpiration = new Date(today);
     newExpiration.setFullYear(newExpiration.getFullYear() + renewalYears);
-
     for (const { member } of membersToUpdate) {
       if (member.expiration) {
         const current = new Date(member.expiration);
@@ -11386,75 +12850,48 @@ function approveRenewal(jsonRequest: string): string {
     const now = new Date().toISOString();
     const periodStart = today.toISOString().split('T')[0];
     const periodEnd = newExpiration.toISOString().split('T')[0];
+    const memberType = intent === 'Family Renewal' ? 'Family' : 'Individual';
 
-    // Update all members in scope
-    for (const { rowIndex, member } of membersToUpdate) {
+    for (const { rowIndex } of membersToUpdate) {
       updateMemberRow(rowIndex, {
-        STATUS: 'active',
-        EXPIRATION: periodEnd,
-        MEMBERSHIP_FEE_PAID: event.amount,
-        PAYMENT_DATE: now,
-        PAYMENT_TRANSACTION: event.matchedTransactionNumber || event.last4Digits || '',
-        LAST_UPDATED: now,
+        STATUS: 'active', EXPIRATION: periodEnd, TYPE: memberType,
+        MEMBERSHIPFEEPAID: event.amount, PAYMENTDATE: now,
+        PAYMENTTRANSACTION: event.matchedTransactionNumber || event.last4Digits,
+        LASTUPDATED: now,
       });
-
-      // Email notification (non-critical)
-      if (member.email) {
-        try {
-          MailApp.sendEmail({
-            to: member.email,
-            subject: 'Misty Mountain Runners — Membership Renewed',
-            body:
-              `Hi ${member.firstName || 'Member'},\n\n` +
-              `Your membership has been renewed and is active through ${periodEnd}.\n\n` +
-              `Thank you for your support!\n\nMisty Mountain Runners`,
-          });
-        } catch (_) { /* non-critical — log only */ }
-      }
     }
 
-    // Write Payment-History record
-    appendPaymentRecord({
-      eventID: event.eventID,
-      memberID: event.memberID,
-      paymentDate: now,
-      amount: event.amount,
-      membershipType: event.membershipType,
-      paymentMethod: event.paymentMethod,
-      payerName: event.payerName,
-      memoField: event.memoField,
-      last4Digits: event.last4Digits,
-      transactionReference: event.matchedTransactionNumber,
-      periodStart,
-      periodEnd,
-      processedBy: payload.adminEmail,
-      processedDate: now,
-      source: 'WebApp',
-      notes: payload.notes ?? '',
-    });
+    appendPaymentRecord({ ...baseRecord(event, payload), paymentIntent: intent,
+      periodStart, periodEnd });
+    updateWebAppEventRow(found.rowIndex, { STATUS: 'Approved',
+      ADMINAPPROVER: payload.adminEmail, APPROVALDATE: now,
+      NOTES: payload.notes ?? '' });
+    auditLog('RENEWALAPPROVED', { eventID: event.eventID, memberID: event.memberID,
+      email: event.email });
 
-    // Mark event as Approved
-    updateWebAppEventRow(found.rowIndex, {
-      STATUS: 'Approved',
-      ADMIN_APPROVER: payload.adminEmail,
-      APPROVAL_DATE: now,
-      NOTES: payload.notes ?? '',
-    });
-
-    auditLog('RENEWAL_APPROVED', {
-      eventID: event.eventID,
-      memberID: event.memberID,
-      email: event.email,
-    });
-
-    console.log('[mmr][approveRenewal] approved, periodEnd:', periodEnd, '| members updated:', membersToUpdate.length);
     return jsonOk(req.requestId, { message: 'Renewal approved.', periodEnd });
+
   } catch (e: any) {
-    console.error('[mmr][approveRenewal] error:', String(e));
     auditLog('ERROR', { eventID: payload.eventID, errorMessage: String(e) });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
+
+// Helper to avoid repeating shared Payment-History fields
+function baseRecord(event: WebAppEvent, payload: ApproveRenewalPayload) {
+  return {
+    eventID: event.eventID, memberID: event.memberID,
+    paymentDate: new Date().toISOString().split('T')[0],
+    amount: event.amount, paymentMethod: event.paymentMethod,
+    payerName: event.payerName, memoField: event.memoField,
+    last4Digits: event.last4Digits,
+    transactionReference: event.matchedTransactionNumber,
+    processedBy: payload.adminEmail,
+    processedDate: new Date().toISOString(),
+    source: 'WebApp', notes: payload.notes ?? '',
+  };
+}
+
 
 function rejectRenewal(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<RejectRenewalPayload>;
@@ -11477,6 +12914,19 @@ function rejectRenewal(jsonRequest: string): string {
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
+}
+
+function testApproveRenewal() {
+  const req = JSON.stringify({
+    requestId: 'test-003',
+    payload: {
+      eventID: 'EV-test-003',
+      adminEmail: 'cathylin@gmail.com',
+      notes: 'Manual test approval'
+    }
+  });
+  const result = approveRenewal(req);
+  console.log('approveRenewal result:', result);
 }
 
 ```
@@ -11508,12 +12958,22 @@ function generateLogID(): string {
 
 // ---- Membership Master ----
 
+function deriveStatus(expirationStr: string): Member['status'] {
+  if (!expirationStr || expirationStr.trim() === '') return 'not active';
+  const exp = new Date(expirationStr);
+  if (isNaN(exp.getTime())) return 'not active';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return exp >= today ? 'active' : 'expired';
+}
+
 function rowToMember(row: any[]): Member {
+  const expiration = String(row[MM_COL.EXPIRATION] ?? '');
   return {
     memberID: String(row[MM_COL.MEMBER_ID] ?? ''),
-    status: String(row[MM_COL.STATUS] ?? '') as Member['status'],
+    status: deriveStatus(expiration),          // ← calculated, not read from sheet
     created: String(row[MM_COL.CREATED] ?? ''),
-    expiration: String(row[MM_COL.EXPIRATION] ?? ''),
+    expiration,
     email: String(row[MM_COL.EMAIL] ?? ''),
     firstName: String(row[MM_COL.FIRST_NAME] ?? ''),
     lastName: String(row[MM_COL.LAST_NAME] ?? ''),
@@ -11535,6 +12995,7 @@ function rowToMember(row: any[]): Member {
     notes: String(row[MM_COL.NOTES] ?? ''),
   };
 }
+
 
 function findMemberByEmail(email: string): { member: Member; rowIndex: number } | null {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
@@ -11584,6 +13045,20 @@ function generateMemberID(): string {
   throw new Error('No available member IDs (A0001–A9999 all in use).');
 }
 
+function generateFamilyID(): string {
+  const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
+  const data = sheet.getDataRange().getValues();
+  const used = new Set<number>();
+  for (let i = 1; i < data.length; i++) {
+    const m = String(data[i][MM_COL.FAMILY_ID]).match(/^B(\d{3})$/);
+    if (m) used.add(parseInt(m[1], 10));
+  }
+  for (let n = 1; n <= 999; n++) {
+    if (!used.has(n)) return 'B' + String(n).padStart(3, '0');
+  }
+  throw new Error('No available family IDs B001–B999 all in use.');
+}
+
 function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
   for (const [colKey, value] of Object.entries(updates)) {
@@ -11603,7 +13078,7 @@ function rowToWebAppEvent(row: any[]): WebAppEvent {
     timestamp: String(row[WE_COL.TIMESTAMP] ?? ''),
     memberID: String(row[WE_COL.MEMBER_ID] ?? ''),
     email: String(row[WE_COL.EMAIL] ?? ''),
-    membershipType: String(row[WE_COL.MEMBERSHIP_TYPE] ?? '') as WebAppEvent['membershipType'],
+    paymentIntent: String(row[WE_COL.PAYMENT_INTENT] ?? '') as WebAppEvent['paymentIntent'],
     amount: Number(row[WE_COL.AMOUNT] ?? 0),
     paymentMethod: String(row[WE_COL.PAYMENT_METHOD] ?? '') as WebAppEvent['paymentMethod'],
     payerName: String(row[WE_COL.PAYER_NAME] ?? ''),
@@ -11628,7 +13103,7 @@ function appendWebAppEvent(event: Omit<WebAppEvent, 'eventID'>): string {
     event.timestamp,
     event.memberID,
     event.email,
-    event.membershipType,
+    event.paymentIntent,
     event.amount,
     event.paymentMethod,
     event.payerName,
@@ -11686,7 +13161,7 @@ function appendPaymentRecord(record: Omit<PaymentRecord, 'paymentID'>): string {
     record.memberID,
     record.paymentDate,
     record.amount,
-    record.membershipType,
+    record.paymentIntent,
     record.paymentMethod,
     record.payerName,
     record.memoField,
@@ -11728,7 +13203,7 @@ function findValidOtp(email: string, otpCode: string): { rowIndex: number } | nu
     if (
       rowEmail === email.toLowerCase() &&
       rowCode === otpCode &&
-      !used &&
+    //  !used && // allow reuse of OTP until expiry to avoid user frustration with multiple attempts
       now <= expiresAt
     ) {
       return { rowIndex: i + 1 };
@@ -11837,6 +13312,54 @@ function appendPaymentProof(proof: PaymentProof): void {
 
 }
 
+function getPaymentHistoryByMemberID(memberID: string): PaymentHistoryItem[] {
+  const sheet = getSheet(SHEET_NAMES.PAYMENT_HISTORY);
+  if (!sheet) return [];
+
+  const rows = sheet.getDataRange().getValues();
+  const headers = rows[0];
+
+  // Column index helpers — adjust names to match your actual sheet headers
+  const col = (name: string) => headers.indexOf(name);
+
+  return rows.slice(1)
+    .filter(row => row[col('MemberID')] === memberID)
+    .map(row => ({
+      paymentID:     String(row[col('PaymentID')]     || ''),
+      eventID:       String(row[col('EventID')]       || ''),
+      paymentDate:   String(row[col('PaymentDate')]   || ''),
+      amount:        Number(row[col('Amount')]        || 0),
+      paymentIntent: String(row[col('PaymentIntent')] || '') as PaymentHistoryItem['paymentIntent'],
+      paymentMethod: String(row[col('PaymentMethod')] || ''),
+      payerName:     String(row[col('PayerName')]     || ''),
+      periodStart:   String(row[col('PeriodStart')]   || ''),
+      periodEnd:     String(row[col('PeriodEnd')]     || ''),
+      source:        String(row[col('Source')]        || ''),
+      notes:         String(row[col('Notes')]         || ''),
+    }));
+}
+
+function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
+  const sheet = getSheet(SHEET_NAMES.WEBAPP_EVENTS);
+  if (!sheet) return [];
+
+  const rows = sheet.getDataRange().getValues();
+  const headers = rows[0];
+  const col = (name: string) => headers.indexOf(name);
+
+  return rows.slice(1)
+    .filter(row => row[col('MemberID')] === memberID)
+    .map(row => ({
+      eventID:       String(row[col('EventID')]       || ''),
+      eventType:     String(row[col('EventType')]     || ''),
+      timestamp:     String(row[col('Timestamp')]     || ''),
+      paymentIntent: String(row[col('PaymentIntent')] || ''),
+      amount:        Number(row[col('Amount')]        || 0),
+      paymentMethod: String(row[col('PaymentMethod')] || ''),
+      status:        String(row[col('Status')]        || '') as WebAppEventSummary['status'],
+      notes:         String(row[col('Notes')]         || ''),
+    }));
+}
 
 
 ```
@@ -11853,7 +13376,7 @@ function appendPaymentProof(proof: PaymentProof): void {
 
 interface Member {
   memberID: string;          // Axxxx
-  status: 'active' | 'not active';
+  status: 'active' | 'not active' | 'expired';
   created: string;
   expiration: string;
   email: string;
@@ -11878,19 +13401,23 @@ interface Member {
   notes: string;
 }
 
+/// ADD this type
+type PaymentIntent = 'Individual Renewal' | 'Family Renewal' | 'Family Upgrade';
+
+// UPDATE WebAppEvent — replace membershipType with paymentIntent
 interface WebAppEvent {
   eventID: string;
-  eventType: 'MembershipRenewal' | 'MembershipSignup';
+  eventType: string;
   timestamp: string;
   memberID: string;
   email: string;
-  membershipType: 'Individual' | 'Family';
+  paymentIntent: PaymentIntent;   // ← was membershipType: string
   amount: number;
-  paymentMethod: 'Zelle' | 'Venmo' | 'PayPal';
+  paymentMethod: string;
   payerName: string;
   memoField: string;
   last4Digits: string;
-  familyMemberEmails: string;  // comma-separated
+  familyMemberEmails: string;
   status: 'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Error';
   matchedMessageId: string;
   matchedTransactionNumber: string;
@@ -11899,13 +13426,43 @@ interface WebAppEvent {
   notes: string;
 }
 
+// UPDATE PaymentHistoryItem — replace membershipType with paymentIntent
+interface PaymentHistoryItem {
+  paymentID: string;
+  eventID: string;
+  paymentDate: string;
+  amount: number;
+  paymentIntent: PaymentIntent;   // ← was membershipType
+  paymentMethod: string;
+  payerName: string;
+  periodStart: string;
+  periodEnd: string;
+  source: string;
+  notes: string;
+}
+
+// ADD RenewalSubmitPayload — replace old payload interface
+interface RenewalSubmitPayload {
+  memberId: string;
+  email: string;
+  paymentIntent: PaymentIntent;   // ← was membershipType
+  amount: number;
+  paymentMethod: string;
+  payerName: string;
+  memoField: string;
+  last4Digits?: string;
+  familyMemberEmails?: string;
+  sessionID: string;
+}
+
+
 interface PaymentRecord {
   paymentID: string;
   eventID: string;
   memberID: string;
   paymentDate: string;
   amount: number;
-  membershipType: string;
+  paymentIntent: string;
   paymentMethod: string;
   payerName: string;
   memoField: string;
@@ -11994,6 +13551,19 @@ interface LoginPayload {
   sessionID: string;
 }
 
+// Payload for the pre-OTP email lookup
+interface LookupEmailPayload {
+  email: string;
+  sessionID: string;
+}
+
+// Response for lookupEmail
+interface LookupEmailResponse {
+  found: boolean;
+  firstName?: string;   // only present if found
+  memberID?: string;    // only present if found
+}
+
 interface OtpRequestPayload {
   email: string;
   sessionID: string;
@@ -12013,19 +13583,6 @@ interface UpdateProfilePayload {
   wechatID?: string;
   district?: string;
   joinYear?: string;
-}
-
-interface RenewalSubmitPayload {
-  memberId: string;
-  email: string;
-  membershipType: 'Individual' | 'Family';
-  amount: number;
-  paymentMethod: 'Zelle' | 'Venmo' | 'PayPal';
-  payerName: string;
-  memoField: string;
-  last4Digits?: string;
-  familyMemberEmails?: string[];
-  sessionID: string;
 }
 
 interface ApproveRenewalPayload {
@@ -12055,6 +13612,17 @@ interface PaymentProof {
   status: 'Pending Review' | 'Approved' | 'Rejected';
 }
 
+interface WebAppEventSummary {
+  eventID:             string;
+  eventType:           string;
+  timestamp:           string;
+  paymentIntent:       string;
+  amount:              number;
+  paymentMethod:       string;
+  status:              'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Error';
+  notes:               string;
+}
+
 ```
 
 
@@ -12070,7 +13638,7 @@ interface PaymentProof {
 
 // Route ?page= to the matching HTML template
 // Route ?page= to the matching HTML template
-function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput | GoogleAppsScript.Base.Blob {
+function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput {
   try {
     console.log('mmr:doGet called, parameters =', JSON.stringify(e.parameter));
     console.log('mmr:doGet page =', e.parameter.page);
@@ -12084,7 +13652,7 @@ function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutp
     }
 
     try {
-      const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember', 'payment_proof', 'payment', 'image'];
+      const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember', 'payment_proof', 'payment', 'image', 'payment_history'];
       const safePage = allowedPages.includes(page) ? page : 'login';
       const fileName = `page_${safePage}`;
       console.log(`doGet: serving "${fileName}", page param="${page}"`);
@@ -12191,6 +13759,48 @@ describe('requestEmailOtp', () => {
     expect(rows).toHaveLength(2); // header + new OTP row
     expect(rows[1][0]).toBe('user@yahoo.com');
     expect(rows[1][4]).toBe(false); // not used
+  });
+});
+
+describe('lookupEmail', () => {
+  beforeEach(() => {
+    __seedSheet(CFG, [['Key', 'Value', 'Desc']]);
+    __seedSheet(LOG, [[]]);
+  });
+
+  it('returns found:false for unknown email', () => {
+    __seedSheet(MM, [blankRow()]);
+    const res = JSON.parse(
+      (global as any).lookupEmail(req({ email: 'unknown@test.com', sessionID: 'S1' }))
+    );
+    expect(res.ok).toBe(true);
+    expect(res.payload.found).toBe(false);
+  });
+
+  it('returns found:true with firstName and memberID only', () => {
+    const row = blankRow();
+    row[0] = 'A0042'; row[4] = 'jane@yahoo.com';
+    row[5] = 'Jane';  row[6] = 'Doe';
+    row[1] = 'active';
+    __seedSheet(MM, [blankRow(), row]);
+    const res = JSON.parse(
+      (global as any).lookupEmail(req({ email: 'jane@yahoo.com', sessionID: 'S1' }))
+    );
+    expect(res.ok).toBe(true);
+    expect(res.payload.found).toBe(true);
+    expect(res.payload.memberID).toBe('A0042');
+    expect(res.payload.firstName).toBe('Jane');
+    // Should NOT expose status or expiration
+    expect(res.payload.status).toBeUndefined();
+    expect(res.payload.expiration).toBeUndefined();
+  });
+
+  it('rejects invalid email format', () => {
+    const res = JSON.parse(
+      (global as any).lookupEmail(req({ email: 'notanemail', sessionID: 'S1' }))
+    );
+    expect(res.ok).toBe(false);
+    expect(res.errorCode).toBe('INVALID_EMAIL');
   });
 });
 
