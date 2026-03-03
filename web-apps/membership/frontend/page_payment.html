@@ -82,6 +82,8 @@
   console.log('[MMR][payment] window.location.search =', window.location.search);
   console.log('[MMR][payment] window.parent.location (may be blocked) =', (() => { try { return window.parent.location.href; } catch(e) { return 'cross-origin blocked'; } })());
   var appBaseUrl = '__SCRIPT_URL__';
+  const SERVER_PARAMS = __URL_PARAMS__;  // ← ADD THIS (no quotes - it's raw JSON)
+  const SESSION_ID = Math.random().toString(36).slice(2);
 
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
@@ -94,34 +96,27 @@
     }
   });
 
-  const SESSION_ID = Math.random().toString(36).slice(2);
   let member = null;
   let config = {};
   let paymentType = 'Payment';
   let paymentAmount = 0;
 
   function getUrlParams() {
-    // In GAS iframes, params may be on the iframe's own src, not window.location
-    let search = window.location.search;
+    console.log('[MMR][payment] SERVER_PARAMS =', SERVER_PARAMS);
     
-    // Fallback: try to read from the iframe element in the parent
-    if (!search) {
-      try {
-        const iframeSrc = window.frameElement && window.frameElement.src;
-        console.log('[MMR][payment] frameElement.src =', iframeSrc);
-        if (iframeSrc) {
-          search = new URL(iframeSrc).search;
-        }
-      } catch(e) {
-        console.warn('[MMR][payment] Could not read frameElement.src:', e);
-      }
+    // Use server-injected params (most reliable - no cross-origin issues)
+    if (SERVER_PARAMS && SERVER_PARAMS['type']) {
+      paymentType = SERVER_PARAMS['type'] || 'Membership Payment';
+      paymentAmount = parseFloat(SERVER_PARAMS['amount']) || 0;
+      console.log('[MMR][payment] params from server injection: type=', paymentType, 'amount=', paymentAmount);
+      return;
     }
 
-    console.log('[MMR][payment] getUrlParams using search =', search);
-    const params = new URLSearchParams(search);
+    // Fallback: window.location.search (works in some GAS setups)
+    const params = new URLSearchParams(window.location.search);
     paymentType = params.get('type') || 'Membership Payment';
     paymentAmount = parseFloat(params.get('amount')) || 0;
-    console.log('[MMR][payment] parsed type =', paymentType, ', amount =', paymentAmount);
+    console.log('[MMR][payment] params from URL fallback: type=', paymentType, 'amount=', paymentAmount);
   }
 
   function callApi(fn, payload) {
@@ -147,20 +142,36 @@
   }
 
   function renderPage() {
+    console.log('[MMR][payment] renderPage called, paymentType=', paymentType, 'paymentAmount=', paymentAmount);
+    console.log('[MMR][payment] config keys =', Object.keys(config || {}));
+    console.log('[MMR][payment] ZelleHandle =', config && config['ZelleHandle']);
+    console.log('[MMR][payment] VenmoHandle =', config && config['VenmoHandle']);
+    console.log('[MMR][payment] PayPalHandle =', config && config['PayPalHandle']);
+    
     document.getElementById('paymentType').textContent = paymentType;
     document.getElementById('paymentAmount').textContent = '$' + paymentAmount;
-    document.getElementById('zelleHandle').textContent = config['Zelle_Handle'] || 'Not configured';
-    document.getElementById('venmoHandle').textContent = config['Venmo_Handle'] || 'Not configured';
-    document.getElementById('paypalHandle').textContent = config['PayPal_Handle'] || 'Not configured';
+    document.getElementById('zelleHandle').textContent = config['ZelleHandle'] || 'Not configured';
+    document.getElementById('venmoHandle').textContent = config['VenmoHandle'] || 'Not configured';
+    document.getElementById('paypalHandle').textContent = config['PayPalHandle'] || 'Not configured';
 
-    const zelleFileId = config['Zelle_QR_Code_File_Id'];
+    // After the handle lines, add:
+    const zelleFileId = config['ZelleQRCodeFileId'];
+    const venmoFileId = config['VenmoQRCodeFileId'];
+
+    console.log('[MMR][payment] ZelleQRCodeFileId =', zelleFileId);
+    console.log('[MMR][payment] VenmoQRCodeFileId =', venmoFileId);
+
+    // In renderPage(), replace the img src assignments with iframes:
     if (zelleFileId) {
-      document.getElementById('zelleQrCode').src = `${appBaseUrl}?page=image&id=${zelleFileId}`;
+      const zelleUrl = appBaseUrl + '?page=image&id=' + zelleFileId;
+      const zelleContainer = document.getElementById('zelleQrCode');
+      zelleContainer.outerHTML = `<iframe src="${zelleUrl}" style="width:160px;height:160px;border:none;" title="Zelle QR Code"></iframe>`;
+      console.log('[MMR][payment] zelleQrCode iframe src =', zelleUrl);
     }
-
-    const venmoFileId = config['Venmo_QR_Code_File_Id'];
     if (venmoFileId) {
-      document.getElementById('venmoQrCode').src = `${appBaseUrl}?page=image&id=${venmoFileId}`;
+      const venmoUrl = appBaseUrl + '?page=image&id=' + venmoFileId;
+      const venmoContainer = document.getElementById('venmoQrCode');
+      venmoContainer.outerHTML = `<iframe src="${venmoUrl}" style="width:160px;height:160px;border:none;" title="Venmo QR Code"></iframe>`;
     }
 
     if (member) {
@@ -179,13 +190,14 @@
         member = JSON.parse(cached);
       }
       
-      const data = await callApi('getOrCreateMemberProfile', { email: member ? member.email : '', sessionID: SESSION_ID });
-      member = data.member;
+      // ✅ FASTER - parallel
+      const [profileData, configData] = await Promise.all([
+        callApi('getOrCreateMemberProfile', { email: member?.email, sessionID: SESSION_ID }),
+        callApi('getPublicConfig', {})
+      ]);
+      member = profileData.member;
       sessionStorage.setItem('member', JSON.stringify(member));
-
-      const configData = await callApi('getPublicConfig', {});
-      config = configData.config || {};
-      
+      config = configData.config;
       renderPage();
 
     } catch (err) {

@@ -4,9 +4,9 @@
 // ============================================================
 
 // Route ?page= to the matching HTML template
-function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput | GoogleAppsScript.Base.Blob {
+// Route ?page= to the matching HTML template
+function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput {
   try {
-
     console.log('mmr:doGet called, parameters =', JSON.stringify(e.parameter));
     console.log('mmr:doGet page =', e.parameter.page);
 
@@ -23,16 +23,25 @@ function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutp
       const safePage = allowedPages.includes(page) ? page : 'login';
       const fileName = `page_${safePage}`;
       console.log(`doGet: serving "${fileName}", page param="${page}"`);
+
       let scriptUrl = '';
       try { scriptUrl = ScriptApp.getService().getUrl(); } catch (_) {}
       console.log('mmr:doGet SCRIPTURL =', scriptUrl);
+
+      // Serialize all URL params as JSON so the page can read type, amount, etc.
+      const urlParamsJson = JSON.stringify(e.parameter || {});
+      console.log('mmr:doGet urlParamsJson =', urlParamsJson);
+
       const raw = HtmlService.createHtmlOutputFromFile(fileName).getContent();
-      const content = raw.replace('__SCRIPT_URL__', scriptUrl);
+      const content = raw
+        .replace('__SCRIPT_URL__', scriptUrl)
+        .replace('__URL_PARAMS__', urlParamsJson);  // ← NEW
+
       console.log(`doGet: content length=${content.length}, scriptUrl=${scriptUrl}`);
       const output = HtmlService.createHtmlOutput(content)
         .setTitle('Misty Mountain Runners — Membership')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-      console.log('mmr:doGet output created successfully for page =', page);  
+      console.log('mmr:doGet output created successfully for page =', page);
       return output;
 
     } catch (er: any) {
@@ -49,6 +58,7 @@ function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutp
     );
   }
 }
+
 
 // ---- JSON response helpers (used by all backend modules) ----
 

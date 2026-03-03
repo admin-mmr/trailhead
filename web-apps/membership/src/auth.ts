@@ -33,6 +33,39 @@ function handleGoogleLogin(jsonRequest: string): string {
   }
 }
 
+// New: lightweight pre-OTP lookup — returns firstName + memberID if found, no auth required.
+// Does NOT expose sensitive fields (status, expiration, payment data).
+function lookupEmail(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string; sessionID: string }>;
+  const { payload } = req;
+  try {
+    const email = payload.email.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return jsonError(req.requestId, 'INVALID_EMAIL', 'Invalid email address.');
+    }
+    console.log('[mmr][lookupEmail] looking up:', email);
+    auditLog('EMAIL_LOOKUP', { sessionID: payload.sessionID, email });
+
+    const existing = findMemberByEmail(email);
+    if (!existing) {
+      console.log('[mmr][lookupEmail] not found:', email);
+      return jsonOk(req.requestId, { found: false });
+    }
+
+    const { member } = existing;
+    console.log('[mmr][lookupEmail] found memberID:', member.memberID);
+    // Return only non-sensitive fields sufficient for the welcome message
+    return jsonOk(req.requestId, {
+      found: true,
+      firstName: member.firstName || '',
+      memberID: member.memberID,
+    });
+  } catch (e: any) {
+    console.error('[mmr][lookupEmail] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
 function requestEmailOtp(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<OtpRequestPayload>;
   const { payload } = req;

@@ -145,6 +145,19 @@ interface LoginPayload {
   sessionID: string;
 }
 
+// Payload for the pre-OTP email lookup
+interface LookupEmailPayload {
+  email: string;
+  sessionID: string;
+}
+
+// Response for lookupEmail
+interface LookupEmailResponse {
+  found: boolean;
+  firstName?: string;   // only present if found
+  memberID?: string;    // only present if found
+}
+
 interface OtpRequestPayload {
   email: string;
   sessionID: string;

@@ -4,14 +4,18 @@
 // Exposed GAS functions: getOrCreateMemberProfile, updateMemberProfile, createNewMember
 // ============================================================
 
+// ✅ AFTER — trust the payload email only
 function getOrCreateMemberProfile(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<{ email?: string; sessionID?: string }>;
-  const { payload } = req;
+  const payload = req.payload;
   try {
-    // Prefer server-side Google session email; fall back to payload email for OTP users
-    const sessionEmail = Session.getActiveUser().getEmail();
-    const resolvedEmail = (sessionEmail || payload.email || '').trim().toLowerCase();
-    console.log('[mmr][getOrCreateMemberProfile] session email:', sessionEmail, '| payload email:', payload.email, '| resolved:', resolvedEmail);
+    // Auth already validated at login (handleGoogleLogin / verifyEmailOtp).
+    // Trust the payload email directly — do NOT use Session.getActiveUser()
+    // here, as GAS may resolve to the script owner's account instead of
+    // the actual user when called from a loaded page.
+    const resolvedEmail = (payload.email || '').trim().toLowerCase();
+    console.log('[mmr] getOrCreateMemberProfile payload email:', payload.email,
+      'resolved:', resolvedEmail);
 
     if (!resolvedEmail) {
       return jsonError(req.requestId, 'AUTH_REQUIRED', 'No email available. Please sign in again.');
@@ -19,22 +23,23 @@ function getOrCreateMemberProfile(jsonRequest: string): string {
 
     const result = findMemberByEmail(resolvedEmail);
     if (!result) {
-      console.log('[mmr][getOrCreateMemberProfile] member not found for:', resolvedEmail);
+      console.log('[mmr] getOrCreateMemberProfile member not found for', resolvedEmail);
       return jsonError(req.requestId, 'NOT_FOUND', 'Member not found. Please sign in again.');
     }
 
-    console.log('[mmr][getOrCreateMemberProfile] found member:', result.member.memberID);
+    console.log('[mmr] getOrCreateMemberProfile found member', result.member.memberID);
     let familyMembers: Member[] = [];
     if (result.member.familyID) {
       familyMembers = findMembersByFamilyID(result.member.familyID).map(r => r.member);
-      console.log('[mmr][getOrCreateMemberProfile] family members:', familyMembers.length);
     }
+    console.log('[mmr] getOrCreateMemberProfile family members:', familyMembers.length);
     return jsonOk(req.requestId, { member: result.member, familyMembers });
   } catch (e: any) {
-    console.error('[mmr][getOrCreateMemberProfile] error:', String(e));
+    console.error('[mmr] getOrCreateMemberProfile error', String(e));
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
+
 
 function updateMemberProfile(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<UpdateProfilePayload>;

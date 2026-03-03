@@ -2121,21 +2121,25 @@ Full renewal scenario:
 <div class="card">
   <div class="logo">🏃</div>
   <h1>Misty Mountain Runners</h1>
-  <p class="subtitle">Member Portal</p>
+ <!-- <p class="subtitle">Member Portal</p> -->
+  <p class="subtitle">Enter your email to receive a login code</p>
 
   <div id="msg" class="msg"></div>
 
   <!-- Login forms (hidden after success) -->
   <div id="loginForms">
     <!-- Google OAuth -->
-    <div class="section-label">Google account members</div>
-    <button class="btn btn-google" id="googleBtn" onclick="loginWithGoogle()">Sign in with Google</button>
-    <div class="spinner" id="googleSpinner">Signing in…</div>
+   <!-- Don't show Google OAuth for now. add display:none to wrapper div -->
+    <div id="googleSection" style="display:none"> 
+      <div class="section-label">Google account members</div>
+      <button class="btn btn-google" id="googleBtn" onclick="loginWithGoogle()">Sign in with Google</button>
+      <div class="spinner" id="googleSpinner">Signing in…</div>
 
-    <hr class="divider" />
-
+      <hr class="divider" />
+    </div>
     <!-- Email OTP -->
-    <div class="section-label">Non-Google account members</div>
+    <!-- <div class="section-label">Non-Google account members</div> -->
+    <div class="section-label">Sign in with Email Code</div>
     <div id="otpStep1">
       <input type="email" id="emailInput" placeholder="Your email address" />
       <button class="btn btn-primary" id="sendOtpBtn" onclick="sendOtp()">Send Login Code</button>
@@ -2162,6 +2166,23 @@ Full renewal scenario:
   var pendingPage = 'dashboard'; // page to navigate to on Continue click
   const SESSION_ID = Math.random().toString(36).slice(2);
   console.log('[MMR][login] appBaseUrl:', appBaseUrl, '| sessionID:', SESSION_ID);
+
+  // ── WeChat / WebView detection ───────────────────────────
+  const ua = navigator.userAgent.toLowerCase();
+  const isWeChat = /micromessenger/.test(ua);
+  const isWebView = /wv/.test(ua) || /(iphone|ipod|ipad).*applewebkit(?!.*safari)/i.test(ua);
+
+  if (isWeChat || isWebView) {
+    console.log('[MMR][login] WeChat/WebView detected');
+    const msg = document.getElementById('msg');
+    msg.innerHTML = isWeChat
+      ? '⚠️ <strong>请在浏览器中打开以获得最佳体验。</strong><br>' +
+        '点击右上角 <strong>···</strong> → <strong>"在浏览器中打开"</strong>'
+      : '⚠️ <strong>Please open in Safari or Chrome for best experience.</strong>';
+    msg.className = 'msg error';
+    msg.style.display = 'block';
+  }
+  // ── End WeChat detection ──────────────────────────────────
 
   function showMsg(text, type) {
     const el = document.getElementById('msg');
@@ -2557,7 +2578,12 @@ Full renewal scenario:
 
 <script>
   console.log('[MMR][payment] page script started');
+  console.log('[MMR][payment] window.location.href =', window.location.href);
+  console.log('[MMR][payment] window.location.search =', window.location.search);
+  console.log('[MMR][payment] window.parent.location (may be blocked) =', (() => { try { return window.parent.location.href; } catch(e) { return 'cross-origin blocked'; } })());
   var appBaseUrl = '__SCRIPT_URL__';
+  const SERVER_PARAMS = __URL_PARAMS__;  // ← ADD THIS (no quotes - it's raw JSON)
+  const SESSION_ID = Math.random().toString(36).slice(2);
 
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
@@ -2570,16 +2596,27 @@ Full renewal scenario:
     }
   });
 
-  const SESSION_ID = Math.random().toString(36).slice(2);
   let member = null;
   let config = {};
   let paymentType = 'Payment';
   let paymentAmount = 0;
 
   function getUrlParams() {
+    console.log('[MMR][payment] SERVER_PARAMS =', SERVER_PARAMS);
+    
+    // Use server-injected params (most reliable - no cross-origin issues)
+    if (SERVER_PARAMS && SERVER_PARAMS['type']) {
+      paymentType = SERVER_PARAMS['type'] || 'Membership Payment';
+      paymentAmount = parseFloat(SERVER_PARAMS['amount']) || 0;
+      console.log('[MMR][payment] params from server injection: type=', paymentType, 'amount=', paymentAmount);
+      return;
+    }
+
+    // Fallback: window.location.search (works in some GAS setups)
     const params = new URLSearchParams(window.location.search);
     paymentType = params.get('type') || 'Membership Payment';
     paymentAmount = parseFloat(params.get('amount')) || 0;
+    console.log('[MMR][payment] params from URL fallback: type=', paymentType, 'amount=', paymentAmount);
   }
 
   function callApi(fn, payload) {
@@ -2605,20 +2642,36 @@ Full renewal scenario:
   }
 
   function renderPage() {
+    console.log('[MMR][payment] renderPage called, paymentType=', paymentType, 'paymentAmount=', paymentAmount);
+    console.log('[MMR][payment] config keys =', Object.keys(config || {}));
+    console.log('[MMR][payment] ZelleHandle =', config && config['ZelleHandle']);
+    console.log('[MMR][payment] VenmoHandle =', config && config['VenmoHandle']);
+    console.log('[MMR][payment] PayPalHandle =', config && config['PayPalHandle']);
+    
     document.getElementById('paymentType').textContent = paymentType;
     document.getElementById('paymentAmount').textContent = '$' + paymentAmount;
-    document.getElementById('zelleHandle').textContent = config['Zelle_Handle'] || 'Not configured';
-    document.getElementById('venmoHandle').textContent = config['Venmo_Handle'] || 'Not configured';
-    document.getElementById('paypalHandle').textContent = config['PayPal_Handle'] || 'Not configured';
+    document.getElementById('zelleHandle').textContent = config['ZelleHandle'] || 'Not configured';
+    document.getElementById('venmoHandle').textContent = config['VenmoHandle'] || 'Not configured';
+    document.getElementById('paypalHandle').textContent = config['PayPalHandle'] || 'Not configured';
 
-    const zelleFileId = config['Zelle_QR_Code_File_Id'];
+    // After the handle lines, add:
+    const zelleFileId = config['ZelleQRCodeFileId'];
+    const venmoFileId = config['VenmoQRCodeFileId'];
+
+    console.log('[MMR][payment] ZelleQRCodeFileId =', zelleFileId);
+    console.log('[MMR][payment] VenmoQRCodeFileId =', venmoFileId);
+
+    // In renderPage(), replace the img src assignments with iframes:
     if (zelleFileId) {
-      document.getElementById('zelleQrCode').src = `${appBaseUrl}?page=image&id=${zelleFileId}`;
+      const zelleUrl = appBaseUrl + '?page=image&id=' + zelleFileId;
+      const zelleContainer = document.getElementById('zelleQrCode');
+      zelleContainer.outerHTML = `<iframe src="${zelleUrl}" style="width:160px;height:160px;border:none;" title="Zelle QR Code"></iframe>`;
+      console.log('[MMR][payment] zelleQrCode iframe src =', zelleUrl);
     }
-
-    const venmoFileId = config['Venmo_QR_Code_File_Id'];
     if (venmoFileId) {
-      document.getElementById('venmoQrCode').src = `${appBaseUrl}?page=image&id=${venmoFileId}`;
+      const venmoUrl = appBaseUrl + '?page=image&id=' + venmoFileId;
+      const venmoContainer = document.getElementById('venmoQrCode');
+      venmoContainer.outerHTML = `<iframe src="${venmoUrl}" style="width:160px;height:160px;border:none;" title="Venmo QR Code"></iframe>`;
     }
 
     if (member) {
@@ -2637,13 +2690,14 @@ Full renewal scenario:
         member = JSON.parse(cached);
       }
       
-      const data = await callApi('getOrCreateMemberProfile', { email: member ? member.email : '', sessionID: SESSION_ID });
-      member = data.member;
+      // ✅ FASTER - parallel
+      const [profileData, configData] = await Promise.all([
+        callApi('getOrCreateMemberProfile', { email: member?.email, sessionID: SESSION_ID }),
+        callApi('getPublicConfig', {})
+      ]);
+      member = profileData.member;
       sessionStorage.setItem('member', JSON.stringify(member));
-
-      const configData = await callApi('getPublicConfig', {});
-      config = configData.config || {};
-      
+      config = configData.config;
       renderPage();
 
     } catch (err) {
@@ -2735,134 +2789,159 @@ Full renewal scenario:
 </div>
 
 <script>
-  console.log('[MMR][payment_proof] page script started');
-  var appBaseUrl = '__SCRIPT_URL__';
-  const SESSION_ID = Math.random().toString(36).slice(2);
-  let member = null;
+console.log('[MMR][paymentproof] page script started');
+var appBaseUrl = '__SCRIPT_URL__';
+const SERVER_PARAMS = __URL_PARAMS__;   // injected by doGet - no quotes!
+const SESSIONID = Math.random().toString(36).slice(2);
+let member = null;
 
-  function callApi(fn, payload) {
-    console.log('[MMR][payment_proof] callApi:', fn);
-    return new Promise((resolve, reject) => {
-      const req = { requestId: Math.random().toString(36).slice(2), payload };
-      google.script.run
-        .withSuccessHandler(r => {
-          const res = JSON.parse(r);
-          if (res.ok) resolve(res.payload);
-          else reject(new Error(res.errorMessage));
-        })
-        .withFailureHandler(err => reject(err))
-        [fn](JSON.stringify(req));
-    });
-  }
+console.log('[MMR][paymentproof] SERVER_PARAMS =', SERVER_PARAMS);
 
-  function showMsg(text, type) {
-    const el = document.getElementById('msg');
-    el.textContent = text;
-    el.className = 'msg ' + type;
-    el.scrollIntoView({ behavior: 'smooth' });
-  }
-
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result.toString().split(',')[1]);
-      reader.onerror = error => reject(error);
-    });
-  }
-
-  async function submitProof() {
-    const btn = document.getElementById('submitBtn');
-    btn.disabled = true;
-    btn.textContent = 'Submitting…';
-
-    try {
-      const fileInput = document.getElementById('screenshot');
-      let screenshotBase64 = null;
-      if (fileInput.files.length > 0) {
-        screenshotBase64 = await fileToBase64(fileInput.files[0]);
-      }
-
-      const payload = {
-        memberID: member ? member.memberID : '',
-        email: member ? member.email : '',
-        eventName: document.getElementById('eventName').value,
-        amount: document.getElementById('amount').value,
-        paymentDate: document.getElementById('paymentDate').value,
-        payerName: document.getElementById('payerName').value.trim(),
-        last4Digits: document.getElementById('last4Digits').value.trim(),
-        notes: document.getElementById('notes').value.trim(),
-        screenshot: screenshotBase64,
-        sessionID: SESSION_ID,
-      };
-
-      await callApi('submitPaymentProof', payload);
-      
-      document.getElementById('formCard').innerHTML = `
-        <div class="msg success" style="text-align:center;">
-          <h2>✅ Success!</h2>
-          <p>Your payment proof has been submitted for review. We will notify you once it is processed.</p>
-          <a href="${appBaseUrl}?page=dashboard" class="btn btn-primary" style="margin-top: 16px;">Back to Dashboard</a>
-        </div>
-      `;
-
-    } catch (err) {
-      showMsg(err.message || 'An error occurred during submission.', 'error');
-      btn.disabled = false;
-      btn.textContent = 'Submit';
-    }
-  }
-
-  function getUrlParams() {
-    const params = new URLSearchParams(window.location.search);
-    const eventName = params.get('eventName');
-    const amount = params.get('amount');
-    if (eventName) {
-      const select = document.getElementById('eventName');
-      // Check if this option already exists
-      let optionExists = false;
-      for (let i = 0; i < select.options.length; i++) {
-        if (select.options[i].value === eventName) {
-          optionExists = true;
-          break;
-        }
-      }
-      if (!optionExists) {
-        const option = document.createElement('option');
-        option.value = eventName;
-        option.textContent = eventName;
-        select.appendChild(option);
-      }
-      select.value = eventName;
-      select.disabled = true;
-    }
-    if (amount) {
-      const amountInput = document.getElementById('amount');
-      amountInput.value = amount;
-      amountInput.readOnly = true;
-    }
-  }
-
-  // Initial data loading
-  document.addEventListener('DOMContentLoaded', async () => {
-    try {
-      const cached = sessionStorage.getItem('member');
-      if (cached) {
-        member = JSON.parse(cached);
-      }
-
-      const { events } = await callApi('getPaymentConfirmationEvents', {});
-      const select = document.getElementById('eventName');
-      select.innerHTML = events.map(e => `<option value="${e.name}">${e.name} - ${e.description}</option>`).join('');
-      
-      getUrlParams(); // Pre-fill from URL
-
-      document.getElementById('paymentDate').valueAsDate = new Date();
-
-    } catch (err) {
-      showMsg('Failed to load page data. Please refresh.', 'error');
-    }
+function callApi(fn, payload) {
+  console.log('[MMR][paymentproof] callApi:', fn);
+  return new Promise((resolve, reject) => {
+    const req = { requestId: Math.random().toString(36).slice(2), payload };
+    google.script.run
+      .withSuccessHandler(r => {
+        const res = JSON.parse(r);
+        if (res.ok) resolve(res.payload);
+        else reject(new Error(res.errorMessage));
+      })
+      .withFailureHandler(err => reject(err))
+      [fn](JSON.stringify(req));
   });
+}
+
+function showMsg(text, type) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + type;
+  el.scrollIntoView({ behavior: 'smooth' });
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result.toString().split(',')[1]);
+    reader.onerror = error => reject(error);
+  });
+}
+
+// Pre-fill fields from SERVER_PARAMS immediately — no API call needed
+function prefillFromParams() {
+  const eventName = SERVER_PARAMS['eventName'];
+  const amount    = SERVER_PARAMS['amount'];
+  const memberId  = SERVER_PARAMS['memberId'];
+
+  console.log('[MMR][paymentproof] prefill: eventName=', eventName, 'amount=', amount, 'memberId=', memberId);
+
+  if (amount) {
+    const amountInput = document.getElementById('amount');
+    amountInput.value = amount;
+    amountInput.readOnly = true;
+    console.log('[MMR][paymentproof] amount pre-filled =', amount);
+  }
+
+  if (memberId) {
+    // Store for submit use even before profile API returns
+    if (!member) member = { memberID: memberId, email: '' };
+    console.log('[MMR][paymentproof] memberId pre-filled =', memberId);
+  }
+
+  // eventName dropdown: add option if not already present after events load
+  return eventName;  // returned so we can use after events load
+}
+
+async function submitProof() {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const fileInput = document.getElementById('screenshot');
+    let screenshotBase64 = null;
+    if (fileInput.files.length > 0) {
+      screenshotBase64 = await fileToBase64(fileInput.files[0]);
+    }
+    const payload = {
+      memberID:    member?.memberID,
+      email:       member?.email,
+      eventName:   document.getElementById('eventName').value,
+      amount:      document.getElementById('amount').value,
+      paymentDate: document.getElementById('paymentDate').value,
+      payerName:   document.getElementById('payerName').value.trim(),
+      last4Digits: document.getElementById('last4Digits').value.trim(),
+      notes:       document.getElementById('notes').value.trim(),
+      screenshot:  screenshotBase64,
+      sessionID:   SESSIONID,
+    };
+    console.log('[MMR][paymentproof] submitting proof for memberID=', payload.memberID);
+    await callApi('submitPaymentProof', payload);
+    document.getElementById('formCard').innerHTML = `
+      <div class="msg success" style="text-align:center">
+        <h2>Success!</h2>
+        <p>Your payment proof has been submitted for review.</p>
+        <a href="${appBaseUrl}?page=dashboard" class="btn btn-primary" style="margin-top:16px">Back to Dashboard</a>
+      </div>`;
+  } catch(err) {
+    showMsg(err.message + ' — An error occurred.', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Submit';
+  }
+}
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', async () => {
+  // 1. Pre-fill amount/memberId immediately from SERVER_PARAMS (instant, no API call)
+  const pendingEventName = prefillFromParams();
+
+  // 2. Pre-fill today's date immediately
+  document.getElementById('paymentDate').valueAsDate = new Date();
+
+  // 3. Load session member + events list in parallel
+  try {
+    const cached = sessionStorage.getItem('member');
+    if (cached) member = JSON.parse(cached);
+
+    console.log('[MMR][paymentproof] loading events and profile in parallel');
+
+    const [eventsResult] = await Promise.all([
+      callApi('getPaymentConfirmationEvents', {}),
+      // ...
+    ]);
+    console.log('[MMR][paymentproof] eventsResult raw =', JSON.stringify(eventsResult));
+    const events = Array.isArray(eventsResult) ? eventsResult 
+                  : Array.isArray(eventsResult?.events) ? eventsResult.events 
+                  : [];
+    console.log('[MMR][paymentproof] events array length =', events.length);
+
+
+    // 4. Populate events dropdown
+    const select = document.getElementById('eventName');
+    select.innerHTML = events.map(e =>
+      `<option value="${e.name}">${e.name} — ${e.description}</option>`
+    ).join('');
+    console.log('[MMR][paymentproof] events loaded, count =', events.length);
+
+    // 5. Set the pre-selected event from URL params
+    if (pendingEventName) {
+      // Add option if not in list (e.g. custom event name)
+      if (![...select.options].some(o => o.value === pendingEventName)) {
+        const opt = document.createElement('option');
+        opt.value = pendingEventName;
+        opt.textContent = pendingEventName;
+        select.appendChild(opt);
+      }
+      select.value = pendingEventName;
+      select.disabled = true;
+      console.log('[MMR][paymentproof] eventName pre-selected =', pendingEventName);
+    }
+
+  } catch(err) {
+    showMsg('Failed to load page data. Please refresh.', 'error');
+    console.error('[MMR][paymentproof] init error:', err);
+  }
+});
 </script>
 </body>
 </html>
@@ -10297,28 +10376,32 @@ function updateConfigEntry(jsonRequest: string): string {
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
-}
+} 
 
 function getPublicConfig(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<{}>;
   try {
+    console.log('mmr:getPublicConfig called, requestId =', req.requestId);
     const allConfig = getConfigMap();
+    console.log('mmr:getPublicConfig allConfig keys =', Object.keys(allConfig).join(', '));
+
     const publicConfig: Record<string, string> = {};
-    const publicKeys = [
-      'Zelle_Handle', 'Venmo_Handle', 'PayPal_Handle',
-      'Zelle_QR_Code_File_Id', 'Venmo_QR_Code_File_Id',
-      'Individual_Price', 'Family_Price'
-    ];
+    const publicKeys = ['ZelleHandle','VenmoHandle','PayPalHandle',
+                        'ZelleQRCodeFileId','VenmoQRCodeFileId',
+                        'IndividualPrice','FamilyPrice'];
     for (const key of publicKeys) {
-      if (allConfig[key]) {
-        publicConfig[key] = allConfig[key];
-      }
+      console.log(`mmr:getPublicConfig key="${key}" value="${allConfig[key] ?? '(missing)'}" `);
+      if (allConfig[key]) publicConfig[key] = allConfig[key];
     }
+
+    console.log('mmr:getPublicConfig returning keys =', Object.keys(publicConfig).join(', '));
     return jsonOk(req.requestId, { config: publicConfig });
   } catch (e: any) {
+    console.error('mmr:getPublicConfig ERROR =', String(e));
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
+
 
 function isAdmin(email: string): boolean {
   const adminEmails = getConfigValue('Admin_Emails')
@@ -10765,12 +10848,31 @@ function setConfigValue(key: string, value: string): void {
 // Image serving
 // ============================================================
 
-function serveImage(fileId: string): GoogleAppsScript.Base.Blob {
+// Image serving
+function serveImage(fileId: string): GoogleAppsScript.HTML.HtmlOutput {
   try {
+    console.log('mmr:serveImage fileId =', fileId);
+    if (!fileId) {
+      return HtmlService.createHtmlOutput('<p>Missing file ID</p>');
+    }
     const file = DriveApp.getFileById(fileId);
-    return file.getBlob();
-  } catch (e) {
-    throw new Error(`Could not serve image with id ${fileId}. Error: ${e}`);
+    const blob = file.getBlob();
+    const mimeType = blob.getContentType();
+    const bytes = blob.getBytes();
+    const base64 = Utilities.base64Encode(bytes);
+
+    console.log('mmr:serveImage mimeType =', mimeType, 'size =', bytes.length);
+
+    // Serve as inline base64 image page — browsers accept this from GAS doGet
+    const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;">
+      <img src="data:${mimeType};base64,${base64}" style="max-width:100%;display:block;" />
+    </body></html>`;
+
+    return HtmlService.createHtmlOutput(html)
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  } catch (e: any) {
+    console.error('mmr:serveImage ERROR fileId =', fileId, 'error =', String(e));
+    return HtmlService.createHtmlOutput(`<p>Image not found: ${String(e)}</p>`);
   }
 }
 
@@ -11967,27 +12069,53 @@ interface PaymentProof {
 // ============================================================
 
 // Route ?page= to the matching HTML template
+// Route ?page= to the matching HTML template
 function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput | GoogleAppsScript.Base.Blob {
   try {
+    console.log('mmr:doGet called, parameters =', JSON.stringify(e.parameter));
+    console.log('mmr:doGet page =', e.parameter.page);
+
     const page = (e && e.parameter && e.parameter['page']) || 'login';
+    console.log('mmr:doGet serving page =', page);
 
     if (page === 'image') {
       const fileId = e.parameter['id'];
       return serveImage(fileId);
     }
 
-    const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember', 'payment_proof', 'payment', 'image'];
-    const safePage = allowedPages.includes(page) ? page : 'login';
-    const fileName = `page_${safePage}`;
-    console.log(`doGet: serving "${fileName}", page param="${page}"`);
-    let scriptUrl = '';
-    try { scriptUrl = ScriptApp.getService().getUrl(); } catch (_) {}
-    const raw = HtmlService.createHtmlOutputFromFile(fileName).getContent();
-    const content = raw.replace('__SCRIPT_URL__', scriptUrl);
-    console.log(`doGet: content length=${content.length}, scriptUrl=${scriptUrl}`);
-    return HtmlService.createHtmlOutput(content)
-      .setTitle('Misty Mountain Runners — Membership')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    try {
+      const allowedPages = ['login', 'dashboard', 'profile', 'renewal', 'admin', 'newmember', 'payment_proof', 'payment', 'image'];
+      const safePage = allowedPages.includes(page) ? page : 'login';
+      const fileName = `page_${safePage}`;
+      console.log(`doGet: serving "${fileName}", page param="${page}"`);
+
+      let scriptUrl = '';
+      try { scriptUrl = ScriptApp.getService().getUrl(); } catch (_) {}
+      console.log('mmr:doGet SCRIPTURL =', scriptUrl);
+
+      // Serialize all URL params as JSON so the page can read type, amount, etc.
+      const urlParamsJson = JSON.stringify(e.parameter || {});
+      console.log('mmr:doGet urlParamsJson =', urlParamsJson);
+
+      const raw = HtmlService.createHtmlOutputFromFile(fileName).getContent();
+      const content = raw
+        .replace('__SCRIPT_URL__', scriptUrl)
+        .replace('__URL_PARAMS__', urlParamsJson);  // ← NEW
+
+      console.log(`doGet: content length=${content.length}, scriptUrl=${scriptUrl}`);
+      const output = HtmlService.createHtmlOutput(content)
+        .setTitle('Misty Mountain Runners — Membership')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      console.log('mmr:doGet output created successfully for page =', page);
+      return output;
+
+    } catch (er: any) {
+      console.error('mmr:doGet ERROR for page =', page, 'error =', String(er));
+      return HtmlService.createHtmlOutput(
+        `<h2 style="color:red;font-family:sans-serif;">Server Error in doGet for ${page}</h2><pre>${String(er)}</pre>`
+      );
+    }
+
   } catch (err: any) {
     console.error('doGet error:', String(err));
     return HtmlService.createHtmlOutput(
@@ -11995,6 +12123,7 @@ function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutp
     );
   }
 }
+
 
 // ---- JSON response helpers (used by all backend modules) ----
 

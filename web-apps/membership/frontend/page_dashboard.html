@@ -336,20 +336,30 @@
 
   callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID })
     .then(function(data) {
-      console.log('[MMR][dashboard] getOrCreateMemberProfile success, memberID:', data.member && data.member.memberID);
+      console.log('[MMR][dashboard] getOrCreateMemberProfile success, memberID:', data.member?.memberID);
+
+      // ⚠️ Only trust the server result if memberID matches what's cached.
+      // If they differ, the server resolved to the wrong account (e.g. admin@mmrunners.org).
+      // In that case, keep the cached session and discard the server response.
+      if (cached && data.member.memberID !== currentMember?.memberID) {
+        console.warn('[MMR][dashboard] server returned different memberID (' + data.member.memberID +
+          ') than cached (' + currentMember?.memberID + ') — ignoring server result.');
+        return;
+      }
+
       sessionStorage.setItem('member', JSON.stringify(data.member));
-      renderMember(data.member, data.familyMembers || []);
+      renderMember(data.member, data.familyMembers);
     })
     .catch(function(err) {
-      console.error('[MMR][dashboard] getOrCreateMemberProfile failed:', err && err.message);
+      console.error('[MMR][dashboard] getOrCreateMemberProfile failed:', err.message);
       if (!cached) {
-        // No cached member and server failed — show session-expired message
         var loadingEl = document.getElementById('loading');
         loadingEl.style.display = 'block';
-        loadingEl.innerHTML = 'Session expired. <a href="?page=login" style="color:#2d7d46;">Sign in again</a>';
+        loadingEl.innerHTML = 'Session expired. <a href="?page=login" style="color:#2d7d46">Sign in again</a>';
       }
       // If we had cached member, we already rendered — don't blank the page
     });
+
 </script>
 </body>
 </html>

@@ -47,6 +47,48 @@ describe('requestEmailOtp', () => {
   });
 });
 
+describe('lookupEmail', () => {
+  beforeEach(() => {
+    __seedSheet(CFG, [['Key', 'Value', 'Desc']]);
+    __seedSheet(LOG, [[]]);
+  });
+
+  it('returns found:false for unknown email', () => {
+    __seedSheet(MM, [blankRow()]);
+    const res = JSON.parse(
+      (global as any).lookupEmail(req({ email: 'unknown@test.com', sessionID: 'S1' }))
+    );
+    expect(res.ok).toBe(true);
+    expect(res.payload.found).toBe(false);
+  });
+
+  it('returns found:true with firstName and memberID only', () => {
+    const row = blankRow();
+    row[0] = 'A0042'; row[4] = 'jane@yahoo.com';
+    row[5] = 'Jane';  row[6] = 'Doe';
+    row[1] = 'active';
+    __seedSheet(MM, [blankRow(), row]);
+    const res = JSON.parse(
+      (global as any).lookupEmail(req({ email: 'jane@yahoo.com', sessionID: 'S1' }))
+    );
+    expect(res.ok).toBe(true);
+    expect(res.payload.found).toBe(true);
+    expect(res.payload.memberID).toBe('A0042');
+    expect(res.payload.firstName).toBe('Jane');
+    // Should NOT expose status or expiration
+    expect(res.payload.status).toBeUndefined();
+    expect(res.payload.expiration).toBeUndefined();
+  });
+
+  it('rejects invalid email format', () => {
+    const res = JSON.parse(
+      (global as any).lookupEmail(req({ email: 'notanemail', sessionID: 'S1' }))
+    );
+    expect(res.ok).toBe(false);
+    expect(res.errorCode).toBe('INVALID_EMAIL');
+  });
+});
+
 describe('verifyEmailOtp', () => {
   beforeEach(() => {
     __seedSheet(CFG, [['Key', 'Value', 'Desc']]);
