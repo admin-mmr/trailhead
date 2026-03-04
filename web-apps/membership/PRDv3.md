@@ -373,6 +373,7 @@ Keys (exact names as they appear in the sheet):
 | `PayPalHandle` | `runningmmr@gmail.com` | PayPal payment handle shown to members |
 | `ZelleQRCodeFileId` | `1rcOOnmejgV0QH2f3NSDhiHP7wfJYqFKY` | Google Drive file ID for Zelle QR code image |
 | `VenmoQRCodeFileId` | `1JNcOT2ZqUI5D3Dyw8o9ZWy8NrLz2UU77` | Google Drive file ID for Venmo QR code image |
+
 | `PaymentProofFolderId` | `1I-FR4iTC8649XBzFSplyG2XARNBHwflz` | Google Drive folder ID where payment proof screenshots are stored |
 
 ### 5.6 WebApp-ActivityLog

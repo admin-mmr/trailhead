@@ -107,6 +107,10 @@
   var appBaseUrl = '__SCRIPT_URL__';
   console.log('[MMR][admin] appBaseUrl:', appBaseUrl);
 
+  var adminEmail = null;
+  var eventsCache = {};      // already used in approve(); keep as-is
+  var pendingEventsList = []; // NEW: flat list for manual match
+
   // Navigate all relative ?page= links through window.top with absolute URL
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
@@ -121,7 +125,6 @@
   });
 
   const SESSION_ID = Math.random().toString(36).slice(2);
-  let adminEmail = '';
   let configData = {};
 
   function callApi(fn, payload) {
@@ -221,30 +224,59 @@
       .then(function(data) {
         var events = data.events || [];
         console.log('[MMR][admin] getPendingEvents returned', events.length, 'events');
-        if (!events.length) { el.innerHTML = '<div class="empty-state">No pending renewals. 🎉</div>'; return; }
+
+        // Rebuild caches for manual match dropdown
+        eventsCache = {};
+        pendingEventsList = [];
+        events.forEach(function(ev) {
+          eventsCache[ev.eventID] = ev;
+          if (ev.status === 'Pending' || ev.status === 'Matched') {
+            pendingEventsList.push(ev);
+          }
+        });
+
+        if (!events.length) {
+          el.innerHTML = '<div class="empty-state">No pending renewals. 🎉</div>';
+          return;
+        }
+
         el.innerHTML = events.map(function(ev) {
           var actionsHtml = '';
           if (ev.status !== 'Approved' && ev.status !== 'Rejected') {
-            actionsHtml = '<input class="notes-input" id="notes-' + esc(ev.eventID) + '" placeholder="Notes (optional)" />' +
+            actionsHtml =
+              '<input class="notes-input" id="notes-' + esc(ev.eventID) + '" placeholder="Notes (optional)" />' +
               '<div class="action-row">' +
               '<button class="btn btn-approve" onclick="approve(\'' + esc(ev.eventID) + '\')">✓ Approve</button>' +
               '<button class="btn btn-reject" onclick="reject(\'' + esc(ev.eventID) + '\')">✗ Reject</button>' +
               '</div>';
           } else {
-            actionsHtml = '<div style="font-size:13px;color:#888;">Processed by ' + esc(ev.adminApprover) + ' on ' + esc(ev.approvalDate) + '</div>';
+            actionsHtml =
+              '<div style="font-size:13px;color:#888;">Processed by ' + esc(ev.adminApprover) + ' on ' + esc(ev.approvalDate) + '</div>';
           }
-          return '<div class="card" id="ev-' + esc(ev.eventID) + '">' +
-            '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-            '<div><h3>' + esc(ev.payerName || 'Unknown') + ' &mdash; ' + esc(ev.paymentIntent) + ' $' + esc(ev.amount) + '</h3>' +
-            '<div class="meta">' + esc(ev.eventID) + ' &bull; ' + new Date(ev.timestamp).toLocaleString() + ' &bull; ' + statusBadge(ev.status) + '</div></div></div>' +
-            '<div class="detail-grid">' +
-            '<div class="detail-item"><label>Member ID</label><span>' + esc(ev.memberID) + '</span></div>' +
-            '<div class="detail-item"><label>Email</label><span>' + esc(ev.email) + '</span></div>' +
-            '<div class="detail-item"><label>Payment Method</label><span>' + esc(ev.paymentMethod) + '</span></div>' +
-            '<div class="detail-item"><label>Last 4 Digits</label><span>' + esc(ev.last4Digits || '—') + '</span></div>' +
-            '<div class="detail-item"><label>Memo</label><span>' + esc(ev.memoField) + '</span></div>' +
-            '<div class="detail-item"><label>Matched Transaction</label><span>' + esc(ev.matchedTransactionNumber || '—') + '</span></div>' +
-            '</div>' + actionsHtml + '</div>';
+
+          return (
+            '<div class="card" id="ev-' + esc(ev.eventID) + '">' +
+              '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+                '<div>' +
+                  '<h3>' + esc(ev.payerName || 'Unknown') + ' &mdash; ' + esc(ev.paymentIntent) + ' $' + esc(ev.amount) + '</h3>' +
+                  '<div class="meta">' +
+                    esc(ev.eventID) + ' &bull; ' +
+                    new Date(ev.timestamp).toLocaleString() + ' &bull; ' +
+                    statusBadge(ev.status) +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="detail-grid">' +
+                '<div class="detail-item"><label>Member ID</label><span>' + esc(ev.memberID) + '</span></div>' +
+                '<div class="detail-item"><label>Email</label><span>' + esc(ev.email) + '</span></div>' +
+                '<div class="detail-item"><label>Payment Method</label><span>' + esc(ev.paymentMethod) + '</span></div>' +
+                '<div class="detail-item"><label>Last 4 Digits</label><span>' + esc(ev.last4Digits || '—') + '</span></div>' +
+                '<div class="detail-item"><label>Memo</label><span>' + esc(ev.memoField) + '</span></div>' +
+                '<div class="detail-item"><label>Matched Transaction</label><span>' + esc(ev.matchedTransactionNumber || '—') + '</span></div>' +
+              '</div>' +
+              actionsHtml +
+            '</div>'
+          );
         }).join('');
       })
       .catch(function(err) {

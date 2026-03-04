@@ -93,33 +93,44 @@ function reconcileWebAppWithGmail(_jsonRequest?: string): string {
 
 function findGmailMatch(event: WebAppEvent, gmailRows: FetchGmailRow[]): FetchGmailRow | null {
   const eventDate = new Date(event.timestamp);
-  const windowMs = 3 * 24 * 60 * 60 * 1000; // ±3 days
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
   for (const row of gmailRows) {
-    // Exact match on last 4 digits of transaction number
-    if (event.last4Digits && row.transactionNumber.endsWith(event.last4Digits)) {
-      if (row.amount === event.amount) return row;
-    }
+    // ── Must-match (all three required) ────────────────────────────────────
+    // 1. Not already matched/processed
+    if (row.processed) continue;
 
-    // Fuzzy match
-    const rowDate = new Date(row.transactionDate || row.timestamp);
-    if (Math.abs(eventDate.getTime() - rowDate.getTime()) > windowMs) continue;
+    // 2. Same amount (exact)
     if (row.amount !== event.amount) continue;
-    if (row.source.toLowerCase() !== event.paymentMethod.toLowerCase()) continue;
 
-    const senderLower = row.sender.toLowerCase();
-    const payerLower = event.payerName.toLowerCase();
-    const memoLower = (row.memo + ' ' + row.originalMemo).toLowerCase();
+    // 3. Transaction date within 7 days of submission timestamp
+    const rowDate = new Date(row.transactionDate || row.timestamp);
+    if (isNaN(rowDate.getTime())) continue;
+    if (Math.abs(eventDate.getTime() - rowDate.getTime()) > SEVEN_DAYS_MS) continue;
 
-    const senderMatch =
-      senderLower.includes(payerLower) || payerLower.includes(senderLower);
-    const memoMatch =
-      memoLower.includes(event.memberID.toLowerCase()) ||
-      memoLower.includes(payerLower);
+    // ── At-least-one (any one is sufficient) ───────────────────────────────
+    // 1. Last 4 digits of confirmation/transaction ID match
+    const trimmed4 = (event.last4Digits || '').trim();
+    const last4Match =
+      trimmed4.length === 4 &&
+      (row.transactionNumber || '').endsWith(trimmed4);
 
-    if (senderMatch || memoMatch) return row;
+    // 2. MemberID found anywhere in the memo fields
+    const memoText = ((row.memo || '') + ' ' + (row.originalMemo || '')).toLowerCase();
+    const memberIdMatch = memoText.includes(event.memberID.toLowerCase());
+
+    // 3. Payer name matches sender (case-insensitive, substring in either direction)
+    const payerLower  = (event.payerName || '').toLowerCase().trim();
+    const senderLower = (row.sender      || '').toLowerCase().trim();
+    const payerNameMatch =
+      payerLower.length > 0 &&
+      senderLower.length > 0 &&
+      (senderLower.includes(payerLower) || payerLower.includes(senderLower));
+
+    if (last4Match || memberIdMatch || payerNameMatch) {
+      return row;
+    }
   }
-
   return null;
 }
 
@@ -286,3 +297,8 @@ function testApproveRenewal() {
   const result = approveRenewal(req);
   console.log('approveRenewal result:', result);
 }
+
+(globalThis as any).submitRenewalRequest     = submitRenewalRequest;
+(globalThis as any).reconcileWebAppWithGmail = reconcileWebAppWithGmail;
+(globalThis as any).approveRenewal           = approveRenewal;
+(globalThis as any).rejectRenewal            = rejectRenewal;

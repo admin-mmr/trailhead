@@ -16,7 +16,8 @@ interface Member {
   wechatID: string;
   district: string;
   webApp: string;
-  paymentCheckInfo: string;
+  paymentCheck: string;
+  info: string;
   lastUpdated: string;
   membershipFeePaid: string;
   paymentDate: string;
@@ -25,7 +26,6 @@ interface Member {
   joinYear: string;
   phoneNumber: string;
   lastLoginDate: string;
-  profileLastUpdated: string;
   notes: string;
 }
 

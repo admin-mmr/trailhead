@@ -141,3 +141,8 @@ function verifyEmailOtp(jsonRequest: string): string {
 function generateOtpCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
+
+(globalThis as any).lookupEmail      = lookupEmail;
+(globalThis as any).requestEmailOtp  = requestEmailOtp;
+(globalThis as any).verifyEmailOtp   = verifyEmailOtp;
+(globalThis as any).handleGoogleLogin = handleGoogleLogin;

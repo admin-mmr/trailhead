@@ -2187,6 +2187,10 @@ This is the complete updated `PRDv2.md`. Key changes from rev 2:[^1]
   var appBaseUrl = '__SCRIPT_URL__';
   console.log('[MMR][admin] appBaseUrl:', appBaseUrl);
 
+  var adminEmail = null;
+  var eventsCache = {};      // already used in approve(); keep as-is
+  var pendingEventsList = []; // NEW: flat list for manual match
+
   // Navigate all relative ?page= links through window.top with absolute URL
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
@@ -2301,30 +2305,59 @@ This is the complete updated `PRDv2.md`. Key changes from rev 2:[^1]
       .then(function(data) {
         var events = data.events || [];
         console.log('[MMR][admin] getPendingEvents returned', events.length, 'events');
-        if (!events.length) { el.innerHTML = '<div class="empty-state">No pending renewals. 🎉</div>'; return; }
+
+        // Rebuild caches for manual match dropdown
+        eventsCache = {};
+        pendingEventsList = [];
+        events.forEach(function(ev) {
+          eventsCache[ev.eventID] = ev;
+          if (ev.status === 'Pending' || ev.status === 'Matched') {
+            pendingEventsList.push(ev);
+          }
+        });
+
+        if (!events.length) {
+          el.innerHTML = '<div class="empty-state">No pending renewals. 🎉</div>';
+          return;
+        }
+
         el.innerHTML = events.map(function(ev) {
           var actionsHtml = '';
           if (ev.status !== 'Approved' && ev.status !== 'Rejected') {
-            actionsHtml = '<input class="notes-input" id="notes-' + esc(ev.eventID) + '" placeholder="Notes (optional)" />' +
+            actionsHtml =
+              '<input class="notes-input" id="notes-' + esc(ev.eventID) + '" placeholder="Notes (optional)" />' +
               '<div class="action-row">' +
               '<button class="btn btn-approve" onclick="approve(\'' + esc(ev.eventID) + '\')">✓ Approve</button>' +
               '<button class="btn btn-reject" onclick="reject(\'' + esc(ev.eventID) + '\')">✗ Reject</button>' +
               '</div>';
           } else {
-            actionsHtml = '<div style="font-size:13px;color:#888;">Processed by ' + esc(ev.adminApprover) + ' on ' + esc(ev.approvalDate) + '</div>';
+            actionsHtml =
+              '<div style="font-size:13px;color:#888;">Processed by ' + esc(ev.adminApprover) + ' on ' + esc(ev.approvalDate) + '</div>';
           }
-          return '<div class="card" id="ev-' + esc(ev.eventID) + '">' +
-            '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-            '<div><h3>' + esc(ev.payerName || 'Unknown') + ' &mdash; ' + esc(ev.paymentIntent) + ' $' + esc(ev.amount) + '</h3>' +
-            '<div class="meta">' + esc(ev.eventID) + ' &bull; ' + new Date(ev.timestamp).toLocaleString() + ' &bull; ' + statusBadge(ev.status) + '</div></div></div>' +
-            '<div class="detail-grid">' +
-            '<div class="detail-item"><label>Member ID</label><span>' + esc(ev.memberID) + '</span></div>' +
-            '<div class="detail-item"><label>Email</label><span>' + esc(ev.email) + '</span></div>' +
-            '<div class="detail-item"><label>Payment Method</label><span>' + esc(ev.paymentMethod) + '</span></div>' +
-            '<div class="detail-item"><label>Last 4 Digits</label><span>' + esc(ev.last4Digits || '—') + '</span></div>' +
-            '<div class="detail-item"><label>Memo</label><span>' + esc(ev.memoField) + '</span></div>' +
-            '<div class="detail-item"><label>Matched Transaction</label><span>' + esc(ev.matchedTransactionNumber || '—') + '</span></div>' +
-            '</div>' + actionsHtml + '</div>';
+
+          return (
+            '<div class="card" id="ev-' + esc(ev.eventID) + '">' +
+              '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+                '<div>' +
+                  '<h3>' + esc(ev.payerName || 'Unknown') + ' &mdash; ' + esc(ev.paymentIntent) + ' $' + esc(ev.amount) + '</h3>' +
+                  '<div class="meta">' +
+                    esc(ev.eventID) + ' &bull; ' +
+                    new Date(ev.timestamp).toLocaleString() + ' &bull; ' +
+                    statusBadge(ev.status) +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="detail-grid">' +
+                '<div class="detail-item"><label>Member ID</label><span>' + esc(ev.memberID) + '</span></div>' +
+                '<div class="detail-item"><label>Email</label><span>' + esc(ev.email) + '</span></div>' +
+                '<div class="detail-item"><label>Payment Method</label><span>' + esc(ev.paymentMethod) + '</span></div>' +
+                '<div class="detail-item"><label>Last 4 Digits</label><span>' + esc(ev.last4Digits || '—') + '</span></div>' +
+                '<div class="detail-item"><label>Memo</label><span>' + esc(ev.memoField) + '</span></div>' +
+                '<div class="detail-item"><label>Matched Transaction</label><span>' + esc(ev.matchedTransactionNumber || '—') + '</span></div>' +
+              '</div>' +
+              actionsHtml +
+            '</div>'
+          );
         }).join('');
       })
       .catch(function(err) {
@@ -3936,6 +3969,76 @@ This is the complete updated `PRDv2.md`. Key changes from rev 2:[^1]
     return html;
   }
 
+    // --- NEW: build proofs section ---
+  function buildProofsHTML(proofs, currentMemberID) {
+    if (!proofs || !proofs.length) return '';
+    var html = '<div class="section-title">Payment Proof Submissions</div>';
+    proofs.forEach(function(p) {
+      var isOwn = p.memberID === currentMemberID;
+      var memberLabel = isOwn ? 'You' : 'Family member ' + esc(p.memberID);
+
+      var screenshotLink = p.screenshotFileId
+        ? ' &bull; <a href="https://drive.google.com/file/d/' + esc(p.screenshotFileId) + '/view" target="_blank">View Screenshot</a>'
+        : '';
+
+      // Deep-link into admin approval queue
+      var isPending = p.status === 'Pending Review' || p.status === 'Pending';
+      var approvalLink = isPending
+        ? ' &bull; <a href="' + appBaseUrl + '?page=admin" target="_top" '
+          + 'onclick="sessionStorage.setItem(\'adminFocusProof\',\'' + esc(p.eventID) + '\');return true;"'
+          + '>View in Admin Queue</a>'
+        : '';
+
+      html += '<div class="row-card">';
+      html += '<div class="row-top">';
+      html += '<span class="row-intent">' + esc(p.eventName) + '</span>';
+      html += '<span class="row-amount">$' + esc(p.amount) + '</span>';
+      html += '</div>';
+      html += '<div class="row-meta">';
+      html += '<span>' + memberLabel + '</span>';
+      html += '<span>' + fmt(p.paymentDate) + '</span>';
+      html += '<span>' + esc(p.payerName) + '</span>';
+      html += '<span><span class="' + badgeCls(p.status) + '">' + esc(p.status) + '</span></span>';
+      html += screenshotLink + approvalLink;
+      html += '</div>';
+      if (p.notes) {
+        html += '<div class="row-meta" style="margin-top:4px;color:#555">'
+              + '<span>Note: ' + esc(p.notes) + '</span></div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
+
+  // --- UPDATED data loader ---
+  var member = null;
+  try { member = JSON.parse(sessionStorage.getItem('member')); } catch(e) {}
+  if (!member || !member.email) {
+    window.top.location.href = appBaseUrl + '?page=login';
+  } else {
+    document.getElementById('member-id-display').textContent = 'Member ID: ' + member.memberID;
+    callApi('getMemberPaymentHistory', { email: member.email, sessionID: SESSIONID })
+      .then(function(data) {
+        document.getElementById('loading').style.display = 'none';
+        var content = document.getElementById('content');
+        content.style.display = 'block';
+        var split = renderEvents(data.events);
+        var html = '';
+        html += buildPendingHTML(split.pending);          // pending WebApp-Events
+        html += buildProofsHTML(data.proofs, data.memberID); // NEW: proof submissions
+        html += buildConfirmedHTML(data.payments);         // confirmed Payment-History
+        html += buildRejectedHTML(split.past);             // rejected/error events
+        content.innerHTML = html || '<div class="empty">No payment activity found.</div>';
+      })
+      .catch(function(err) {
+        document.getElementById('loading').style.display = 'none';
+        var content = document.getElementById('content');
+        content.style.display = 'block';
+        content.innerHTML = '<div class="empty" style="color:#c62828">Failed to load: ' + esc(err.message) + '</div>';
+      });
+  }
+
+
   function buildConfirmedHTML(payments) {
     if (!payments.length) return '<div class="empty">No confirmed payments yet.</div>';
     var html = '<div class="section-title">✅ Confirmed Payments</div>';
@@ -4624,7 +4727,6 @@ function buildOptions(memberType) {
     { intent: 'Family Renewal',     label: 'Family Membership – $50',     amount: 50 },
   ];
 }
-
 
   let selectedType = 'Individual';
   let config = {};
@@ -11764,6 +11866,129 @@ function isAdmin(email: string): boolean {
   return adminEmails.includes(email.trim().toLowerCase());
 }
 
+// Manually link an unmatched Gmail payment to a WebApp-Events row
+function manualMatch(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{
+    adminEmail: string;
+    eventID: string;
+    messageId: string;
+  }>;
+  const payload = req.payload;
+
+  try {
+    if (!isAdmin(payload.adminEmail)) {
+      return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
+    }
+
+    const eventID = (payload.eventID || '').trim();
+    const messageId = (payload.messageId || '').trim();
+    if (!eventID || !messageId) {
+      return jsonError(req.requestId, 'BAD_REQUEST', 'eventID and messageId are required.');
+    }
+
+    const eventsSheet = getSheet(SHEET_NAMES.WEBAPP_EVENTS);
+    const gmailSheet  = getSheet(SHEET_NAMES.FETCH_GMAIL);
+    if (!eventsSheet || !gmailSheet) {
+      return jsonError(req.requestId, 'SHEET_MISSING', 'Required sheets not found.');
+    }
+
+    const eventsValues = eventsSheet.getDataRange().getValues();
+    const gmailValues  = gmailSheet.getDataRange().getValues();
+
+    let eventRowIndex = -1;
+    let gmailRowIndex = -1;
+
+    // Find WebApp-Events row by EventID
+    for (let i = 1; i < eventsValues.length; i++) {
+      const row = eventsValues[i];
+      if (String(row[WE_COL.EVENT_ID]).trim() === eventID) {
+        eventRowIndex = i;
+        break;
+      }
+    }
+
+    if (eventRowIndex === -1) {
+      return jsonError(req.requestId, 'NOT_FOUND', 'Event not found.');
+    }
+
+    // Find Fetch-Gmail row by MessageId
+    for (let i = 1; i < gmailValues.length; i++) {
+      const row = gmailValues[i];
+      if (String(row[FG_COL.MESSAGE_ID]).trim() === messageId) {
+        gmailRowIndex = i;
+        break;
+      }
+    }
+
+    if (gmailRowIndex === -1) {
+      return jsonError(req.requestId, 'NOT_FOUND', 'Gmail payment not found.');
+    }
+
+    const eventRow = eventsValues[eventRowIndex];
+    const gmailRow = gmailValues[gmailRowIndex];
+
+    const transactionNumber = String(gmailRow[FG_COL.TRANSACTION_NUMBER] || '');
+    const amount            = Number(gmailRow[FG_COL.AMOUNT]) || 0;
+
+    // Update WebApp-Events row: Status -> Matched, set matched fields
+    eventRow[WE_COL.STATUS]                 = 'Matched';
+    eventRow[WE_COL.MATCHED_MESSAGE_ID]       = messageId;
+    eventRow[WE_COL.MATCHED_TRANSACTION_NUMBER] = transactionNumber;
+    // Optionally record note that this was a manual match
+    const oldNotes = String(eventRow[WE_COL.NOTES] || '');
+    const noteLine = `Manual match by ${payload.adminEmail} on ${new Date().toISOString()} amount=${amount}`;
+    eventRow[WE_COL.NOTES] = oldNotes ? (oldNotes + ' | ' + noteLine) : noteLine;
+
+    eventsSheet.getRange(eventRowIndex + 1, 1, 1, eventRow.length).setValues([eventRow]);
+
+    // Update Fetch-Gmail row: mark processed and link EventID
+    gmailRow[FG_COL.PROCESSED]    = true;
+    gmailRow[FG_COL.WEBAPP_EVENT_ID] = eventID;
+    gmailSheet.getRange(gmailRowIndex + 1, 1, 1, gmailRow.length).setValues([gmailRow]);
+
+    auditLog('MANUALMATCH', {
+      email: payload.adminEmail,
+      eventID,
+      state: { messageId, transactionNumber, amount },
+    });
+
+    // Return minimal summary for frontend refresh
+    const updatedEvent: WebAppEvent = {
+      eventID:        String(eventRow[WE_COL.EVENT_ID]),
+      eventType:      String(eventRow[WE_COL.EVENT_TYPE])  as WebAppEvent['eventType'],
+      timestamp:      String(eventRow[WE_COL.TIMESTAMP]),
+      memberID:       String(eventRow[WE_COL.MEMBER_ID]),
+      email:          String(eventRow[WE_COL.EMAIL]),
+      paymentIntent:  String(eventRow[WE_COL.PAYMENT_INTENT]) as WebAppEvent['paymentIntent'],
+      amount:         Number(eventRow[WE_COL.AMOUNT]) || 0,
+      paymentMethod:  String(eventRow[WE_COL.PAYMENT_METHOD]) as WebAppEvent['paymentMethod'],
+      payerName:      String(eventRow[WE_COL.PAYER_NAME]),
+      memoField:      String(eventRow[WE_COL.MEMO_FIELD]),
+      last4Digits:    String(eventRow[WE_COL.LAST_4_DIGITS]),
+      familyMemberEmails: String(eventRow[WE_COL.FAMILY_MEMBER_EMAILS]),
+      status:        String(eventRow[WE_COL.STATUS]) as WebAppEvent['status'],  
+      matchedMessageId:       String(eventRow[WE_COL.MATCHED_MESSAGE_ID]),
+      matchedTransactionNumber: String(eventRow[WE_COL.MATCHED_TRANSACTION_NUMBER]),
+      adminApprover: String(eventRow[WE_COL.ADMIN_APPROVER] || ''),
+      approvalDate:  String(eventRow[WE_COL.APPROVAL_DATE] || ''),
+      notes:         String(eventRow[WE_COL.NOTES] || ''),
+    };
+
+    return jsonOk(req.requestId, { event: updatedEvent });
+  } catch (e: any) {
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
+(globalThis as any).getPendingEvents     = getPendingEvents;
+(globalThis as any).getUnmatchedPayments = getUnmatchedPayments;
+(globalThis as any).getConfig            = getConfig;
+(globalThis as any).updateConfigEntry    = updateConfigEntry;
+(globalThis as any).getPaymentProofs     = getPaymentProofs;
+(globalThis as any).getPublicConfig      = getPublicConfig;
+(globalThis as any).manualMatch          = manualMatch;
+
+
 ```
 
 
@@ -12451,30 +12676,35 @@ function createNewMember(jsonRequest: string): string {
 
 function getMemberPaymentHistory(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string; sessionID: string }>;
-  const { payload } = req;
+  const payload = req.payload;
   try {
     const email = payload.email.trim().toLowerCase();
 
-    // 1. Get memberID from Membership Master
+    // 1. Resolve member
     const found = findMemberByEmail(email);
-    if (!found) {
-      return jsonError(req.requestId, 'MEMBER_NOT_FOUND', 'Member not found.');
+    if (!found) return jsonError(req.requestId, 'MEMBER_NOT_FOUND', 'Member not found.');
+    const member = found.member;
+    const memberID = member.memberID;
+
+    // 2. Expand to family scope: self + anyone sharing the same FamilyID
+    let allMemberIDs: string[] = [memberID];
+    if (member.familyID) {
+      const familyMembers = getMembersByFamilyID(member.familyID);
+      const familyIDs = familyMembers
+        .map(m => m.memberID)
+        .filter(id => id !== memberID);
+      allMemberIDs = [memberID, ...familyIDs];
     }
-    const memberID = found.member.memberID;
 
-    // 2. Load approved Payment-History rows for this member
-    const payments = getPaymentHistoryByMemberID(memberID);
+    // 3. Gather data across entire family scope
+    const payments = allMemberIDs.flatMap(id => getPaymentHistoryByMemberID(id));
+    const events   = allMemberIDs.flatMap(id => getWebAppEventsByMemberID(id));
+    const proofs   = getPaymentProofsByMemberIDs(allMemberIDs);
 
-    // 3. Load ALL WebApp-Events rows for this member (Pending/Matched/Approved/Rejected)
-    const events = getWebAppEventsByMemberID(memberID);
+    auditLog('PAYMENTHISTORY_VIEW', { sessionID: payload.sessionID, memberID });
 
-    auditLog('PAYMENT_HISTORY_VIEW', { sessionID: payload.sessionID, memberID });
-
-    return jsonOk(req.requestId, {
-      memberID,
-      payments,   // confirmed Payment-History rows
-      events,     // all submission events including pending ones
-    });
+    // Return memberID so frontend knows who "self" is (to label family entries)
+    return jsonOk(req.requestId, { memberID, payments, events, proofs });
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
@@ -12735,33 +12965,44 @@ function reconcileWebAppWithGmail(_jsonRequest?: string): string {
 
 function findGmailMatch(event: WebAppEvent, gmailRows: FetchGmailRow[]): FetchGmailRow | null {
   const eventDate = new Date(event.timestamp);
-  const windowMs = 3 * 24 * 60 * 60 * 1000; // ±3 days
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
   for (const row of gmailRows) {
-    // Exact match on last 4 digits of transaction number
-    if (event.last4Digits && row.transactionNumber.endsWith(event.last4Digits)) {
-      if (row.amount === event.amount) return row;
-    }
+    // ── Must-match (all three required) ────────────────────────────────────
+    // 1. Not already matched/processed
+    if (row.processed) continue;
 
-    // Fuzzy match
-    const rowDate = new Date(row.transactionDate || row.timestamp);
-    if (Math.abs(eventDate.getTime() - rowDate.getTime()) > windowMs) continue;
+    // 2. Same amount (exact)
     if (row.amount !== event.amount) continue;
-    if (row.source.toLowerCase() !== event.paymentMethod.toLowerCase()) continue;
 
-    const senderLower = row.sender.toLowerCase();
-    const payerLower = event.payerName.toLowerCase();
-    const memoLower = (row.memo + ' ' + row.originalMemo).toLowerCase();
+    // 3. Transaction date within 7 days of submission timestamp
+    const rowDate = new Date(row.transactionDate || row.timestamp);
+    if (isNaN(rowDate.getTime())) continue;
+    if (Math.abs(eventDate.getTime() - rowDate.getTime()) > SEVEN_DAYS_MS) continue;
 
-    const senderMatch =
-      senderLower.includes(payerLower) || payerLower.includes(senderLower);
-    const memoMatch =
-      memoLower.includes(event.memberID.toLowerCase()) ||
-      memoLower.includes(payerLower);
+    // ── At-least-one (any one is sufficient) ───────────────────────────────
+    // 1. Last 4 digits of confirmation/transaction ID match
+    const trimmed4 = (event.last4Digits || '').trim();
+    const last4Match =
+      trimmed4.length === 4 &&
+      (row.transactionNumber || '').endsWith(trimmed4);
 
-    if (senderMatch || memoMatch) return row;
+    // 2. MemberID found anywhere in the memo fields
+    const memoText = ((row.memo || '') + ' ' + (row.originalMemo || '')).toLowerCase();
+    const memberIdMatch = memoText.includes(event.memberID.toLowerCase());
+
+    // 3. Payer name matches sender (case-insensitive, substring in either direction)
+    const payerLower  = (event.payerName || '').toLowerCase().trim();
+    const senderLower = (row.sender      || '').toLowerCase().trim();
+    const payerNameMatch =
+      payerLower.length > 0 &&
+      senderLower.length > 0 &&
+      (senderLower.includes(payerLower) || payerLower.includes(senderLower));
+
+    if (last4Match || memberIdMatch || payerNameMatch) {
+      return row;
+    }
   }
-
   return null;
 }
 
@@ -13058,6 +13299,43 @@ function generateFamilyID(): string {
   }
   throw new Error('No available family IDs B001–B999 all in use.');
 }
+
+// Returns all members sharing a FamilyID
+function getMembersByFamilyID(familyID: string): Member[] {
+  const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues();
+  return rows.slice(1)
+    .filter(row => String(row[MM_COL.FAMILY_ID]).trim() === familyID.trim())
+    .map(row => rowToMember(row));
+}
+
+// Loads Payment-Proofs rows for any of the given memberIDs
+function getPaymentProofsByMemberIDs(memberIDs: string[]): PaymentProof[] {
+  const sheet = getSheet(SHEET_NAMES.PAYMENT_PROOFS);
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues().slice(1);
+  return rows
+    .filter(row => memberIDs.includes(String(row[PP_COL.MEMBER_ID])))
+    .map(row => ({
+      eventID:          String(row[PP_COL.EVENT_ID]),
+      timestamp:        String(row[PP_COL.TIMESTAMP]),
+      memberID:         String(row[PP_COL.MEMBER_ID]),
+      email:            String(row[PP_COL.EMAIL]),
+      eventName:        String(row[PP_COL.EVENT_NAME]),
+      amount:           Number(row[PP_COL.AMOUNT]) || 0,
+      paymentDate:      String(row[PP_COL.PAYMENT_DATE]),
+      payerName:        String(row[PP_COL.PAYER_NAME]),
+      last4Digits:      String(row[PP_COL.LAST_4_DIGITS]),
+      notes:            String(row[PP_COL.NOTES]),
+      screenshotFileId: String(row[PP_COL.SCREENSHOT_FILE_ID]),
+      status:           String(row[PP_COL.STATUS]) as PaymentProof['status'],
+      gdriveFilePath:   String(row[PP_COL.GDRIVE_FILE_PATH]),
+      ocrText:          String(row[PP_COL.OCR_TEXT]),
+      ocrTimestamp:     String(row[PP_COL.OCR_TIMESTAMP]),
+    }));
+}
+
 
 function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
@@ -13704,6 +13982,8 @@ function jsonError(requestId: string, errorCode: string, errorMessage: string): 
   const response: ApiResponseError = { ok: false, requestId, errorCode, errorMessage };
   return JSON.stringify(response);
 }
+
+(globalThis as any).doGet = doGet;
 
 ```
 

@@ -51,7 +51,6 @@ function updateMemberProfile(jsonRequest: string): string {
     const now = new Date().toISOString();
     const updates: Record<string, any> = {
       LAST_UPDATED: now,
-      PROFILE_LAST_UPDATED: now,
     };
     if (payload.firstName !== undefined) updates['FIRST_NAME'] = payload.firstName.trim();
     if (payload.lastName !== undefined) updates['LAST_NAME'] = payload.lastName.trim();
@@ -112,7 +111,6 @@ function createNewMember(jsonRequest: string): string {
     newRow[MM_COL.DISTRICT] = (payload.district || '').trim();
     newRow[MM_COL.JOIN_YEAR] = currentYear;
     newRow[MM_COL.LAST_UPDATED] = now;
-    newRow[MM_COL.PROFILE_LAST_UPDATED] = now;
     newRow[MM_COL.LAST_LOGIN_DATE] = now;
     sheet.appendRow(newRow);
 
@@ -130,32 +128,41 @@ function createNewMember(jsonRequest: string): string {
 
 function getMemberPaymentHistory(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string; sessionID: string }>;
-  const { payload } = req;
+  const payload = req.payload;
   try {
     const email = payload.email.trim().toLowerCase();
 
-    // 1. Get memberID from Membership Master
+    // 1. Resolve member
     const found = findMemberByEmail(email);
-    if (!found) {
-      return jsonError(req.requestId, 'MEMBER_NOT_FOUND', 'Member not found.');
+    if (!found) return jsonError(req.requestId, 'MEMBER_NOT_FOUND', 'Member not found.');
+    const member = found.member;
+    const memberID = member.memberID;
+
+    // 2. Expand to family scope: self + anyone sharing the same FamilyID
+    let allMemberIDs: string[] = [memberID];
+    if (member.familyID) {
+      const familyMembers = getMembersByFamilyID(member.familyID);
+      const familyIDs = familyMembers
+        .map(m => m.memberID)
+        .filter(id => id !== memberID);
+      allMemberIDs = [memberID, ...familyIDs];
     }
-    const memberID = found.member.memberID;
 
-    // 2. Load approved Payment-History rows for this member
-    const payments = getPaymentHistoryByMemberID(memberID);
+    // 3. Gather data across entire family scope
+    const payments = allMemberIDs.flatMap(id => getPaymentHistoryByMemberID(id));
+    const events   = allMemberIDs.flatMap(id => getWebAppEventsByMemberID(id));
+    const proofs   = getPaymentProofsByMemberIDs(allMemberIDs);
 
-    // 3. Load ALL WebApp-Events rows for this member (Pending/Matched/Approved/Rejected)
-    const events = getWebAppEventsByMemberID(memberID);
+    auditLog('PAYMENTHISTORY_VIEW', { sessionID: payload.sessionID, memberID });
 
-    auditLog('PAYMENT_HISTORY_VIEW', { sessionID: payload.sessionID, memberID });
-
-    return jsonOk(req.requestId, {
-      memberID,
-      payments,   // confirmed Payment-History rows
-      events,     // all submission events including pending ones
-    });
+    // Return memberID so frontend knows who "self" is (to label family entries)
+    return jsonOk(req.requestId, { memberID, payments, events, proofs });
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
 
+(globalThis as any).getOrCreateMemberProfile  = getOrCreateMemberProfile;
+(globalThis as any).updateMemberProfile       = updateMemberProfile;
+(globalThis as any).getMemberPaymentHistory   = getMemberPaymentHistory;
+(globalThis as any).createNewMember            = createNewMember;            // ← 

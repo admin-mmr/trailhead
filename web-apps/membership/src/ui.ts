@@ -71,3 +71,5 @@ function jsonError(requestId: string, errorCode: string, errorMessage: string): 
   const response: ApiResponseError = { ok: false, requestId, errorCode, errorMessage };
   return JSON.stringify(response);
 }
+
+(globalThis as any).doGet = doGet;

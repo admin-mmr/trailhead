@@ -40,16 +40,16 @@ const MM_COL = {
   WECHAT_ID: 10,
   DISTRICT: 11,
   WEBAPP: 12,
-  PAYMENT_CHECK_INFO: 13,
-  LAST_UPDATED: 14,
-  MEMBERSHIP_FEE_PAID: 15,
-  PAYMENT_DATE: 16,
-  PAYMENT_TRANSACTION: 17,
+  PAYMENT_CHECK: 13,
+  INFO: 14,
+  LAST_UPDATED: 15,
+  MEMBERSHIP_FEE_PAID: 16,
+  PAYMENT_DATE: 17,
+  PAYMENT_TRANSACTION: 18,
   // New columns appended after existing ones
-  JOIN_YEAR: 18,
-  PHONE_NUMBER: 19,
-  LAST_LOGIN_DATE: 20,
-  PROFILE_LAST_UPDATED: 21,
+  JOIN_YEAR: 19,
+  PHONE_NUMBER: 20,
+  LAST_LOGIN_DATE: 21,
   NOTES: 22,
 };
 
@@ -225,7 +225,8 @@ const DEFAULT_CONFIG_ROWS: string[][] = [
   ['OTPCleanupDays',         '7',                       'Days before used/expired OTPs are deleted'],
   ['AdminEmails',            'admin@mmrunners.org',     'Comma-separated admin email addresses'],
   ['AppBaseUrl',             '',                        'Deployed web app URL (set after first deploy)'],
-  ['PaymentProofFolderId',   '',                        'Google Drive folder ID for payment proofs'],
+  // src/config.ts — in DEFAULT_CONFIG_ROWS
+  ['PaymentProofFolderId', '1I-FR4iTC8649XBzFSplyG2XARNBHwflz', 'Google Drive folder ID for payment proofs'],
   ['ZelleQRCodeFileId',      '',                        'Google Drive file ID for Zelle QR code image'],
   ['VenmoQRCodeFileId',      '',                        'Google Drive file ID for Venmo QR code image'],
 ];

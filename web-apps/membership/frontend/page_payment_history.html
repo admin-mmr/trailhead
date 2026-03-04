@@ -189,6 +189,76 @@
     return html;
   }
 
+    // --- NEW: build proofs section ---
+  function buildProofsHTML(proofs, currentMemberID) {
+    if (!proofs || !proofs.length) return '';
+    var html = '<div class="section-title">Payment Proof Submissions</div>';
+    proofs.forEach(function(p) {
+      var isOwn = p.memberID === currentMemberID;
+      var memberLabel = isOwn ? 'You' : 'Family member ' + esc(p.memberID);
+
+      var screenshotLink = p.screenshotFileId
+        ? ' &bull; <a href="https://drive.google.com/file/d/' + esc(p.screenshotFileId) + '/view" target="_blank">View Screenshot</a>'
+        : '';
+
+      // Deep-link into admin approval queue
+      var isPending = p.status === 'Pending Review' || p.status === 'Pending';
+      var approvalLink = isPending
+        ? ' &bull; <a href="' + appBaseUrl + '?page=admin" target="_top" '
+          + 'onclick="sessionStorage.setItem(\'adminFocusProof\',\'' + esc(p.eventID) + '\');return true;"'
+          + '>View in Admin Queue</a>'
+        : '';
+
+      html += '<div class="row-card">';
+      html += '<div class="row-top">';
+      html += '<span class="row-intent">' + esc(p.eventName) + '</span>';
+      html += '<span class="row-amount">$' + esc(p.amount) + '</span>';
+      html += '</div>';
+      html += '<div class="row-meta">';
+      html += '<span>' + memberLabel + '</span>';
+      html += '<span>' + fmt(p.paymentDate) + '</span>';
+      html += '<span>' + esc(p.payerName) + '</span>';
+      html += '<span><span class="' + badgeCls(p.status) + '">' + esc(p.status) + '</span></span>';
+      html += screenshotLink + approvalLink;
+      html += '</div>';
+      if (p.notes) {
+        html += '<div class="row-meta" style="margin-top:4px;color:#555">'
+              + '<span>Note: ' + esc(p.notes) + '</span></div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
+
+  // --- UPDATED data loader ---
+  var member = null;
+  try { member = JSON.parse(sessionStorage.getItem('member')); } catch(e) {}
+  if (!member || !member.email) {
+    window.top.location.href = appBaseUrl + '?page=login';
+  } else {
+    document.getElementById('member-id-display').textContent = 'Member ID: ' + member.memberID;
+    callApi('getMemberPaymentHistory', { email: member.email, sessionID: SESSIONID })
+      .then(function(data) {
+        document.getElementById('loading').style.display = 'none';
+        var content = document.getElementById('content');
+        content.style.display = 'block';
+        var split = renderEvents(data.events);
+        var html = '';
+        html += buildPendingHTML(split.pending);          // pending WebApp-Events
+        html += buildProofsHTML(data.proofs, data.memberID); // NEW: proof submissions
+        html += buildConfirmedHTML(data.payments);         // confirmed Payment-History
+        html += buildRejectedHTML(split.past);             // rejected/error events
+        content.innerHTML = html || '<div class="empty">No payment activity found.</div>';
+      })
+      .catch(function(err) {
+        document.getElementById('loading').style.display = 'none';
+        var content = document.getElementById('content');
+        content.style.display = 'block';
+        content.innerHTML = '<div class="empty" style="color:#c62828">Failed to load: ' + esc(err.message) + '</div>';
+      });
+  }
+
+
   function buildConfirmedHTML(payments) {
     if (!payments.length) return '<div class="empty">No confirmed payments yet.</div>';
     var html = '<div class="section-title">✅ Confirmed Payments</div>';

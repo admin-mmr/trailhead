@@ -44,7 +44,8 @@ function rowToMember(row: any[]): Member {
     wechatID: String(row[MM_COL.WECHAT_ID] ?? ''),
     district: String(row[MM_COL.DISTRICT] ?? ''),
     webApp: String(row[MM_COL.WEBAPP] ?? ''),
-    paymentCheckInfo: String(row[MM_COL.PAYMENT_CHECK_INFO] ?? ''),
+    paymentCheck: String(row[MM_COL.PAYMENT_CHECK] ?? ''),
+    info: String(row[MM_COL.INFO] ?? ''),
     lastUpdated: String(row[MM_COL.LAST_UPDATED] ?? ''),
     membershipFeePaid: String(row[MM_COL.MEMBERSHIP_FEE_PAID] ?? ''),
     paymentDate: String(row[MM_COL.PAYMENT_DATE] ?? ''),
@@ -52,7 +53,6 @@ function rowToMember(row: any[]): Member {
     joinYear: String(row[MM_COL.JOIN_YEAR] ?? ''),
     phoneNumber: String(row[MM_COL.PHONE_NUMBER] ?? ''),
     lastLoginDate: String(row[MM_COL.LAST_LOGIN_DATE] ?? ''),
-    profileLastUpdated: String(row[MM_COL.PROFILE_LAST_UPDATED] ?? ''),
     notes: String(row[MM_COL.NOTES] ?? ''),
   };
 }
@@ -119,6 +119,43 @@ function generateFamilyID(): string {
   }
   throw new Error('No available family IDs B001–B999 all in use.');
 }
+
+// Returns all members sharing a FamilyID
+function getMembersByFamilyID(familyID: string): Member[] {
+  const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues();
+  return rows.slice(1)
+    .filter(row => String(row[MM_COL.FAMILY_ID]).trim() === familyID.trim())
+    .map(row => rowToMember(row));
+}
+
+// Loads Payment-Proofs rows for any of the given memberIDs
+function getPaymentProofsByMemberIDs(memberIDs: string[]): PaymentProof[] {
+  const sheet = getSheet(SHEET_NAMES.PAYMENT_PROOFS);
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues().slice(1);
+  return rows
+    .filter(row => memberIDs.includes(String(row[PP_COL.MEMBER_ID])))
+    .map(row => ({
+      eventID:          String(row[PP_COL.EVENT_ID]),
+      timestamp:        String(row[PP_COL.TIMESTAMP]),
+      memberID:         String(row[PP_COL.MEMBER_ID]),
+      email:            String(row[PP_COL.EMAIL]),
+      eventName:        String(row[PP_COL.EVENT_NAME]),
+      amount:           Number(row[PP_COL.AMOUNT]) || 0,
+      paymentDate:      String(row[PP_COL.PAYMENT_DATE]),
+      payerName:        String(row[PP_COL.PAYER_NAME]),
+      last4Digits:      String(row[PP_COL.LAST_4_DIGITS]),
+      notes:            String(row[PP_COL.NOTES]),
+      screenshotFileId: String(row[PP_COL.SCREENSHOT_FILE_ID]),
+      status:           String(row[PP_COL.STATUS]) as PaymentProof['status'],
+      gdriveFilePath:   String(row[PP_COL.GDRIVE_FILE_PATH]),
+      ocrText:          String(row[PP_COL.OCR_TEXT]),
+      ocrTimestamp:     String(row[PP_COL.OCR_TIMESTAMP]),
+    }));
+}
+
 
 function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
