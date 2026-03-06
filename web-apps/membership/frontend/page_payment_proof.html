@@ -76,7 +76,7 @@
 console.log('[MMR][paymentproof] page script started');
 var appBaseUrl = '__SCRIPT_URL__';
 const SERVER_PARAMS = __URL_PARAMS__;   // injected by doGet - no quotes!
-const SESSIONID = Math.random().toString(36).slice(2);
+const SESSION_ID = Math.random().toString(36).slice(2);
 let member = null;
 
 console.log('[MMR][paymentproof] SERVER_PARAMS =', SERVER_PARAMS);
@@ -157,7 +157,7 @@ async function submitProof() {
       last4Digits: document.getElementById('last4Digits').value.trim(),
       notes:       document.getElementById('notes').value.trim(),
       screenshot:  screenshotBase64,
-      sessionID:   SESSIONID,
+      sessionID:   SESSION_ID,
     };
     console.log('[MMR][paymentproof] submitting proof for memberID=', payload.memberID);
     await callApi('submitPaymentProof', payload);

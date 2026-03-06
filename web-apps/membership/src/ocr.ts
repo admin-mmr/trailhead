@@ -1,5 +1,5 @@
 // ============================================================
-// OCR processing for payment proofs
+// OCR processing for payment proofs stored in WebApp-Events
 // Depends on: config.ts, sheets.ts, admin.ts
 // Exposed GAS functions: runOcrForPaymentProof
 // ============================================================
@@ -33,35 +33,25 @@ function runOcrForPaymentProof(jsonRequest: string): string {
       return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
     }
 
-    const sheet = getSheet(SHEET_NAMES.PAYMENT_PROOFS);
-    const data = sheet.getDataRange().getValues();
-    let rowIndex = -1;
-    let fileId = '';
-
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][PP_COL.EVENT_ID] === payload.eventId) {
-        rowIndex = i;
-        fileId = data[i][PP_COL.SCREENSHOT_FILE_ID];
-        break;
-      }
+    const found = findWebAppEvent(payload.eventId);
+    if (!found) {
+      return jsonError(req.requestId, 'NOT_FOUND', 'WebApp event not found.');
     }
 
-    if (rowIndex === -1) {
-      return jsonError(req.requestId, 'NOT_FOUND', 'Payment proof event not found.');
-    }
-
+    const fileId = found.event.screenshotFileId || '';
     if (!fileId) {
-      return jsonError(req.requestId, 'BAD_REQUEST', 'No screenshot file ID found for this payment proof.');
+      return jsonError(req.requestId, 'BAD_REQUEST', 'No screenshot file ID found for this event.');
     }
 
     const ocrText = ocrImageToText_(fileId);
-    const file = DriveApp.getFileById(fileId);
-    const filePath = file.getUrl();
+    const filePath = DriveApp.getFileById(fileId).getUrl();
     const timestamp = new Date().toISOString();
 
-    sheet.getRange(rowIndex + 1, PP_COL.GDRIVE_FILE_PATH + 1).setValue(filePath);
-    sheet.getRange(rowIndex + 1, PP_COL.OCR_TEXT + 1).setValue(ocrText);
-    sheet.getRange(rowIndex + 1, PP_COL.OCR_TIMESTAMP + 1).setValue(timestamp);
+    updateWebAppEventRow(found.rowIndex, {
+      GDRIVE_FILE_PATH: filePath,
+      OCR_TEXT:         ocrText,
+      OCR_TIMESTAMP:    timestamp,
+    });
 
     return jsonOk(req.requestId, { message: 'OCR process completed successfully.' });
 

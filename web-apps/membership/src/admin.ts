@@ -37,25 +37,29 @@ function getPaymentProofs(jsonRequest: string): string {
     if (!isAdmin(req.payload.adminEmail)) {
       return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
     }
-    const sheet = getSheet(SHEET_NAMES.PAYMENT_PROOFS);
+    // Payment proofs are now stored directly in WebApp-Events.
+    // Return all events that have a screenshotFileId attached.
+    const sheet = getSheet(SHEET_NAMES.WEBAPP_EVENTS);
     const data = sheet.getDataRange().getValues().slice(1); // skip header
-    const proofs = data.map(row => ({
-      eventId: row[PP_COL.EVENT_ID],
-      timestamp: row[PP_COL.TIMESTAMP],
-      memberId: row[PP_COL.MEMBER_ID],
-      email: row[PP_COL.EMAIL],
-      eventName: row[PP_COL.EVENT_NAME],
-      amount: row[PP_COL.AMOUNT],
-      paymentDate: row[PP_COL.PAYMENT_DATE],
-      payerName: row[PP_COL.PAYER_NAME],
-      last4Digits: row[PP_COL.LAST_4_DIGITS],
-      notes: row[PP_COL.NOTES],
-      screenshotFileId: row[PP_COL.SCREENSHOT_FILE_ID],
-      status: row[PP_COL.STATUS],
-      gdriveFilePath: row[PP_COL.GDRIVE_FILE_PATH],
-      ocrText: row[PP_COL.OCR_TEXT],
-      ocrTimestamp: row[PP_COL.OCR_TIMESTAMP],
-    }));
+    const proofs = data
+      .filter(row => row[WE_COL.SCREENSHOT_FILE_ID])
+      .map(row => ({
+        eventId:         String(row[WE_COL.EVENT_ID]),
+        timestamp:       String(row[WE_COL.TIMESTAMP]),
+        memberId:        String(row[WE_COL.MEMBER_ID]),
+        email:           String(row[WE_COL.EMAIL]),
+        eventName:       String(row[WE_COL.PAYMENT_INTENT]),
+        amount:          Number(row[WE_COL.AMOUNT]) || 0,
+        paymentDate:     String(row[WE_COL.PAYMENT_DATE]      || ''),
+        payerName:       String(row[WE_COL.PAYER_NAME]),
+        last4Digits:     String(row[WE_COL.LAST_4_DIGITS]),
+        notes:           String(row[WE_COL.NOTES]),
+        screenshotFileId: String(row[WE_COL.SCREENSHOT_FILE_ID]),
+        status:          String(row[WE_COL.STATUS]),
+        gdriveFilePath:  String(row[WE_COL.GDRIVE_FILE_PATH]  || ''),
+        ocrText:         String(row[WE_COL.OCR_TEXT]          || ''),
+        ocrTimestamp:    String(row[WE_COL.OCR_TIMESTAMP]     || ''),
+      }));
     return jsonOk(req.requestId, { proofs });
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
@@ -107,7 +111,7 @@ function getPublicConfig(jsonRequest: string): string {
     const publicConfig: Record<string, string> = {};
     const publicKeys = ['ZelleHandle','VenmoHandle','PayPalHandle',
                         'ZelleQRCodeFileId','VenmoQRCodeFileId',
-                        'IndividualPrice','FamilyPrice'];
+                        'IndividualPrice','FamilyPrice','FamilyUpgradePrice'];
     for (const key of publicKeys) {
       console.log(`mmr:getPublicConfig key="${key}" value="${allConfig[key] ?? '(missing)'}" `);
       if (allConfig[key]) publicConfig[key] = allConfig[key];

@@ -151,12 +151,11 @@ function getMemberPaymentHistory(jsonRequest: string): string {
     // 3. Gather data across entire family scope
     const payments = allMemberIDs.flatMap(id => getPaymentHistoryByMemberID(id));
     const events   = allMemberIDs.flatMap(id => getWebAppEventsByMemberID(id));
-    const proofs   = getPaymentProofsByMemberIDs(allMemberIDs);
 
     auditLog('PAYMENTHISTORY_VIEW', { sessionID: payload.sessionID, memberID });
 
     // Return memberID so frontend knows who "self" is (to label family entries)
-    return jsonOk(req.requestId, { memberID, payments, events, proofs });
+    return jsonOk(req.requestId, { memberID, payments, events });
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }

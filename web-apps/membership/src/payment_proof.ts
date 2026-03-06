@@ -21,12 +21,13 @@ function getPaymentConfirmationEvents(jsonRequest: string): string {
 }
 
 function submitPaymentProof(jsonRequest: string): string {
-  const req = JSON.parse(jsonRequest) as ApiRequest<any>; // Define a proper type later
+  const req = JSON.parse(jsonRequest) as ApiRequest<any>;
   const { payload } = req;
   try {
-    console.log('[mmr][submitPaymentProof] payload:', payload);
+    console.log('[mmr][submitPaymentProof] memberID:', payload.memberID);
 
-    const folderId = getConfigValue('Payment_Proof_Folder_Id');
+    // 1. Upload screenshot to Drive
+    const folderId = getConfigValue('PaymentProofFolderId');
     if (!folderId) {
       throw new Error('Payment proof folder ID is not configured.');
     }
@@ -40,20 +41,51 @@ function submitPaymentProof(jsonRequest: string): string {
       fileId = file.getId();
     }
 
-    appendPaymentProof({
-      eventID: `PP-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      memberID: payload.memberID,
-      email: payload.email,
-      eventName: payload.eventName,
-      amount: payload.amount,
-      paymentDate: payload.paymentDate,
-      payerName: payload.payerName,
-      last4Digits: payload.last4Digits,
-      notes: payload.notes,
-      screenshotFileId: fileId,
-      status: 'Pending Review',
-    });
+    // 2. Find the most recent Pending or Matched WebApp-Event for this member
+    const memberEvents = getWebAppEventsByMemberID(payload.memberID);
+    const pendingEvent = memberEvents
+      .filter(ev => ev.status === 'Pending' || ev.status === 'Matched')
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+
+    if (pendingEvent) {
+      // 3a. Attach proof fields to the existing event
+      const found = findWebAppEvent(pendingEvent.eventID);
+      if (found) {
+        updateWebAppEventRow(found.rowIndex, {
+          PAYMENT_DATE:       payload.paymentDate || '',
+          SCREENSHOT_FILE_ID: fileId,
+          NOTES:              payload.notes || found.event.notes,
+        });
+        console.log('[mmr][submitPaymentProof] updated existing event:', pendingEvent.eventID);
+      }
+    } else {
+      // 3b. No pending event found — create a standalone proof event
+      const newEventID = appendWebAppEvent({
+        eventType:                'PaymentProof',
+        timestamp:                new Date().toISOString(),
+        memberID:                 payload.memberID,
+        email:                    payload.email,
+        paymentIntent:            (payload.eventName || '') as PaymentIntent,
+        amount:                   payload.amount || 0,
+        paymentMethod:            '',
+        payerName:                payload.payerName || '',
+        memoField:                '',
+        last4Digits:              payload.last4Digits || '',
+        familyMemberEmails:       '',
+        status:                   'Pending',
+        matchedMessageId:         '',
+        matchedTransactionNumber: '',
+        adminApprover:            '',
+        approvalDate:             '',
+        notes:                    payload.notes || '',
+        paymentDate:              payload.paymentDate || '',
+        screenshotFileId:         fileId,
+        gdriveFilePath:           '',
+        ocrText:                  '',
+        ocrTimestamp:             '',
+      });
+      console.log('[mmr][submitPaymentProof] created standalone event:', newEventID);
+    }
 
     return jsonOk(req.requestId, { message: 'Proof submitted successfully.' });
   } catch (e: any) {

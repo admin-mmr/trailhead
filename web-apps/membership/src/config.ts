@@ -19,7 +19,6 @@ const SHEET_NAMES = {
   ACTIVITY_LOG: 'WebApp-ActivityLog',
   FETCH_GMAIL: 'Active',
   PAYMENT_EVENTS: 'Payment Confirmation Events',
-  PAYMENT_PROOFS: 'Payment-Proofs',
 };
 
 // Sheets that live in the Fetch-Gmail spreadsheet (all others are in the membership spreadsheet)
@@ -73,6 +72,12 @@ const WE_COL = {
   ADMIN_APPROVER: 15,
   APPROVAL_DATE: 16,
   NOTES: 17,
+  // Payment-proof fields (added to mirror Payment-Proofs table)
+  PAYMENT_DATE: 18,
+  SCREENSHOT_FILE_ID: 19,
+  GDRIVE_FILE_PATH: 20,
+  OCR_TEXT: 21,
+  OCR_TIMESTAMP: 22,
 };
 
 // Payment-History column indices (0-based)
@@ -151,25 +156,6 @@ const PCE_COL = {
   CONFIRMATION_METHOD: 2,
 };
 
-// Payment-Proofs column indices (0-based)
-const PP_COL = {
-  EVENT_ID: 0,
-  TIMESTAMP: 1,
-  MEMBER_ID: 2,
-  EMAIL: 3,
-  EVENT_NAME: 4,
-  AMOUNT: 5,
-  PAYMENT_DATE: 6,
-  PAYER_NAME: 7,
-  LAST_4_DIGITS: 8,
-  NOTES: 9,
-  SCREENSHOT_FILE_ID: 10,
-  STATUS: 11,
-  GDRIVE_FILE_PATH: 12,
-  OCR_TEXT: 13,
-  OCR_TIMESTAMP: 14,
-};
-
 
 // ============================================================
 // Sheet headers for auto-creation (new sheets only)
@@ -183,6 +169,7 @@ const SHEET_HEADERS: Record<string, string[]> = {
     'Last4Digits', 'FamilyMemberEmails', 'Status',
     'MatchedMessageId', 'MatchedTransactionNumber',
     'AdminApprover', 'ApprovalDate', 'Notes',
+    'PaymentDate', 'ScreenshotFileId', 'GDriveFilePath', 'OCRText', 'OCRTimestamp',
   ],
   [SHEET_NAMES.PAYMENT_HISTORY]: [
     'PaymentID', 'EventID', 'MemberID', 'PaymentDate', 'Amount',
@@ -202,11 +189,6 @@ const SHEET_HEADERS: Record<string, string[]> = {
   ],
   [SHEET_NAMES.PAYMENT_EVENTS]: [
     'Event Name', 'Description', 'Confirmation Method',
-  ],
-  [SHEET_NAMES.PAYMENT_PROOFS]: [
-    'EventID', 'Timestamp', 'MemberID', 'Email', 'EventName', 'Amount',
-    'PaymentDate', 'PayerName', 'Last4Digits', 'Notes', 'ScreenshotFileID', 'Status',
-    'GDrive File Path', 'OCR Text', 'OCR Timestamp',
   ],
 };
 

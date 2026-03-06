@@ -39,16 +39,7 @@
     <div class="field" style="margin-top:18px;">
       <label>Membership Type</label>
       <div class="radio-group" id="typeOptions">
-        <div class="radio-option selected" id="opt-individual" onclick="selectType('Individual')">
-          <div class="opt-title">Individual</div>
-          <div class="opt-price" id="price-individual">$30</div>
-          <div class="opt-desc">For one member</div>
-        </div>
-        <div class="radio-option" id="opt-family" onclick="selectType('Family')">
-          <div class="opt-title">Family</div>
-          <div class="opt-price" id="price-family">$50</div>
-          <div class="opt-desc">All family members</div>
-        </div>
+        <div class="empty-loading" style="color:#999;font-size:14px;padding:12px 0;">Loading options…</div>
       </div>
     </div>
     <button class="btn btn-primary" onclick="continueToPayment()">Continue →</button>
@@ -70,80 +61,107 @@
     }
   });
 
-function buildOptions(memberType) {
-  // Brand-new / never paid: offer both full tiers, no upgrade
-  if (memberType === 'not active' || !memberType) {
-    return [
-      { intent: 'Individual Renewal', label: 'Individual Membership – $30', amount: 30 },
-      { intent: 'Family Renewal',     label: 'Family Membership – $50',     amount: 50 },
-    ];
-  }
-  // Existing individual: renew as individual, or pay delta to upgrade to family
-  if (memberType === 'Individual') {
-    return [
-      { intent: 'Individual Renewal', label: 'Renew Individual Membership – $30',       amount: 30 },
-      { intent: 'Family Upgrade',     label: 'Upgrade to Family – $20 (delta only)',     amount: 20 },
-    ];
-  }
-  // Existing family member: only family renewal available
-  if (memberType === 'Family') {
-    return [
-      { intent: 'Family Renewal', label: 'Renew Family Membership – $50', amount: 50 },
-    ];
-  }
-  // Fallback — unknown type, offer both full tiers safely
-  return [
-    { intent: 'Individual Renewal', label: 'Individual Membership – $30', amount: 30 },
-    { intent: 'Family Renewal',     label: 'Family Membership – $50',     amount: 50 },
-  ];
-}
-
-  let selectedType = 'Individual';
+  let selectedOptionIndex = 0;
+  let currentOptions = [];
   let config = {};
 
-  function selectType(type) {
-    selectedType = type;
-    document.getElementById('opt-individual').classList.toggle('selected', type === 'Individual');
-    document.getElementById('opt-family').classList.toggle('selected', type === 'Family');
+  function esc(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function getPrice() {
-    if (selectedType === 'Family') return parseInt(config['Family_Price'] || '50');
-    return parseInt(config['Individual_Price'] || '30');
+  function buildOptions(memberType) {
+    const indivPrice   = parseInt(config['IndividualPrice']   || '30');
+    const familyPrice  = parseInt(config['FamilyPrice']       || '50');
+    const upgradePrice = parseInt(config['FamilyUpgradePrice']|| '20');
+
+    // Brand-new / never paid: offer both full tiers
+    if (memberType === 'not active' || !memberType) {
+      return [
+        { intent: 'Individual Renewal', label: 'Individual Membership', desc: 'For one member',      amount: indivPrice },
+        { intent: 'Family Renewal',     label: 'Family Membership',     desc: 'All family members',  amount: familyPrice },
+      ];
+    }
+    // Existing individual: renew as individual, or pay delta to upgrade to family
+    if (memberType === 'Individual') {
+      return [
+        { intent: 'Individual Renewal', label: 'Renew Individual',     desc: 'For one member',              amount: indivPrice },
+        { intent: 'Family Upgrade',     label: 'Upgrade to Family',    desc: 'Delta upgrade (difference)',   amount: upgradePrice },
+      ];
+    }
+    // Existing family member: only family renewal available
+    if (memberType === 'Family') {
+      return [
+        { intent: 'Family Renewal', label: 'Renew Family Membership', desc: 'All family members', amount: familyPrice },
+      ];
+    }
+    // Fallback
+    return [
+      { intent: 'Individual Renewal', label: 'Individual Membership', desc: 'For one member',     amount: indivPrice },
+      { intent: 'Family Renewal',     label: 'Family Membership',     desc: 'All family members', amount: familyPrice },
+    ];
+  }
+
+  function renderOptions(options) {
+    currentOptions = options;
+    selectedOptionIndex = 0;
+    const container = document.getElementById('typeOptions');
+    container.innerHTML = options.map(function(opt, i) {
+      return '<div class="radio-option' + (i === 0 ? ' selected' : '') + '" id="opt-' + i + '" onclick="selectOption(' + i + ')">' +
+        '<div class="opt-title">' + esc(opt.label) + '</div>' +
+        '<div class="opt-price">$' + opt.amount + '</div>' +
+        '<div class="opt-desc">' + esc(opt.desc) + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function selectOption(index) {
+    selectedOptionIndex = index;
+    document.querySelectorAll('.radio-option').forEach(function(el, i) {
+      el.classList.toggle('selected', i === index);
+    });
   }
 
   function continueToPayment() {
-    const amount = getPrice();
-    const url = `?page=payment&type=${encodeURIComponent(selectedType + ' Membership')}&amount=${amount}`;
+    var opt = currentOptions[selectedOptionIndex];
+    if (!opt) return;
+    var url = '?page=payment&type=' + encodeURIComponent(opt.intent) + '&amount=' + opt.amount;
     window.top.location.href = appBaseUrl + url;
   }
-  
+
   function callApi(fn, payload) {
-    return new Promise((resolve, reject) => {
-      const req = { requestId: Math.random().toString(36).slice(2), payload };
+    return new Promise(function(resolve, reject) {
+      var req = { requestId: Math.random().toString(36).slice(2), payload: payload };
       google.script.run
-        .withSuccessHandler(r => {
-          const res = JSON.parse(r);
+        .withSuccessHandler(function(r) {
+          var res = JSON.parse(r);
           if (res.ok) resolve(res.payload);
           else reject(new Error(res.errorMessage));
         })
-        .withFailureHandler(err => reject(err))
+        .withFailureHandler(function(err) { reject(err); })
         [fn](JSON.stringify(req));
     });
   }
 
-  // Init
-  (async function() {
+  // Init: load config + member type, then render correct options
+  (function() {
+    var memberType = '';
     try {
-      const data = await callApi('getPublicConfig', {});
-      config = data.config || {};
-      const ip = config['Individual_Price'];
-      const fp = config['Family_Price'];
-      if (ip) document.getElementById('price-individual').textContent = '$' + ip;
-      if (fp) document.getElementById('price-family').textContent = '$' + fp;
-    } catch (err) {
-      console.error('[MMR][renewal] init error:', err);
-    }
+      var cached = sessionStorage.getItem('member');
+      if (cached) memberType = JSON.parse(cached).type || '';
+    } catch (_) {}
+    console.log('[MMR][renewal] member type from session:', memberType);
+
+    callApi('getPublicConfig', {})
+      .then(function(data) {
+        config = data.config || {};
+        console.log('[MMR][renewal] config loaded, rendering options for type:', memberType);
+        renderOptions(buildOptions(memberType));
+      })
+      .catch(function(err) {
+        console.error('[MMR][renewal] getPublicConfig error:', err);
+        // Show default options on error so the user isn't stuck
+        renderOptions(buildOptions(memberType));
+      });
   })();
 </script>
 </body>

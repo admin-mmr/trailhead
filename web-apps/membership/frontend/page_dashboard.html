@@ -37,16 +37,25 @@
     .btn-admin     { background: #5c35a8; color: #fff; }
     .btn-admin:hover { background: #4a2b8a; }
     /* Payment History — outlined slate/grey ghost button */
-.btn-ghost {
-  background: #fff;
-  color: #555;
-  border: 1.5px solid #ccc;
-}
-.btn-ghost:hover {
-  background: #f5f5f5;
-  border-color: #aaa;
-  color: #333;
-}
+    .btn-ghost {
+      background: #fff;
+      color: #555;
+      border: 1.5px solid #ccc;
+    }
+    .btn-ghost:hover {
+      background: #f5f5f5;
+      border-color: #aaa;
+      color: #333;
+    }
+    /* Pending requests */
+    .pending-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 10px; }
+    .badge-pending-review { background: #fff8e1; color: #e65100; border: 1px solid #ffcc80; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .btn-pending { background: #fff; color: #e65100; border: 1.5px solid #ffcc80; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    .btn-pending:hover { background: #fff8e1; }
+    .pending-details { margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 14px; }
+    .pending-item { background: #fffdf5; border: 1px solid #ffe082; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; }
+    .pending-item-title { font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .pending-item-meta { color: #888; font-size: 12px; }
 
     /* Profile confirm card */
     .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-bottom: 16px; }
@@ -100,6 +109,15 @@
           <span id="district">—</span>
         </div>
       </div>
+      <!-- Pending requests section (hidden until loaded) -->
+      <div id="pendingSection" style="display:none;">
+        <div class="pending-row" id="pendingBadges"></div>
+        <button class="btn-pending" id="pendingDetailsBtn" onclick="togglePendingDetails()">
+          ⏳ View Pending Requests
+        </button>
+        <div class="pending-details" id="pendingDetails" style="display:none;"></div>
+      </div>
+
       <div class="actions">
         <a href="?page=renewal" class="btn btn-primary">Renew Membership</a>
         <a href="#" id="paymentProofBtn" class="btn btn-secondary">Submit Payment Proof</a>
@@ -330,6 +348,82 @@
     }
   }
 
+  // ---- Pending requests ----
+
+  var pendingItemsCache = [];
+
+  function esc(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function renderPendingRequests(events) {
+    // Collect pending items from WebApp-Events
+    var items = [];
+
+    (events || []).forEach(function(ev) {
+      if (ev.status === 'Pending' || ev.status === 'Matched') {
+        items.push({
+          source: ev.screenshotFileId ? 'Proof Attached' : 'Renewal',
+          title: ev.paymentIntent || ev.eventType || 'Renewal',
+          amount: ev.amount,
+          date: ev.timestamp,
+          status: ev.status,
+          method: ev.paymentMethod || '',
+          id: ev.eventID,
+        });
+      }
+    });
+
+    pendingItemsCache = items;
+
+    if (items.length === 0) return; // nothing to show
+
+    // Render summary badges
+    var badgesEl = document.getElementById('pendingBadges');
+    badgesEl.innerHTML = items.map(function(item) {
+      return '<span class="badge-pending-review">⏳ ' + esc(item.title) + ' — ' + item.status + '</span>';
+    }).join('');
+
+    // Render detail cards (hidden until button clicked)
+    var detailsEl = document.getElementById('pendingDetails');
+    detailsEl.innerHTML = items.map(function(item) {
+      var dateStr = item.date ? new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+      var amountStr = item.amount ? '$' + item.amount : '';
+      var methodStr = item.method ? ' · ' + esc(item.method) : '';
+      return '<div class="pending-item">' +
+        '<div class="pending-item-title">' + esc(item.title) + (amountStr ? ' — ' + amountStr : '') + '</div>' +
+        '<div class="pending-item-meta">' +
+          esc(item.source) + ' · Submitted ' + dateStr + methodStr +
+          ' · Status: <strong>' + esc(item.status) + '</strong>' +
+        '</div>' +
+      '</div>';
+    }).join('') +
+    '<p style="font-size:12px;color:#aaa;margin-top:4px;">Pending items are typically reviewed within 1–2 business days.</p>';
+
+    document.getElementById('pendingSection').style.display = 'block';
+    console.log('[MMR][dashboard] pending items found:', items.length);
+  }
+
+  function togglePendingDetails() {
+    var detailsEl = document.getElementById('pendingDetails');
+    var btn = document.getElementById('pendingDetailsBtn');
+    var isHidden = detailsEl.style.display === 'none';
+    detailsEl.style.display = isHidden ? 'block' : 'none';
+    btn.textContent = isHidden ? '▲ Hide Pending Requests' : '⏳ View Pending Requests';
+  }
+
+  function loadPendingRequests(email) {
+    console.log('[MMR][dashboard] loading pending requests for:', email);
+    callApi('getMemberPaymentHistory', { email: email, sessionID: SESSION_ID })
+      .then(function(data) {
+        renderPendingRequests(data.events);
+      })
+      .catch(function(err) {
+        console.warn('[MMR][dashboard] loadPendingRequests error (non-fatal):', err && err.message);
+        // Non-fatal: pending section stays hidden
+      });
+  }
+
   // ---- Load member from sessionStorage or server ----
   const cached = sessionStorage.getItem('member');
   if (cached) {
@@ -337,6 +431,7 @@
       const m = JSON.parse(cached);
       console.log('[MMR][dashboard] loaded member from sessionStorage:', m.memberID);
       renderMember(m, []);
+      loadPendingRequests(m.email);
     } catch (e) {
       console.error('[MMR][dashboard] failed to parse cached member:', e);
     }
@@ -363,6 +458,7 @@
 
       sessionStorage.setItem('member', JSON.stringify(data.member));
       renderMember(data.member, data.familyMembers);
+      loadPendingRequests(data.member.email);
     })
     .catch(function(err) {
       console.error('[MMR][dashboard] getOrCreateMemberProfile failed:', err.message);

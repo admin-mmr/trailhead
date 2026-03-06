@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "commonjs",
-    "types": ["jest", "node"],
+    "types": ["jest", "node", "google-apps-script"],
     "outDir": "dist-test"
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"],

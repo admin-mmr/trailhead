@@ -389,14 +389,36 @@
   }
   console.log('[MMR][admin] adminEmail from sessionStorage:', adminEmail);
 
-  if (!adminEmail) {
+  function showUnauthorized(reason) {
     document.querySelector('.container').innerHTML =
-      '<div class="card" style="text-align:center;padding:40px;">Not authorized. <a href="?page=login">Sign in</a></div>';
+      '<div class="card" style="text-align:center;padding:40px;">' +
+      '<p style="font-size:20px;margin-bottom:12px;">🔒</p>' +
+      '<p style="font-weight:700;margin-bottom:8px;">Access Denied</p>' +
+      '<p style="color:#888;margin-bottom:20px;">' + esc(reason) + '</p>' +
+      '<a href="' + appBaseUrl + '?page=dashboard" style="color:#5c35a8;">← Back to Dashboard</a>' +
+      '</div>';
+  }
+
+  if (!adminEmail) {
+    showUnauthorized('No session found. Please sign in.');
   } else {
-    loadPending();
-    loadUnmatched();
-    loadPaymentProofs();
-    loadConfig();
+    // Verify admin status server-side before loading any panels.
+    // getConfig() returns FORBIDDEN if the email is not in AdminEmails config.
+    console.log('[MMR][admin] verifying admin status for:', adminEmail);
+    callApi('getConfig', { adminEmail: adminEmail, caller: 'admin-page-auth-check' })
+      .then(function(data) {
+        console.log('[MMR][admin] admin verified, loading panels');
+        // Seed configData from the auth check so Config tab doesn't need a second call
+        configData = data.config || {};
+        loadPending();
+        loadUnmatched();
+        loadPaymentProofs();
+        loadConfig();
+      })
+      .catch(function(err) {
+        console.warn('[MMR][admin] admin check failed:', err && err.message);
+        showUnauthorized('You do not have admin access.');
+      });
   }
 </script>
 </body>

@@ -158,7 +158,7 @@ function approveRenewal(jsonRequest: string): string {
       let familyID = primary.member.familyID;
       if (!familyID) {
         familyID = generateFamilyID();
-        updateMemberRow(primary.rowIndex, { FAMILYID: familyID });
+        updateMemberRow(primary.rowIndex, { FAMILY_ID: familyID });
       }
       // Set Type → Family, do NOT change Expiration
       updateMemberRow(primary.rowIndex, { TYPE: 'Family' });
@@ -173,7 +173,7 @@ function approveRenewal(jsonRequest: string): string {
       appendPaymentRecord({ ...baseRecord(event, payload), paymentIntent: intent,
         periodStart, periodEnd });
       updateWebAppEventRow(found.rowIndex, { STATUS: 'Approved',
-        ADMINAPPROVER: payload.adminEmail, APPROVALDATE: new Date().toISOString(),
+        ADMIN_APPROVER: payload.adminEmail, APPROVAL_DATE: new Date().toISOString(),
         NOTES: payload.notes ?? '' });
       auditLog('UPGRADEAPPROVED', { eventID: event.eventID, memberID: event.memberID });
       return jsonOk(req.requestId, { message: 'Family upgrade approved.', periodEnd });
@@ -190,7 +190,7 @@ function approveRenewal(jsonRequest: string): string {
       // Assign FamilyID if blank
       if (!primary.member.familyID) {
         const newFamilyID = generateFamilyID();
-        updateMemberRow(primary.rowIndex, { FAMILYID: newFamilyID });
+        updateMemberRow(primary.rowIndex, { FAMILY_ID: newFamilyID });
         primary.member.familyID = newFamilyID;
       }
       membersToUpdate = findMembersByFamilyID(primary.member.familyID);
@@ -223,17 +223,17 @@ function approveRenewal(jsonRequest: string): string {
 
     for (const { rowIndex } of membersToUpdate) {
       updateMemberRow(rowIndex, {
-        STATUS: 'active', EXPIRATION: periodEnd, TYPE: memberType,
-        MEMBERSHIPFEEPAID: event.amount, PAYMENTDATE: now,
-        PAYMENTTRANSACTION: event.matchedTransactionNumber || event.last4Digits,
-        LASTUPDATED: now,
+        EXPIRATION: periodEnd, TYPE: memberType,
+        MEMBERSHIP_FEE_PAID: event.amount, PAYMENT_DATE: now,
+        PAYMENT_TRANSACTION: event.matchedTransactionNumber || event.last4Digits,
+        LAST_UPDATED: now,
       });
     }
 
     appendPaymentRecord({ ...baseRecord(event, payload), paymentIntent: intent,
       periodStart, periodEnd });
     updateWebAppEventRow(found.rowIndex, { STATUS: 'Approved',
-      ADMINAPPROVER: payload.adminEmail, APPROVALDATE: now,
+      ADMIN_APPROVER: payload.adminEmail, APPROVAL_DATE: now,
       NOTES: payload.notes ?? '' });
     auditLog('RENEWALAPPROVED', { eventID: event.eventID, memberID: event.memberID,
       email: event.email });
@@ -283,19 +283,6 @@ function rejectRenewal(jsonRequest: string): string {
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
-}
-
-function testApproveRenewal() {
-  const req = JSON.stringify({
-    requestId: 'test-003',
-    payload: {
-      eventID: 'EV-test-003',
-      adminEmail: 'cathylin@gmail.com',
-      notes: 'Manual test approval'
-    }
-  });
-  const result = approveRenewal(req);
-  console.log('approveRenewal result:', result);
 }
 
 (globalThis as any).submitRenewalRequest     = submitRenewalRequest;

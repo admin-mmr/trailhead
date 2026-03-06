@@ -696,6 +696,7 @@ Jest + ts-jest + TypeScript.
 5. Build and deploy: `npm run build && clasp push && clasp deploy`.
 6. Update `Config.AppBaseUrl` with deployment URL.
 
+**Notes: run `clasp login` before build and deploy**
 ### 10.2 Implementation Steps
 
 1. **Scaffold**: `src/`, `frontend/`, `tests/`, `tsconfig.json`, `package.json`, `jest.config.js`, `.clasp.json`.

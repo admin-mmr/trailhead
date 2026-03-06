@@ -130,32 +130,6 @@ function getMembersByFamilyID(familyID: string): Member[] {
     .map(row => rowToMember(row));
 }
 
-// Loads Payment-Proofs rows for any of the given memberIDs
-function getPaymentProofsByMemberIDs(memberIDs: string[]): PaymentProof[] {
-  const sheet = getSheet(SHEET_NAMES.PAYMENT_PROOFS);
-  if (!sheet) return [];
-  const rows = sheet.getDataRange().getValues().slice(1);
-  return rows
-    .filter(row => memberIDs.includes(String(row[PP_COL.MEMBER_ID])))
-    .map(row => ({
-      eventID:          String(row[PP_COL.EVENT_ID]),
-      timestamp:        String(row[PP_COL.TIMESTAMP]),
-      memberID:         String(row[PP_COL.MEMBER_ID]),
-      email:            String(row[PP_COL.EMAIL]),
-      eventName:        String(row[PP_COL.EVENT_NAME]),
-      amount:           Number(row[PP_COL.AMOUNT]) || 0,
-      paymentDate:      String(row[PP_COL.PAYMENT_DATE]),
-      payerName:        String(row[PP_COL.PAYER_NAME]),
-      last4Digits:      String(row[PP_COL.LAST_4_DIGITS]),
-      notes:            String(row[PP_COL.NOTES]),
-      screenshotFileId: String(row[PP_COL.SCREENSHOT_FILE_ID]),
-      status:           String(row[PP_COL.STATUS]) as PaymentProof['status'],
-      gdriveFilePath:   String(row[PP_COL.GDRIVE_FILE_PATH]),
-      ocrText:          String(row[PP_COL.OCR_TEXT]),
-      ocrTimestamp:     String(row[PP_COL.OCR_TIMESTAMP]),
-    }));
-}
-
 
 function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
@@ -189,6 +163,11 @@ function rowToWebAppEvent(row: any[]): WebAppEvent {
     adminApprover: String(row[WE_COL.ADMIN_APPROVER] ?? ''),
     approvalDate: String(row[WE_COL.APPROVAL_DATE] ?? ''),
     notes: String(row[WE_COL.NOTES] ?? ''),
+    paymentDate: String(row[WE_COL.PAYMENT_DATE] ?? ''),
+    screenshotFileId: String(row[WE_COL.SCREENSHOT_FILE_ID] ?? ''),
+    gdriveFilePath: String(row[WE_COL.GDRIVE_FILE_PATH] ?? ''),
+    ocrText: String(row[WE_COL.OCR_TEXT] ?? ''),
+    ocrTimestamp: String(row[WE_COL.OCR_TIMESTAMP] ?? ''),
   };
 }
 
@@ -209,7 +188,12 @@ function appendWebAppEvent(event: Omit<WebAppEvent, 'eventID'>): string {
     event.last4Digits,
     event.familyMemberEmails,
     event.status,
-    '', '', '', '', '',
+    '', '', '', '', '',             // MatchedMessageId, MatchedTransactionNumber, AdminApprover, ApprovalDate, Notes
+    event.paymentDate      ?? '',   // PaymentDate
+    event.screenshotFileId ?? '',   // ScreenshotFileId
+    event.gdriveFilePath   ?? '',   // GDriveFilePath
+    event.ocrText          ?? '',   // OCRText
+    event.ocrTimestamp     ?? '',   // OCRTimestamp
   ]);
   return eventID;
 }
@@ -275,61 +259,6 @@ function appendPaymentRecord(record: Omit<PaymentRecord, 'paymentID'>): string {
   return paymentID;
 }
 
-// ---- Auth-OTP ----
-
-function appendOtpRecord(record: OtpRecord): void {
-  const sheet = getSheet(SHEET_NAMES.AUTH_OTP);
-  sheet.appendRow([
-    record.email,
-    record.otpCode,
-    record.createdAt,
-    record.expiresAt,
-    record.used,
-    record.ipAddress,
-  ]);
-}
-
-function findValidOtp(email: string, otpCode: string): { rowIndex: number } | null {
-  const sheet = getSheet(SHEET_NAMES.AUTH_OTP);
-  const data = sheet.getDataRange().getValues();
-  const now = new Date();
-  for (let i = 1; i < data.length; i++) {
-    const rowEmail = String(data[i][OTP_COL.EMAIL]).toLowerCase();
-    const rowCode = String(data[i][OTP_COL.OTP_CODE]);
-    const used = data[i][OTP_COL.USED];
-    const expiresAt = new Date(data[i][OTP_COL.EXPIRES_AT]);
-    if (
-      rowEmail === email.toLowerCase() &&
-      rowCode === otpCode &&
-    //  !used && // allow reuse of OTP until expiry to avoid user frustration with multiple attempts
-      now <= expiresAt
-    ) {
-      return { rowIndex: i + 1 };
-    }
-  }
-  return null;
-}
-
-function markOtpUsed(rowIndex: number): void {
-  const sheet = getSheet(SHEET_NAMES.AUTH_OTP);
-  sheet.getRange(rowIndex, OTP_COL.USED + 1).setValue(true);
-}
-
-function cleanupExpiredOtps(): void {
-  const sheet = getSheet(SHEET_NAMES.AUTH_OTP);
-  const data = sheet.getDataRange().getValues();
-  const cleanupDays = parseInt(getConfigValue('OTP_Cleanup_Days'), 10) || 7;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - cleanupDays);
-  // Delete from bottom up to preserve row indices
-  for (let i = data.length - 1; i >= 1; i--) {
-    const createdAt = new Date(data[i][OTP_COL.CREATED_AT]);
-    if (createdAt < cutoff) {
-      sheet.deleteRow(i + 1);
-    }
-  }
-}
-
 // ---- Fetch Gmail ----
 
 function getUnmatchedGmailPayments(): FetchGmailRow[] {
@@ -375,41 +304,6 @@ function markGmailPaymentProcessed(rowIndex: number, eventID: string): void {
 }
 
 
-
-function appendPaymentProof(proof: PaymentProof): void {
-
-  const sheet = getSheet(SHEET_NAMES.PAYMENT_PROOFS);
-
-  sheet.appendRow([
-
-    proof.eventID,
-
-    proof.timestamp,
-
-    proof.memberID,
-
-    proof.email,
-
-    proof.eventName,
-
-    proof.amount,
-
-    proof.paymentDate,
-
-    proof.payerName,
-
-    proof.last4Digits,
-
-    proof.notes,
-
-    proof.screenshotFileId,
-
-    proof.status,
-
-  ]);
-
-}
-
 function getPaymentHistoryByMemberID(memberID: string): PaymentHistoryItem[] {
   const sheet = getSheet(SHEET_NAMES.PAYMENT_HISTORY);
   if (!sheet) return [];
@@ -448,14 +342,19 @@ function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
   return rows.slice(1)
     .filter(row => row[col('MemberID')] === memberID)
     .map(row => ({
-      eventID:       String(row[col('EventID')]       || ''),
-      eventType:     String(row[col('EventType')]     || ''),
-      timestamp:     String(row[col('Timestamp')]     || ''),
-      paymentIntent: String(row[col('PaymentIntent')] || ''),
-      amount:        Number(row[col('Amount')]        || 0),
-      paymentMethod: String(row[col('PaymentMethod')] || ''),
-      status:        String(row[col('Status')]        || '') as WebAppEventSummary['status'],
-      notes:         String(row[col('Notes')]         || ''),
+      eventID:          String(row[col('EventID')]          || ''),
+      eventType:        String(row[col('EventType')]        || ''),
+      timestamp:        String(row[col('Timestamp')]        || ''),
+      paymentIntent:    String(row[col('PaymentIntent')]    || ''),
+      amount:           Number(row[col('Amount')]           || 0),
+      paymentMethod:    String(row[col('PaymentMethod')]    || ''),
+      status:           String(row[col('Status')]           || '') as WebAppEventSummary['status'],
+      notes:            String(row[col('Notes')]            || ''),
+      paymentDate:      String(row[col('PaymentDate')]      || ''),
+      screenshotFileId: String(row[col('ScreenshotFileId')] || ''),
+      gdriveFilePath:   String(row[col('GDriveFilePath')]   || ''),
+      ocrText:          String(row[col('OCRText')]          || ''),
+      ocrTimestamp:     String(row[col('OCRTimestamp')]     || ''),
     }));
 }
 

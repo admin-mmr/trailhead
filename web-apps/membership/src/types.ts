@@ -52,6 +52,12 @@ interface WebAppEvent {
   adminApprover: string;
   approvalDate: string;
   notes: string;
+  // Payment-proof fields (populated when user attaches a proof to this event)
+  paymentDate?: string;
+  screenshotFileId?: string;
+  gdriveFilePath?: string;
+  ocrText?: string;
+  ocrTimestamp?: string;
 }
 
 // UPDATE PaymentHistoryItem — replace membershipType with paymentIntent
@@ -104,13 +110,18 @@ interface PaymentRecord {
   notes: string;
 }
 
-interface OtpRecord {
+interface Otp {
   email: string;
   otpCode: string;
   createdAt: string;
   expiresAt: string;
   used: boolean;
   ipAddress: string;
+}
+
+interface OtpMatch {
+  rowIndex: number;
+  otp: Otp;
 }
 
 interface ActivityLogEntry {
@@ -225,20 +236,6 @@ interface RejectRenewalPayload {
   notes: string;
 }
 
-interface PaymentProof {
-  eventID: string;
-  timestamp: string;
-  memberID: string;
-  email: string;
-  eventName: string;
-  amount: number;
-  paymentDate: string;
-  payerName: string;
-  last4Digits: string;
-  notes: string;
-  screenshotFileId: string;
-  status: 'Pending Review' | 'Approved' | 'Rejected';
-}
 
 interface WebAppEventSummary {
   eventID:             string;
@@ -249,4 +246,10 @@ interface WebAppEventSummary {
   paymentMethod:       string;
   status:              'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Error';
   notes:               string;
+  // Payment-proof fields
+  paymentDate:         string;
+  screenshotFileId:    string;
+  gdriveFilePath:      string;
+  ocrText:             string;
+  ocrTimestamp:        string;
 }

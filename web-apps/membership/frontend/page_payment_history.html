@@ -237,7 +237,7 @@
     window.top.location.href = appBaseUrl + '?page=login';
   } else {
     document.getElementById('member-id-display').textContent = 'Member ID: ' + member.memberID;
-    callApi('getMemberPaymentHistory', { email: member.email, sessionID: SESSIONID })
+    callApi('getMemberPaymentHistory', { email: member.email, sessionID: SESSION_ID })
       .then(function(data) {
         document.getElementById('loading').style.display = 'none';
         var content = document.getElementById('content');

@@ -421,6 +421,13 @@
       .then(function(data) {
         btn.disabled = false;
         btn.textContent = 'Verify Code →';
+
+        if (data.otpNotFound) {
+          // Stay on the same screen, but show the message from the server
+          showMsg(msgId, data.message, 'info');
+          return;
+        }
+
         if (data.isNewMember) {
           sessionStorage.setItem('pending_email', data.email);
           showContinue(

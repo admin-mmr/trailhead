@@ -8,7 +8,11 @@ require('../src/members');
 require('../src/auth');
 
 declare function requestEmailOtp(jsonRequest: string): string;
+
 declare function verifyEmailOtp(jsonRequest: string): string;
+
+declare function handleOtpNotFound(jsonRequest: string): string;
+
 declare function handleGoogleLogin(jsonRequest: string): string;
 declare function __seedSheet(name: string, rows: any[][]): void;
 declare function __getSheet(name: string): any[][];
@@ -94,17 +98,23 @@ describe('verifyEmailOtp', () => {
     __seedSheet(CFG, [['Key', 'Value', 'Desc']]);
     __seedSheet(MM, [blankRow()]);
     __seedSheet(LOG, [[]]);
+    (global as any).MailApp = {
+      sendEmail: jest.fn(),
+    };
   });
 
-  it('returns error for invalid OTP', () => {
+  it('returns error for invalid OTP and generates a new one', () => {
     const future = new Date(Date.now() + 1000 * 60 * 60).toISOString();
     __seedSheet(OTP, [
       ['Email', 'Code', 'CreatedAt', 'ExpiresAt', 'Used', 'IP'],
       ['u@test.com', '999999', new Date().toISOString(), future, false, ''],
     ]);
     const res = JSON.parse(verifyEmailOtp(req({ email: 'u@test.com', otpCode: '000000', sessionID: 'S1' })));
-    expect(res.ok).toBe(false);
-    expect(res.errorCode).toBe('INVALID_OTP');
+    expect(res.ok).toBe(true);
+    expect(res.payload.otpNotFound).toBe(true);
+    const otpRows = __getSheet(OTP);
+    expect(otpRows).toHaveLength(3);
+    expect((global as any).MailApp.sendEmail).toHaveBeenCalled();
   });
 
   it('logs in successfully with valid OTP', () => {

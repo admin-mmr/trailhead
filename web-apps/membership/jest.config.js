@@ -8,5 +8,5 @@ module.exports = {
     },
   },
   testMatch: ['**/tests/**/*.test.ts'],
-  setupFiles: ['./tests/setup.ts'],
+  setupFilesAfterEnv: ['./tests/setup.ts'],
 };
