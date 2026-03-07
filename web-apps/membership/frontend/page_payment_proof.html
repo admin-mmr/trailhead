@@ -52,12 +52,25 @@
       <input type="date" id="paymentDate" />
     </div>
     <div class="field">
+      <label>Payment Method</label>
+      <select id="paymentMethod" required>
+        <option value="">— Select a payment method —</option>
+        <option value="Zelle">Zelle</option>
+        <option value="Venmo">Venmo</option>
+        <option value="PayPal">PayPal</option>
+      </select>
+    </div>
+    <div class="field">
       <label>Payer Name</label>
       <input type="text" id="payerName" placeholder="Name on the account used for payment" />
     </div>
     <div class="field">
       <label>Last 4 Digits of Confirmation/Transaction #</label>
       <input type="text" id="last4Digits" placeholder="e.g. 5678" maxlength="4" />
+    </div>
+    <div class="field">
+      <label>Memo</label>
+      <input type="text" id="memoField" placeholder="e.g. memo in the transfer" />
     </div>
     <div class="field">
       <label>Notes</label>
@@ -148,16 +161,18 @@ async function submitProof() {
       screenshotBase64 = await fileToBase64(fileInput.files[0]);
     }
     const payload = {
-      memberID:    member?.memberID,
-      email:       member?.email,
-      eventName:   document.getElementById('eventName').value,
-      amount:      document.getElementById('amount').value,
-      paymentDate: document.getElementById('paymentDate').value,
-      payerName:   document.getElementById('payerName').value.trim(),
-      last4Digits: document.getElementById('last4Digits').value.trim(),
-      notes:       document.getElementById('notes').value.trim(),
-      screenshot:  screenshotBase64,
-      sessionID:   SESSION_ID,
+      memberID:      member?.memberID,
+      email:         member?.email,
+      eventName:     document.getElementById('eventName').value,
+      amount:        document.getElementById('amount').value,
+      paymentDate:   document.getElementById('paymentDate').value,
+      paymentMethod: document.getElementById('paymentMethod').value,
+      memoField:     document.getElementById('memoField').value.trim(),
+      payerName:     document.getElementById('payerName').value.trim(),
+      last4Digits:   document.getElementById('last4Digits').value.trim(),
+      notes:         document.getElementById('notes').value.trim(),
+      screenshot:    screenshotBase64,
+      sessionID:     SESSION_ID,
     };
     console.log('[MMR][paymentproof] submitting proof for memberID=', payload.memberID);
     await callApi('submitPaymentProof', payload);

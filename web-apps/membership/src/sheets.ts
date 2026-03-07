@@ -68,6 +68,7 @@ function rowToMember(row: any[]): Member {
     joinYear: String(row[MM_COL.JOIN_YEAR] ?? ''),
     phoneNumber: String(row[MM_COL.PHONE_NUMBER] ?? ''),
     lastLoginDate: String(row[MM_COL.LAST_LOGIN_DATE] ?? ''),
+    profileLastUpdated: String(row[MM_COL.PROFILE_LAST_UPDATED] ?? ''),
     notes: String(row[MM_COL.NOTES] ?? ''),
   };
 }
@@ -176,6 +177,7 @@ function getMembersByFamilyID(familyID: string): Member[] {
 }
 
 
+// ── PROTECTED: Direct row update (internal only, must be called via updateMemberWithLog) ──
 function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
   for (const [colKey, value] of Object.entries(updates)) {
@@ -184,6 +186,21 @@ function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
       sheet.getRange(rowIndex, colIndex + 1).setValue(value);
     }
   }
+}
+
+// ── PUBLIC: Update member with automatic logging (enforces audit trail) ──
+function updateMemberWithLog(memberID: string, updates: Record<string, any>): void {
+  // STEP 1: Log the current state before making any changes
+  logMainTableRow(memberID);
+
+  // STEP 2: Find the row and update it
+  const result = findMemberByID(memberID);
+  if (!result) {
+    throw new Error(`[updateMemberWithLog] Member not found: ${memberID}`);
+  }
+
+  updateMemberRow(result.rowIndex, updates);
+  console.log('[sheets] updated member:', memberID, 'with:', Object.keys(updates).join(', '));
 }
 
 // ---- WebApp-Events ----
@@ -433,7 +450,7 @@ function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
 (globalThis as any).generateMemberID               = generateMemberID;
 (globalThis as any).generateFamilyID               = generateFamilyID;
 (globalThis as any).generateMasterLogID            = generateMasterLogID;
-(globalThis as any).updateMemberRow                = updateMemberRow;
+(globalThis as any).updateMemberWithLog           = updateMemberWithLog;  // ENFORCED: All updates must log first
 (globalThis as any).appendWebAppEvent              = appendWebAppEvent;
 (globalThis as any).findWebAppEvent                = findWebAppEvent;
 (globalThis as any).getPendingWebAppEvents         = getPendingWebAppEvents;

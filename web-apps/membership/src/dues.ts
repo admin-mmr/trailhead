@@ -178,14 +178,9 @@ function approveDuesPayment(jsonRequest: string): string {
         ? findMembersByFamilyID(familyID)
         : [primary];
 
-      // Log before write for each family member
+      // Update each family member (logging is automatic via updateMemberWithLog)
       for (const { member: fm } of membersToUpdate) {
-        logMainTableRow(fm.memberID);
-      }
-
-      // Set Type = Family, Status = active for all. Expiration unchanged.
-      for (const { rowIndex } of membersToUpdate) {
-        updateMemberRow(rowIndex, {
+        updateMemberWithLog(fm.memberID, {
           TYPE:         'Family',
           STATUS:       'active',
           LAST_UPDATED: now,
@@ -208,6 +203,7 @@ function approveDuesPayment(jsonRequest: string): string {
         NOTES:          payload.notes ?? '',
       });
       auditLog('UPGRADE_APPROVED', { eventID: event.eventID, memberID: event.memberID });
+      notifyPaymentApproved(event.memberID, intent);
       return jsonOk(req.requestId, { message: 'Family upgrade approved.', periodEnd });
     }
 
@@ -222,8 +218,7 @@ function approveDuesPayment(jsonRequest: string): string {
       // Assign FamilyID if blank (safety net — should already be set by initiateSwitch)
       if (!primary.member.familyID) {
         const newFamilyID = generateFamilyID();
-        logMainTableRow(primary.member.memberID);
-        updateMemberRow(primary.rowIndex, { FAMILY_ID: newFamilyID });
+        updateMemberWithLog(primary.member.memberID, { FAMILY_ID: newFamilyID });
         primary.member.familyID = newFamilyID;
       }
 
@@ -254,13 +249,9 @@ function approveDuesPayment(jsonRequest: string): string {
     const periodEnd   = newExpiration.toISOString().split('T')[0];
     const memberType  = intent === 'Family Membership' ? 'Family' : 'Individual';
 
-    // Log before write for each member
+    // Update each member (logging is automatic via updateMemberWithLog)
     for (const { member: fm } of membersToUpdate) {
-      logMainTableRow(fm.memberID);
-    }
-
-    for (const { rowIndex } of membersToUpdate) {
-      updateMemberRow(rowIndex, {
+      updateMemberWithLog(fm.memberID, {
         EXPIRATION:          periodEnd,
         TYPE:                memberType,
         STATUS:              'active',
@@ -284,6 +275,7 @@ function approveDuesPayment(jsonRequest: string): string {
     auditLog('DUES_APPROVED', {
       eventID: event.eventID, memberID: event.memberID, email: event.email,
     });
+    notifyPaymentApproved(event.memberID, intent);
 
     return jsonOk(req.requestId, { message: 'Dues approved.', periodEnd });
 
@@ -334,6 +326,7 @@ function rejectDuesPayment(jsonRequest: string): string {
     });
 
     auditLog('RENEWAL_REJECTED', { eventID: payload.eventID, memberID: found.event.memberID });
+    notifyPaymentRejected(found.event.memberID, payload.notes || 'No reason provided');
     return jsonOk(req.requestId, { message: 'Payment rejected.' });
   } catch (e: any) {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));

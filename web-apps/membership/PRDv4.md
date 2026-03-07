@@ -404,6 +404,7 @@ Keys (exact names as they appear in the sheet):
 | `FamilyPrice` | `50` | Price for family membership dues |
 | `FamilyUpgradePrice` | `20` | Delta price to upgrade Individual → Family mid-cycle |
 | `PaymentMethods` | `Zelle,Venmo,PayPal` | Comma-separated accepted payment methods |
+| `Districts` | _(empty)_ | Comma-separated list of member districts |
 | `ReminderDaysBefore` | `42` | Days before expiry to begin showing renewal buttons |
 | `UpgradeMinMonths` | `3` | Minimum months remaining on expiration to allow Family Upgrade (difference only) |
 | `MembershipRenewalYears` | `1` | Years added per dues payment |
@@ -425,12 +426,24 @@ Sheet: `WebApp-ActivityLog`
 
 Columns: `LogID`, `Timestamp`, `SessionID`, `MemberID`, `Email`, `EventID` (optional), `Action`, `State` (JSON snippet), `ErrorCode` (optional), `ErrorMessage` (optional).
 
-Action codes: `LOGIN_START`, `LOGIN_SUCCESS`,
+Action codes (authentication & core flow):
+`LOGIN_START`, `LOGIN_SUCCESS`, `NEW_MEMBER_DETECTED`,
 `EMAIL_LOOKUP`, `EMAIL_LOOKUP_NOT_FOUND`,
-`OTP_REQUESTED`, `OTP_VERIFY_SUCCESS`, `OTP_VERIFY_FAIL`,
+`OTP_REQUESTED`, `OTP_VERIFY_SUCCESS`, `OTP_VERIFY_FAIL`.
+
+Action codes (member profile & membership):
+`MEMBER_CREATED`, `PROFILE_UPDATE`,
 `DUES_SUBMIT`, `UPGRADE_INITIATE`, `CANCEL_UPGRADE`,
-`RECONCILE_MATCH_FOUND`, `DUES_APPROVED`, `UPGRADE_APPROVED`,
-`PROOF_EXPIRED`, `ERROR`.
+`DUES_APPROVED`, `UPGRADE_APPROVED`.
+
+Action codes (family & payment):
+`FAMILY_MEMBER_ADDED`, `FAMILY_MEMBER_REMOVED`, `PAYMENTHISTORY_VIEW`,
+`RECONCILE_MATCH_FOUND`, `MANUALMATCH`,
+`RENEWAL_REJECTED`, `PROOF_EXPIRED`.
+
+Action codes (admin & system):
+`CONFIG_UPDATE`, `ADMIN_CREATE_PAYMENT_PROOF`, `MEMBERSHIP_EXPIRED`,
+`ERROR`.
 
 ### 5.7 Fetch-Gmail (Existing)
 
@@ -573,6 +586,7 @@ A scheduled job checks `WebApp-Events` for rows where `ExpiresAt < now` and `M_S
 | `dashboard` | `page_dashboard.html` | Primary action hub |
 | `profile` | `page_profile.html` | |
 | `payment_proof` | `page_payment_proof.html` | Pre-filled from URL params |
+| `payment` | `page_payment.html` | Payment method instructions & QR codes |
 | `payment_history` | `page_payment_history.html` | |
 | `family` | `page_family.html` | Family member management (§8.6) |
 | `newmember` | `page_newmember.html` | |
@@ -736,7 +750,7 @@ Jest + ts-jest + TypeScript.
 
 ### 10.3 TODO — Upcoming
 
-- [ ] `page_family.html` full implementation (family member add/remove UI).
-- [ ] Admin notification when a payment proof is submitted.
-- [ ] Proof expiry scheduled job implementation.
-- [ ] Nightly expiry-check job to set `Status = inactive` when `Expiration < today`.
+- [x] `page_family.html` full implementation (family member add/remove UI).
+- [x] Admin notification when a payment proof is submitted.
+- [x] Proof expiry scheduled job implementation.
+- [x] Nightly expiry-check job to set `Status = inactive` when `Expiration < today`.

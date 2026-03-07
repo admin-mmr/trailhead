@@ -26,6 +26,7 @@ interface Member {
   joinYear: string;
   phoneNumber: string;
   lastLoginDate: string;
+  profileLastUpdated: string;
   notes: string;
 }
 

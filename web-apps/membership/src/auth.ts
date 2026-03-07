@@ -127,7 +127,7 @@ function handleOtpNotFound(jsonRequest: string): string {
   try {
     const email = payload.email.trim().toLowerCase();
     console.log('[mmr][handleOtpNotFound] OTP not found, generating a new one for:', email);
-    auditLog('OTP_NOT_FOUND', { sessionID: payload.sessionID, email });
+    auditLog('EMAIL_LOOKUP_NOT_FOUND', { sessionID: payload.sessionID, email });
     
     // To avoid duplicating code, we can call requestEmailOtp internally.
     // However, requestEmailOtp sends an email and returns a JSON string.

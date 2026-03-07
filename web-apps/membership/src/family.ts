@@ -1,8 +1,33 @@
 // ============================================================
 // Family member management
 // Depends on: config.ts, sheets.ts, logger.ts
-// Exposed GAS functions: getFamilyMembers, addFamilyMember, removeFamilyMember
+// Exposed GAS functions: getFamilyMembers, addFamilyMember, removeFamilyMember, lookupEmailForFamily
 // ============================================================
+
+// Helper: look up if an email exists in the system (for add family member flow).
+// Returns { exists: true, member: ... } if found, or { exists: false } if not.
+function lookupEmailForFamily(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string }>;
+  const { payload } = req;
+  try {
+    const email = (payload.email || '').trim().toLowerCase();
+    if (!email) {
+      return jsonError(req.requestId, 'INVALID_INPUT', 'Email is required.');
+    }
+
+    const result = findMemberByEmail(email);
+    if (result) {
+      return jsonOk(req.requestId, {
+        exists: true,
+        member: result.member,
+      });
+    } else {
+      return jsonOk(req.requestId, { exists: false });
+    }
+  } catch (e: any) {
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
 
 // Returns all members sharing the acting member's FamilyID.
 function getFamilyMembers(jsonRequest: string): string {
@@ -158,6 +183,7 @@ function removeFamilyMember(jsonRequest: string): string {
   }
 }
 
-(globalThis as any).getFamilyMembers   = getFamilyMembers;
-(globalThis as any).addFamilyMember    = addFamilyMember;
-(globalThis as any).removeFamilyMember = removeFamilyMember;
+(globalThis as any).getFamilyMembers      = getFamilyMembers;
+(globalThis as any).lookupEmailForFamily = lookupEmailForFamily;
+(globalThis as any).addFamilyMember     = addFamilyMember;
+(globalThis as any).removeFamilyMember  = removeFamilyMember;

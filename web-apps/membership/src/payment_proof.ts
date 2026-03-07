@@ -53,6 +53,8 @@ function submitPaymentProof(jsonRequest: string): string {
       if (found) {
         updateWebAppEventRow(found.rowIndex, {
           PAYMENT_DATE:       payload.paymentDate || '',
+          PAYMENT_METHOD:     payload.paymentMethod || found.event.paymentMethod,
+          MEMO_FIELD:         payload.memoField || found.event.memoField,
           SCREENSHOT_FILE_ID: fileId,
           NOTES:              payload.notes || found.event.notes,
         });
@@ -68,9 +70,9 @@ function submitPaymentProof(jsonRequest: string): string {
         email:                    payload.email,
         paymentIntent:            (payload.eventName || '') as PaymentIntent,
         amount:                   payload.amount || 0,
-        paymentMethod:            '',
+        paymentMethod:            payload.paymentMethod || '',
         payerName:                payload.payerName || '',
-        memoField:                '',
+        memoField:                payload.memoField || '',
         last4Digits:              payload.last4Digits || '',
         familyMemberEmails:       '',
         status:                   'Pending',

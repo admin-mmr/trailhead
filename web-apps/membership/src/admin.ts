@@ -256,6 +256,160 @@ function debugAdminCheck() {
   console.log('Includes admin@mmrunners.org:', list.includes('admin@mmrunners.org'));
 }
 
+// ── getMemberSummaryForAdmin ─────────────────────────────────
+// Returns key member info (type, expiration, status) for admin preview
+// before creating a payment proof record on behalf of a member.
+function getMemberSummaryForAdmin(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string; memberID: string }>;
+  const { payload } = req;
+  try {
+    if (!isAdmin(payload.adminEmail)) {
+      return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
+    }
+
+    const memberID = (payload.memberID || '').trim();
+    if (!memberID) {
+      return jsonError(req.requestId, 'BAD_REQUEST', 'memberID is required.');
+    }
+
+    const result = findMemberByID(memberID);
+    if (!result) {
+      return jsonError(req.requestId, 'NOT_FOUND', `Member not found: ${memberID}`);
+    }
+
+    const m = result.member;
+    console.log('[mmr][getMemberSummaryForAdmin] found member:', m.memberID, 'type:', m.type, 'exp:', m.expiration);
+
+    return jsonOk(req.requestId, {
+      memberID: m.memberID,
+      firstName: m.firstName,
+      lastName: m.lastName,
+      email: m.email,
+      type: m.type,
+      expiration: m.expiration,
+      status: m.status,
+    });
+  } catch (e: any) {
+    console.error('[mmr][getMemberSummaryForAdmin] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
+// ── adminCreatePaymentProof ──────────────────────────────────
+// Creates a WebApp-Events row (PaymentProof / Matched) on behalf of a member,
+// linking it to the unmatched Gmail payment and marking that row processed.
+function adminCreatePaymentProof(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{
+    adminEmail: string;
+    memberID: string;
+    paymentIntent: string;
+    messageId: string;
+    transactionNumber: string;
+    amount: number;
+    sender: string;
+    memo: string;
+    source: string;
+    transactionDate: string;
+    rowIndex: number;
+  }>;
+  const { payload } = req;
+
+  try {
+    if (!isAdmin(payload.adminEmail)) {
+      return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
+    }
+
+    const memberID = (payload.memberID || '').trim();
+    if (!memberID) {
+      return jsonError(req.requestId, 'BAD_REQUEST', 'memberID is required.');
+    }
+
+    const result = findMemberByID(memberID);
+    if (!result) {
+      return jsonError(req.requestId, 'NOT_FOUND', `Member not found: ${memberID}`);
+    }
+
+    const m = result.member;
+    const now = new Date().toISOString();
+
+    // Create the proof event with Approved status (admin-created, fully reviewed)
+    const paymentIntent = (payload.paymentIntent || 'Individual Membership').trim() as WebAppEvent['paymentIntent'];
+    const newEventID = appendWebAppEvent({
+      eventType: 'PaymentProof',
+      timestamp: now,
+      expiresAt: '',
+      memberID: m.memberID,
+      email: m.email,
+      paymentIntent,
+      amount: Number(payload.amount) || 0,
+      paymentMethod: payload.source || '',
+      payerName: payload.sender || '',
+      memoField: payload.memo || '',
+      last4Digits: '',
+      familyMemberEmails: '',
+      status: 'Approved',
+      matchedMessageId: payload.messageId || '',
+      matchedTransactionNumber: payload.transactionNumber || '',
+      adminApprover: payload.adminEmail,
+      approvalDate: now,
+      notes: `Created & approved by admin ${payload.adminEmail} on ${now} from unmatched payment (${paymentIntent})`,
+      paymentDate: payload.transactionDate || '',
+      screenshotFileId: '',
+      gdriveFilePath: '',
+      ocrText: '',
+      ocrTimestamp: '',
+    });
+
+    console.log('[mmr][adminCreatePaymentProof] created eventID:', newEventID, 'for member:', memberID, 'intent:', paymentIntent);
+
+    // ── CREATE PAYMENT-HISTORY RECORD (required for audit trail) ──
+    const paymentID = appendPaymentRecord({
+      eventID: newEventID,
+      memberID: m.memberID,
+      paymentDate: payload.transactionDate || now.split('T')[0],
+      amount: Number(payload.amount) || 0,
+      paymentIntent,
+      paymentMethod: payload.source || '',
+      payerName: payload.sender || '',
+      memoField: payload.memo || '',
+      last4Digits: '',
+      transactionReference: payload.transactionNumber || '',
+      periodStart: '',
+      periodEnd: '',
+      processedBy: payload.adminEmail,
+      processedDate: now,
+      source: 'Admin-Created',
+      notes: `Created from unmatched payment by admin ${payload.adminEmail}`,
+    });
+    console.log('[mmr][adminCreatePaymentProof] created payment record:', paymentID);
+
+    // Mark the Fetch-Gmail row as processed if rowIndex was provided
+    if (payload.rowIndex && Number(payload.rowIndex) > 0) {
+      markGmailPaymentProcessed(Number(payload.rowIndex), newEventID);
+      console.log('[mmr][adminCreatePaymentProof] marked Gmail row processed, rowIndex:', payload.rowIndex);
+    }
+
+    auditLog('ADMIN_CREATE_PAYMENT_PROOF', {
+      email: payload.adminEmail,
+      memberID,
+      state: {
+        eventID: newEventID,
+        messageId: payload.messageId,
+        amount: payload.amount,
+        sender: payload.sender,
+        paymentIntent,
+      },
+    });
+
+    // Send approval email to member (status is Approved immediately)
+    notifyPaymentApproved(memberID, paymentIntent);
+
+    return jsonOk(req.requestId, { eventID: newEventID });
+  } catch (e: any) {
+    console.error('[mmr][adminCreatePaymentProof] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
 
 (globalThis as any).getPendingEvents     = getPendingEvents;
 (globalThis as any).getUnmatchedPayments = getUnmatchedPayments;
@@ -264,4 +418,6 @@ function debugAdminCheck() {
 (globalThis as any).getPaymentProofs     = getPaymentProofs;
 (globalThis as any).getPublicConfig      = getPublicConfig;
 (globalThis as any).manualMatch          = manualMatch;
+(globalThis as any).getMemberSummaryForAdmin = getMemberSummaryForAdmin;
+(globalThis as any).adminCreatePaymentProof = adminCreatePaymentProof;
 

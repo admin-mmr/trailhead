@@ -51,7 +51,8 @@ const MM_COL = {
   JOIN_YEAR: 19,
   PHONE_NUMBER: 20,
   LAST_LOGIN_DATE: 21,
-  NOTES: 22,
+  PROFILE_LAST_UPDATED: 22,
+  NOTES: 23,
 };
 
 // Membership-Master-Log column indices (0-based)
@@ -99,7 +100,7 @@ const PH_COL = {
   MEMBER_ID: 2,
   PAYMENT_DATE: 3,
   AMOUNT: 4,
-  MEMBERSHIP_TYPE: 5,
+  PAYMENT_INTENT: 5,
   PAYMENT_METHOD: 6,
   PAYER_NAME: 7,
   MEMO_FIELD: 8,
@@ -182,7 +183,7 @@ const SHEET_HEADERS: Record<string, string[]> = {
     'FirstName', 'LastName', 'Type', 'FamilyID', 'Gender',
     'WeChatID', 'District', 'WebApp', 'PaymentCheck', 'Info',
     'LastUpdated', 'MembershipFeePaid', 'PaymentDate', 'PaymentTransaction',
-    'JoinYear', 'PhoneNumber', 'LastLoginDate', 'Notes',
+    'JoinYear', 'PhoneNumber', 'LastLoginDate', 'ProfileLastUpdated', 'Notes',
   ],
   [SHEET_NAMES.WEBAPP_EVENTS]: [
     'EventID', 'EventType', 'Timestamp', 'ExpiresAt', 'MemberID', 'Email',
@@ -219,6 +220,7 @@ const DEFAULT_CONFIG_ROWS: string[][] = [
   ['FamilyPrice',              '50',                      'Price for family membership dues'],
   ['FamilyUpgradePrice',       '20',                      'Delta price to upgrade Individual → Family mid-cycle'],
   ['PaymentMethods',           'Zelle,Venmo,PayPal',      'Comma-separated accepted payment methods'],
+  ['Districts',                '',                        'Comma-separated list of member districts'],
   ['ZelleHandle',              'zelle@example.com',       'Zelle payment handle'],
   ['VenmoHandle',              '@venmo-user',             'Venmo payment handle'],
   ['PayPalHandle',             'paypal@example.com',      'PayPal payment handle'],
@@ -304,14 +306,32 @@ function setConfigValue(key: string, value: string): void {
   sheet.appendRow([key, value, '']);
 }
 
+function getDistrictsFromConfig(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{}>;
+  try {
+    const districtsStr = getConfigValue('Districts') || '';
+    const districts = districtsStr
+      .split(',')
+      .map(d => d.trim())
+      .filter(d => d.length > 0);
+
+    console.log('[config] getDistrictsFromConfig found', districts.length, 'districts');
+    return jsonOk(req.requestId, { districts });
+  } catch (e: any) {
+    console.error('[config] getDistrictsFromConfig error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
 // ── globalThis exports for test environment ──────────────────
 // In GAS all functions are globally scoped. In Node.js/Jest each
 // require() runs in its own module scope, so helpers needed by
 // other modules must be reachable via globalThis.
-(globalThis as any).getSheet           = getSheet;
-(globalThis as any).getConfigMap       = getConfigMap;
-(globalThis as any).getConfigValue     = getConfigValue;
-(globalThis as any).setConfigValue     = setConfigValue;
+(globalThis as any).getSheet                 = getSheet;
+(globalThis as any).getConfigMap            = getConfigMap;
+(globalThis as any).getConfigValue          = getConfigValue;
+(globalThis as any).setConfigValue          = setConfigValue;
+(globalThis as any).getDistrictsFromConfig  = getDistrictsFromConfig;
 
 // Export config constants so cross-module calls can resolve them in the test environment
 (globalThis as any).SHEET_NAMES    = SHEET_NAMES;

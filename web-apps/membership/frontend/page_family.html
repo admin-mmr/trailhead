@@ -9,46 +9,411 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
     .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
     .topbar h1 { font-size: 18px; font-weight: 700; }
-    .topbar a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.85; }
-    .container { max-width: 600px; margin: 32px auto; padding: 0 16px; }
+    .topbar button { background: none; border: none; color: #fff; cursor: pointer; font-size: 14px; padding: 0; opacity: 0.85; }
+    .topbar button:hover { opacity: 1; }
+    .container { max-width: 900px; margin: 32px auto; padding: 0 16px; }
     .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 28px; margin-bottom: 20px; }
-    .placeholder { text-align: center; padding: 48px 24px; color: #888; }
-    .placeholder h2 { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 12px; }
-    .placeholder p { font-size: 14px; line-height: 1.6; }
-    .btn { padding: 11px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 20px; }
-    .btn-secondary { background: #fff; color: #2d7d46; border: 1.5px solid #2d7d46; }
+    h2 { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 20px; }
+    h3 { font-size: 16px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px; margin-top: 24px; }
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    input, select { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; background: #fff; }
+    input:disabled { background: #f5f5f5; cursor: not-allowed; }
+    .row { display: flex; gap: 12px; align-items: flex-end; }
+    .row .field { flex: 1; margin-bottom: 0; }
+    .btn { padding: 10px 16px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn-primary { background: #2d7d46; color: #fff; }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-danger { background: #d32f2f; color: #fff; padding: 8px 12px; font-size: 13px; }
+    .btn-secondary { background: #999; color: #fff; }
+    .msg { font-size: 14px; padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; display: none; }
+    .msg.success { background: #e8f5e9; color: #2d7d46; display: block; }
+    .msg.error { background: #fdecea; color: #c62828; display: block; }
+    .msg.info { background: #e3f2fd; color: #1565c0; display: block; }
+
+    /* Table styles */
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }
+    th { background: #f5f5f5; font-weight: 700; padding: 12px; text-align: left; border-bottom: 2px solid #ddd; }
+    td { padding: 12px; border-bottom: 1px solid #eee; }
+    tr:hover { background: #f9f9f9; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+    .badge-active { background: #e8f5e9; color: #2d7d46; }
+    .badge-inactive { background: #fdecea; color: #c62828; }
+    .badge-pending { background: #fff3e0; color: #f57c00; }
+
+    /* Form sections */
+    .section { margin-bottom: 24px; }
+    .section-hidden { display: none; }
+    .lookup-result { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-top: 12px; display: none; }
+    .lookup-result.show { display: block; }
   </style>
 </head>
 <body>
-
 <div class="topbar">
   <h1>🏃 Misty Mountain Runners</h1>
-  <a href="?page=dashboard">← Dashboard</a>
+  <button onclick="window.top.location.href = appBaseUrl + '?page=dashboard'">
+    ← Dashboard
+  </button>
 </div>
 
 <div class="container">
   <div class="card">
-    <div class="placeholder">
-      <h2>Family Members</h2>
-      <p>Family member management is coming soon.<br>
-         You'll be able to add and remove family members from this page.</p>
-      <a href="?page=dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+    <h2>Family Members</h2>
+    <div id="msg" class="msg"></div>
+
+    <!-- Family Members Table -->
+    <div class="section" id="membersSection">
+      <h3>Current Family Members</h3>
+      <table id="membersTable">
+        <thead>
+          <tr>
+            <th>Member ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Expiration</th>
+            <th>WeChat</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="membersBody">
+        </tbody>
+      </table>
+      <p id="noMembers" style="color: #999; font-size: 14px;">Loading family members...</p>
+    </div>
+
+    <!-- Add Family Member Section -->
+    <div class="section">
+      <h3>Add Family Member</h3>
+      <p style="color: #666; font-size: 14px; margin-bottom: 16px;">Enter an email address to look up or invite a member.</p>
+
+      <div class="row">
+        <div class="field">
+          <label>Email Address</label>
+          <input type="email" id="lookupEmail" placeholder="member@example.com" />
+        </div>
+        <button class="btn btn-primary" onclick="lookupEmail()" id="lookupBtn">Look Up</button>
+      </div>
+
+      <!-- Lookup Result -->
+      <div class="lookup-result" id="lookupResult">
+        <div id="resultContent"></div>
+      </div>
+
+      <!-- Create New Member Form (hidden initially) -->
+      <div class="section-hidden" id="createNewMemberForm">
+        <h3 style="margin-top: 0;">Create New Family Member</h3>
+        <p style="color: #666; font-size: 14px; margin-bottom: 16px;">
+          This email is not in our system. Fill in their information below to add them to your family.
+        </p>
+
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="newEmail" readonly />
+        </div>
+        <div class="field">
+          <label>First Name *</label>
+          <input type="text" id="newFirstName" placeholder="First name" required />
+        </div>
+        <div class="field">
+          <label>Last Name</label>
+          <input type="text" id="newLastName" placeholder="Last name" />
+        </div>
+        <div class="field">
+          <label>Phone Number</label>
+          <input type="tel" id="newPhoneNumber" placeholder="Phone number" />
+        </div>
+        <div class="field">
+          <label>District</label>
+          <input type="text" id="newDistrict" placeholder="District" />
+        </div>
+
+        <div style="display: flex; gap: 12px;">
+          <button class="btn btn-primary" onclick="submitNewMember()">Create & Add to Family</button>
+          <button class="btn btn-secondary" onclick="cancelNewMember()">Cancel</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-  var appBaseUrl = '__SCRIPT_URL__';
-  document.addEventListener('click', function(e) {
-    var a = e.target.closest('a[href]');
-    if (a) {
-      var h = a.getAttribute('href');
-      if (h && h.charAt(0) === '?') {
-        e.preventDefault();
-        window.top.location.href = appBaseUrl + h;
-      }
-    }
+console.log('[MMR][family] page script started');
+var appBaseUrl = '__SCRIPT_URL__';
+const SERVER_PARAMS = __URL_PARAMS__;
+const SESSION_ID = Math.random().toString(36).slice(2);
+let member = null;
+let familyMembers = [];
+
+function callApi(fn, payload) {
+  console.log('[MMR][family] callApi:', fn);
+  return new Promise((resolve, reject) => {
+    const req = { requestId: Math.random().toString(36).slice(2), payload };
+    google.script.run
+      .withSuccessHandler(r => {
+        const res = JSON.parse(r);
+        if (res.ok) resolve(res.payload);
+        else reject(new Error(res.errorMessage || 'API error'));
+      })
+      .withFailureHandler(err => reject(err))
+      [fn](JSON.stringify(req));
   });
+}
+
+function showMsg(text, type = 'success') {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + type;
+  el.scrollIntoView({ behavior: 'smooth' });
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function getStatusBadge(status) {
+  if (status === 'active') return '<span class="badge badge-active">active</span>';
+  if (status === 'pending_upgrade') return '<span class="badge badge-pending">pending</span>';
+  return '<span class="badge badge-inactive">inactive</span>';
+}
+
+// Load family members table
+async function loadFamilyMembers() {
+  try {
+    console.log('[MMR][family] loading family members for:', member?.memberID);
+    const result = await callApi('getFamilyMembers', {
+      memberID: member.memberID,
+      sessionID: SESSION_ID,
+    });
+
+    familyMembers = result.members || [];
+    console.log('[MMR][family] loaded members:', familyMembers.length);
+
+    const tbody = document.getElementById('membersBody');
+    const noMembers = document.getElementById('noMembers');
+
+    if (familyMembers.length === 0) {
+      tbody.innerHTML = '';
+      noMembers.style.display = 'block';
+      noMembers.textContent = 'No family members yet. Add one below!';
+      return;
+    }
+
+    noMembers.style.display = 'none';
+    tbody.innerHTML = familyMembers.map(m => `
+      <tr>
+        <td><strong>${m.memberID}</strong></td>
+        <td>${m.firstName} ${m.lastName}</td>
+        <td>${m.email}</td>
+        <td>${m.type}</td>
+        <td>${getStatusBadge(m.status)}</td>
+        <td>${formatDate(m.expiration)}</td>
+        <td>${m.wechatID || '—'}</td>
+        <td>
+          ${m.memberID === member.memberID ?
+            '<em style="color:#999">Primary</em>' :
+            `<button class="btn btn-danger" onclick="removeMember('${m.email}')">Remove</button>`
+          }
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    console.error('[MMR][family] loadFamilyMembers error:', err);
+    showMsg('Failed to load family members: ' + err.message, 'error');
+  }
+}
+
+// Look up an email
+async function lookupEmail() {
+  const email = document.getElementById('lookupEmail').value.trim();
+  if (!email) {
+    showMsg('Please enter an email address', 'error');
+    return;
+  }
+
+  try {
+    console.log('[MMR][family] looking up email:', email);
+    const result = await callApi('lookupEmailForFamily', { email });
+
+    const resultDiv = document.getElementById('lookupResult');
+    const contentDiv = document.getElementById('resultContent');
+    const createForm = document.getElementById('createNewMemberForm');
+
+    if (result.exists) {
+      // Member found
+      console.log('[MMR][family] member found:', result.member.memberID);
+      contentDiv.innerHTML = `
+        <p style="margin-bottom: 12px;"><strong>${result.member.firstName} ${result.member.lastName}</strong></p>
+        <p style="color: #666; font-size: 13px; margin-bottom: 12px;">
+          Email: ${result.member.email}<br/>
+          Member ID: ${result.member.memberID}
+        </p>
+        <button class="btn btn-primary" onclick="addExistingMember('${email}')">Add to Family</button>
+      `;
+      resultDiv.classList.add('show');
+      createForm.classList.add('section-hidden');
+    } else {
+      // Member not found
+      console.log('[MMR][family] member not found, showing create form');
+      contentDiv.innerHTML = `
+        <p style="color: #c62828; margin-bottom: 12px;">
+          ⚠️ No member found with this email.
+        </p>
+        <p style="color: #666; font-size: 13px;">
+          You can create a new member with this email.
+        </p>
+      `;
+      resultDiv.classList.add('show');
+
+      // Show new member form
+      document.getElementById('newEmail').value = email;
+      createForm.classList.remove('section-hidden');
+      createForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  } catch (err) {
+    console.error('[MMR][family] lookupEmail error:', err);
+    showMsg('Lookup failed: ' + err.message, 'error');
+  }
+}
+
+// Add an existing member to the family
+async function addExistingMember(email) {
+  try {
+    console.log('[MMR][family] adding existing member:', email);
+    document.getElementById('lookupBtn').disabled = true;
+
+    const result = await callApi('addFamilyMember', {
+      memberID: member.memberID,
+      targetEmail: email,
+      sessionID: SESSION_ID,
+    });
+
+    showMsg(`✅ ${result.message}`, 'success');
+
+    // Reset form and reload
+    document.getElementById('lookupEmail').value = '';
+    document.getElementById('lookupResult').classList.remove('show');
+    document.getElementById('createNewMemberForm').classList.add('section-hidden');
+    document.getElementById('lookupBtn').disabled = false;
+
+    await loadFamilyMembers();
+  } catch (err) {
+    console.error('[MMR][family] addExistingMember error:', err);
+    showMsg('Failed to add member: ' + err.message, 'error');
+    document.getElementById('lookupBtn').disabled = false;
+  }
+}
+
+// Submit new member form
+async function submitNewMember() {
+  const email = document.getElementById('newEmail').value.trim();
+  const firstName = document.getElementById('newFirstName').value.trim();
+  const lastName = document.getElementById('newLastName').value.trim();
+  const phoneNumber = document.getElementById('newPhoneNumber').value.trim();
+  const district = document.getElementById('newDistrict').value.trim();
+
+  if (!firstName) {
+    showMsg('First name is required', 'error');
+    return;
+  }
+
+  try {
+    console.log('[MMR][family] creating new member:', email);
+
+    // Step 1: Create the new member
+    const createResult = await callApi('createNewMember', {
+      email,
+      firstName,
+      lastName,
+      phoneNumber,
+      district,
+      sessionID: SESSION_ID,
+    });
+
+    console.log('[MMR][family] new member created:', createResult.member.memberID);
+
+    // Step 2: Add to family
+    const addResult = await callApi('addFamilyMember', {
+      memberID: member.memberID,
+      targetEmail: email,
+      sessionID: SESSION_ID,
+    });
+
+    showMsg(`✅ New member created and added to family!`, 'success');
+
+    // Reset form
+    document.getElementById('lookupEmail').value = '';
+    document.getElementById('newFirstName').value = '';
+    document.getElementById('newLastName').value = '';
+    document.getElementById('newPhoneNumber').value = '';
+    document.getElementById('newDistrict').value = '';
+    document.getElementById('lookupResult').classList.remove('show');
+    document.getElementById('createNewMemberForm').classList.add('section-hidden');
+
+    await loadFamilyMembers();
+  } catch (err) {
+    console.error('[MMR][family] submitNewMember error:', err);
+    showMsg('Failed to create member: ' + err.message, 'error');
+  }
+}
+
+// Cancel new member form
+function cancelNewMember() {
+  document.getElementById('createNewMemberForm').classList.add('section-hidden');
+  document.getElementById('lookupResult').classList.remove('show');
+  document.getElementById('lookupEmail').value = '';
+  document.getElementById('newFirstName').value = '';
+  document.getElementById('newLastName').value = '';
+  document.getElementById('newPhoneNumber').value = '';
+  document.getElementById('newDistrict').value = '';
+}
+
+// Remove a family member
+async function removeMember(email) {
+  const targetName = familyMembers.find(m => m.email === email)?.firstName || email;
+  if (!confirm(`Remove ${targetName} from the family?`)) {
+    return;
+  }
+
+  try {
+    console.log('[MMR][family] removing member:', email);
+    const result = await callApi('removeFamilyMember', {
+      memberID: member.memberID,
+      targetEmail: email,
+      sessionID: SESSION_ID,
+    });
+
+    showMsg(`✅ ${result.message}`, 'success');
+    await loadFamilyMembers();
+  } catch (err) {
+    console.error('[MMR][family] removeMember error:', err);
+    showMsg('Failed to remove member: ' + err.message, 'error');
+  }
+}
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const cached = sessionStorage.getItem('member');
+    if (cached) member = JSON.parse(cached);
+
+    if (!member) {
+      showMsg('Not authenticated. Please log in again.', 'error');
+      return;
+    }
+
+    console.log('[MMR][family] initialized for member:', member.memberID);
+
+    // Load family members
+    await loadFamilyMembers();
+  } catch (err) {
+    console.error('[MMR][family] init error:', err);
+    showMsg('Failed to load page: ' + err.message, 'error');
+  }
+});
 </script>
 </body>
 </html>

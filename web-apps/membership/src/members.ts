@@ -51,6 +51,7 @@ function updateMemberProfile(jsonRequest: string): string {
     const now = new Date().toISOString();
     const updates: Record<string, any> = {
       LAST_UPDATED: now,
+      PROFILE_LAST_UPDATED: now,
     };
     if (payload.firstName   !== undefined) updates['FIRST_NAME']   = payload.firstName.trim();
     if (payload.lastName    !== undefined) updates['LAST_NAME']    = payload.lastName.trim();

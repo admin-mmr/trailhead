@@ -48,6 +48,18 @@
     #globalMsg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; display: none; }
     #globalMsg.success { background: #e8f5e9; color: #2d7d46; display: block; }
     #globalMsg.error   { background: #fdecea; color: #c62828; display: block; }
+    /* ── Unmatched Payments: Member ID highlight ── */
+    .card-highlighted { border: 2px solid #f59e0b; box-shadow: 0 2px 14px rgba(245,158,11,0.18); }
+    .assign-section { background: #fffbf0; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-top: 14px; }
+    .assign-hint { font-size: 12px; font-weight: 700; color: #b45309; margin-bottom: 10px; }
+    .assign-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .assign-select { padding: 7px 10px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; min-width: 160px; }
+    .btn-lookup { background: #5c35a8; color: #fff; padding: 7px 14px; border-radius: 6px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-lookup:hover { background: #4a2b8a; }
+    .member-preview { margin-top: 14px; }
+    .member-info-box { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; }
+    .proof-preview-box { background: #f8f6ff; border-radius: 8px; padding: 12px; margin: 10px 0 12px; font-size: 13px; }
+    .proof-preview-box strong { color: #333; }
   </style>
 </head>
 <body>
@@ -108,8 +120,9 @@
   console.log('[MMR][admin] appBaseUrl:', appBaseUrl);
 
   var adminEmail = null;
-  var eventsCache = {};      // already used in approve(); keep as-is
-  var pendingEventsList = []; // NEW: flat list for manual match
+  var eventsCache = {};        // already used in approve(); keep as-is
+  var pendingEventsList = [];  // flat list for manual match
+  var unmatchedPaymentsCache = {}; // messageId -> full payment row for assign flow
 
   // Navigate all relative ?page= links through window.top with absolute URL
   document.addEventListener('click', function(e) {
@@ -285,31 +298,160 @@
       });
   }
 
+  // Regex to detect member IDs like A0001, A1234 in free text
+  var MEMBER_ID_RE = /\bA\d{4}\b/g;
+
   function loadUnmatched() {
     console.log('[MMR][admin] loadUnmatched, adminEmail:', adminEmail);
     var el = document.getElementById('unmatched-list');
     el.innerHTML = '<div class="empty-state">Loading…</div>';
+    unmatchedPaymentsCache = {};
     callApi('getUnmatchedPayments', { adminEmail: adminEmail })
       .then(function(data) {
         var payments = data.payments || [];
         console.log('[MMR][admin] getUnmatchedPayments returned', payments.length, 'payments');
         if (!payments.length) { el.innerHTML = '<div class="empty-state">No unmatched payments.</div>'; return; }
+
+        // Cache all payments for later use in assign flow
+        payments.forEach(function(p) {
+          if (p.messageId) unmatchedPaymentsCache[p.messageId] = p;
+        });
+
         el.innerHTML = payments.map(function(p) {
-          return '<div class="card">' +
-            '<h3>' + esc(p.sender) + ' &mdash; $' + esc(p.amount) + ' via ' + esc(p.source) + '</h3>' +
-            '<div class="meta">' + esc(p.transactionDate || p.timestamp) + '</div>' +
-            '<div class="detail-grid">' +
-            '<div class="detail-item"><label>Memo</label><span>' + esc(p.memo) + '</span></div>' +
-            '<div class="detail-item"><label>Original Memo</label><span>' + esc(p.originalMemo || '—') + '</span></div>' +
-            '<div class="detail-item"><label>Transaction #</label><span>' + esc(p.transactionNumber || '—') + '</span></div>' +
-            '<div class="detail-item"><label>Message ID</label><span>' + esc(p.messageId || '—') + '</span></div>' +
-            '</div></div>';
+          // Scan memo + originalMemo + sender for A\d{4} member IDs
+          var searchText = [p.memo, p.originalMemo, p.sender].join(' ');
+          var foundIDs = Array.from(new Set((searchText.match(MEMBER_ID_RE) || [])));
+          var isHighlighted = foundIDs.length > 0;
+
+          var assignSection = '';
+          if (isHighlighted) {
+            var optionItems = foundIDs.map(function(id) {
+              return '<option value="' + esc(id) + '">' + esc(id) + '</option>';
+            }).join('');
+            assignSection =
+              '<div class="assign-section">' +
+                '<div class="assign-hint">🔍 Member ID detected — assign this payment to a member</div>' +
+                '<div class="assign-row">' +
+                  '<select class="assign-select" id="msel-' + esc(p.messageId) + '">' +
+                    '<option value="">— Select Member ID —</option>' + optionItems +
+                  '</select>' +
+                  '<button class="btn btn-lookup" onclick="lookupMemberForPayment(\'' + esc(p.messageId) + '\')">Preview Member</button>' +
+                '</div>' +
+                '<div class="member-preview" id="mpreview-' + esc(p.messageId) + '" style="display:none;"></div>' +
+              '</div>';
+          }
+
+          return (
+            '<div class="card' + (isHighlighted ? ' card-highlighted' : '') + '">' +
+              '<h3>' + esc(p.sender) + ' &mdash; $' + esc(p.amount) + ' via ' + esc(p.source) + '</h3>' +
+              '<div class="meta">' + esc(p.transactionDate || p.timestamp) + '</div>' +
+              '<div class="detail-grid">' +
+                '<div class="detail-item"><label>Memo</label><span>' + esc(p.memo) + '</span></div>' +
+                '<div class="detail-item"><label>Original Memo</label><span>' + esc(p.originalMemo || '—') + '</span></div>' +
+                '<div class="detail-item"><label>Transaction #</label><span>' + esc(p.transactionNumber || '—') + '</span></div>' +
+                '<div class="detail-item"><label>Message ID</label><span>' + esc(p.messageId || '—') + '</span></div>' +
+              '</div>' +
+              assignSection +
+            '</div>'
+          );
         }).join('');
       })
       .catch(function(err) {
         console.error('[MMR][admin] getUnmatchedPayments error:', err && err.message);
         el.innerHTML = '<div class="empty-state">Error: ' + esc(err && err.message) + '</div>';
       });
+  }
+
+  // ---- Assign unmatched payment to member ----
+
+  function lookupMemberForPayment(messageId) {
+    var selectEl = document.getElementById('msel-' + messageId);
+    var memberID = selectEl ? selectEl.value : '';
+    if (!memberID) { showGlobalMsg('Please select a Member ID first.', 'error'); return; }
+
+    var previewEl = document.getElementById('mpreview-' + messageId);
+    previewEl.style.display = 'block';
+    previewEl.innerHTML = '<div style="color:#888;font-size:13px;padding:8px 0;">Looking up member…</div>';
+    console.log('[MMR][admin] lookupMemberForPayment memberID:', memberID, 'messageId:', messageId);
+
+    callApi('getMemberSummaryForAdmin', { adminEmail: adminEmail, memberID: memberID })
+      .then(function(member) {
+        var p = unmatchedPaymentsCache[messageId];
+        var statusColor = member.status === 'active' ? '#2d7d46' : '#c62828';
+        var statusBg   = member.status === 'active' ? '#e8f5e9' : '#fdecea';
+        previewEl.innerHTML =
+          '<div class="member-info-box">' +
+            '<div style="font-size:13px;font-weight:700;color:#333;margin-bottom:10px;">Member Preview</div>' +
+            '<div class="detail-grid" style="margin-bottom:10px;">' +
+              '<div class="detail-item"><label>Name</label><span>' + esc(member.firstName + ' ' + member.lastName) + '</span></div>' +
+              '<div class="detail-item"><label>Member ID</label><span>' + esc(member.memberID) + '</span></div>' +
+              '<div class="detail-item"><label>Membership Type</label><span>' + esc(member.type) + '</span></div>' +
+              '<div class="detail-item"><label>Expiration</label><span>' + esc(member.expiration || '—') + '</span></div>' +
+              '<div class="detail-item"><label>Status</label><span class="badge" style="background:' + statusBg + ';color:' + statusColor + ';">' + esc(member.status) + '</span></div>' +
+            '</div>' +
+            '<div class="proof-preview-box">' +
+              '<div style="font-weight:700;color:#5c35a8;margin-bottom:6px;">Payment Details</div>' +
+              '<div>Amount: <strong>$' + esc(p ? p.amount : '—') + '</strong> &nbsp;·&nbsp; From: <strong>' + esc(p ? p.sender : '—') + '</strong></div>' +
+              '<div style="color:#888;margin-top:4px;">Memo: ' + esc(p ? (p.memo || p.originalMemo || '—') : '—') + '</div>' +
+              '<div style="color:#888;margin-top:2px;">Date: ' + esc(p ? (p.transactionDate || p.timestamp || '—') : '—') + '</div>' +
+            '</div>' +
+            '<div style="background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px;margin:10px 0;font-size:13px;">' +
+              '<div style="font-weight:700;color:#1e40af;margin-bottom:8px;">Select Payment Type</div>' +
+              '<div style="display:flex;flex-direction:column;gap:8px;">' +
+                '<label style="cursor:pointer;"><input type="radio" name="payment-intent-' + esc(messageId) + '" value="Individual Membership" checked /> <span style="font-weight:600;">Individual Membership</span></label>' +
+                '<label style="cursor:pointer;"><input type="radio" name="payment-intent-' + esc(messageId) + '" value="Family Membership" /> <span style="font-weight:600;">Family Membership</span></label>' +
+                '<label style="cursor:pointer;"><input type="radio" name="payment-intent-' + esc(messageId) + '" value="Family Upgrade" /> <span style="font-weight:600;">Family Upgrade</span></label>' +
+              '</div>' +
+            '</div>' +
+            '<div class="action-row">' +
+              '<button class="btn btn-approve" onclick="confirmCreateProof(\'' + esc(messageId) + '\',\'' + esc(memberID) + '\')">✓ Create Payment Proof Record</button>' +
+              '<button class="btn btn-reject" onclick="cancelMemberPreview(\'' + esc(messageId) + '\')">Cancel</button>' +
+            '</div>' +
+          '</div>';
+      })
+      .catch(function(err) {
+        console.error('[MMR][admin] getMemberSummaryForAdmin error:', err && err.message);
+        previewEl.innerHTML = '<div style="color:#c62828;font-size:13px;padding:8px 0;">Error: ' + esc(err && err.message) + '</div>';
+      });
+  }
+
+  function confirmCreateProof(messageId, memberID) {
+    var p = unmatchedPaymentsCache[messageId];
+    if (!p) { showGlobalMsg('Payment data not found. Please refresh.', 'error'); return; }
+
+    // Get selected payment intent from radio buttons
+    var radioName = 'payment-intent-' + messageId;
+    var selectedRadio = document.querySelector('input[name="' + radioName + '"]:checked');
+    var paymentIntent = selectedRadio ? selectedRadio.value : 'Individual Membership';
+
+    console.log('[MMR][admin] confirmCreateProof messageId:', messageId, 'memberID:', memberID, 'paymentIntent:', paymentIntent);
+
+    callApi('adminCreatePaymentProof', {
+      adminEmail: adminEmail,
+      memberID: memberID,
+      paymentIntent: paymentIntent,
+      messageId: p.messageId,
+      transactionNumber: p.transactionNumber || '',
+      amount: p.amount || 0,
+      sender: p.sender || '',
+      memo: p.memo || p.originalMemo || '',
+      source: p.source || '',
+      transactionDate: p.transactionDate || p.timestamp || '',
+      rowIndex: p.rowIndex || 0,
+    })
+    .then(function(result) {
+      showGlobalMsg('✅ Payment proof record created & approved: ' + result.eventID, 'success');
+      loadUnmatched();
+      loadPaymentProofs();
+    })
+    .catch(function(err) {
+      showGlobalMsg('Error creating record: ' + (err && err.message), 'error');
+    });
+  }
+
+  function cancelMemberPreview(messageId) {
+    var previewEl = document.getElementById('mpreview-' + messageId);
+    if (previewEl) { previewEl.style.display = 'none'; previewEl.innerHTML = ''; }
   }
 
   function loadConfig() {
