@@ -95,3 +95,6 @@ function submitPaymentProof(jsonRequest: string): string {
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
+
+(globalThis as any).getPaymentConfirmationEvents = getPaymentConfirmationEvents;
+(globalThis as any).submitPaymentProof          = submitPaymentProof;

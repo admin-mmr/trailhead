@@ -533,34 +533,27 @@
     document.getElementById('content').style.display = 'block';
   }
 
-  // ---- Load config + member ----
-  // We load config first (prices, thresholds) then member + events in parallel.
-  var configPromise = callApi('getPublicConfig', {})
-    .then(function(data) { configCache = data || {}; })
-    .catch(function() { /* use defaults */ });
-
-  var eventsPromise = null;
-  var memberPromise = null;
-
+  // ---- Load config + member + payment history in parallel ----
+  // All three are independent and can load concurrently for maximum speed
   var cached = sessionStorage.getItem('member');
+  var memberEmail = '';
+  if (cached) { try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {} }
+
+  // Render from cache immediately while data loads in background
   if (cached) {
     try {
       var m = JSON.parse(cached);
-      // Render immediately from cache with empty events (events load separately)
-      configPromise.then(function() {
-        renderMember(m, []);
-      });
+      renderMember(m, []);
     } catch (e) {
       console.error('[MMR][dashboard] failed to parse cached member:', e);
     }
   }
 
-  var memberEmail = '';
-  if (cached) { try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {} }
-
-  // Load fresh member data + events in parallel
+  // Load all three data sources in true parallel (none wait for others)
   Promise.all([
-    configPromise,
+    callApi('getPublicConfig', {})
+      .then(function(data) { configCache = data || {}; })
+      .catch(function() { /* use defaults */ }),
     callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID }),
     callApi('getMemberPaymentHistory',   { email: memberEmail, sessionID: SESSION_ID }),
   ]).then(function(results) {

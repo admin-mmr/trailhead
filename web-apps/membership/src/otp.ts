@@ -76,3 +76,8 @@ function markOtpUsed(rowIndex: number): void {
   const sheet = getSheet(SHEET_NAMES.OTP);
   sheet.getRange(rowIndex, 5).setValue(true);
 }
+
+(globalThis as any).findValidOtp       = findValidOtp;
+(globalThis as any).findValidOtpByEmail = findValidOtpByEmail;
+(globalThis as any).appendOtpRecord    = appendOtpRecord;
+(globalThis as any).markOtpUsed        = markOtpUsed;

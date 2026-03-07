@@ -235,11 +235,25 @@
   }
   console.log('[MMR][profile] calling getOrCreateMemberProfile with email:', memberEmail);
 
-  // Load districts from Config
+  // Load districts from Config (with sessionStorage caching to avoid repeated fetches)
+  var cachedDistricts = sessionStorage.getItem('districts_list');
+  if (cachedDistricts) {
+    try {
+      var districts = JSON.parse(cachedDistricts);
+      console.log('[MMR][profile] districts from cache:', districts.length);
+      populateDistricts(districts);
+    } catch (e) {
+      console.warn('[MMR][profile] failed to parse cached districts:', e);
+    }
+  }
+
+  // Always fetch fresh districts in case they've changed (cache is just an optimization)
   callApi('getDistrictsFromConfig', {})
     .then(function(data) {
-      console.log('[MMR][profile] districts loaded:', data.districts && data.districts.length);
+      console.log('[MMR][profile] districts loaded fresh:', data.districts && data.districts.length);
       if (data.districts && Array.isArray(data.districts)) {
+        // Update cache for next page load
+        sessionStorage.setItem('districts_list', JSON.stringify(data.districts));
         populateDistricts(data.districts);
       }
     })

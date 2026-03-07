@@ -464,3 +464,4 @@ function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
 (globalThis as any).generateEventID             = generateEventID;
 (globalThis as any).generatePaymentID           = generatePaymentID;
 (globalThis as any).generateLogID               = generateLogID;
+(globalThis as any).updateMemberRow             = updateMemberRow;

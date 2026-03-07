@@ -9,7 +9,7 @@ require('../src/ui');
 require('../src/config');
 require('../src/sheets');
 require('../src/logger');
-require('../src/renewal');
+require('../src/dues');
 
 declare function submitDuesPayment(jsonRequest: string): string;
 declare function submitRenewalRequest(jsonRequest: string): string;

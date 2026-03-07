@@ -250,6 +250,11 @@ const DEFAULT_PAYMENT_EVENTS_ROWS: string[][] = [
 // Spreadsheet + Config helpers
 // ============================================================
 
+// Config caching — reduces repeated sheet reads during page load
+let configMapCache: ConfigMap | null = null;
+let configCacheTime = 0;
+const CONFIG_CACHE_TTL_MS = 60000; // 60 second cache per GAS execution
+
 function getSheet(name: string): GoogleAppsScript.Spreadsheet.Sheet {
   const id = GMAIL_SHEETS.has(name) ? GMAIL_SPREADSHEET_ID : MEMBERSHIP_SPREADSHEET_ID;
   const ss = SpreadsheetApp.openById(id);
@@ -278,6 +283,15 @@ function getSheet(name: string): GoogleAppsScript.Spreadsheet.Sheet {
 }
 
 function getConfigMap(): ConfigMap {
+  // Check cache first — reduces duplicate sheet reads during admin operations
+  const now = Date.now();
+  if (configMapCache !== null && (now - configCacheTime) < CONFIG_CACHE_TTL_MS) {
+    console.log('[config] getConfigMap cache hit, skipping sheet read');
+    return configMapCache;
+  }
+
+  // Cache miss — read from sheet
+  console.log('[config] getConfigMap cache miss, reading from sheet');
   const sheet = getSheet(SHEET_NAMES.CONFIG);
   const rows = sheet.getDataRange().getValues();
   const map: ConfigMap = {};
@@ -286,6 +300,11 @@ function getConfigMap(): ConfigMap {
     const value = String(rows[i][CFG_COL.VALUE]).trim();
     if (key) map[key] = value;
   }
+
+  // Store in cache
+  configMapCache = map;
+  configCacheTime = now;
+
   return map;
 }
 

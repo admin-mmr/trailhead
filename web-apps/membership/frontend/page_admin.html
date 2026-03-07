@@ -455,26 +455,36 @@
   }
 
   function loadConfig() {
-    console.log('[MMR][admin] loadConfig, adminEmail:', adminEmail);
-    callApi('getConfig', { adminEmail: adminEmail, caller: 'admin-page-init' })
-      .then(function(data) {
-        configData = data.config || {};
-        console.log('[MMR][admin] getConfig returned', Object.keys(configData).length, 'keys');
-        var body = document.getElementById('config-body');
-        body.innerHTML = Object.keys(configData).map(function(key) {
-          var value = configData[key];
-          return '<tr>' +
-            '<td><strong>' + esc(key) + '</strong></td>' +
-            '<td><input type="text" id="cfg-' + esc(key) + '" value="' + esc(value) + '" /></td>' +
-            '<td style="color:#999;font-size:13px;"></td>' +
-            '<td><button class="btn btn-save-config" onclick="saveConfig(\'' + esc(key) + '\')">Save</button></td>' +
-            '</tr>';
-        }).join('');
-      })
-      .catch(function(err) {
-        console.error('[MMR][admin] getConfig error:', err && err.message);
-        document.getElementById('config-body').innerHTML = '<tr><td colspan="4">Error: ' + esc(err && err.message) + '</td></tr>';
-      });
+    console.log('[MMR][admin] loadConfig using cached configData');
+    // configData is already populated from auth check (line 554), no need to fetch again
+    if (!configData || Object.keys(configData).length === 0) {
+      console.warn('[MMR][admin] configData not cached, fetching now');
+      callApi('getConfig', { adminEmail: adminEmail, caller: 'admin-page-config' })
+        .then(function(data) {
+          configData = data.config || {};
+          renderConfigTable();
+        })
+        .catch(function(err) {
+          console.error('[MMR][admin] getConfig error:', err && err.message);
+          document.getElementById('config-body').innerHTML = '<tr><td colspan="4">Error: ' + esc(err && err.message) + '</td></tr>';
+        });
+    } else {
+      renderConfigTable();
+    }
+  }
+
+  function renderConfigTable() {
+    console.log('[MMR][admin] rendering config table with', Object.keys(configData).length, 'keys');
+    var body = document.getElementById('config-body');
+    body.innerHTML = Object.keys(configData).map(function(key) {
+      var value = configData[key];
+      return '<tr>' +
+        '<td><strong>' + esc(key) + '</strong></td>' +
+        '<td><input type="text" id="cfg-' + esc(key) + '" value="' + esc(value) + '" /></td>' +
+        '<td style="color:#999;font-size:13px;"></td>' +
+        '<td><button class="btn btn-save-config" onclick="saveConfig(\'' + esc(key) + '\')">Save</button></td>' +
+        '</tr>';
+    }).join('');
   }
 
   function approve(eventID) {
@@ -549,13 +559,16 @@
     console.log('[MMR][admin] verifying admin status for:', adminEmail);
     callApi('getConfig', { adminEmail: adminEmail, caller: 'admin-page-auth-check' })
       .then(function(data) {
-        console.log('[MMR][admin] admin verified, loading panels');
+        console.log('[MMR][admin] admin verified, loading panels in parallel');
         // Seed configData from the auth check so Config tab doesn't need a second call
         configData = data.config || {};
-        loadPending();
-        loadUnmatched();
-        loadPaymentProofs();
-        loadConfig();
+
+        // Load all three panels in parallel (they make independent API calls)
+        // No need to wait for one to finish before starting the next
+        loadPending();      // Starts API call, doesn't wait for completion
+        loadUnmatched();    // Starts API call, doesn't wait for completion
+        loadPaymentProofs(); // Starts API call, doesn't wait for completion
+        loadConfig();       // Renders immediately using cached configData
       })
       .catch(function(err) {
         console.warn('[MMR][admin] admin check failed:', err && err.message);
