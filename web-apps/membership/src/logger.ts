@@ -35,3 +35,6 @@ function auditLog(
     console.error('auditLog failed:', e);
   }
 }
+
+// ── globalThis exports for test environment ──────────────────
+(globalThis as any).auditLog    = auditLog;

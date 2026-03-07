@@ -4,7 +4,7 @@
 
 interface Member {
   memberID: string;          // Axxxx
-  status: 'active' | 'not active' | 'expired';
+  status: 'active' | 'inactive' | 'pending_upgrade';
   created: string;
   expiration: string;
   email: string;
@@ -29,24 +29,32 @@ interface Member {
   notes: string;
 }
 
-/// ADD this type
-type PaymentIntent = 'Individual Renewal' | 'Family Renewal' | 'Family Upgrade';
+// PaymentIntent describes the financial transaction type
+type PaymentIntent = 'Individual Membership' | 'Family Membership' | 'Family Upgrade';
 
-// UPDATE WebAppEvent — replace membershipType with paymentIntent
+// EventType aligns with the action that triggered the event
+type EventType =
+  | 'dues_payment'          // Regular dues submission (Individual or Family)
+  | 'family_switch'         // Individual switching to Family (full dues, triggered by initiateSwitch)
+  | 'family_upgrade'        // Individual upgrading to Family mid-cycle (delta, triggered by initiateUpgrade)
+  | 'membership_application'// New member application
+  | 'admin_request';        // Admin-initiated event
+
 interface WebAppEvent {
   eventID: string;
-  eventType: string;
+  eventType: EventType | string;
   timestamp: string;
+  expiresAt: string;         // Timestamp + PaymentProofReviewDays; after this, event auto-expires
   memberID: string;
   email: string;
-  paymentIntent: PaymentIntent;   // ← was membershipType: string
+  paymentIntent: PaymentIntent;
   amount: number;
   paymentMethod: string;
   payerName: string;
   memoField: string;
   last4Digits: string;
   familyMemberEmails: string;
-  status: 'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Error';
+  status: 'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Expired' | 'Error';
   matchedMessageId: string;
   matchedTransactionNumber: string;
   adminApprover: string;
@@ -60,26 +68,26 @@ interface WebAppEvent {
   ocrTimestamp?: string;
 }
 
-// UPDATE PaymentHistoryItem — replace membershipType with paymentIntent
 interface PaymentHistoryItem {
   paymentID: string;
   eventID: string;
   paymentDate: string;
   amount: number;
-  paymentIntent: PaymentIntent;   // ← was membershipType
+  paymentIntent: PaymentIntent;
   paymentMethod: string;
   payerName: string;
   periodStart: string;
   periodEnd: string;
   source: string;
   notes: string;
+  memoField: string;
 }
 
-// ADD RenewalSubmitPayload — replace old payload interface
-interface RenewalSubmitPayload {
+// Payload for submitting dues (Pay Dues flow — no pre-existing event)
+interface DuesSubmitPayload {
   memberId: string;
   email: string;
-  paymentIntent: PaymentIntent;   // ← was membershipType
+  paymentIntent: PaymentIntent;
   amount: number;
   paymentMethod: string;
   payerName: string;
@@ -89,6 +97,8 @@ interface RenewalSubmitPayload {
   sessionID: string;
 }
 
+// Keep old name as alias for backward compat with any callers
+type RenewalSubmitPayload = DuesSubmitPayload;
 
 interface PaymentRecord {
   paymentID: string;
@@ -190,17 +200,15 @@ interface LoginPayload {
   sessionID: string;
 }
 
-// Payload for the pre-OTP email lookup
 interface LookupEmailPayload {
   email: string;
   sessionID: string;
 }
 
-// Response for lookupEmail
 interface LookupEmailResponse {
   found: boolean;
-  firstName?: string;   // only present if found
-  memberID?: string;    // only present if found
+  firstName?: string;
+  memberID?: string;
 }
 
 interface OtpRequestPayload {
@@ -222,20 +230,54 @@ interface UpdateProfilePayload {
   wechatID?: string;
   district?: string;
   joinYear?: string;
+  // NOTE: Type is intentionally excluded — type changes go through upgrade.ts only
 }
 
-interface ApproveRenewalPayload {
+interface ApproveDuesPayload {
   eventID: string;
   adminEmail: string;
   notes?: string;
 }
 
-interface RejectRenewalPayload {
+// Keep old name as alias
+type ApproveRenewalPayload = ApproveDuesPayload;
+
+interface RejectDuesPayload {
   eventID: string;
   adminEmail: string;
   notes: string;
 }
 
+// Keep old name as alias
+type RejectRenewalPayload = RejectDuesPayload;
+
+// Payload for initiating Switch to Family (full dues)
+interface InitiateSwitchPayload {
+  memberID: string;
+  email: string;
+  sessionID: string;
+}
+
+// Payload for initiating Upgrade to Family (delta payment, mid-cycle)
+interface InitiateUpgradePayload {
+  memberID: string;
+  email: string;
+  sessionID: string;
+}
+
+// Payload for cancelling a pending upgrade
+interface CancelUpgradePayload {
+  memberID: string;
+  email: string;
+  sessionID: string;
+}
+
+// Payload for family member management
+interface FamilyMemberPayload {
+  memberID: string;       // Acting member (must be Family type)
+  targetEmail: string;    // Email of member to add/remove
+  sessionID: string;
+}
 
 interface WebAppEventSummary {
   eventID:             string;
@@ -244,8 +286,9 @@ interface WebAppEventSummary {
   paymentIntent:       string;
   amount:              number;
   paymentMethod:       string;
-  status:              'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Error';
+  status:              'Pending' | 'Matched' | 'Approved' | 'Rejected' | 'Expired' | 'Error';
   notes:               string;
+  memoField:           string;
   // Payment-proof fields
   paymentDate:         string;
   screenshotFileId:    string;

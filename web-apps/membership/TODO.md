@@ -3,18 +3,26 @@
 - [ ] error in page=payment_history: Uncaught ReferenceError: SESSIONID is not defined
     at userCodeAppPanel?createOAuthDialog=true:133:74
 
+page=profile error
+
+[MMR][profile] updateMemberProfile success
+userCodeAppPanel?createOAuthDialog=true:55 [MMR][profile] loadProfile memberID: A0201
+userCodeAppPanel?createOAuthDialog=true:93 Unsafe attempt to initiate navigation for frame with origin 'https://script.google.com' from frame with URL 'https://n-a3blli3eby2hbqwnwx2ao6zrz3ht5gw2omu3mhq-0lu-script.googleusercontent.com/userCodeAppPanel?createOAuthDialog=true'. The frame attempting navigation of the top-level window is sandboxed with the 'allow-top-navigation-by-user-activation' flag, but has no user activation (aka gesture). See https://www.chromestatus.com/feature/5629582019395584.
+
+(anonymous) @ userCodeAppPanel?createOAuthDialog=true:93
+setTimeout
+(anonymous) @ userCodeAppPanel?createOAuthDialog=true:92
+Promise.then
+saveProfile @ userCodeAppPanel?createOAuthDialog=true:85
+onclick @ userCodeAppPanel?createOAuthDialog=true:1Understand this error
+userCodeAppPanel?createOAuthDialog=true:93 Uncaught SecurityError: Failed to set a named property 'href' on 'Location': The current window does not have permission to navigate the target frame to 'https://script.google.com/a/mmrunners.org/macros/s/AKfycbxjTf60ws8K-kcILGrc6YUZH9KSfAkf4hr_wiwzOHZCkVwOkCQ5tKg6gEVIfGFkc--23A/exec?page=dashboard'.
+setTimeout
+(anonymous) @ userCodeAppPanel?createOAuthDialog=true:92
+Promise.then
+saveProfile @ userCodeAppPanel?createOAuthDialog=true:85
+onclick @ userCodeAppPanel?createOAuthDialog=true:1Understand this error
+
 - [ ] remove renewal page. 
-
-add PaymentMethod in Submit Payment Proof page.
-
-dashboard actions depending on the membership type and membership expires and webapp-events history.
-
-1. if any status=Pending, button=View Pending Requests.
-2. if membership expires < 42 days, button=Pay Dues, PaymentIntent depends on Membership Type. 
-3. if membership expires < 42 days and Type = Individual, button= Switch to Family, send PaymentIntent = Family Membership
-4. if membership expires >= 42 days and Type = Individual, button=Upgrade to Family, send PaymentIntent = Family Upgrade 
-
-
 
 - [ ] Timestamp of all rows in WebApp-Events table is updated to the current time. It should be the event original time. 
 

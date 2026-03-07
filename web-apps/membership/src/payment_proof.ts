@@ -63,6 +63,7 @@ function submitPaymentProof(jsonRequest: string): string {
       const newEventID = appendWebAppEvent({
         eventType:                'PaymentProof',
         timestamp:                new Date().toISOString(),
+        expiresAt:                '',
         memberID:                 payload.memberID,
         email:                    payload.email,
         paymentIntent:            (payload.eventName || '') as PaymentIntent,

@@ -1,7 +1,8 @@
 // ============================================================
 // Spreadsheet configuration
 // MEMBERSHIP_SPREADSHEET_ID: the workbook containing Membership-Master-Main-3
-//   and all new sheets (WebApp-Events, Payment-History, Auth-OTP, Config, WebApp-ActivityLog).
+//   and all new sheets (WebApp-Events, Payment-History, Auth-OTP, Config,
+//   WebApp-ActivityLog, Membership-Master-Log).
 // GMAIL_SPREADSHEET_ID: the separate workbook containing the Fetch-Gmail sheet.
 // Update both IDs before deploying.
 // ============================================================
@@ -12,13 +13,14 @@ const GMAIL_SPREADSHEET_ID = '1rVOvhXzSxCRpWdAw3jYq5tWrYdCYtXmfqblTHP_wPqA';
 // Sheet names
 const SHEET_NAMES = {
   MEMBERSHIP_MASTER: 'Main',
-  WEBAPP_EVENTS: 'WebApp-Events',
-  PAYMENT_HISTORY: 'Payment-History',
-  AUTH_OTP: 'Auth-OTP',
-  CONFIG: 'Config',
-  ACTIVITY_LOG: 'WebApp-ActivityLog',
-  FETCH_GMAIL: 'Active',
-  PAYMENT_EVENTS: 'Payment Confirmation Events',
+  MEMBERSHIP_LOG:    'Membership-Master-Log',   // Full-row audit log (copy before every write)
+  WEBAPP_EVENTS:     'WebApp-Events',
+  PAYMENT_HISTORY:   'Payment-History',
+  OTP:               'OTP',
+  CONFIG:            'Config',
+  ACTIVITY_LOG:      'WebApp-ActivityLog',
+  FETCH_GMAIL:       'Active',
+  PAYMENT_EVENTS:    'Payment Confirmation Events',
 };
 
 // Sheets that live in the Fetch-Gmail spreadsheet (all others are in the membership spreadsheet)
@@ -52,32 +54,42 @@ const MM_COL = {
   NOTES: 22,
 };
 
+// Membership-Master-Log column indices (0-based)
+// LogID and LoggingTime are prepended; all MM_COL values follow at offset +2
+const ML_COL = {
+  LOG_ID: 0,
+  LOGGING_TIME: 1,
+  // Main table columns start at index 2 (MM_COL offset by +2)
+};
+const ML_MM_OFFSET = 2; // MM columns start at this index in the log table
+
 // WebApp-Events column indices (0-based)
 const WE_COL = {
   EVENT_ID: 0,
   EVENT_TYPE: 1,
   TIMESTAMP: 2,
-  MEMBER_ID: 3,
-  EMAIL: 4,
-  PAYMENT_INTENT: 5,
-  AMOUNT: 6,
-  PAYMENT_METHOD: 7,
-  PAYER_NAME: 8,
-  MEMO_FIELD: 9,
-  LAST_4_DIGITS: 10,
-  FAMILY_MEMBER_EMAILS: 11,
-  STATUS: 12,
-  MATCHED_MESSAGE_ID: 13,
-  MATCHED_TRANSACTION_NUMBER: 14,
-  ADMIN_APPROVER: 15,
-  APPROVAL_DATE: 16,
-  NOTES: 17,
-  // Payment-proof fields (added to mirror Payment-Proofs table)
-  PAYMENT_DATE: 18,
-  SCREENSHOT_FILE_ID: 19,
-  GDRIVE_FILE_PATH: 20,
-  OCR_TEXT: 21,
-  OCR_TIMESTAMP: 22,
+  EXPIRES_AT: 3,           // New: Timestamp + PaymentProofReviewDays
+  MEMBER_ID: 4,
+  EMAIL: 5,
+  PAYMENT_INTENT: 6,
+  AMOUNT: 7,
+  PAYMENT_METHOD: 8,
+  PAYER_NAME: 9,
+  MEMO_FIELD: 10,
+  LAST_4_DIGITS: 11,
+  FAMILY_MEMBER_EMAILS: 12,
+  STATUS: 13,
+  MATCHED_MESSAGE_ID: 14,
+  MATCHED_TRANSACTION_NUMBER: 15,
+  ADMIN_APPROVER: 16,
+  APPROVAL_DATE: 17,
+  NOTES: 18,
+  // Payment-proof fields
+  PAYMENT_DATE: 19,
+  SCREENSHOT_FILE_ID: 20,
+  GDRIVE_FILE_PATH: 21,
+  OCR_TEXT: 22,
+  OCR_TIMESTAMP: 23,
 };
 
 // Payment-History column indices (0-based)
@@ -163,8 +175,17 @@ const PCE_COL = {
 // ============================================================
 
 const SHEET_HEADERS: Record<string, string[]> = {
+  [SHEET_NAMES.MEMBERSHIP_LOG]: [
+    'LogID', 'LoggingTime',
+    // All Main table columns follow (mirrors MM_COL order)
+    'MemberID', 'Status', 'Created', 'Expiration', 'Email',
+    'FirstName', 'LastName', 'Type', 'FamilyID', 'Gender',
+    'WeChatID', 'District', 'WebApp', 'PaymentCheck', 'Info',
+    'LastUpdated', 'MembershipFeePaid', 'PaymentDate', 'PaymentTransaction',
+    'JoinYear', 'PhoneNumber', 'LastLoginDate', 'Notes',
+  ],
   [SHEET_NAMES.WEBAPP_EVENTS]: [
-    'EventID', 'EventType', 'Timestamp', 'MemberID', 'Email',
+    'EventID', 'EventType', 'Timestamp', 'ExpiresAt', 'MemberID', 'Email',
     'PaymentIntent', 'Amount', 'PaymentMethod', 'PayerName', 'MemoField',
     'Last4Digits', 'FamilyMemberEmails', 'Status',
     'MatchedMessageId', 'MatchedTransactionNumber',
@@ -177,7 +198,7 @@ const SHEET_HEADERS: Record<string, string[]> = {
     'Last4Digits', 'TransactionReference', 'PeriodStart', 'PeriodEnd',
     'ProcessedBy', 'ProcessedDate', 'Source', 'Notes',
   ],
-  [SHEET_NAMES.AUTH_OTP]: [
+  [SHEET_NAMES.OTP]: [
     'Email', 'OTPCode', 'CreatedAt', 'ExpiresAt', 'Used', 'IPAddress',
   ],
   [SHEET_NAMES.CONFIG]: [
@@ -194,31 +215,32 @@ const SHEET_HEADERS: Record<string, string[]> = {
 
 // Default Config values seeded on first creation
 const DEFAULT_CONFIG_ROWS: string[][] = [
-  ['IndividualPrice',        '30',                      'Price for individual membership'],
-  ['FamilyPrice',            '50',                      'Price for family membership'],
-  ['FamilyUpgradePrice',     '20',                      'Price for family membership'],
-  ['PaymentMethods',         'Zelle,Venmo,PayPal',      'Comma-separated accepted payment methods'],
-  ['ZelleHandle',            'zelle@example.com',       'Zelle payment handle'],
-  ['VenmoHandle',            '@venmo-user',             'Venmo payment handle'],
-  ['PayPalHandle',           'paypal@example.com',      'PayPal payment handle'],
-  ['ReminderDaysBefore',     '30',                      'Days before expiry to send reminder'],
-  ['MembershipRenewalYears', '1',                       'Years added per renewal'],
-  ['OTPValidHours',          '24',                      'Hours before OTP expires'],
-  ['OTPCleanupDays',         '7',                       'Days before used/expired OTPs are deleted'],
-  ['AdminEmails',            'admin@mmrunners.org',     'Comma-separated admin email addresses'],
-  ['AppBaseUrl',             '',                        'Deployed web app URL (set after first deploy)'],
-  // src/config.ts — in DEFAULT_CONFIG_ROWS
-  ['PaymentProofFolderId', '1I-FR4iTC8649XBzFSplyG2XARNBHwflz', 'Google Drive folder ID for payment proofs'],
-  ['ZelleQRCodeFileId',      '',                        'Google Drive file ID for Zelle QR code image'],
-  ['VenmoQRCodeFileId',      '',                        'Google Drive file ID for Venmo QR code image'],
+  ['IndividualPrice',          '30',                      'Price for individual membership dues'],
+  ['FamilyPrice',              '50',                      'Price for family membership dues'],
+  ['FamilyUpgradePrice',       '20',                      'Delta price to upgrade Individual → Family mid-cycle'],
+  ['PaymentMethods',           'Zelle,Venmo,PayPal',      'Comma-separated accepted payment methods'],
+  ['ZelleHandle',              'zelle@example.com',       'Zelle payment handle'],
+  ['VenmoHandle',              '@venmo-user',             'Venmo payment handle'],
+  ['PayPalHandle',             'paypal@example.com',      'PayPal payment handle'],
+  ['ReminderDaysBefore',       '42',                      'Days before expiry to show renewal buttons on dashboard'],
+  ['UpgradeMinMonths',         '3',                       'Minimum months remaining to allow Family Upgrade (delta payment)'],
+  ['PaymentProofReviewDays',   '7',                       'Days before an unreviewed payment proof event auto-expires'],
+  ['MembershipRenewalYears',   '1',                       'Years added per dues payment'],
+  ['OTPValidHours',            '24',                      'Hours before OTP expires'],
+  ['OTPCleanupDays',           '7',                       'Days before used/expired OTPs are deleted'],
+  ['AdminEmails',              'admin@mmrunners.org',     'Comma-separated admin email addresses'],
+  ['AppBaseUrl',               '',                        'Deployed web app URL (set after first deploy)'],
+  ['PaymentProofFolderId',     '1I-FR4iTC8649XBzFSplyG2XARNBHwflz', 'Google Drive folder ID for payment proofs'],
+  ['ZelleQRCodeFileId',        '',                        'Google Drive file ID for Zelle QR code image'],
+  ['VenmoQRCodeFileId',        '',                        'Google Drive file ID for Venmo QR code image'],
 ];
 
 // Default Payment Events values seeded on first creation
 const DEFAULT_PAYMENT_EVENTS_ROWS: string[][] = [
-  ['Individual Membership', 'Confirm your payment for individual membership renewal', 'Match with payment history'],
-  ['Family Membership', 'Confirm your payment for family membership renewal', 'Match with payment history'],
-  ['Upgrade to Family Membership', 'Confirm your payment for upgrading to family membership', 'Match with payment history'],
-  ['Other Payment', 'Confirm your other payments related to membership', 'Manual review'],
+  ['Individual Membership', 'Confirm your payment for individual membership dues', 'Match with payment history'],
+  ['Family Membership',     'Confirm your payment for family membership dues',     'Match with payment history'],
+  ['Family Upgrade',        'Confirm your payment for upgrading to family membership (delta)', 'Match with payment history'],
+  ['Other Payment',         'Confirm your other payments related to membership',   'Manual review'],
 ];
 
 
@@ -281,3 +303,28 @@ function setConfigValue(key: string, value: string): void {
   // Key not found — append new row
   sheet.appendRow([key, value, '']);
 }
+
+// ── globalThis exports for test environment ──────────────────
+// In GAS all functions are globally scoped. In Node.js/Jest each
+// require() runs in its own module scope, so helpers needed by
+// other modules must be reachable via globalThis.
+(globalThis as any).getSheet           = getSheet;
+(globalThis as any).getConfigMap       = getConfigMap;
+(globalThis as any).getConfigValue     = getConfigValue;
+(globalThis as any).setConfigValue     = setConfigValue;
+
+// Export config constants so cross-module calls can resolve them in the test environment
+(globalThis as any).SHEET_NAMES    = SHEET_NAMES;
+(globalThis as any).GMAIL_SHEETS   = GMAIL_SHEETS;
+(globalThis as any).MM_COL         = MM_COL;
+(globalThis as any).ML_COL         = ML_COL;
+(globalThis as any).ML_MM_OFFSET   = ML_MM_OFFSET;
+(globalThis as any).WE_COL         = WE_COL;
+(globalThis as any).PH_COL         = PH_COL;
+(globalThis as any).OTP_COL        = OTP_COL;
+(globalThis as any).LOG_COL        = LOG_COL;
+(globalThis as any).FG_COL         = FG_COL;
+(globalThis as any).CFG_COL        = CFG_COL;
+(globalThis as any).PCE_COL        = PCE_COL;
+(globalThis as any).MEMBERSHIP_SPREADSHEET_ID = MEMBERSHIP_SPREADSHEET_ID;
+(globalThis as any).GMAIL_SPREADSHEET_ID      = GMAIL_SPREADSHEET_ID;

@@ -61,6 +61,23 @@ beforeEach(() => {
   log: jest.fn(),
 };
 
+(global as any).ScriptApp = {
+  getService: () => ({ getUrl: () => 'https://script.google.com/test' }),
+};
+
+// HtmlService.createHtmlOutput needed by ui.ts
+(global as any).HtmlService = {
+  createHtmlOutputFromFile: (_file: string) => ({
+    getContent: () => '<html>__SCRIPT_URL____URL_PARAMS__</html>',
+    setTitle: () => ({}),
+    setXFrameOptionsMode: () => ({}),
+  }),
+  createHtmlOutput: (_content: string) => ({
+    setTitle: (_t: string) => ({ setXFrameOptionsMode: () => ({}) }),
+  }),
+  XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' },
+};
+
 // Expose test helper to seed sheets
 (global as any).__seedSheet = (name: string, rows: any[][]) => {
   sheetData[name] = rows.map(r => [...r]);

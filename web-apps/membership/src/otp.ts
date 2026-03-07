@@ -1,6 +1,6 @@
 
 function findValidOtp(email: string, otpCode: string): OtpMatch | null {
-  const sheet = getSheet('OTP');
+  const sheet = getSheet(SHEET_NAMES.OTP);
   const otps = sheet.getDataRange().getValues();
   const now = new Date();
 
@@ -19,7 +19,6 @@ function findValidOtp(email: string, otpCode: string): OtpMatch | null {
     if (
       record.email.toLowerCase() === email.toLowerCase() &&
       record.otpCode === otpCode &&
-      !record.used &&
       new Date(record.expiresAt) > now
     ) {
       return {
@@ -32,7 +31,7 @@ function findValidOtp(email: string, otpCode: string): OtpMatch | null {
 }
 
 function findValidOtpByEmail(email: string): OtpMatch | null {
-  const sheet = getSheet('OTP');
+  const sheet = getSheet(SHEET_NAMES.OTP);
   const otps = sheet.getDataRange().getValues();
   const now = new Date();
 
@@ -50,7 +49,6 @@ function findValidOtpByEmail(email: string): OtpMatch | null {
 
     if (
       record.email.toLowerCase() === email.toLowerCase() &&
-      !record.used &&
       new Date(record.expiresAt) > now
     ) {
       return {
@@ -63,7 +61,7 @@ function findValidOtpByEmail(email: string): OtpMatch | null {
 }
 
 function appendOtpRecord(otp: Otp): void {
-  const sheet = getSheet('OTP');
+  const sheet = getSheet(SHEET_NAMES.OTP);
   sheet.appendRow([
     otp.email,
     otp.otpCode,
@@ -75,6 +73,6 @@ function appendOtpRecord(otp: Otp): void {
 }
 
 function markOtpUsed(rowIndex: number): void {
-  const sheet = getSheet('OTP');
+  const sheet = getSheet(SHEET_NAMES.OTP);
   sheet.getRange(rowIndex, 5).setValue(true);
 }

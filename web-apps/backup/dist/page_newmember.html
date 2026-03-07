@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Misty Mountain Runners — New Member Registration</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.10); padding: 40px 36px; width: 100%; max-width: 460px; }
+    .logo { text-align: center; margin-bottom: 8px; font-size: 32px; }
+    h1 { text-align: center; font-size: 20px; color: #1a1a1a; margin-bottom: 4px; }
+    .notice { background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px; padding: 12px 16px; font-size: 14px; color: #5d4037; margin: 20px 0; }
+    .notice .email-highlight { font-weight: 700; color: #1a1a1a; }
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+    .required { color: #c62828; }
+    input[type=text], input[type=tel] { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
+    input[readonly] { background: #f5f5f5; color: #888; cursor: default; }
+    input:focus { outline: none; border-color: #2d7d46; box-shadow: 0 0 0 2px rgba(45,125,70,0.15); }
+    .btn { display: block; width: 100%; padding: 12px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; text-align: center; }
+    .btn-primary { background: #2d7d46; color: #fff; margin-top: 8px; }
+    .btn-primary:hover { background: #235f36; }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-link { background: none; border: none; color: #2d7d46; cursor: pointer; font-size: 13px; margin-top: 12px; text-decoration: underline; }
+    .msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
+    .msg.error { background: #fdecea; color: #c62828; display: block; }
+    .success-view { display: none; text-align: center; padding: 20px 0; }
+    .success-icon { font-size: 52px; margin-bottom: 16px; }
+    .member-id-badge { display: inline-block; background: #e8f5e9; color: #1b5e20; font-size: 28px; font-weight: 800; letter-spacing: 2px; padding: 12px 28px; border-radius: 10px; margin: 12px 0 20px; border: 2px solid #a5d6a7; }
+    .success-view p { color: #555; font-size: 15px; line-height: 1.6; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">🏃</div>
+  <h1>Misty Mountain Runners</h1>
+
+  <!-- Registration form -->
+  <div id="formView">
+    <div class="notice">
+      We don't recognize <span class="email-highlight" id="emailDisplay">this email</span>. If this is your correct email and you're signing up, please complete the form below.
+    </div>
+
+    <div id="msg" class="msg"></div>
+
+    <div class="field">
+      <label>Email (verified)</label>
+      <input type="text" id="emailField" readonly />
+    </div>
+    <div class="field">
+      <label>First Name <span class="required">*</span></label>
+      <input type="text" id="firstName" placeholder="Your first name" />
+    </div>
+    <div class="field">
+      <label>Last Name <span class="required">*</span></label>
+      <input type="text" id="lastName" placeholder="Your last name" />
+    </div>
+    <div class="field">
+      <label>Phone Number</label>
+      <input type="tel" id="phoneNumber" placeholder="e.g. 917-555-1234" />
+    </div>
+    <div class="field">
+      <label>District</label>
+      <input type="text" id="district" placeholder="e.g. Queens, Brooklyn" />
+    </div>
+
+    <button class="btn btn-primary" id="submitBtn" onclick="submitRegistration()">Register →</button>
+    <button class="btn-link" onclick="goToLogin()">← Not your email? Sign in again</button>
+  </div>
+
+  <!-- Success view -->
+  <div id="successView" class="success-view">
+    <div class="success-icon">🎉</div>
+    <h2 style="font-size:20px;color:#1a1a1a;margin-bottom:8px;">Welcome to Misty Mountain Runners!</h2>
+    <p>Your registration is complete. Your member ID is:</p>
+    <div class="member-id-badge" id="memberIdBadge">—</div>
+    <p>Next, set up your membership by submitting your annual fee.</p>
+    <button class="btn btn-primary" id="toRenewalBtn" onclick="onGoToRenewal()">Set Up Membership →</button>
+  </div>
+</div>
+
+<script>
+  console.log('[MMR][newmember] page script started, location:', window.location.href);
+  var appBaseUrl = '__SCRIPT_URL__';
+  const SESSION_ID = Math.random().toString(36).slice(2);
+  console.log('[MMR][newmember] appBaseUrl:', appBaseUrl);
+
+  document.addEventListener('click', function(e) {
+    var a = e.target.closest('a[href]');
+    if (a) { var h = a.getAttribute('href'); if (h && h.charAt(0) === '?') { e.preventDefault(); window.top.location.href = appBaseUrl + h; } }
+  });
+
+  function callApi(fn, payload) {
+    console.log('[MMR][newmember] callApi:', fn, JSON.stringify(payload));
+    return new Promise((resolve, reject) => {
+      const req = { requestId: Math.random().toString(36).slice(2), payload };
+      google.script.run
+        .withSuccessHandler(r => {
+          const res = JSON.parse(r);
+          console.log('[MMR][newmember]', fn, 'success:', JSON.stringify(res.payload || res));
+          if (res.ok) resolve(res.payload);
+          else reject(new Error(res.errorMessage));
+        })
+        .withFailureHandler(err => {
+          console.error('[MMR][newmember]', fn, 'failure:', err);
+          reject(err);
+        })
+        [fn](JSON.stringify(req));
+    });
+  }
+
+  function showMsg(text) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'msg error';
+  }
+
+  function goToLogin() {
+    console.log('[MMR][newmember] navigating to login');
+    window.top.location.href = appBaseUrl + '?page=login';
+  }
+
+  function onGoToRenewal() {
+    console.log('[MMR][newmember] navigating to renewal');
+    window.top.location.href = appBaseUrl + '?page=renewal';
+  }
+
+  function submitRegistration() {
+    const email = document.getElementById('emailField').value.trim();
+    const firstName = document.getElementById('firstName').value.trim();
+    const lastName = document.getElementById('lastName').value.trim();
+    const phoneNumber = document.getElementById('phoneNumber').value.trim();
+    const district = document.getElementById('district').value.trim();
+
+    if (!firstName) return showMsg('First name is required.');
+    if (!lastName) return showMsg('Last name is required.');
+
+    console.log('[MMR][newmember] submitting registration for:', email, firstName, lastName);
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Registering…';
+
+    callApi('createNewMember', { email, firstName, lastName, phoneNumber, district, sessionID: SESSION_ID })
+      .then(data => {
+        console.log('[MMR][newmember] member created:', data.member && data.member.memberID);
+        sessionStorage.setItem('member', JSON.stringify(data.member));
+        document.getElementById('memberIdBadge').textContent = data.member.memberID;
+        document.getElementById('formView').style.display = 'none';
+        document.getElementById('successView').style.display = 'block';
+      })
+      .catch(err => {
+        console.error('[MMR][newmember] registration error:', err.message);
+        showMsg(err.message || 'Registration failed. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Register →';
+      });
+  }
+
+  // Populate email from sessionStorage
+  const pendingEmail = sessionStorage.getItem('pending_email') || '';
+  console.log('[MMR][newmember] pending_email from sessionStorage:', pendingEmail);
+  if (!pendingEmail) {
+    // No pending email — redirect to login
+    console.log('[MMR][newmember] no pending_email, redirecting to login');
+    window.top.location.href = appBaseUrl + '?page=login';
+  } else {
+    document.getElementById('emailDisplay').textContent = pendingEmail;
+    document.getElementById('emailField').value = pendingEmail;
+  }
+</script>
+</body>
+</html>

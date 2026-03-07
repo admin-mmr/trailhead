@@ -17,22 +17,37 @@ function generateLogID(): string {
   return `LG-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
 
+function generateMasterLogID(): string {
+  return `ML-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+}
+
 // ---- Membership Master ----
 
-function deriveStatus(expirationStr: string): Member['status'] {
-  if (!expirationStr || expirationStr.trim() === '') return 'not active';
+// Returns 'active' or 'inactive' based on expiration date.
+// 'pending_upgrade' is STORED in the Status column and read directly by rowToMember — not derived.
+function deriveStatus(expirationStr: string): 'active' | 'inactive' {
+  if (!expirationStr || expirationStr.trim() === '') return 'inactive';
   const exp = new Date(expirationStr);
-  if (isNaN(exp.getTime())) return 'not active';
+  if (isNaN(exp.getTime())) return 'inactive';
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return exp >= today ? 'active' : 'expired';
+  return exp >= today ? 'active' : 'inactive';
 }
 
 function rowToMember(row: any[]): Member {
   const expiration = String(row[MM_COL.EXPIRATION] ?? '');
+  const storedStatus = String(row[MM_COL.STATUS] ?? '').trim().toLowerCase();
+
+  // 'pending_upgrade' is stored explicitly. For all other values (including legacy
+  // 'expired', 'not active'), derive active/inactive from the expiration date.
+  const status: Member['status'] =
+    storedStatus === 'pending_upgrade'
+      ? 'pending_upgrade'
+      : deriveStatus(expiration);
+
   return {
     memberID: String(row[MM_COL.MEMBER_ID] ?? ''),
-    status: deriveStatus(expiration),          // ← calculated, not read from sheet
+    status,
     created: String(row[MM_COL.CREATED] ?? ''),
     expiration,
     email: String(row[MM_COL.EMAIL] ?? ''),
@@ -57,6 +72,36 @@ function rowToMember(row: any[]): Member {
   };
 }
 
+// ---- Membership-Master-Log (audit trail) ----
+
+/**
+ * Copy the current Main table row for memberID into the Log table BEFORE any write.
+ * Rule: every function that updates Membership Master must call this first.
+ */
+function logMainTableRow(memberID: string): void {
+  try {
+    const mainSheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
+    const data = mainSheet.getDataRange().getValues();
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][MM_COL.MEMBER_ID]) === memberID) {
+        const logSheet = getSheet(SHEET_NAMES.MEMBERSHIP_LOG);
+        const logRow = [
+          generateMasterLogID(),
+          new Date().toISOString(),
+          ...data[i],            // All Main table columns verbatim
+        ];
+        logSheet.appendRow(logRow);
+        return;
+      }
+    }
+    // If member not found, log a warning but don't throw — write must proceed
+    console.warn(`[logMainTableRow] memberID not found: ${memberID}`);
+  } catch (e) {
+    // Logging must never crash the main flow
+    console.error('[logMainTableRow] failed:', e);
+  }
+}
 
 function findMemberByEmail(email: string): { member: Member; rowIndex: number } | null {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
@@ -145,29 +190,30 @@ function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
 
 function rowToWebAppEvent(row: any[]): WebAppEvent {
   return {
-    eventID: String(row[WE_COL.EVENT_ID] ?? ''),
-    eventType: String(row[WE_COL.EVENT_TYPE] ?? '') as WebAppEvent['eventType'],
-    timestamp: String(row[WE_COL.TIMESTAMP] ?? ''),
-    memberID: String(row[WE_COL.MEMBER_ID] ?? ''),
-    email: String(row[WE_COL.EMAIL] ?? ''),
-    paymentIntent: String(row[WE_COL.PAYMENT_INTENT] ?? '') as WebAppEvent['paymentIntent'],
-    amount: Number(row[WE_COL.AMOUNT] ?? 0),
-    paymentMethod: String(row[WE_COL.PAYMENT_METHOD] ?? '') as WebAppEvent['paymentMethod'],
-    payerName: String(row[WE_COL.PAYER_NAME] ?? ''),
-    memoField: String(row[WE_COL.MEMO_FIELD] ?? ''),
-    last4Digits: String(row[WE_COL.LAST_4_DIGITS] ?? ''),
-    familyMemberEmails: String(row[WE_COL.FAMILY_MEMBER_EMAILS] ?? ''),
-    status: String(row[WE_COL.STATUS] ?? '') as WebAppEvent['status'],
-    matchedMessageId: String(row[WE_COL.MATCHED_MESSAGE_ID] ?? ''),
-    matchedTransactionNumber: String(row[WE_COL.MATCHED_TRANSACTION_NUMBER] ?? ''),
-    adminApprover: String(row[WE_COL.ADMIN_APPROVER] ?? ''),
-    approvalDate: String(row[WE_COL.APPROVAL_DATE] ?? ''),
-    notes: String(row[WE_COL.NOTES] ?? ''),
-    paymentDate: String(row[WE_COL.PAYMENT_DATE] ?? ''),
-    screenshotFileId: String(row[WE_COL.SCREENSHOT_FILE_ID] ?? ''),
-    gdriveFilePath: String(row[WE_COL.GDRIVE_FILE_PATH] ?? ''),
-    ocrText: String(row[WE_COL.OCR_TEXT] ?? ''),
-    ocrTimestamp: String(row[WE_COL.OCR_TIMESTAMP] ?? ''),
+    eventID:                  String(row[WE_COL.EVENT_ID]                  ?? ''),
+    eventType:                String(row[WE_COL.EVENT_TYPE]                ?? '') as WebAppEvent['eventType'],
+    timestamp:                String(row[WE_COL.TIMESTAMP]                 ?? ''),
+    expiresAt:                String(row[WE_COL.EXPIRES_AT]                ?? ''),
+    memberID:                 String(row[WE_COL.MEMBER_ID]                 ?? ''),
+    email:                    String(row[WE_COL.EMAIL]                     ?? ''),
+    paymentIntent:            String(row[WE_COL.PAYMENT_INTENT]            ?? '') as WebAppEvent['paymentIntent'],
+    amount:                   Number(row[WE_COL.AMOUNT]                    ?? 0),
+    paymentMethod:            String(row[WE_COL.PAYMENT_METHOD]            ?? ''),
+    payerName:                String(row[WE_COL.PAYER_NAME]                ?? ''),
+    memoField:                String(row[WE_COL.MEMO_FIELD]                ?? ''),
+    last4Digits:              String(row[WE_COL.LAST_4_DIGITS]             ?? ''),
+    familyMemberEmails:       String(row[WE_COL.FAMILY_MEMBER_EMAILS]      ?? ''),
+    status:                   String(row[WE_COL.STATUS]                    ?? '') as WebAppEvent['status'],
+    matchedMessageId:         String(row[WE_COL.MATCHED_MESSAGE_ID]        ?? ''),
+    matchedTransactionNumber: String(row[WE_COL.MATCHED_TRANSACTION_NUMBER]?? ''),
+    adminApprover:            String(row[WE_COL.ADMIN_APPROVER]            ?? ''),
+    approvalDate:             String(row[WE_COL.APPROVAL_DATE]             ?? ''),
+    notes:                    String(row[WE_COL.NOTES]                     ?? ''),
+    paymentDate:              String(row[WE_COL.PAYMENT_DATE]              ?? ''),
+    screenshotFileId:         String(row[WE_COL.SCREENSHOT_FILE_ID]        ?? ''),
+    gdriveFilePath:           String(row[WE_COL.GDRIVE_FILE_PATH]          ?? ''),
+    ocrText:                  String(row[WE_COL.OCR_TEXT]                  ?? ''),
+    ocrTimestamp:             String(row[WE_COL.OCR_TIMESTAMP]             ?? ''),
   };
 }
 
@@ -178,6 +224,7 @@ function appendWebAppEvent(event: Omit<WebAppEvent, 'eventID'>): string {
     eventID,
     event.eventType,
     event.timestamp,
+    event.expiresAt,
     event.memberID,
     event.email,
     event.paymentIntent,
@@ -188,12 +235,12 @@ function appendWebAppEvent(event: Omit<WebAppEvent, 'eventID'>): string {
     event.last4Digits,
     event.familyMemberEmails,
     event.status,
-    '', '', '', '', '',             // MatchedMessageId, MatchedTransactionNumber, AdminApprover, ApprovalDate, Notes
-    event.paymentDate      ?? '',   // PaymentDate
-    event.screenshotFileId ?? '',   // ScreenshotFileId
-    event.gdriveFilePath   ?? '',   // GDriveFilePath
-    event.ocrText          ?? '',   // OCRText
-    event.ocrTimestamp     ?? '',   // OCRTimestamp
+    '', '', '', '', '',             // MatchedMessageId … Notes
+    event.paymentDate      ?? '',
+    event.screenshotFileId ?? '',
+    event.gdriveFilePath   ?? '',
+    event.ocrText          ?? '',
+    event.ocrTimestamp     ?? '',
   ]);
   return eventID;
 }
@@ -216,6 +263,27 @@ function getPendingWebAppEvents(): WebAppEvent[] {
   for (let i = 1; i < data.length; i++) {
     const status = String(data[i][WE_COL.STATUS]);
     if (status === 'Pending' || status === 'Matched') {
+      events.push(rowToWebAppEvent(data[i]));
+    }
+  }
+  return events;
+}
+
+// Returns all pending payment-type events for a specific member.
+// Used by the dashboard to determine catch-all gate state.
+function getPendingPaymentEventsForMember(memberID: string): WebAppEvent[] {
+  const PAYMENT_TYPES: Set<string> = new Set([
+    'dues_payment', 'family_switch', 'family_upgrade',
+  ]);
+  const sheet = getSheet(SHEET_NAMES.WEBAPP_EVENTS);
+  const data = sheet.getDataRange().getValues();
+  const events: WebAppEvent[] = [];
+  for (let i = 1; i < data.length; i++) {
+    if (
+      String(data[i][WE_COL.MEMBER_ID]) === memberID &&
+      String(data[i][WE_COL.STATUS]) === 'Pending' &&
+      PAYMENT_TYPES.has(String(data[i][WE_COL.EVENT_TYPE]))
+    ) {
       events.push(rowToWebAppEvent(data[i]));
     }
   }
@@ -294,13 +362,9 @@ function rowToFetchGmailRow(row: any[], rowIndex: number): FetchGmailRow {
 }
 
 function markGmailPaymentProcessed(rowIndex: number, eventID: string): void {
-
   const sheet = getSheet(SHEET_NAMES.FETCH_GMAIL);
-
-  sheet.getRange(rowIndex, FG_COL.PROCESSED + 1).setValue(true);
-
+  sheet.getRange(rowIndex, FG_COL.PROCESSED + 1).setValue(new Date().toISOString());
   sheet.getRange(rowIndex, FG_COL.WEBAPP_EVENT_ID + 1).setValue(eventID);
-
 }
 
 
@@ -310,8 +374,6 @@ function getPaymentHistoryByMemberID(memberID: string): PaymentHistoryItem[] {
 
   const rows = sheet.getDataRange().getValues();
   const headers = rows[0];
-
-  // Column index helpers — adjust names to match your actual sheet headers
   const col = (name: string) => headers.indexOf(name);
 
   return rows.slice(1)
@@ -328,6 +390,7 @@ function getPaymentHistoryByMemberID(memberID: string): PaymentHistoryItem[] {
       periodEnd:     String(row[col('PeriodEnd')]     || ''),
       source:        String(row[col('Source')]        || ''),
       notes:         String(row[col('Notes')]         || ''),
+      memoField:     String(row[col('MemoField')]    || ''),
     }));
 }
 
@@ -350,6 +413,7 @@ function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
       paymentMethod:    String(row[col('PaymentMethod')]    || ''),
       status:           String(row[col('Status')]           || '') as WebAppEventSummary['status'],
       notes:            String(row[col('Notes')]            || ''),
+      memoField:        String(row[col('MemoField')]       || ''),
       paymentDate:      String(row[col('PaymentDate')]      || ''),
       screenshotFileId: String(row[col('ScreenshotFileId')] || ''),
       gdriveFilePath:   String(row[col('GDriveFilePath')]   || ''),
@@ -358,3 +422,28 @@ function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
     }));
 }
 
+// ── globalThis exports for test environment ──────────────────
+(globalThis as any).deriveStatus                   = deriveStatus;
+(globalThis as any).rowToMember                    = rowToMember;
+(globalThis as any).logMainTableRow                = logMainTableRow;
+(globalThis as any).findMemberByEmail              = findMemberByEmail;
+(globalThis as any).findMemberByID                 = findMemberByID;
+(globalThis as any).findMembersByFamilyID          = findMembersByFamilyID;
+(globalThis as any).getMembersByFamilyID           = getMembersByFamilyID;
+(globalThis as any).generateMemberID               = generateMemberID;
+(globalThis as any).generateFamilyID               = generateFamilyID;
+(globalThis as any).generateMasterLogID            = generateMasterLogID;
+(globalThis as any).updateMemberRow                = updateMemberRow;
+(globalThis as any).appendWebAppEvent              = appendWebAppEvent;
+(globalThis as any).findWebAppEvent                = findWebAppEvent;
+(globalThis as any).getPendingWebAppEvents         = getPendingWebAppEvents;
+(globalThis as any).getPendingPaymentEventsForMember = getPendingPaymentEventsForMember;
+(globalThis as any).updateWebAppEventRow           = updateWebAppEventRow;
+(globalThis as any).appendPaymentRecord            = appendPaymentRecord;
+(globalThis as any).getUnmatchedGmailPayments      = getUnmatchedGmailPayments;
+(globalThis as any).markGmailPaymentProcessed      = markGmailPaymentProcessed;
+(globalThis as any).getPaymentHistoryByMemberID    = getPaymentHistoryByMemberID;
+(globalThis as any).getWebAppEventsByMemberID      = getWebAppEventsByMemberID;
+(globalThis as any).generateEventID             = generateEventID;
+(globalThis as any).generatePaymentID           = generatePaymentID;
+(globalThis as any).generateLogID               = generateLogID;

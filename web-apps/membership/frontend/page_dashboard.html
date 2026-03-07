@@ -20,7 +20,7 @@
     .status-active    { background: #e8f5e9; color: #2d7d46; }
     .status-inactive  { background: #fdecea; color: #c62828; }
     .status-expiring  { background: #fff8e1; color: #f57c00; }
-    .status-urgent    { background: #fdecea; color: #c62828; }
+    .status-pending   { background: #fff3e0; color: #e65100; }
     .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .info-item label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 2px; }
     .info-item span { font-size: 15px; color: #1a1a1a; font-weight: 500; }
@@ -28,7 +28,8 @@
     .expiry-date.expired  { color: #c62828; }
     .expiry-date.expiring { color: #f57c00; }
     .expiry-date.active   { color: #2d7d46; }
-    .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+    /* Action buttons */
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
     .btn { padding: 11px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
     .btn-primary   { background: #2d7d46; color: #fff; }
     .btn-primary:hover { background: #235f36; }
@@ -36,38 +37,23 @@
     .btn-secondary:hover { background: #f0f8f2; }
     .btn-admin     { background: #5c35a8; color: #fff; }
     .btn-admin:hover { background: #4a2b8a; }
-    /* Payment History — outlined slate/grey ghost button */
-    .btn-ghost {
-      background: #fff;
-      color: #555;
-      border: 1.5px solid #ccc;
-    }
-    .btn-ghost:hover {
-      background: #f5f5f5;
-      border-color: #aaa;
-      color: #333;
-    }
-    /* Pending requests */
-    .pending-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 10px; }
-    .badge-pending-review { background: #fff8e1; color: #e65100; border: 1px solid #ffcc80; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .btn-pending { background: #fff; color: #e65100; border: 1.5px solid #ffcc80; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    .btn-ghost     { background: #fff; color: #555; border: 1.5px solid #ccc; }
+    .btn-ghost:hover { background: #f5f5f5; border-color: #aaa; color: #333; }
+    .btn-danger    { background: #fff; color: #c62828; border: 1.5px solid #c62828; }
+    .btn-danger:hover { background: #fdecea; }
+    .btn-pending   { background: #fff; color: #e65100; border: 1.5px solid #ffcc80; }
     .btn-pending:hover { background: #fff8e1; }
-    .pending-details { margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 14px; }
-    .pending-item { background: #fffdf5; border: 1px solid #ffe082; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; }
-    .pending-item-title { font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
-    .pending-item-meta { color: #888; font-size: 12px; }
-
-    /* Profile confirm card */
+    /* Status/info messages within action area */
+    .action-msg { width: 100%; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5; margin-bottom: 4px; }
+    .action-msg-warning { background: #fff3e0; border: 1px solid #ffb74d; color: #e65100; }
+    .action-msg-info    { background: #e3f2fd; border: 1px solid #90caf9; color: #1565c0; }
+    .action-msg-success { background: #e8f5e9; border: 1px solid #a5d6a7; color: #2d7d46; }
+    /* Profile card */
     .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-bottom: 16px; }
     .profile-row label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 2px; }
     .profile-row span { font-size: 14px; color: #1a1a1a; }
     .profile-row span.empty { color: #bbb; font-style: italic; }
     .profile-warning { background: #fff3e0; border: 1px solid #ffb74d; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #e65100; margin-bottom: 14px; }
-    /* Family card */
-    .family-list { list-style: none; }
-    .family-list li { padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; color: #333; }
-    .family-list li:last-child { border-bottom: none; }
-    .family-upgrade { color: #555; font-size: 14px; line-height: 1.6; margin-bottom: 14px; }
     #loading { text-align: center; padding: 60px; color: #888; }
     #content { display: none; }
   </style>
@@ -91,7 +77,7 @@
       <div class="welcome" id="welcomeName"></div>
       <div class="member-id" id="memberMeta"></div>
       <span class="status-badge" id="statusBadge"></span>
-      <div class="info-grid" style="margin-bottom:0;">
+      <div class="info-grid">
         <div class="info-item">
           <label>Membership Expires</label>
           <span class="expiry-date" id="expiryDate">—</span>
@@ -109,174 +95,382 @@
           <span id="district">—</span>
         </div>
       </div>
-      <!-- Pending requests section (hidden until loaded) -->
-      <div id="pendingSection" style="display:none;">
-        <div class="pending-row" id="pendingBadges"></div>
-        <button class="btn-pending" id="pendingDetailsBtn" onclick="togglePendingDetails()">
-          ⏳ View Pending Requests
-        </button>
-        <div class="pending-details" id="pendingDetails" style="display:none;"></div>
-      </div>
 
-      <div class="actions">
-        <a href="?page=renewal" class="btn btn-primary">Renew Membership</a>
-        <a href="#" id="paymentProofBtn" class="btn btn-secondary">Submit Payment Proof</a>
-        <a href="#" id="paymentHistoryBtn" class="btn btn-ghost">Payment History</a>
+      <!-- Dynamic action buttons — populated by renderActionButtons() -->
+      <div class="actions" id="actionButtons">
+        <span style="color:#aaa;font-size:13px;">Loading actions…</span>
+      </div>
+    </div>
+
+    <!-- Profile confirmation card (Section 2) -->
+    <div class="card" id="toolsCard">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+        <a href="#" id="paymentHistoryBtn" class="btn btn-primary">Payment History</a>
         <a href="?page=admin" class="btn btn-admin" id="adminBtn" style="display:none;">Admin Panel</a>
       </div>
     </div>
 
-    <!-- Profile confirmation card -->
+    <!-- Profile confirmation card (Section 2) -->
     <div class="card" id="profileCard">
-      <h2>Is your information correct?</h2>
+      <h2>Is your information accurate?</h2>
       <div id="profileWarning" class="profile-warning" style="display:none;">
         Some fields are empty — please update your profile.
       </div>
       <div class="profile-grid" id="profileGrid"></div>
-      <a href="?page=profile" class="btn btn-secondary">Update Profile</a>
-    </div>
-
-    <!-- Family card -->
-    <div class="card" id="familyCard" style="display:none;">
-      <h2 id="familyCardTitle">Family Members</h2>
-      <div id="familyCardBody"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+        <a href="?page=profile" class="btn btn-secondary">Update Profile</a>
+      </div>
     </div>
 
   </div>
 </div>
 
 <script>
-  console.log('[MMR][dashboard] page script started, location:', window.location.href);
   var appBaseUrl = '__SCRIPT_URL__';
-  console.log('[MMR][dashboard] appBaseUrl:', appBaseUrl);
+  var currentMember = null;
+  var cachedEvents  = [];
+  var configCache   = {};
 
-  // Navigate all relative ?page= links through window.top with absolute URL
+  const SESSION_ID = Math.random().toString(36).slice(2);
+
+  // Navigate relative ?page= links through window.top using absolute URL
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
     if (a) {
       var h = a.getAttribute('href');
       if (h && h.charAt(0) === '?') {
         e.preventDefault();
-        console.log('[MMR][dashboard] nav click to:', h);
         window.top.location.href = appBaseUrl + h;
       }
     }
   });
 
-  // Sign-out: clear sessionStorage before navigating
   document.getElementById('signOutLink').addEventListener('click', function() {
-    console.log('[MMR][dashboard] signing out, clearing sessionStorage');
     sessionStorage.removeItem('member');
   });
 
-  const SESSION_ID = Math.random().toString(36).slice(2);
-  let currentMember = null;
-
+  // ---- API helper ----
   function callApi(fn, payload) {
-    console.log('[MMR][dashboard] callApi:', fn, JSON.stringify(payload));
-    return new Promise((resolve, reject) => {
-      const req = { requestId: Math.random().toString(36).slice(2), payload };
+    return new Promise(function(resolve, reject) {
+      var req = { requestId: Math.random().toString(36).slice(2), payload: payload };
       google.script.run
-        .withSuccessHandler(r => {
-          const res = JSON.parse(r);
-          console.log('[MMR][dashboard]', fn, 'success:', JSON.stringify(res.payload || res));
+        .withSuccessHandler(function(r) {
+          var res = JSON.parse(r);
           if (res.ok) resolve(res.payload);
           else reject(new Error(res.errorMessage));
         })
-        .withFailureHandler(err => {
-          console.error('[MMR][dashboard]', fn, 'failure:', err);
-          reject(err);
-        })
+        .withFailureHandler(function(err) { reject(err); })
         [fn](JSON.stringify(req));
     });
   }
 
+  // ---- Date helpers ----
   function getDaysUntilExpiry(expirationStr) {
     if (!expirationStr) return -9999;
-    const exp = new Date(expirationStr);
-    const today = new Date();
+    var exp = new Date(expirationStr);
+    var today = new Date();
     today.setHours(0, 0, 0, 0);
     return Math.floor((exp - today) / (1000 * 60 * 60 * 24));
   }
 
-  function renderMember(member, familyMembers) {
-    currentMember = member;
-    console.log('[MMR][dashboard] renderMember memberID:', member.memberID, '| status:', member.status, '| type:', member.type);
-
-    document.getElementById('welcomeName').textContent =
-      'Welcome, ' + (member.firstName || member.email) + '!';
-    document.getElementById('memberMeta').textContent =
-      member.memberID + (member.familyID ? ' · Family ' + member.familyID : '');
-
-    // ---- Status badge & expiry color ----
-    const days = getDaysUntilExpiry(member.expiration);
-    const badgeEl = document.getElementById('statusBadge');
-    const expiryEl = document.getElementById('expiryDate');
-    console.log('[MMR][dashboard] expiration:', member.expiration, '| days until expiry:', days);
-
-    if (member.status === 'active' || member.status === 'Active') {
-      if (days < 0) {
-        badgeEl.textContent = 'Expired';
-        badgeEl.className = 'status-badge status-urgent';
-        expiryEl.className = 'expiry-date expired';
-      } else if (days <= 7) {
-        badgeEl.textContent = 'Expiring Very Soon';
-        badgeEl.className = 'status-badge status-urgent';
-        expiryEl.className = 'expiry-date expired';
-      } else if (days <= 42) {
-        badgeEl.textContent = 'Expiring Soon — within 6 weeks';
-        badgeEl.className = 'status-badge status-expiring';
-        expiryEl.className = 'expiry-date expiring';
-      } else {
-        badgeEl.textContent = 'Active';
-        badgeEl.className = 'status-badge status-active';
-        expiryEl.className = 'expiry-date active';
-      }
-    } else {
-      badgeEl.textContent = 'Not Active';
-      badgeEl.className = 'status-badge status-inactive';
-      expiryEl.className = 'expiry-date expired';
-    }
-
-    expiryEl.textContent = member.expiration
-      ? new Date(member.expiration).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-      : 'Not set';
-
-    document.getElementById('joinYear').textContent = member.joinYear || '—';
-    document.getElementById('memberType').textContent = member.type || '—';
-    document.getElementById('district').textContent = member.district || '—';
-
-    document.getElementById('paymentProofBtn').href = '?page=payment_proof&memberId=' + member.memberID;
-    document.getElementById('paymentHistoryBtn').href = '?page=payment_history&memberId=' + member.memberID;
-
-    // ---- Profile confirmation card ----
-    renderProfileCard(member);
-
-    // ---- Family card ----
-    renderFamilyCard(member, familyMembers || []);
-
-    // ---- Admin button (non-blocking) ----
-    callApi('getConfig', { adminEmail: member.email, caller: 'dashboard-admin-check' })
-      .then(() => {
-        console.log('[MMR][dashboard] admin check: user IS admin');
-        document.getElementById('adminBtn').style.display = 'inline-block';
-      })
-      .catch(err => {
-        console.log('[MMR][dashboard] admin check: not admin or error:', err && err.message);
-      });
-
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('content').style.display = 'block';
+  function fmtDate(str) {
+    if (!str) return 'Not set';
+    return new Date(str).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   }
 
+  function esc(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ---- Status badge ----
+  function renderStatusBadge(member, hasPendingPayment) {
+    var badgeEl  = document.getElementById('statusBadge');
+    var expiryEl = document.getElementById('expiryDate');
+    var days = getDaysUntilExpiry(member.expiration);
+
+    if (member.status === 'pending_upgrade') {
+      badgeEl.textContent  = '⏳ Upgrade Pending';
+      badgeEl.className    = 'status-badge status-pending';
+      expiryEl.className   = 'expiry-date expiring';
+    } else if (hasPendingPayment) {
+      badgeEl.textContent  = '⏳ Payment Pending';
+      badgeEl.className    = 'status-badge status-pending';
+      expiryEl.className   = 'expiry-date expiring';
+    } else if (member.status === 'active') {
+      if (days <= 7) {
+        badgeEl.textContent = '🔴 Expiring Very Soon';
+        badgeEl.className   = 'status-badge status-inactive';
+        expiryEl.className  = 'expiry-date expired';
+      } else if (days <= 42) {
+        badgeEl.textContent = '🟡 Active — Renew Soon';
+        badgeEl.className   = 'status-badge status-expiring';
+        expiryEl.className  = 'expiry-date expiring';
+      } else {
+        badgeEl.textContent = '🟢 Active';
+        badgeEl.className   = 'status-badge status-active';
+        expiryEl.className  = 'expiry-date active';
+      }
+    } else {
+      // inactive
+      badgeEl.textContent = '🔴 Inactive';
+      badgeEl.className   = 'status-badge status-inactive';
+      expiryEl.className  = 'expiry-date expired';
+    }
+
+    expiryEl.textContent = fmtDate(member.expiration);
+  }
+
+  // ---- Action buttons ----
+  // Renders the dynamic button set based on PRDv4 §8.3 logic.
+  function renderActionButtons(member, events) {
+    var container = document.getElementById('actionButtons');
+    container.innerHTML = '';
+
+    var PAYMENT_TYPES = ['dues_payment', 'family_switch', 'family_upgrade'];
+    var pendingPaymentEvents = (events || []).filter(function(e) {
+      return PAYMENT_TYPES.indexOf(e.eventType) !== -1 && e.status === 'Pending';
+    });
+    var hasPendingPayment = pendingPaymentEvents.length > 0;
+    var hasAnyPending = (events || []).some(function(e) {
+      return e.status === 'Pending' || e.status === 'Matched';
+    });
+
+    var days        = getDaysUntilExpiry(member.expiration);
+    var REMIND_DAYS = parseInt(configCache['ReminderDaysBefore'] || '42', 10);
+    var MIN_MONTHS  = parseInt(configCache['UpgradeMinMonths']   || '3', 10);
+    var indivPrice  = parseFloat(configCache['IndividualPrice']  || '30');
+    var familyPrice = parseFloat(configCache['FamilyPrice']      || '50');
+    var upgradePrice= parseFloat(configCache['FamilyUpgradePrice']|| '20');
+    var THREE_MONTHS_DAYS = MIN_MONTHS * 30;
+
+    // ── View Pending Requests — always show when any pending event ──────────
+    if (hasAnyPending) {
+      addBtn(container, '⏳ View Pending Requests',
+        '?page=payment_history&memberId=' + member.memberID, 'btn-pending');
+      // Hide main action buttons and upgrade button when pending requests exist
+      document.querySelector('.actions').style.display = 'none';
+      const upgradeBtn = document.querySelector('#familyCard a');
+      if (upgradeBtn) upgradeBtn.style.display = 'none';
+    }
+
+    // ── Pending Upgrade state ─────────────────────────────────────────────
+    if (member.status === 'pending_upgrade') {
+      if (hasPendingPayment) {
+        // Sub-state 1: proof submitted, awaiting review
+        addMsg(container, '⏳ Your upgrade payment is under review. We\'ll notify you of the result.', 'action-msg-info');
+      } else {
+        // Sub-state 2: no proof submitted yet
+        addMsg(container, '⚠️ Please submit payment proof to complete your Family upgrade.', 'action-msg-warning');
+        addBtn(container, 'Submit Payment Proof',
+          '?page=payment_proof&memberId=' + member.memberID, 'btn-primary');
+      }
+      addActionBtn(container, 'Cancel Upgrade', 'btn-danger', function() {
+        doCancelUpgrade(member);
+      });
+      if (member.type === 'Family') {
+        addBtn(container, 'Manage Family', '?page=family&memberId=' + member.memberID, 'btn-secondary');
+      }
+      return; // No further payment buttons when pending_upgrade
+    }
+
+    // ── Payment buttons (suppressed if pending payment exists) ───────────
+    if (!hasPendingPayment) {
+      var isInactiveOrExpiring = member.status === 'inactive' || days < REMIND_DAYS;
+
+      if (member.type === 'Individual') {
+        if (isInactiveOrExpiring) {
+          // Pay Dues + Switch to Family
+          addBtn(container,
+            'Pay Dues — $' + indivPrice,
+            '?page=payment&intent=' + encodeURIComponent('Individual Membership') + '&amount=' + indivPrice,
+            'btn-primary');
+          addActionBtn(container,
+            'Switch to Family — $' + familyPrice,
+            'btn-secondary',
+            function() { doInitiateSwitch(member, familyPrice); });
+        } else if (days >= REMIND_DAYS && days <= THREE_MONTHS_DAYS) {
+          // Both Switch and Upgrade (user's choice)
+          addActionBtn(container,
+            'Switch to Family — $' + familyPrice,
+            'btn-secondary',
+            function() { doInitiateSwitch(member, familyPrice); });
+          addActionBtn(container,
+            'Upgrade to Family — $' + upgradePrice + ' (no expiry change)',
+            'btn-secondary',
+            function() { doInitiateUpgrade(member, upgradePrice); });
+        } else {
+          // Upgrade to Family only (> 3 months remaining)
+          addActionBtn(container,
+            'Upgrade to Family — $' + upgradePrice,
+            'btn-secondary',
+            function() { doInitiateUpgrade(member, upgradePrice); });
+        }
+      } else if (member.type === 'Family') {
+        if (isInactiveOrExpiring) {
+          addBtn(container,
+            'Pay Dues — $' + familyPrice,
+            '?page=payment&intent=' + encodeURIComponent('Family Membership') + '&amount=' + familyPrice,
+            'btn-primary');
+        }
+        addBtn(container, 'Manage Family',
+          '?page=family&memberId=' + member.memberID, 'btn-secondary');
+      }
+      // submit payment proof 
+      addBtn(container, 'Submit Payment Proof',
+        '?page=payment_proof&memberId=' + member.memberID, 'btn-primary');
+
+    }
+  }
+
+  // ---- Button/message builder helpers ----
+  function addBtn(container, label, href, cls) {
+    var a = document.createElement('a');
+    a.href      = href;
+    a.className = 'btn ' + cls;
+    a.textContent = label;
+    container.appendChild(a);
+  }
+
+  function addActionBtn(container, label, cls, handler) {
+    var btn = document.createElement('button');
+    btn.className   = 'btn ' + cls;
+    btn.textContent = label;
+    btn.addEventListener('click', handler);
+    container.appendChild(btn);
+  }
+
+  function addMsg(container, text, cls) {
+    var div = document.createElement('div');
+    div.className   = 'action-msg ' + cls;
+    div.textContent = text;
+    container.appendChild(div);
+  }
+
+  // ---- Initiate Switch to Family ----
+  function doInitiateSwitch(member, amount) {
+    if (!confirm(
+      'Switch to Family membership?\n\n' +
+      'Your membership type will change to Family and marked as pending until $' + amount + ' is paid.\n\n' +
+      'Continue?'
+    )) return;
+
+    var btn = event.currentTarget;
+    btn.disabled    = true;
+    btn.textContent = 'Processing…';
+
+    callApi('initiateSwitch', { memberID: member.memberID, email: member.email, sessionID: SESSION_ID })
+      .then(function(data) {
+        // Update local cache so the "Continue" button navigates with correct state
+        var updated = Object.assign({}, member, {
+          status: 'pending_upgrade', type: 'Family', familyID: data.familyID,
+        });
+        sessionStorage.setItem('member', JSON.stringify(updated));
+        currentMember = updated;
+
+        // GAS iframe requires navigation from a user gesture — show Continue button
+        var container = document.getElementById('actionButtons');
+        container.innerHTML = '';
+        addMsg(container,
+          '✅ Switched to Family. Please pay $' + amount + ' to activate your membership.',
+          'action-msg-success');
+        var cont = document.createElement('button');
+        cont.className   = 'btn btn-primary';
+        cont.textContent = 'Continue to Payment →';
+        cont.addEventListener('click', function() {
+          window.top.location.href = appBaseUrl +
+            '?page=payment&intent=' + encodeURIComponent('Family Membership') + '&amount=' + amount;
+        });
+        container.appendChild(cont);
+        // Refresh badge
+        renderStatusBadge(updated, false);
+      })
+      .catch(function(err) {
+        btn.disabled    = false;
+        btn.textContent = 'Switch to Family — $' + amount;
+        alert('Error: ' + (err && err.message || 'Unknown error. Please try again.'));
+      });
+  }
+
+  // ---- Initiate Upgrade to Family ----
+  function doInitiateUpgrade(member, amount) {
+    if (!confirm(
+      'Upgrade to Family membership?\n\n' +
+      'You will pay $' + amount + ' (delta). Your expiration date will NOT change.\n\n' +
+      'Continue?'
+    )) return;
+
+    var btn = event.currentTarget;
+    btn.disabled    = true;
+    btn.textContent = 'Processing…';
+
+    callApi('initiateUpgrade', { memberID: member.memberID, email: member.email, sessionID: SESSION_ID })
+      .then(function(data) {
+        var updated = Object.assign({}, member, {
+          status: 'pending_upgrade', type: 'Family', familyID: data.familyID,
+        });
+        sessionStorage.setItem('member', JSON.stringify(updated));
+        currentMember = updated;
+
+        var container = document.getElementById('actionButtons');
+        container.innerHTML = '';
+        addMsg(container,
+          '✅ Upgrade initiated. Please pay $' + amount + ' upgrade fee. Your expiration date is unchanged.',
+          'action-msg-success');
+        var cont = document.createElement('button');
+        cont.className   = 'btn btn-primary';
+        cont.textContent = 'Continue to Payment →';
+        cont.addEventListener('click', function() {
+          window.top.location.href = appBaseUrl +
+            '?page=payment&intent=' + encodeURIComponent('Family Upgrade') + '&amount=' + amount;
+        });
+        container.appendChild(cont);
+        renderStatusBadge(updated, false);
+      })
+      .catch(function(err) {
+        btn.disabled    = false;
+        btn.textContent = 'Upgrade to Family — $' + amount;
+        alert('Error: ' + (err && err.message || 'Unknown error. Please try again.'));
+      });
+  }
+
+  // ---- Cancel Upgrade ----
+  function doCancelUpgrade(member) {
+    if (!confirm(
+      'Cancel Family upgrade?\n\n' +
+      'All family members will revert to Individual membership. ' +
+      'Any pending payment proof will be rejected.\n\n' +
+      'Continue?'
+    )) return;
+
+    callApi('cancelUpgrade', { memberID: member.memberID, email: member.email, sessionID: SESSION_ID })
+      .then(function() {
+        var container = document.getElementById('actionButtons');
+        container.innerHTML = '';
+        addMsg(container,
+          '✅ Upgrade cancelled. All members reverted to Individual.',
+          'action-msg-success');
+        var cont = document.createElement('button');
+        cont.className   = 'btn btn-secondary';
+        cont.textContent = 'Reload Dashboard →';
+        cont.addEventListener('click', function() {
+          window.top.location.href = appBaseUrl + '?page=dashboard';
+        });
+        container.appendChild(cont);
+      })
+      .catch(function(err) {
+        alert('Error: ' + (err && err.message || 'Unknown error. Please try again.'));
+      });
+  }
+
+  // ---- Profile card ----
   function renderProfileCard(member) {
     var fields = [
-      { label: 'First Name',  value: member.firstName },
-      { label: 'Last Name',   value: member.lastName },
-      { label: 'Email',       value: member.email },
-      { label: 'Phone',       value: member.phoneNumber },
-      { label: 'WeChat ID',   value: member.wechatID },
-      { label: 'District',    value: member.district },
+      { label: 'First Name', value: member.firstName },
+      { label: 'Last Name',  value: member.lastName },
+      { label: 'Email',      value: member.email },
+      { label: 'Phone',      value: member.phoneNumber },
+      { label: 'WeChat ID',  value: member.wechatID },
+      { label: 'District',   value: member.district },
     ];
     var anyEmpty = !member.firstName || !member.lastName || !member.phoneNumber;
     document.getElementById('profileWarning').style.display = anyEmpty ? 'block' : 'none';
@@ -301,174 +495,96 @@
     });
   }
 
-  function renderFamilyCard(member, familyMembers) {
-    var card = document.getElementById('familyCard');
-    var body = document.getElementById('familyCardBody');
-    var title = document.getElementById('familyCardTitle');
-    var memberType = (member.type || '').trim();
+  // ---- Main render ----
+  function renderMember(member, events) {
+    currentMember = member;
+    cachedEvents  = events || [];
 
-    if (memberType === 'Individual' || !memberType) {
-      // Offer upgrade CTA
-      title.textContent = 'Upgrade to Family Membership';
-      body.innerHTML = '';
-      var p = document.createElement('p');
-      p.className = 'family-upgrade';
-      p.textContent = 'Add family members under one membership. Renew with a Family plan to get everyone covered.';
-      var btn = document.createElement('a');
-      btn.href = '?page=renewal';
-      btn.className = 'btn btn-secondary';
-      btn.textContent = 'Renew as Family →';
-      body.appendChild(p);
-      body.appendChild(btn);
-      card.style.display = 'block';
-    } else if (memberType === 'Family') {
-      title.textContent = 'Family Members';
-      body.innerHTML = '';
-      // Other family members (exclude self)
-      var others = (familyMembers || []).filter(function(fm) { return fm.memberID !== member.memberID; });
-      if (others.length > 0) {
-        var ul = document.createElement('ul');
-        ul.className = 'family-list';
-        others.forEach(function(fm) {
-          var li = document.createElement('li');
-          li.textContent = (fm.firstName || '') + ' ' + (fm.lastName || '') + ' (' + fm.memberID + ')';
-          ul.appendChild(li);
-        });
-        body.appendChild(ul);
-      } else {
-        var p2 = document.createElement('p');
-        p2.style.color = '#888';
-        p2.style.fontSize = '14px';
-        p2.textContent = 'You\'re on a Family plan. No linked family members yet.';
-        body.appendChild(p2);
-      }
-      card.style.display = 'block';
-    } else {
-      card.style.display = 'none';
-    }
-  }
+    document.getElementById('welcomeName').textContent =
+      'Welcome, ' + (member.firstName || member.email) + '!';
+    document.getElementById('memberMeta').textContent =
+      member.memberID + (member.familyID ? ' · Family ' + member.familyID : '');
 
-  // ---- Pending requests ----
-
-  var pendingItemsCache = [];
-
-  function esc(str) {
-    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  function renderPendingRequests(events) {
-    // Collect pending items from WebApp-Events
-    var items = [];
-
-    (events || []).forEach(function(ev) {
-      if (ev.status === 'Pending' || ev.status === 'Matched') {
-        items.push({
-          source: ev.screenshotFileId ? 'Proof Attached' : 'Renewal',
-          title: ev.paymentIntent || ev.eventType || 'Renewal',
-          amount: ev.amount,
-          date: ev.timestamp,
-          status: ev.status,
-          method: ev.paymentMethod || '',
-          id: ev.eventID,
-        });
-      }
+    var PAYMENT_TYPES   = ['dues_payment', 'family_switch', 'family_upgrade'];
+    var hasPendingPayment = (events || []).some(function(e) {
+      return PAYMENT_TYPES.indexOf(e.eventType) !== -1 && e.status === 'Pending';
     });
 
-    pendingItemsCache = items;
+    renderStatusBadge(member, hasPendingPayment);
 
-    if (items.length === 0) return; // nothing to show
+    document.getElementById('joinYear').textContent   = member.joinYear  || '—';
+    document.getElementById('memberType').textContent = member.type      || '—';
+    document.getElementById('district').textContent   = member.district  || '—';
 
-    // Render summary badges
-    var badgesEl = document.getElementById('pendingBadges');
-    badgesEl.innerHTML = items.map(function(item) {
-      return '<span class="badge-pending-review">⏳ ' + esc(item.title) + ' — ' + item.status + '</span>';
-    }).join('');
+    document.getElementById('paymentHistoryBtn').href =
+      '?page=payment_history&memberId=' + member.memberID;
 
-    // Render detail cards (hidden until button clicked)
-    var detailsEl = document.getElementById('pendingDetails');
-    detailsEl.innerHTML = items.map(function(item) {
-      var dateStr = item.date ? new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-      var amountStr = item.amount ? '$' + item.amount : '';
-      var methodStr = item.method ? ' · ' + esc(item.method) : '';
-      return '<div class="pending-item">' +
-        '<div class="pending-item-title">' + esc(item.title) + (amountStr ? ' — ' + amountStr : '') + '</div>' +
-        '<div class="pending-item-meta">' +
-          esc(item.source) + ' · Submitted ' + dateStr + methodStr +
-          ' · Status: <strong>' + esc(item.status) + '</strong>' +
-        '</div>' +
-      '</div>';
-    }).join('') +
-    '<p style="font-size:12px;color:#aaa;margin-top:4px;">Pending items are typically reviewed within 1–2 business days.</p>';
+    renderProfileCard(member);
+    renderActionButtons(member, events);
 
-    document.getElementById('pendingSection').style.display = 'block';
-    console.log('[MMR][dashboard] pending items found:', items.length);
-  }
-
-  function togglePendingDetails() {
-    var detailsEl = document.getElementById('pendingDetails');
-    var btn = document.getElementById('pendingDetailsBtn');
-    var isHidden = detailsEl.style.display === 'none';
-    detailsEl.style.display = isHidden ? 'block' : 'none';
-    btn.textContent = isHidden ? '▲ Hide Pending Requests' : '⏳ View Pending Requests';
-  }
-
-  function loadPendingRequests(email) {
-    console.log('[MMR][dashboard] loading pending requests for:', email);
-    callApi('getMemberPaymentHistory', { email: email, sessionID: SESSION_ID })
-      .then(function(data) {
-        renderPendingRequests(data.events);
+    // Admin button (non-blocking)
+    callApi('getConfig', { adminEmail: member.email, caller: 'dashboard-admin-check' })
+      .then(function() {
+        document.getElementById('adminBtn').style.display = 'inline-block';
       })
-      .catch(function(err) {
-        console.warn('[MMR][dashboard] loadPendingRequests error (non-fatal):', err && err.message);
-        // Non-fatal: pending section stays hidden
-      });
+      .catch(function() { /* not admin */ });
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
   }
 
-  // ---- Load member from sessionStorage or server ----
-  const cached = sessionStorage.getItem('member');
+  // ---- Load config + member ----
+  // We load config first (prices, thresholds) then member + events in parallel.
+  var configPromise = callApi('getPublicConfig', {})
+    .then(function(data) { configCache = data || {}; })
+    .catch(function() { /* use defaults */ });
+
+  var eventsPromise = null;
+  var memberPromise = null;
+
+  var cached = sessionStorage.getItem('member');
   if (cached) {
     try {
-      const m = JSON.parse(cached);
-      console.log('[MMR][dashboard] loaded member from sessionStorage:', m.memberID);
-      renderMember(m, []);
-      loadPendingRequests(m.email);
+      var m = JSON.parse(cached);
+      // Render immediately from cache with empty events (events load separately)
+      configPromise.then(function() {
+        renderMember(m, []);
+      });
     } catch (e) {
       console.error('[MMR][dashboard] failed to parse cached member:', e);
     }
   }
 
   var memberEmail = '';
-  if (cached) {
-    try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {}
-  }
-  console.log('[MMR][dashboard] calling getOrCreateMemberProfile with email:', memberEmail);
+  if (cached) { try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {} }
 
-  callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID })
-    .then(function(data) {
-      console.log('[MMR][dashboard] getOrCreateMemberProfile success, memberID:', data.member?.memberID);
+  // Load fresh member data + events in parallel
+  Promise.all([
+    configPromise,
+    callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID }),
+    callApi('getMemberPaymentHistory',   { email: memberEmail, sessionID: SESSION_ID }),
+  ]).then(function(results) {
+    var profileData = results[1];
+    var historyData = results[2];
 
-      // ⚠️ Only trust the server result if memberID matches what's cached.
-      // If they differ, the server resolved to the wrong account (e.g. admin@mmrunners.org).
-      // In that case, keep the cached session and discard the server response.
-      if (cached && data.member.memberID !== currentMember?.memberID) {
-        console.warn('[MMR][dashboard] server returned different memberID (' + data.member.memberID +
-          ') than cached (' + currentMember?.memberID + ') — ignoring server result.');
-        return;
-      }
+    // Guard against server returning wrong memberID (GAS admin account fallback)
+    if (cached && profileData.member.memberID !== currentMember?.memberID) {
+      console.warn('[MMR][dashboard] server memberID mismatch — keeping cached session');
+      // Still update events with correct data
+      renderMember(currentMember, historyData.events || []);
+      return;
+    }
 
-      sessionStorage.setItem('member', JSON.stringify(data.member));
-      renderMember(data.member, data.familyMembers);
-      loadPendingRequests(data.member.email);
-    })
-    .catch(function(err) {
-      console.error('[MMR][dashboard] getOrCreateMemberProfile failed:', err.message);
-      if (!cached) {
-        var loadingEl = document.getElementById('loading');
-        loadingEl.style.display = 'block';
-        loadingEl.innerHTML = 'Session expired. <a href="?page=login" style="color:#2d7d46">Sign in again</a>';
-      }
-      // If we had cached member, we already rendered — don't blank the page
-    });
+    sessionStorage.setItem('member', JSON.stringify(profileData.member));
+    renderMember(profileData.member, historyData.events || []);
+  }).catch(function(err) {
+    console.error('[MMR][dashboard] load error:', err && err.message);
+    if (!cached) {
+      var loadingEl = document.getElementById('loading');
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = 'Session expired. <a href="?page=login" style="color:#2d7d46">Sign in again</a>';
+    }
+  });
 
 </script>
 </body>

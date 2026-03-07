@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Misty Mountain Runners — Login</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .card {
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+      padding: 40px 32px; width: 100%; max-width: 400px;
+    }
+    .logo { text-align: center; font-size: 40px; margin-bottom: 8px; }
+    .app-title { text-align: center; font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .subtitle { text-align: center; font-size: 14px; color: #777; margin-bottom: 28px; }
+
+    /* Messages */
+    .msg { font-size: 14px; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; display: none; }
+    .msg.success { background: #e8f5e9; color: #2d7d46; display: block; }
+    .msg.error   { background: #fdecea; color: #c62828; display: block; }
+    .msg.info    { background: #e3f2fd; color: #1565c0; display: block; }
+
+    /* Inputs */
+    input[type="email"], input[type="text"] {
+      width: 100%; padding: 13px 14px;
+      border: 1.5px solid #ddd; border-radius: 10px;
+      font-size: 15px; margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #2d7d46; outline: none; }
+
+    /* Buttons */
+    .btn {
+      width: 100%; padding: 13px;
+      border-radius: 10px; border: none;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: background 0.2s;
+      margin-bottom: 10px;
+    }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-primary   { background: #2d7d46; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #235f36; }
+    .btn-google    { background: #fff; color: #333; border: 1.5px solid #ddd; }
+    .btn-google:hover:not(:disabled) { background: #f5f5f5; }
+    .btn-outline   { background: #fff; color: #2d7d46; border: 1.5px solid #2d7d46; }
+    .btn-outline:hover:not(:disabled) { background: #f0f8f2; }
+    .btn-ghost {
+      background: none; border: none; color: #888;
+      font-size: 13px; cursor: pointer; padding: 4px 0;
+      text-decoration: underline; width: auto; margin-bottom: 0;
+    }
+    .btn-ghost:hover { color: #444; }
+
+    .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: #bbb; font-size: 13px; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #eee; }
+
+    /* Result boxes */
+    .result-box {
+      border-radius: 10px; padding: 18px 16px; margin-bottom: 20px; text-align: center;
+    }
+    .result-box.returning { background: #e8f5e9; border: 1px solid #a5d6a7; }
+    .result-box.new-member { background: #e3f2fd; border: 1px solid #90caf9; }
+    .result-box .result-icon { font-size: 28px; margin-bottom: 6px; }
+    .result-box h3 { font-size: 17px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .result-box p  { font-size: 13px; color: #555; line-height: 1.5; }
+
+    /* OTP sub-section */
+    .otp-section { margin-top: 20px; border-top: 1px solid #f0f0f0; padding-top: 20px; }
+    .otp-section label { font-size: 13px; color: #555; display: block; margin-bottom: 6px; }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #dbg { font-size: 11px; color: #bbb; margin-top: 12px; text-align: center; }
+
+    /* not show Google loginn for now since it requires extra setup and isn't the primary path in the current codebase */
+    #googleBtn, #googleSpinner, .divider { display: none; }
+
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🏃</div>
+  <div class="app-title">Misty Mountain Runners</div>
+
+  <!-- ═══════════════════════════════════════════
+       STATE 1: Email entry + Google sign-in
+  ════════════════════════════════════════════ -->
+  <div id="state-email">
+    <p class="subtitle">Sign in or register</p>
+    <div id="msg-email" class="msg"></div>
+
+    <button class="btn btn-google" id="googleBtn" onclick="loginWithGoogle()" style="display:none;">
+      <img src="https://www.google.com/favicon.ico"
+           style="width:16px;height:16px;vertical-align:middle;margin-right:8px;" />
+      Sign in with Google
+    </button>
+    <span id="googleSpinner" style="display:none;"><span class="spinner"></span></span>
+
+    <div class="divider"  style="display:none;">or sign in with email</div>
+
+    <input type="email" id="emailInput"
+           placeholder="your@email.com"
+           onkeydown="if(event.key==='Enter') checkEmail()" />
+    <button class="btn btn-primary" id="checkEmailBtn" onclick="checkEmail()">
+      Continue →
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       STATE 2A: Returning member found
+  ════════════════════════════════════════════ -->
+  <div id="state-returning" style="display:none">
+    <div class="result-box returning">
+      <div class="result-icon">👋</div>
+      <h3>Welcome back, <span id="returning-name"></span>!</h3>
+      <p>Member ID: <strong id="returning-memberid"></strong></p>
+    </div>
+
+    <div id="msg-returning" class="msg"></div>
+
+    <div class="otp-section">
+      <label>Enter your one-time login code, or request a new one.</label>
+      <input type="text" id="otpInput-returning"
+             placeholder="6-digit code" maxlength="6"
+             inputmode="numeric" autocomplete="one-time-code"
+             onkeydown="if(event.key==='Enter') verifyOtp('returning')" />
+      <button class="btn btn-primary" id="verifyBtn-returning"
+              onclick="verifyOtp('returning')">
+        Verify Code →
+      </button>
+      <button class="btn btn-outline" id="sendBtn-returning"
+              onclick="sendOtp('returning')">
+        Send Me a New Code
+      </button>
+      <button class="btn-ghost" onclick="goBack()">← Try a different email</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       STATE 2B: Email not found — ask intent
+  ════════════════════════════════════════════ -->
+  <div id="state-new-ask" style="display:none">
+    <div class="result-box new-member">
+      <div class="result-icon">✉️</div>
+      <h3>No account found</h3>
+      <p>We don't have a record for<br/><strong id="new-ask-email"></strong></p>
+    </div>
+
+    <div id="msg-new-ask" class="msg"></div>
+    <p style="font-size:14px;color:#444;margin-bottom:16px;text-align:center;">
+      Are you a new member?
+    </p>
+
+    <button class="btn btn-primary" id="newMemberYesBtn"
+            onclick="startNewMemberOtp()">
+      Yes — Register Me →
+    </button>
+    <button class="btn-ghost" style="display:block;text-align:center;width:100%;margin-top:4px;"
+            onclick="goBack()">
+      ← No, go back and change email
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       STATE 2B-verify: New member OTP entry
+  ════════════════════════════════════════════ -->
+  <div id="state-new-verify" style="display:none">
+    <div class="result-box new-member">
+      <div class="result-icon">✉️</div>
+      <h3>Verify your email</h3>
+      <p>Code sent to<br/><strong id="new-verify-email"></strong></p>
+    </div>
+
+    <div id="msg-new-verify" class="msg"></div>
+
+    <div class="otp-section">
+      <label>Enter the 6-digit code from your inbox.</label>
+      <input type="text" id="otpInput-new"
+             placeholder="6-digit code" maxlength="6"
+             inputmode="numeric" autocomplete="one-time-code"
+             onkeydown="if(event.key==='Enter') verifyOtp('new')" />
+      <button class="btn btn-primary" id="verifyBtn-new"
+              onclick="verifyOtp('new')">
+        Verify Code →
+      </button>
+      <button class="btn btn-outline" id="sendBtn-new"
+              onclick="sendOtp('new')">
+        Resend Code
+      </button>
+      <button class="btn-ghost" onclick="goBack()">← Go back</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       FINAL: Continue button (after OTP verified)
+  ════════════════════════════════════════════ -->
+  <div id="state-continue" style="display:none">
+    <div id="continue-msg" style="margin-bottom:20px;"></div>
+    <button class="btn btn-primary" id="continueBtn" onclick="onContinueClick()">
+      Continue →
+    </button>
+  </div>
+
+  <div id="dbg"></div>
+</div>
+
+<script>
+  console.log('[MMR][login] page loaded, location:', window.location.href);
+  var appBaseUrl = '__SCRIPT_URL__';
+  var SESSION_ID = Math.random().toString(36).slice(2);
+  var pendingPage = 'dashboard';
+  var currentEmail = '';
+
+  // ── Utilities ──────────────────────────────────────────────
+
+  function callApi(fn, payload) {
+    console.log('[MMR][login] callApi:', fn, JSON.stringify(payload));
+    return new Promise(function(resolve, reject) {
+      var req = { requestId: Math.random().toString(36).slice(2), payload: payload };
+      google.script.run
+        .withSuccessHandler(function(r) {
+          var res = JSON.parse(r);
+          console.log('[MMR][login]', fn, 'response:', JSON.stringify(res.payload || res));
+          if (res.ok) resolve(res.payload);
+          else reject(new Error(res.errorMessage));
+        })
+        .withFailureHandler(function(err) {
+          console.error('[MMR][login]', fn, 'failure:', err);
+          reject(err);
+        })
+        [fn](JSON.stringify(req));
+    });
+  }
+
+  function showMsg(id, text, type) {
+    var el = document.getElementById('msg-' + id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'msg ' + type;
+  }
+  function clearMsg(id) {
+    var el = document.getElementById('msg-' + id);
+    if (el) el.className = 'msg';
+  }
+
+  function showState(name) {
+    var states = ['email', 'returning', 'new-ask', 'new-verify', 'continue'];
+    states.forEach(function(s) {
+      var el = document.getElementById('state-' + s);
+      if (el) el.style.display = (s === name) ? 'block' : 'none';
+    });
+    document.getElementById('dbg').textContent = 'State: ' + name;
+  }
+
+  function goBack() {
+    currentEmail = '';
+    document.getElementById('emailInput').value = '';
+    document.getElementById('otpInput-returning').value = '';
+    document.getElementById('otpInput-new').value = '';
+    document.getElementById('checkEmailBtn').disabled = false;
+    clearMsg('email');
+    showState('email');
+    document.getElementById('emailInput').focus();
+  }
+
+  // ── Google OAuth ───────────────────────────────────────────
+
+  function loginWithGoogle() {
+    document.getElementById('googleBtn').disabled = true;
+    document.getElementById('googleSpinner').style.display = 'inline';
+    callApi('handleGoogleLogin', { email: '', sessionID: SESSION_ID })
+      .then(function(data) {
+        document.getElementById('googleSpinner').style.display = 'none';
+        if (data.isNewMember) {
+          sessionStorage.setItem('pending_email', data.email);
+          showContinue(
+            '<div class="result-box new-member"><div class="result-icon">✅</div>' +
+            '<h3>Email verified</h3><p>New member registration for<br/><strong>' +
+            esc(data.email) + '</strong></p></div>',
+            'newmember'
+          );
+        } else {
+          sessionStorage.setItem('member', JSON.stringify(data.member));
+          showContinue(
+            '<div class="result-box returning"><div class="result-icon">✅</div>' +
+            '<h3>Welcome back, ' + esc(data.member.firstName || data.member.email) + '!</h3>' +
+            '<p>Signed in with Google</p></div>',
+            'dashboard'
+          );
+        }
+      })
+      .catch(function(err) {
+        document.getElementById('googleSpinner').style.display = 'none';
+        document.getElementById('googleBtn').disabled = false;
+        showMsg('email', err.message || 'Google sign-in failed. Try email login.', 'error');
+      });
+  }
+
+  // ── STATE 1 → STATE 2: Check email in database ─────────────
+
+  function checkEmail() {
+    var email = document.getElementById('emailInput').value.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return showMsg('email', 'Please enter a valid email address.', 'error');
+    }
+    currentEmail = email;
+    clearMsg('email');
+    var btn = document.getElementById('checkEmailBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Checking…';
+
+    callApi('lookupEmail', { email: email, sessionID: SESSION_ID })
+      .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = 'Continue →';
+        if (data.found) {
+          // Returning member
+          document.getElementById('returning-name').textContent =
+            data.firstName || email;
+          document.getElementById('returning-memberid').textContent =
+            data.memberID || '';
+          clearMsg('returning');
+          showState('returning');
+          document.getElementById('otpInput-returning').focus();
+        } else {
+          // Not found — ask if new member
+          document.getElementById('new-ask-email').textContent = email;
+          clearMsg('new-ask');
+          showState('new-ask');
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Continue →';
+        showMsg('email', err.message || 'Could not check email. Please try again.', 'error');
+      });
+  }
+
+  // ── OTP Send ────────────────────────────────────────────────
+
+  function sendOtp(context) {
+    // context: 'returning' | 'new'
+    var btnId = 'sendBtn-' + context;
+    var msgId = context === 'returning' ? 'returning' : 'new-verify';
+    var btn = document.getElementById(btnId);
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Sending…';
+    clearMsg(msgId);
+
+    callApi('requestEmailOtp', { email: currentEmail, sessionID: SESSION_ID })
+      .then(function() {
+        btn.disabled = false;
+        btn.textContent = context === 'returning' ? 'Send Me a New Code' : 'Resend Code';
+        showMsg(msgId, '✓ Code sent to ' + currentEmail + '. Check your inbox.', 'success');
+        var inputId = context === 'returning' ? 'otpInput-returning' : 'otpInput-new';
+        document.getElementById(inputId).focus();
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = context === 'returning' ? 'Send Me a New Code' : 'Resend Code';
+        showMsg(msgId, err.message || 'Failed to send code. Please try again.', 'error');
+      });
+  }
+
+  // ── New member: "Yes, register me" → send OTP then show verify ──
+
+  function startNewMemberOtp() {
+    var btn = document.getElementById('newMemberYesBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Sending code…';
+    clearMsg('new-ask');
+
+    callApi('requestEmailOtp', { email: currentEmail, sessionID: SESSION_ID })
+      .then(function() {
+        btn.disabled = false;
+        btn.textContent = 'Yes — Register Me →';
+        document.getElementById('new-verify-email').textContent = currentEmail;
+        clearMsg('new-verify');
+        showState('new-verify');
+        document.getElementById('otpInput-new').focus();
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Yes — Register Me →';
+        showMsg('new-ask', err.message || 'Failed to send code. Please try again.', 'error');
+      });
+  }
+
+  // ── OTP Verify ──────────────────────────────────────────────
+
+  function verifyOtp(context) {
+    // context: 'returning' | 'new'
+    var inputId = context === 'returning' ? 'otpInput-returning' : 'otpInput-new';
+    var btnId   = context === 'returning' ? 'verifyBtn-returning' : 'verifyBtn-new';
+    var msgId   = context === 'returning' ? 'returning' : 'new-verify';
+    var otpCode = document.getElementById(inputId).value.trim();
+
+    if (!otpCode || otpCode.length < 6) {
+      return showMsg(msgId, 'Please enter the 6-digit code.', 'error');
+    }
+
+    var btn = document.getElementById(btnId);
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Verifying…';
+    clearMsg(msgId);
+
+    callApi('verifyEmailOtp', { email: currentEmail, otpCode: otpCode, sessionID: SESSION_ID })
+      .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = 'Verify Code →';
+        if (data.isNewMember) {
+          sessionStorage.setItem('pending_email', data.email);
+          showContinue(
+            '<div class="result-box new-member"><div class="result-icon">✅</div>' +
+            '<h3>Email verified!</h3>' +
+            '<p>Let\'s set up your account for<br/><strong>' + esc(data.email) + '</strong></p></div>',
+            'newmember'
+          );
+        } else {
+          sessionStorage.setItem('member', JSON.stringify(data.member));
+          showContinue(
+            '<div class="result-box returning"><div class="result-icon">✅</div>' +
+            '<h3>Welcome back, ' + esc(data.member.firstName || data.member.email) + '!</h3>' +
+            '<p>Member ID: <strong>' + esc(data.member.memberID) + '</strong></p></div>',
+            'dashboard'
+          );
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Verify Code →';
+        showMsg(msgId, err.message || 'Invalid or expired code. Please try again.', 'error');
+      });
+  }
+
+  // ── Final continue state ────────────────────────────────────
+
+  function showContinue(msgHtml, page) {
+    pendingPage = page;
+    document.getElementById('continue-msg').innerHTML = msgHtml;
+    var label = page === 'dashboard'  ? 'Continue to Dashboard →'
+              : page === 'newmember'  ? 'Continue to Registration →'
+              : 'Continue →';
+    document.getElementById('continueBtn').textContent = label;
+    showState('continue');
+  }
+
+  function onContinueClick() {
+    var btn = document.getElementById('continueBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Loading…';
+    var url = appBaseUrl + '?page=' + pendingPage;
+    console.log('[MMR][login] navigating to:', url);
+    window.top.location.href = url;
+  }
+
+  // ── HTML escape ─────────────────────────────────────────────
+  function esc(str) {
+    return String(str || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Init: redirect if already logged in ─────────────────────
+  var cached = sessionStorage.getItem('member');
+  if (cached) {
+    var btn = document.getElementById('continueBtn');
+    btn.style.display = 'block';
+    btn.onclick = function() {
+      window.top.location.href = appBaseUrl + '?page=dashboard';
+    };
+  }
+</script>
+</body>
+</html>

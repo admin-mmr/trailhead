@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build":  "rm -f dist/*.html && tsc && cp frontend/*.html dist/ && cp appsscript.json dist/",
     "build:copy": "rm -f dist/*.html && tsc && cp frontend/*.html dist/ && cp appsscript.json dist/",
     "push": "clasp push",
     "deploy": "clasp deploy",

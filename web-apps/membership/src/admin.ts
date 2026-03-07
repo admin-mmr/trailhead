@@ -224,6 +224,7 @@ function manualMatch(jsonRequest: string): string {
       eventID:        String(eventRow[WE_COL.EVENT_ID]),
       eventType:      String(eventRow[WE_COL.EVENT_TYPE])  as WebAppEvent['eventType'],
       timestamp:      String(eventRow[WE_COL.TIMESTAMP]),
+      expiresAt:      String(eventRow[WE_COL.EXPIRES_AT] || ''),
       memberID:       String(eventRow[WE_COL.MEMBER_ID]),
       email:          String(eventRow[WE_COL.EMAIL]),
       paymentIntent:  String(eventRow[WE_COL.PAYMENT_INTENT]) as WebAppEvent['paymentIntent'],

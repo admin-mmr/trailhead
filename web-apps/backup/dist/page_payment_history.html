@@ -237,7 +237,7 @@
     window.top.location.href = appBaseUrl + '?page=login';
   } else {
     document.getElementById('member-id-display').textContent = 'Member ID: ' + member.memberID;
-    callApi('getMemberPaymentHistory', { email: member.email, sessionID: SESSION_ID })
+    callApi('getMemberPaymentHistory', { email: member.email, sessionID: SESSIONID })
       .then(function(data) {
         document.getElementById('loading').style.display = 'none';
         var content = document.getElementById('content');
@@ -273,7 +273,6 @@
       html += '<span>' + fmt(p.paymentDate) + '</span>';
       html += '<span>' + esc(p.payerName) + '</span>';
       if (p.source) html += '<span>' + esc(p.source) + '</span>';
-      if (p.memoField) html += '<span>' + esc(p.memoField) + '</span>';
       html += '</div>';
       if (p.periodStart && p.periodEnd) {
         html += '<div class="period-bar">📅 Coverage: ' +

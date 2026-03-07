@@ -52,14 +52,17 @@ function updateMemberProfile(jsonRequest: string): string {
     const updates: Record<string, any> = {
       LAST_UPDATED: now,
     };
-    if (payload.firstName !== undefined) updates['FIRST_NAME'] = payload.firstName.trim();
-    if (payload.lastName !== undefined) updates['LAST_NAME'] = payload.lastName.trim();
+    if (payload.firstName   !== undefined) updates['FIRST_NAME']   = payload.firstName.trim();
+    if (payload.lastName    !== undefined) updates['LAST_NAME']    = payload.lastName.trim();
     if (payload.phoneNumber !== undefined) updates['PHONE_NUMBER'] = payload.phoneNumber.trim();
-    if (payload.wechatID !== undefined) updates['WECHAT_ID'] = payload.wechatID.trim();
-    if (payload.district !== undefined) updates['DISTRICT'] = payload.district.trim();
-    if (payload.joinYear !== undefined) updates['JOIN_YEAR'] = payload.joinYear.trim();
+    if (payload.wechatID    !== undefined) updates['WECHAT_ID']    = payload.wechatID.trim();
+    if (payload.district    !== undefined) updates['DISTRICT']     = payload.district.trim();
+    if (payload.joinYear    !== undefined) updates['JOIN_YEAR']    = payload.joinYear.trim();
+    // NOTE: Type is intentionally excluded. Membership type changes
+    // (Individual ↔ Family) are handled exclusively via upgrade.ts.
 
     console.log('[mmr][updateMemberProfile] updating fields:', Object.keys(updates));
+    logMainTableRow(payload.memberID);
     updateMemberRow(result.rowIndex, updates);
     auditLog('PROFILE_UPDATE', { memberID: payload.memberID, state: payload });
 
@@ -101,7 +104,7 @@ function createNewMember(jsonRequest: string): string {
     const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
     const newRow: any[] = new Array(23).fill('');
     newRow[MM_COL.MEMBER_ID] = memberID;
-    newRow[MM_COL.STATUS] = 'not active';
+    newRow[MM_COL.STATUS] = 'inactive';
     newRow[MM_COL.CREATED] = now;
     newRow[MM_COL.EMAIL] = email;
     newRow[MM_COL.FIRST_NAME] = payload.firstName.trim();
