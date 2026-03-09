@@ -335,6 +335,7 @@
           clearMsg('returning');
           showState('returning');
           document.getElementById('otpInput-returning').focus();
+          sendOtp('returning'); // auto-send code on arrival
         } else {
           // Not found — ask if new member
           document.getElementById('new-ask-email').textContent = email;
@@ -455,23 +456,22 @@
 
   // ── Final continue state ────────────────────────────────────
 
+  function navigateTo(page) {
+    var url = appBaseUrl + '?page=' + page;
+    console.log('[MMR][login] navigating to:', url);
+    window.top.location.replace(url);
+  }
+
   function showContinue(msgHtml, page) {
-    pendingPage = page;
-    document.getElementById('continue-msg').innerHTML = msgHtml;
-    var label = page === 'dashboard'  ? 'Continue to Dashboard →'
-              : page === 'newmember'  ? 'Continue to Registration →'
-              : 'Continue →';
-    document.getElementById('continueBtn').textContent = label;
-    showState('continue');
+    // Navigate immediately — no extra button click needed
+    navigateTo(page);
   }
 
   function onContinueClick() {
     var btn = document.getElementById('continueBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Loading…';
-    var url = appBaseUrl + '?page=' + pendingPage;
-    console.log('[MMR][login] navigating to:', url);
-    window.top.location.href = url;
+    navigateTo(pendingPage);
   }
 
   // ── HTML escape ─────────────────────────────────────────────
@@ -484,11 +484,7 @@
   // ── Init: redirect if already logged in ─────────────────────
   var cached = sessionStorage.getItem('member');
   if (cached) {
-    var btn = document.getElementById('continueBtn');
-    btn.style.display = 'block';
-    btn.onclick = function() {
-      window.top.location.href = appBaseUrl + '?page=dashboard';
-    };
+    navigateTo('dashboard');
   }
 </script>
 </body>

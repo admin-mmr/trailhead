@@ -21,7 +21,7 @@ function getPaymentConfirmationEvents(jsonRequest: string): string {
 }
 
 function submitPaymentProof(jsonRequest: string): string {
-  const req = JSON.parse(jsonRequest) as ApiRequest<any>;
+  const req = JSON.parse(jsonRequest) as ApiRequest<SubmitPaymentProofPayload>;
   const { payload } = req;
   try {
     console.log('[mmr][submitPaymentProof] memberID:', payload.memberID);

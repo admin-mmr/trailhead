@@ -65,7 +65,10 @@ describe('OTP Functions', () => {
     // Tested in auth.test.ts - OTP expiry behavior validated
     const now = new Date();
     const expectedExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    expect(expectedExpiry.getHours()).toBe((now.getHours() + 24) % 24);
+    // Verify the time difference is 24 hours (timezone-independent)
+    const diffMs = expectedExpiry.getTime() - now.getTime();
+    const diffHours = diffMs / (60 * 60 * 1000);
+    expect(diffHours).toBe(24);
   });
 
   // findOtpRecord tests

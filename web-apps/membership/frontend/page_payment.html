@@ -30,12 +30,25 @@
     .btn-primary:hover { background: #235f36; }
     .msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
     .msg.error { background: #fdecea; color: #c62828; display: block; }
+    .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; z-index: 1000; justify-content: center; align-items: center; }
+    .loading-overlay.active { display: flex; }
+    .loading-spinner { background: #fff; border-radius: 12px; padding: 32px; text-align: center; }
+    .spinner { width: 50px; height: 50px; border: 4px solid #e0e0e0; border-top: 4px solid #2d7d46; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .loading-text { font-size: 15px; color: #555; font-weight: 500; }
   </style>
 </head>
 <body>
 <div class="topbar">
   <h1>🏃 Misty Mountain Runners</h1>
   <a href="?page=dashboard">← Dashboard</a>
+</div>
+
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="loading-spinner">
+    <div class="spinner"></div>
+    <div class="loading-text">Loading payment details...</div>
+  </div>
 </div>
 
 <div class="container">
@@ -45,7 +58,7 @@
     <h2>Send Your Payment</h2>
     <div class="payment-summary">
       <div>
-        <div class="desc" id="paymentType">Membership Renewal</div>
+        <div class="desc" id="paymentIntent">Membership Renewal</div>
       </div>
       <div class="amount" id="paymentAmount">$0</div>
     </div>
@@ -98,25 +111,25 @@
 
   let member = null;
   let config = {};
-  let paymentType = 'Payment';
+  let paymentIntent = 'Payment';
   let paymentAmount = 0;
 
   function getUrlParams() {
     console.log('[MMR][payment] SERVER_PARAMS =', SERVER_PARAMS);
-    
+
     // Use server-injected params (most reliable - no cross-origin issues)
-    if (SERVER_PARAMS && SERVER_PARAMS['type']) {
-      paymentType = SERVER_PARAMS['type'] || 'Membership Payment';
+    if (SERVER_PARAMS && SERVER_PARAMS['intent']) {
+      paymentIntent = SERVER_PARAMS['intent'] || 'Membership Payment';
       paymentAmount = parseFloat(SERVER_PARAMS['amount']) || 0;
-      console.log('[MMR][payment] params from server injection: type=', paymentType, 'amount=', paymentAmount);
+      console.log('[MMR][payment] params from server injection: intent=', paymentIntent, 'amount=', paymentAmount);
       return;
     }
 
     // Fallback: window.location.search (works in some GAS setups)
     const params = new URLSearchParams(window.location.search);
-    paymentType = params.get('type') || 'Membership Payment';
+    paymentIntent = params.get('intent') || 'Membership Payment';
     paymentAmount = parseFloat(params.get('amount')) || 0;
-    console.log('[MMR][payment] params from URL fallback: type=', paymentType, 'amount=', paymentAmount);
+    console.log('[MMR][payment] params from URL fallback: intent=', paymentIntent, 'amount=', paymentAmount);
   }
 
   function callApi(fn, payload) {
@@ -141,66 +154,108 @@
     el.scrollIntoView({ behavior: 'smooth' });
   }
 
-  function renderPage() {
-    console.log('[MMR][payment] renderPage called, paymentType=', paymentType, 'paymentAmount=', paymentAmount);
-    console.log('[MMR][payment] config keys =', Object.keys(config || {}));
-    console.log('[MMR][payment] ZelleHandle =', config && config['ZelleHandle']);
-    console.log('[MMR][payment] VenmoHandle =', config && config['VenmoHandle']);
-    console.log('[MMR][payment] PayPalHandle =', config && config['PayPalHandle']);
-    
-    document.getElementById('paymentType').textContent = paymentType;
+  function showLoading() {
+    document.getElementById('loadingOverlay').classList.add('active');
+  }
+
+  function hideLoading() {
+    document.getElementById('loadingOverlay').classList.remove('active');
+  }
+
+  function renderPaymentSummary() {
+    // Fast render: show payment info immediately
+    console.log('[MMR][payment] renderPaymentSummary called');
+    document.getElementById('paymentIntent').textContent = paymentIntent;
     document.getElementById('paymentAmount').textContent = '$' + paymentAmount;
+    if (member) {
+      document.getElementById('memoMemberID').textContent = member.memberID;
+    }
+  }
+
+  function renderPaymentMethods() {
+    // Load payment methods from config
+    console.log('[MMR][payment] renderPaymentMethods called, config keys =', Object.keys(config || {}));
     document.getElementById('zelleHandle').textContent = config['ZelleHandle'] || 'Not configured';
     document.getElementById('venmoHandle').textContent = config['VenmoHandle'] || 'Not configured';
     document.getElementById('paypalHandle').textContent = config['PayPalHandle'] || 'Not configured';
 
-    // After the handle lines, add:
+    const continueBtn = document.getElementById('continueBtn');
+    continueBtn.href = `?page=payment_proof&memberId=${member ? member.memberID : ''}&eventName=${encodeURIComponent(paymentIntent)}&amount=${paymentAmount}`;
+  }
+
+  async function loadQRCodes() {
+    // Load QR codes asynchronously - doesn't block page render
+    console.log('[MMR][payment] loadQRCodes called');
     const zelleFileId = config['ZelleQRCodeFileId'];
     const venmoFileId = config['VenmoQRCodeFileId'];
 
-    console.log('[MMR][payment] ZelleQRCodeFileId =', zelleFileId);
-    console.log('[MMR][payment] VenmoQRCodeFileId =', venmoFileId);
-
-    // In renderPage(), replace the img src assignments with iframes:
     if (zelleFileId) {
       const zelleUrl = appBaseUrl + '?page=image&id=' + zelleFileId;
       const zelleContainer = document.getElementById('zelleQrCode');
-      zelleContainer.outerHTML = `<iframe src="${zelleUrl}" style="width:160px;height:160px;border:none;" title="Zelle QR Code"></iframe>`;
-      console.log('[MMR][payment] zelleQrCode iframe src =', zelleUrl);
+      if (zelleContainer) {
+        zelleContainer.outerHTML = `<iframe src="${zelleUrl}" style="width:160px;height:160px;border:none;" title="Zelle QR Code"></iframe>`;
+        console.log('[MMR][payment] zelleQrCode iframe src =', zelleUrl);
+      }
     }
     if (venmoFileId) {
       const venmoUrl = appBaseUrl + '?page=image&id=' + venmoFileId;
       const venmoContainer = document.getElementById('venmoQrCode');
-      venmoContainer.outerHTML = `<iframe src="${venmoUrl}" style="width:160px;height:160px;border:none;" title="Venmo QR Code"></iframe>`;
+      if (venmoContainer) {
+        venmoContainer.outerHTML = `<iframe src="${venmoUrl}" style="width:160px;height:160px;border:none;" title="Venmo QR Code"></iframe>`;
+        console.log('[MMR][payment] venmoQrCode iframe src =', venmoUrl);
+      }
     }
-
-    if (member) {
-      document.getElementById('memoMemberID').textContent = member.memberID;
-    }
-    const continueBtn = document.getElementById('continueBtn');
-    continueBtn.href = `?page=payment_proof&memberId=${member ? member.memberID : ''}&eventName=${encodeURIComponent(paymentType)}&amount=${paymentAmount}`;
   }
 
   // Init
   (async function() {
     try {
+      showLoading();
       getUrlParams();
-      const cached = sessionStorage.getItem('member');
-      if (cached) {
-        member = JSON.parse(cached);
+
+      // Restore cached data
+      const cachedMember = sessionStorage.getItem('member');
+      if (cachedMember) {
+        member = JSON.parse(cachedMember);
       }
-      
-      // ✅ FASTER - parallel
-      const [profileData, configData] = await Promise.all([
-        callApi('getOrCreateMemberProfile', { email: member?.email, sessionID: SESSION_ID }),
-        callApi('getPublicConfig', {})
-      ]);
-      member = profileData.member;
-      sessionStorage.setItem('member', JSON.stringify(member));
-      config = configData.config;
-      renderPage();
+      const cachedConfig = sessionStorage.getItem('paymentConfig');
+      if (cachedConfig) {
+        config = JSON.parse(cachedConfig);
+      }
+
+      // ✅ FAST: Show payment summary immediately (no API wait)
+      renderPaymentSummary();
+
+      // ✅ FASTER: Load config in parallel with profile
+      const configPromise = config && config['ZelleHandle']
+        ? Promise.resolve(config)
+        : callApi('getPublicConfig', {}).then(data => data.config);
+
+      const profilePromise = callApi('getOrCreateMemberProfile', { email: member?.email, sessionID: SESSION_ID })
+        .then(data => data.member);
+
+      // Handle profile load first (usually faster than config)
+      profilePromise.then(profileMember => {
+        member = profileMember;
+        sessionStorage.setItem('member', JSON.stringify(member));
+        renderPaymentSummary();
+      }).catch(err => console.error('[MMR][payment] profile error:', err));
+
+      // Handle config load, then render methods and QR codes
+      configPromise.then(configData => {
+        config = configData;
+        sessionStorage.setItem('paymentConfig', JSON.stringify(config));
+        renderPaymentMethods();
+        // Load QR codes asynchronously - doesn't block
+        loadQRCodes().catch(err => console.error('[MMR][payment] QR code error:', err));
+      }).catch(err => console.error('[MMR][payment] config error:', err));
+
+      // Hide loading once we have config (user can see content)
+      await configPromise;
+      hideLoading();
 
     } catch (err) {
+      hideLoading();
       showMsg('Error loading page: ' + err.message);
       console.error('[MMR][payment] init error:', err);
     }

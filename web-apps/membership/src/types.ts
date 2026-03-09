@@ -280,6 +280,22 @@ interface FamilyMemberPayload {
   sessionID: string;
 }
 
+// Payload for submitting payment proof
+interface SubmitPaymentProofPayload {
+  memberID: string;
+  email: string;
+  screenshot?: string;        // base64-encoded PNG image
+  paymentDate?: string;       // Date of payment (YYYY-MM-DD)
+  paymentMethod?: string;     // e.g., Zelle, Venmo, PayPal
+  payerName?: string;         // Name of the person who made the payment
+  memoField?: string;         // Reference number or memo from payment
+  last4Digits?: string;       // Last 4 digits of card/account (if applicable)
+  notes?: string;             // Additional notes from user
+  eventName?: string;         // Payment intent or event name
+  amount?: number;            // Payment amount
+  sessionID?: string;         // Session identifier
+}
+
 interface WebAppEventSummary {
   eventID:             string;
   eventType:           string;
