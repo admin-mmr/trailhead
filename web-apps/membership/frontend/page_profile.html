@@ -7,10 +7,14 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
-    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+    .topbar-left { display: flex; align-items: center; gap: 20px; flex: 1; }
+    .language-selector { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; }
+    .language-selector:hover { background: rgba(255,255,255,0.2); }
     .topbar h1 { font-size: 18px; font-weight: 700; }
     .topbar a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.85; }
     .topbar a:hover { opacity: 1; }
+    .language-selector { max-width: 90px; }
     .container { max-width: 520px; margin: 32px auto; padding: 0 16px; }
     .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 28px; }
     h2 { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 24px; }
@@ -37,8 +41,14 @@
 </head>
 <body>
 <div class="topbar">
-  <h1>🏃 Misty Mountain Runners</h1>
-  <a href="?page=dashboard">← Dashboard</a>
+  <div class="topbar-left">
+    <h1 id="appTitle">🏃 Misty Mountain Runners</h1>
+    <select id="languageSelector" class="language-selector">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+  </div>
+  <a href="?page=dashboard">← <span data-i18n="navDashboard">Dashboard</span></a>
 </div>
 
 <div class="container">
@@ -52,48 +62,48 @@
 
     <!-- Profile form -->
     <div id="formView">
-      <h2>Update Profile</h2>
+      <h2 data-i18n="pageTitle">Update Profile</h2>
       <div id="msg" class="msg"></div>
 
       <div class="field">
-        <label>Email</label>
+        <label data-i18n="labelEmail">Email</label>
         <input type="email" id="email" readonly />
       </div>
       <div class="field">
-        <label>Member ID</label>
+        <label data-i18n="labelMemberID">Member ID</label>
         <input type="text" id="memberID" readonly />
       </div>
       <div class="field">
-        <label>First Name</label>
+        <label data-i18n="labelFirstName">First Name</label>
         <input type="text" id="firstName" placeholder="First name" />
       </div>
       <div class="field">
-        <label>Last Name</label>
+        <label data-i18n="labelLastName">Last Name</label>
         <input type="text" id="lastName" placeholder="Last name" />
       </div>
       <div class="field">
-        <label>Phone Number</label>
+        <label data-i18n="labelPhone">Phone Number</label>
         <input type="tel" id="phoneNumber" placeholder="e.g. 917-555-1234" />
       </div>
       <div class="field">
-        <label>WeChat ID</label>
+        <label data-i18n="labelWechat">WeChat ID</label>
         <input type="text" id="wechatID" placeholder="WeChat username (optional)" />
       </div>
       <div class="field">
-        <label>District</label>
+        <label data-i18n="labelDistrict">District</label>
         <select id="district">
           <option value="">— Select district —</option>
         </select>
       </div>
       <div class="field">
-        <label>Join Year</label>
+        <label data-i18n="labelJoinYear">Join Year</label>
         <input type="number" id="joinYear" placeholder="e.g. 2019" min="2000" max="2099" />
-        <div class="hint">Year you first joined the club. You may edit this.</div>
+        <div class="hint" data-i18n="joinYearHint">Year you first joined the club. You may edit this.</div>
       </div>
 
       <div class="actions">
-        <button class="btn btn-primary" id="saveBtn" onclick="saveProfile()">Save Changes</button>
-        <a href="?page=dashboard" class="btn btn-secondary">Cancel</a>
+        <button class="btn btn-primary" id="saveBtn" onclick="saveProfile()" data-i18n="btnSave">Save Changes</button>
+        <a href="?page=dashboard" class="btn btn-secondary" data-i18n="btnCancel">Cancel</a>
       </div>
     </div>
 
@@ -101,19 +111,109 @@
 </div>
 
 <script>
-  console.log('[MMR][profile] page script started, location:', window.location.href);
-  var appBaseUrl = '__SCRIPT_URL__';
-  console.log('[MMR][profile] appBaseUrl:', appBaseUrl);
+  // ── i18n ─────────────────────────────────────────────────
+  var TRANSLATIONS = {
+    "en": {
+        "appTitle": "🏃 Misty Mountain Runners",
+        "navDashboard": "Dashboard",
+        "pageTitle": "Update Profile",
+        "labelEmail": "Email",
+        "labelMemberID": "Member ID",
+        "labelFirstName": "First Name",
+        "labelLastName": "Last Name",
+        "labelPhone": "Phone Number",
+        "labelWechat": "WeChat ID",
+        "labelDistrict": "District",
+        "labelJoinYear": "Join Year",
+        "joinYearHint": "Year you first joined the club. You may edit this.",
+        "btnSave": "Save Changes",
+        "btnCancel": "Cancel"
+    },
+    "zh": {
+        "appTitle": "🏃 岚山跑团",
+        "navDashboard": "主页",
+        "pageTitle": "更新个人资料",
+        "labelEmail": "电子邮件",
+        "labelMemberID": "会员编号",
+        "labelFirstName": "名字",
+        "labelLastName": "姓氏",
+        "labelPhone": "手机号码",
+        "labelWechat": "微信号",
+        "labelDistrict": "区域",
+        "labelJoinYear": "加入年份",
+        "joinYearHint": "您加入跑团的年份，可自行修改。",
+        "btnSave": "保存修改",
+        "btnCancel": "取消"
+    }
+};
 
-  // Navigate all relative ?page= links through window.top with absolute URL
+  function applyTranslations(lang) {
+    var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    var titleEl = document.getElementById('appTitle');
+    if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
+    var els = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < els.length; i++) {
+      var k = els[i].getAttribute('data-i18n');
+      if (t[k] !== undefined) els[i].textContent = t[k];
+    }
+    var pls = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var j = 0; j < pls.length; j++) {
+      var k2 = pls[j].getAttribute('data-i18n-placeholder');
+      if (t[k2] !== undefined) pls[j].placeholder = t[k2];
+    }
+  }
+
+  function getCurrentLanguage() {
+    var stored = localStorage.getItem('portal_lang');
+    if (stored && ['en','zh'].indexOf(stored) !== -1) return stored;
+    var lang = (navigator.language || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+  }
+
+  function setLanguage(lang) {
+    if (['en','zh'].indexOf(lang) !== -1) {
+      localStorage.setItem('portal_lang', lang);
+      var sel = document.getElementById('languageSelector');
+      if (sel) sel.value = lang;
+      applyTranslations(lang);
+    }
+  }
+
+  function initLanguageSelector() {
+    var lang = getCurrentLanguage();
+    var sel = document.getElementById('languageSelector');
+    if (sel) {
+      sel.value = lang;
+      sel.addEventListener('change', function(e) { setLanguage(e.target.value); });
+    }
+    applyTranslations(lang);
+  }
+  document.addEventListener('DOMContentLoaded', initLanguageSelector);
+
+  var appBaseUrl = '__SCRIPT_URL__';
+
+  // Navigate top frame (GAS iframe requires target="_top")
+  function navigateToPage(page) {
+    var url = appBaseUrl + '?page=' + page;
+    console.log('[MMR] navigateToPage:', url);
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_top';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+  }
+
+  // Intercept relative ?page= links and navigate top frame
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
     if (a) {
       var h = a.getAttribute('href');
       if (h && h.charAt(0) === '?') {
-        e.preventDefault();
-        console.log('[MMR][profile] nav click to:', h);
-        window.top.location.href = appBaseUrl + h;
+        // Rewrite link to full URL with target="_top" before click proceeds
+        a.href = appBaseUrl + h;
+        a.target = '_top';
+        // Don't preventDefault — let browser handle the click naturally
       }
     }
   });
@@ -199,15 +299,21 @@
 
     callApi('updateMemberProfile', updates)
       .then(data => {
-        console.log('[MMR][profile] updateMemberProfile success');
+        console.log('[MMR][profile] updateMemberProfile success, navigating to dashboard');
         if (data.member) {
           sessionStorage.setItem('member', JSON.stringify(data.member));
-          loadProfile(data.member);
         }
-        showMsg('Profile updated successfully! Redirecting…', 'success');
-        setTimeout(() => {
-          window.top.location.href = appBaseUrl + '?page=dashboard';
-        }, 1000);
+        // Show manual link in case auto-nav is slow
+        var el = document.getElementById('msg');
+        el.innerHTML = '✓ Profile saved! <a href="' + appBaseUrl + '?page=dashboard' +
+          '" style="color:#2d7d46;font-weight:bold;margin-left:6px;">← Back to Dashboard</a>';
+        el.className = 'msg success';
+        // Scroll to message so user sees the success feedback
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Wait 1.5 seconds to let user see the message, then navigate
+        setTimeout(function() {
+          navigateToPage('dashboard');
+        }, 1500);
       })
       .catch(err => {
         console.error('[MMR][profile] updateMemberProfile error:', err && err.message);

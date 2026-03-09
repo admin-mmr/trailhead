@@ -17,7 +17,10 @@
       padding: 40px 32px; width: 100%; max-width: 400px;
     }
     .logo { text-align: center; font-size: 40px; margin-bottom: 8px; }
-    .app-title { text-align: center; font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .app-title { text-align: center; font-size: 22px; font-weight: 700; color: #1a1a1a; flex: 1; }
+    .language-selector { padding: 6px 10px; border-radius: 6px; border: 1px solid #ddd; background: #f9f9f9; color: #333; font-size: 13px; font-weight: 500; cursor: pointer; }
+    .language-selector:hover { background: #f0f0f0; }
     .subtitle { text-align: center; font-size: 14px; color: #777; margin-bottom: 28px; }
 
     /* Messages */
@@ -93,13 +96,19 @@
 <body>
 <div class="card">
   <div class="logo">🏃</div>
-  <div class="app-title">Misty Mountain Runners</div>
+  <div class="header-row">
+    <div class="app-title">Misty Mountain Runners</div>
+    <select id="languageSelector" class="language-selector">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+  </div>
 
   <!-- ═══════════════════════════════════════════
        STATE 1: Email entry + Google sign-in
   ════════════════════════════════════════════ -->
   <div id="state-email">
-    <p class="subtitle">Sign in or register</p>
+    <p class="subtitle" data-i18n="subtitle">Sign in or register</p>
     <div id="msg-email" class="msg"></div>
 
     <button class="btn btn-google" id="googleBtn" onclick="loginWithGoogle()" style="display:none;">
@@ -114,9 +123,7 @@
     <input type="email" id="emailInput"
            placeholder="your@email.com"
            onkeydown="if(event.key==='Enter') checkEmail()" />
-    <button class="btn btn-primary" id="checkEmailBtn" onclick="checkEmail()">
-      Continue →
-    </button>
+    <button class="btn btn-primary" id="checkEmailBtn" onclick="checkEmail()" data-i18n="checkEmailBtn">Continue →</button>
   </div>
 
   <!-- ═══════════════════════════════════════════
@@ -132,7 +139,7 @@
     <div id="msg-returning" class="msg"></div>
 
     <div class="otp-section">
-      <label>Enter your one-time login code, or request a new one.</label>
+      <label data-i18n="otpLabel">Enter your one-time login code, or request a new one.</label>
       <input type="text" id="otpInput-returning"
              placeholder="6-digit code" maxlength="6"
              inputmode="numeric" autocomplete="one-time-code"
@@ -155,7 +162,7 @@
   <div id="state-new-ask" style="display:none">
     <div class="result-box new-member">
       <div class="result-icon">✉️</div>
-      <h3>No account found</h3>
+      <h3 data-i18n="noAccountTitle">No account found</h3>
       <p>We don't have a record for<br/><strong id="new-ask-email"></strong></p>
     </div>
 
@@ -218,8 +225,91 @@
 </div>
 
 <script>
+  // ── i18n ─────────────────────────────────────────────────
+  var TRANSLATIONS = {
+    "en": {
+        "appTitle": "🏃 Misty Mountain Runners",
+        "subtitle": "Sign in or register",
+        "checkEmailBtn": "Continue →",
+        "otpLabel": "Enter your one-time login code, or request a new one.",
+        "verifyBtn": "Verify Code →",
+        "sendNewCodeBtn": "Send Me a New Code",
+        "backBtn": "← Try a different email",
+        "noAccountTitle": "No account found",
+        "newMemberYes": "Yes — Register Me →",
+        "newMemberNo": "No — Try a different email"
+    },
+    "zh": {
+        "appTitle": "🏃 岚山跑团",
+        "subtitle": "登录或注册",
+        "checkEmailBtn": "继续 →",
+        "otpLabel": "请输入一次性验证码，或申请新验证码。",
+        "verifyBtn": "验证 →",
+        "sendNewCodeBtn": "发送新验证码",
+        "backBtn": "← 更换邮箱",
+        "noAccountTitle": "未找到账号",
+        "newMemberYes": "是，帮我注册 →",
+        "newMemberNo": "否 — 更换邮箱"
+    }
+};
+
+  function applyTranslations(lang) {
+    var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    var titleEl = document.getElementById('appTitle');
+    if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
+    var els = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < els.length; i++) {
+      var k = els[i].getAttribute('data-i18n');
+      if (t[k] !== undefined) els[i].textContent = t[k];
+    }
+    var pls = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var j = 0; j < pls.length; j++) {
+      var k2 = pls[j].getAttribute('data-i18n-placeholder');
+      if (t[k2] !== undefined) pls[j].placeholder = t[k2];
+    }
+  }
+
+  function getCurrentLanguage() {
+    var stored = localStorage.getItem('portal_lang');
+    if (stored && ['en','zh'].indexOf(stored) !== -1) return stored;
+    var lang = (navigator.language || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+  }
+
+  function setLanguage(lang) {
+    if (['en','zh'].indexOf(lang) !== -1) {
+      localStorage.setItem('portal_lang', lang);
+      var sel = document.getElementById('languageSelector');
+      if (sel) sel.value = lang;
+      applyTranslations(lang);
+    }
+  }
+
+  function initLanguageSelector() {
+    var lang = getCurrentLanguage();
+    var sel = document.getElementById('languageSelector');
+    if (sel) {
+      sel.value = lang;
+      sel.addEventListener('change', function(e) { setLanguage(e.target.value); });
+    }
+    applyTranslations(lang);
+  }
+  document.addEventListener('DOMContentLoaded', initLanguageSelector);
+
   console.log('[MMR][login] page loaded, location:', window.location.href);
   var appBaseUrl = '__SCRIPT_URL__';
+
+  // Navigate top frame (GAS iframe requires target="_top")
+  function navigateToPage(page) {
+    var url = appBaseUrl + '?page=' + page;
+    console.log('[MMR] navigateToPage:', url);
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_top';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+  }
   var SESSION_ID = Math.random().toString(36).slice(2);
   var pendingPage = 'dashboard';
   var currentEmail = '';
@@ -332,10 +422,11 @@
             data.firstName || email;
           document.getElementById('returning-memberid').textContent =
             data.memberID || '';
-          clearMsg('returning');
           showState('returning');
           document.getElementById('otpInput-returning').focus();
-          sendOtp('returning'); // auto-send code on arrival
+          // Don't auto-send OTP — a valid code may already exist.
+          // Show instructions instead; user types code from inbox or requests a new one.
+          showMsg('returning', 'Enter your login code from your email, or click below to request a new one.', 'info');
         } else {
           // Not found — ask if new member
           document.getElementById('new-ask-email').textContent = email;
@@ -457,12 +548,12 @@
   // ── Final continue state ────────────────────────────────────
 
   function navigateTo(page) {
-    var url = appBaseUrl + '?page=' + page;
-    console.log('[MMR][login] navigating to:', url);
-    window.top.location.replace(url);
+    // Use the common navigateToPage which uses target="_top"
+    navigateToPage(page);
   }
 
   function showContinue(msgHtml, page) {
+    console.log('[MMR][login] showContinue:', page);
     // Navigate immediately — no extra button click needed
     navigateTo(page);
   }

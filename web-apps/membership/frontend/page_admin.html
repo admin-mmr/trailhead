@@ -60,11 +60,14 @@
     .member-info-box { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; }
     .proof-preview-box { background: #f8f6ff; border-radius: 8px; padding: 12px; margin: 10px 0 12px; font-size: 13px; }
     .proof-preview-box strong { color: #333; }
+    .language-selector { padding: 5px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.12); color: #fff; font-size: 13px; cursor: pointer; }
+    .language-selector:hover { background: rgba(255,255,255,0.22); }
   </style>
 </head>
 <body>
 <div class="topbar">
-  <h1>🛡️ Admin Panel — Misty Mountain Runners</h1>
+  <div style="display:flex;align-items:center;gap:16px;flex:1;"><h1>🛡️ Admin — Misty Mountain Runners</h1>
+    <select id="languageSelector" class="language-selector"><option value="en">EN</option><option value="zh">中文</option></select></div>
   <a href="?page=dashboard">← Dashboard</a>
 </div>
 
@@ -115,8 +118,73 @@
 </div>
 
 <script>
+  // ── i18n ─────────────────────────────────────────────────
+  var TRANSLATIONS = {
+    "en": {
+        "appTitle": "🛡️ Admin — Misty Mountain Runners"
+    },
+    "zh": {
+        "appTitle": "🛡️ 管理员 — 岚山跑团"
+    }
+};
+
+  function applyTranslations(lang) {
+    var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    var titleEl = document.getElementById('appTitle');
+    if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
+    var els = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < els.length; i++) {
+      var k = els[i].getAttribute('data-i18n');
+      if (t[k] !== undefined) els[i].textContent = t[k];
+    }
+    var pls = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var j = 0; j < pls.length; j++) {
+      var k2 = pls[j].getAttribute('data-i18n-placeholder');
+      if (t[k2] !== undefined) pls[j].placeholder = t[k2];
+    }
+  }
+
+  function getCurrentLanguage() {
+    var stored = localStorage.getItem('portal_lang');
+    if (stored && ['en','zh'].indexOf(stored) !== -1) return stored;
+    var lang = (navigator.language || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+  }
+
+  function setLanguage(lang) {
+    if (['en','zh'].indexOf(lang) !== -1) {
+      localStorage.setItem('portal_lang', lang);
+      var sel = document.getElementById('languageSelector');
+      if (sel) sel.value = lang;
+      applyTranslations(lang);
+    }
+  }
+
+  function initLanguageSelector() {
+    var lang = getCurrentLanguage();
+    var sel = document.getElementById('languageSelector');
+    if (sel) {
+      sel.value = lang;
+      sel.addEventListener('change', function(e) { setLanguage(e.target.value); });
+    }
+    applyTranslations(lang);
+  }
+  document.addEventListener('DOMContentLoaded', initLanguageSelector);
+
   console.log('[MMR][admin] page script started, location:', window.location.href);
   var appBaseUrl = '__SCRIPT_URL__';
+
+  // Navigate top frame (GAS iframe requires target="_top")
+  function navigateToPage(page) {
+    var url = appBaseUrl + '?page=' + page;
+    console.log('[MMR] navigateToPage:', url);
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_top';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+  }
   console.log('[MMR][admin] appBaseUrl:', appBaseUrl);
 
   var adminEmail = null;
@@ -124,15 +192,14 @@
   var pendingEventsList = [];  // flat list for manual match
   var unmatchedPaymentsCache = {}; // messageId -> full payment row for assign flow
 
-  // Navigate all relative ?page= links through window.top with absolute URL
+  // Navigate all relative ?page= links using absolute URL
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
     if (a) {
       var h = a.getAttribute('href');
       if (h && h.charAt(0) === '?') {
-        e.preventDefault();
-        console.log('[MMR][admin] nav click to:', h);
-        window.top.location.href = appBaseUrl + h;
+        a.href = appBaseUrl + h;
+        a.target = '_top';
       }
     }
   });

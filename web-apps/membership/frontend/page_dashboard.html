@@ -7,7 +7,10 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
-    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+    .topbar-left { display: flex; align-items: center; gap: 20px; flex: 1; }
+    .language-selector { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; }
+    .language-selector:hover { background: rgba(255,255,255,0.2); }
     .topbar h1 { font-size: 18px; font-weight: 700; }
     .topbar a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.85; }
     .topbar a:hover { opacity: 1; }
@@ -16,11 +19,11 @@
     .card h2 { font-size: 16px; font-weight: 700; color: #333; margin-bottom: 18px; }
     .welcome { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
     .member-id { font-size: 13px; color: #888; margin-bottom: 20px; }
-    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; margin-bottom: 16px; line-height: 1.5; }
     .status-active    { background: #e8f5e9; color: #2d7d46; }
     .status-inactive  { background: #fdecea; color: #c62828; }
     .status-expiring  { background: #fff8e1; color: #f57c00; }
-    .status-pending   { background: #fff3e0; color: #e65100; }
+    .status-pending   { background: #fff3e0; color: #e65100; padding: 8px 14px; }
     .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .info-item label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 2px; }
     .info-item span { font-size: 15px; color: #1a1a1a; font-weight: 500; }
@@ -61,10 +64,16 @@
 <body>
 
 <div class="topbar">
-  <h1>🏃 Misty Mountain Runners</h1>
+  <div class="topbar-left">
+    <h1 id="appTitle">🏃 Misty Mountain Runners</h1>
+    <select id="languageSelector" class="language-selector">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+  </div>
   <div style="display:flex;gap:20px;align-items:center;">
-    <a href="?page=profile">Profile</a>
-    <a href="?page=login" id="signOutLink">Sign Out</a>
+    <a href="?page=profile" data-i18n="profile">Profile</a>
+    <a href="?page=login" id="signOutLink" data-i18n="signOut">Sign Out</a>
   </div>
 </div>
 
@@ -105,20 +114,18 @@
     <!-- Profile confirmation card (Section 2) -->
     <div class="card" id="toolsCard">
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
-        <a href="#" id="paymentHistoryBtn" class="btn btn-primary">Payment History</a>
-        <a href="?page=admin" class="btn btn-admin" id="adminBtn" style="display:none;">Admin Panel</a>
+        <a href="#" id="paymentHistoryBtn" class="btn btn-primary" data-i18n="paymentHistory">Payment History</a>
+        <a href="?page=admin" class="btn btn-admin" id="adminBtn" style="display:none;" data-i18n="adminPanel">Admin Panel</a>
       </div>
     </div>
 
     <!-- Profile confirmation card (Section 2) -->
     <div class="card" id="profileCard">
-      <h2>Is your information accurate?</h2>
-      <div id="profileWarning" class="profile-warning" style="display:none;">
-        Some fields are empty — please update your profile.
-      </div>
+      <h2 data-i18n="profileCardTitle">Is your information accurate?</h2>
+      <div id="profileWarning" class="profile-warning" style="display:none;" data-i18n="profileWarning">Some fields are empty — please update your profile.</div>
       <div class="profile-grid" id="profileGrid"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
-        <a href="?page=profile" class="btn btn-secondary">Update Profile</a>
+        <a href="?page=profile" class="btn btn-secondary" data-i18n="updateProfile">Update Profile</a>
       </div>
     </div>
 
@@ -126,21 +133,101 @@
 </div>
 
 <script>
+  // ── i18n ─────────────────────────────────────────────────
+  var TRANSLATIONS = {
+    "en": {
+        "appTitle": "🏃 Misty Mountain Runners",
+        "profile": "Profile",
+        "signOut": "Sign Out",
+        "paymentHistory": "Payment History",
+        "adminPanel": "Admin Panel",
+        "profileCardTitle": "Is your information accurate?",
+        "profileWarning": "Some fields are empty — please update your profile.",
+        "updateProfile": "Update Profile"
+    },
+    "zh": {
+        "appTitle": "🏃 岚山跑团",
+        "profile": "个人资料",
+        "signOut": "退出",
+        "paymentHistory": "支付记录",
+        "adminPanel": "管理面板",
+        "profileCardTitle": "请确认您的信息是否准确",
+        "profileWarning": "部分信息未填写，请更新您的个人资料。",
+        "updateProfile": "更新资料"
+    }
+};
+
+  function applyTranslations(lang) {
+    var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    var titleEl = document.getElementById('appTitle');
+    if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
+    var els = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < els.length; i++) {
+      var k = els[i].getAttribute('data-i18n');
+      if (t[k] !== undefined) els[i].textContent = t[k];
+    }
+    var pls = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var j = 0; j < pls.length; j++) {
+      var k2 = pls[j].getAttribute('data-i18n-placeholder');
+      if (t[k2] !== undefined) pls[j].placeholder = t[k2];
+    }
+  }
+
+  function getCurrentLanguage() {
+    var stored = localStorage.getItem('portal_lang');
+    if (stored && ['en','zh'].indexOf(stored) !== -1) return stored;
+    var lang = (navigator.language || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+  }
+
+  function setLanguage(lang) {
+    if (['en','zh'].indexOf(lang) !== -1) {
+      localStorage.setItem('portal_lang', lang);
+      var sel = document.getElementById('languageSelector');
+      if (sel) sel.value = lang;
+      applyTranslations(lang);
+    }
+  }
+
+  function initLanguageSelector() {
+    var lang = getCurrentLanguage();
+    var sel = document.getElementById('languageSelector');
+    if (sel) {
+      sel.value = lang;
+      sel.addEventListener('change', function(e) { setLanguage(e.target.value); });
+    }
+    applyTranslations(lang);
+  }
+  document.addEventListener('DOMContentLoaded', initLanguageSelector);
+
   var appBaseUrl = '__SCRIPT_URL__';
+
+  // Navigate top frame (GAS iframe requires target="_top")
+  function navigateToPage(page) {
+    var url = appBaseUrl + '?page=' + page;
+    console.log('[MMR] navigateToPage:', url);
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_top';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+  }
   var currentMember = null;
   var cachedEvents  = [];
   var configCache   = {};
-
   const SESSION_ID = Math.random().toString(36).slice(2);
 
-  // Navigate relative ?page= links through window.top using absolute URL
+  // Intercept relative ?page= links and navigate top frame
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
     if (a) {
       var h = a.getAttribute('href');
       if (h && h.charAt(0) === '?') {
-        e.preventDefault();
-        window.top.location.href = appBaseUrl + h;
+        // Rewrite link to full URL with target="_top" before click proceeds
+        a.href = appBaseUrl + h;
+        a.target = '_top';
+        // Don't preventDefault — let browser handle the click naturally
       }
     }
   });
@@ -183,13 +270,19 @@
   }
 
   // ---- Status badge ----
-  function renderStatusBadge(member, hasPendingPayment) {
+  function renderStatusBadge(member, hasPendingPayment, pendingEvent) {
     var badgeEl  = document.getElementById('statusBadge');
     var expiryEl = document.getElementById('expiryDate');
     var days = getDaysUntilExpiry(member.expiration);
 
     if (member.status === 'pending_upgrade') {
       badgeEl.textContent  = '⏳ Upgrade Pending';
+      badgeEl.className    = 'status-badge status-pending';
+      expiryEl.className   = 'expiry-date expiring';
+    } else if (pendingEvent) {
+      // Show custom pending payment message
+      var paymentDate = new Date(pendingEvent.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      badgeEl.innerHTML = '<div style="font-weight:600;color:#e65100;">Thank you for <strong>' + esc(pendingEvent.paymentIntent) + '</strong> on <strong>' + paymentDate + '</strong>. It is Pending review. You will receive an email soon.</div>';
       badgeEl.className    = 'status-badge status-pending';
       expiryEl.className   = 'expiry-date expiring';
     } else if (hasPendingPayment) {
@@ -377,8 +470,9 @@
         cont.className   = 'btn btn-primary';
         cont.textContent = 'Continue to Payment →';
         cont.addEventListener('click', function() {
-          window.top.location.href = appBaseUrl +
-            '?page=payment&intent=' + encodeURIComponent('Family Membership') + '&amount=' + amount;
+          var _a1 = document.createElement('a');
+          _a1.href = appBaseUrl + '?page=payment&intent=' + encodeURIComponent('Family Membership') + '&amount=' + amount;
+          _a1.target = '_top'; _a1.style.display = 'none'; document.body.appendChild(_a1); _a1.click();
         });
         container.appendChild(cont);
         // Refresh badge
@@ -420,8 +514,9 @@
         cont.className   = 'btn btn-primary';
         cont.textContent = 'Continue to Payment →';
         cont.addEventListener('click', function() {
-          window.top.location.href = appBaseUrl +
-            '?page=payment&intent=' + encodeURIComponent('Family Upgrade') + '&amount=' + amount;
+          var _a2 = document.createElement('a');
+          _a2.href = appBaseUrl + '?page=payment&intent=' + encodeURIComponent('Family Upgrade') + '&amount=' + amount;
+          _a2.target = '_top'; _a2.style.display = 'none'; document.body.appendChild(_a2); _a2.click();
         });
         container.appendChild(cont);
         renderStatusBadge(updated, false);
@@ -453,7 +548,7 @@
         cont.className   = 'btn btn-secondary';
         cont.textContent = 'Reload Dashboard →';
         cont.addEventListener('click', function() {
-          window.top.location.href = appBaseUrl + '?page=dashboard';
+          navigateToPage('dashboard');
         });
         container.appendChild(cont);
       })
@@ -464,13 +559,15 @@
 
   // ---- Profile card ----
   function renderProfileCard(member) {
+    // Combine first and last name
+    var fullName = (member.firstName || '') + (member.lastName ? ' ' + member.lastName : '');
     var fields = [
-      { label: 'First Name', value: member.firstName },
-      { label: 'Last Name',  value: member.lastName },
+      { label: 'Name',       value: fullName.trim() },
       { label: 'Email',      value: member.email },
       { label: 'Phone',      value: member.phoneNumber },
       { label: 'WeChat ID',  value: member.wechatID },
       { label: 'District',   value: member.district },
+      { label: 'Join Year',  value: member.joinYear },
     ];
     var anyEmpty = !member.firstName || !member.lastName || !member.phoneNumber;
     document.getElementById('profileWarning').style.display = anyEmpty ? 'block' : 'none';
@@ -510,7 +607,16 @@
       return PAYMENT_TYPES.indexOf(e.eventType) !== -1 && e.status === 'Pending';
     });
 
-    renderStatusBadge(member, hasPendingPayment);
+    // Find the first pending event for this member
+    var pendingEvent = null;
+    var memberPendingEvents = (events || []).filter(function(e) {
+      return e.memberID === member.memberID && e.status === 'Pending';
+    });
+    if (memberPendingEvents.length > 0) {
+      pendingEvent = memberPendingEvents[0];
+    }
+
+    renderStatusBadge(member, hasPendingPayment, pendingEvent);
 
     document.getElementById('joinYear').textContent   = member.joinYear  || '—';
     document.getElementById('memberType').textContent = member.type      || '—';

@@ -7,7 +7,10 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
-    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar { background: #2d7d46; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+    .topbar-left { display: flex; align-items: center; gap: 20px; flex: 1; }
+    .language-selector { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; }
+    .language-selector:hover { background: rgba(255,255,255,0.2); }
     .topbar h1 { font-size: 18px; font-weight: 700; }
     .topbar a { color: #fff; text-decoration: none; font-size: 14px; opacity: 0.85; }
     .container { max-width: 560px; margin: 32px auto; padding: 0 16px; }
@@ -40,8 +43,14 @@
 </head>
 <body>
 <div class="topbar">
-  <h1>🏃 Misty Mountain Runners</h1>
-  <a href="?page=dashboard">← Dashboard</a>
+  <div class="topbar-left">
+    <h1 id="appTitle">🏃 Misty Mountain Runners</h1>
+    <select id="languageSelector" class="language-selector">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+  </div>
+  <a href="?page=dashboard">← <span data-i18n="dashboard">Dashboard</span></a>
 </div>
 
 <div id="loadingOverlay" class="loading-overlay">
@@ -76,10 +85,6 @@
           <div class="handle">Handle: <strong id="venmoHandle"></strong></div>
           <img id="venmoQrCode" alt="Venmo QR Code" class="qr-code" />
         </div>
-        <div class="method">
-          <h4>PayPal</h4>
-          <div class="handle">Handle: <strong id="paypalHandle"></strong></div>
-        </div>
       </div>
       <div class="memo-tip">
         <strong>Important:</strong> Please include your Member ID <strong id="memoMemberID"></strong> in the payment memo/note to help us match your payment.
@@ -90,21 +95,82 @@
 </div>
 
 <script>
-  console.log('[MMR][payment] page script started');
-  console.log('[MMR][payment] window.location.href =', window.location.href);
-  console.log('[MMR][payment] window.location.search =', window.location.search);
-  console.log('[MMR][payment] window.parent.location (may be blocked) =', (() => { try { return window.parent.location.href; } catch(e) { return 'cross-origin blocked'; } })());
+  // ── i18n ─────────────────────────────────────────────────
+  var TRANSLATIONS = {
+    "en": {
+        "appTitle": "🏃 Misty Mountain Runners",
+        "navDashboard": "← Dashboard"
+    },
+    "zh": {
+        "appTitle": "🏃 岚山跑团",
+        "navDashboard": "← 主页"
+    }
+};
+
+  function applyTranslations(lang) {
+    var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    var titleEl = document.getElementById('appTitle');
+    if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
+    var els = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < els.length; i++) {
+      var k = els[i].getAttribute('data-i18n');
+      if (t[k] !== undefined) els[i].textContent = t[k];
+    }
+    var pls = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var j = 0; j < pls.length; j++) {
+      var k2 = pls[j].getAttribute('data-i18n-placeholder');
+      if (t[k2] !== undefined) pls[j].placeholder = t[k2];
+    }
+  }
+
+  function getCurrentLanguage() {
+    var stored = localStorage.getItem('portal_lang');
+    if (stored && ['en','zh'].indexOf(stored) !== -1) return stored;
+    var lang = (navigator.language || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+  }
+
+  function setLanguage(lang) {
+    if (['en','zh'].indexOf(lang) !== -1) {
+      localStorage.setItem('portal_lang', lang);
+      var sel = document.getElementById('languageSelector');
+      if (sel) sel.value = lang;
+      applyTranslations(lang);
+    }
+  }
+
+  function initLanguageSelector() {
+    var lang = getCurrentLanguage();
+    var sel = document.getElementById('languageSelector');
+    if (sel) {
+      sel.value = lang;
+      sel.addEventListener('change', function(e) { setLanguage(e.target.value); });
+    }
+    applyTranslations(lang);
+  }
+  document.addEventListener('DOMContentLoaded', initLanguageSelector);
+
   var appBaseUrl = '__SCRIPT_URL__';
-  const SERVER_PARAMS = __URL_PARAMS__;  // ← ADD THIS (no quotes - it's raw JSON)
-  const SESSION_ID = Math.random().toString(36).slice(2);
+
+  // Navigate top frame (GAS iframe requires target="_top")
+  function navigateToPage(page) {
+    var url = appBaseUrl + '?page=' + page;
+    console.log('[MMR] navigateToPage:', url);
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_top';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+  }
 
   document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
     if (a) {
       var h = a.getAttribute('href');
       if (h && h.charAt(0) === '?') {
-        e.preventDefault();
-        window.top.location.href = appBaseUrl + h;
+        a.href = appBaseUrl + h;
+        a.target = '_top';
       }
     }
   });
@@ -177,7 +243,6 @@
     console.log('[MMR][payment] renderPaymentMethods called, config keys =', Object.keys(config || {}));
     document.getElementById('zelleHandle').textContent = config['ZelleHandle'] || 'Not configured';
     document.getElementById('venmoHandle').textContent = config['VenmoHandle'] || 'Not configured';
-    document.getElementById('paypalHandle').textContent = config['PayPalHandle'] || 'Not configured';
 
     const continueBtn = document.getElementById('continueBtn');
     continueBtn.href = `?page=payment_proof&memberId=${member ? member.memberID : ''}&eventName=${encodeURIComponent(paymentIntent)}&amount=${paymentAmount}`;

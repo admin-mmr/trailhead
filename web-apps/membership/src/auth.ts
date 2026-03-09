@@ -80,9 +80,10 @@ function requestEmailOtp(jsonRequest: string): string {
     // Check for existing valid OTP
     const existingOtp = findValidOtpByEmail(email);
     if (existingOtp) {
-      console.log('[mmr][requestEmailOtp] Found existing valid OTP for:', email);
-      // Resend the existing OTP
-      sendCode(email, existingOtp.otp.otpCode);
+      console.log('[mmr][requestEmailOtp] Found existing valid OTP for:', email, '— skipping email send');
+      // Don't resend — the user already has a valid code in their inbox
+      auditLog('OTP_REUSED', { sessionID: payload.sessionID, email });
+      return jsonOk(req.requestId, { message: 'A valid code was already sent. Please check your email.' });
     } else {
       // Generate and send a new OTP
       const otpCode = generateOtpCode();

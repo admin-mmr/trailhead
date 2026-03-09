@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build":  "rm -f dist/*.html && tsc && cp frontend/*.html dist/ && cp appsscript.json dist/",
-    "build:copy": "rm -f dist/*.html && tsc && cp frontend/*.html dist/ && cp appsscript.json dist/",
+    "build":  "rm -f dist/*.html && tsc && cp frontend/*.html dist/ && cp frontend/i18n.js dist/ && cp appsscript.json dist/",
+    "build:copy": "rm -f dist/*.html && tsc && cp frontend/*.html dist/ && cp frontend/i18n.js dist/ && cp appsscript.json dist/",
     "push": "clasp push",
     "deploy": "clasp deploy",
     "build:push": "npm run build:copy && npm run push",

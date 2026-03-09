@@ -32,8 +32,8 @@ function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutp
 
       const raw = HtmlService.createHtmlOutputFromFile(fileName).getContent();
       const content = raw
-        .replace('__SCRIPT_URL__', scriptUrl)
-        .replace('__URL_PARAMS__', urlParamsJson);
+        .replace(/__SCRIPT_URL__/g, scriptUrl)
+        .replace(/__URL_PARAMS__/g, urlParamsJson);
 
       const output = HtmlService.createHtmlOutput(content)
         .setTitle('Misty Mountain Runners — Membership')

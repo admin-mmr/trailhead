@@ -19,7 +19,7 @@
       display: inline-flex; align-items: center; gap: 6px;
       color: #2d7d46; font-size: 14px; font-weight: 500;
       cursor: pointer; border: none; background: none;
-      padding: 0; margin-bottom: 20px; text-decoration: none;
+      padding: 0; margin-bottom: 0; text-decoration: none;
     }
     .back-link:hover { text-decoration: underline; }
     h2 { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
@@ -92,11 +92,20 @@
       margin: 40px auto; display: block;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .language-selector { padding: 5px 9px; border-radius: 6px; border: 1px solid #ccc; background: #f5f5f5; color: #333; font-size: 13px; cursor: pointer; }
+    .language-selector:hover { background: #eee; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
   </style>
 </head>
 <body>
 <div class="card">
-  <button class="back-link" onclick="goToDashboard()">← Dashboard</button>
+  <div class="card-header">
+    <button class="back-link" onclick="goToDashboard()">← Dashboard</button>
+    <select id="languageSelector" class="language-selector">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+  </div>
 
   <h2>🧾 Payment History</h2>
   <div class="member-id" id="member-id-display"></div>
@@ -106,11 +115,80 @@
 </div>
 
 <script>
+  // ── i18n ─────────────────────────────────────────────────
+  var TRANSLATIONS = {
+    "en": {
+        "appTitle": "🏃 Misty Mountain Runners",
+        "h2Title": "🧾 Payment History",
+        "backDash": "← Dashboard"
+    },
+    "zh": {
+        "appTitle": "🏃 岚山跑团",
+        "h2Title": "🧾 支付记录",
+        "backDash": "← 主页"
+    }
+};
+
+  function applyTranslations(lang) {
+    var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    var titleEl = document.getElementById('appTitle');
+    if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
+    var els = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < els.length; i++) {
+      var k = els[i].getAttribute('data-i18n');
+      if (t[k] !== undefined) els[i].textContent = t[k];
+    }
+    var pls = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var j = 0; j < pls.length; j++) {
+      var k2 = pls[j].getAttribute('data-i18n-placeholder');
+      if (t[k2] !== undefined) pls[j].placeholder = t[k2];
+    }
+  }
+
+  function getCurrentLanguage() {
+    var stored = localStorage.getItem('portal_lang');
+    if (stored && ['en','zh'].indexOf(stored) !== -1) return stored;
+    var lang = (navigator.language || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+  }
+
+  function setLanguage(lang) {
+    if (['en','zh'].indexOf(lang) !== -1) {
+      localStorage.setItem('portal_lang', lang);
+      var sel = document.getElementById('languageSelector');
+      if (sel) sel.value = lang;
+      applyTranslations(lang);
+    }
+  }
+
+  function initLanguageSelector() {
+    var lang = getCurrentLanguage();
+    var sel = document.getElementById('languageSelector');
+    if (sel) {
+      sel.value = lang;
+      sel.addEventListener('change', function(e) { setLanguage(e.target.value); });
+    }
+    applyTranslations(lang);
+  }
+  document.addEventListener('DOMContentLoaded', initLanguageSelector);
+
   var appBaseUrl = '__SCRIPT_URL__';
+
+  // Navigate top frame (GAS iframe requires target="_top")
+  function navigateToPage(page) {
+    var url = appBaseUrl + '?page=' + page;
+    console.log('[MMR] navigateToPage:', url);
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_top';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+  }
   var SESSION_ID = Math.random().toString(36).slice(2);
 
   function goToDashboard() {
-    window.top.location.href = appBaseUrl + '?page=dashboard';
+    navigateToPage('dashboard');
   }
 
   function callApi(fn, payload) {
@@ -230,33 +308,7 @@
     return html;
   }
 
-  // --- UPDATED data loader ---
-  var member = null;
-  try { member = JSON.parse(sessionStorage.getItem('member')); } catch(e) {}
-  if (!member || !member.email) {
-    window.top.location.href = appBaseUrl + '?page=login';
-  } else {
-    document.getElementById('member-id-display').textContent = 'Member ID: ' + member.memberID;
-    callApi('getMemberPaymentHistory', { email: member.email, sessionID: SESSION_ID })
-      .then(function(data) {
-        document.getElementById('loading').style.display = 'none';
-        var content = document.getElementById('content');
-        content.style.display = 'block';
-        var split = renderEvents(data.events);
-        var html = '';
-        html += buildPendingHTML(split.pending);          // pending WebApp-Events
-        html += buildProofsHTML(data.proofs, data.memberID); // NEW: proof submissions
-        html += buildConfirmedHTML(data.payments);         // confirmed Payment-History
-        html += buildRejectedHTML(split.past);             // rejected/error events
-        content.innerHTML = html || '<div class="empty">No payment activity found.</div>';
-      })
-      .catch(function(err) {
-        document.getElementById('loading').style.display = 'none';
-        var content = document.getElementById('content');
-        content.style.display = 'block';
-        content.innerHTML = '<div class="empty" style="color:#c62828">Failed to load: ' + esc(err.message) + '</div>';
-      });
-  }
+  // (data loading moved below after all function definitions)
 
 
   function buildConfirmedHTML(payments) {
@@ -314,7 +366,7 @@
   try { member = JSON.parse(sessionStorage.getItem('member') || 'null'); } catch(_) {}
 
   if (!member || !member.email) {
-    window.top.location.href = appBaseUrl + '?page=login';
+    navigateToPage('login');
   } else {
     document.getElementById('member-id-display').textContent =
       'Member ID: ' + (member.memberID || '—');
@@ -334,10 +386,13 @@
       // 1. Pending submissions (with explainer)
       html += buildPendingHTML(split.pending);
 
-      // 2. Confirmed payments
+      // 2. Payment proof submissions
+      html += buildProofsHTML(data.proofs || [], data.memberID || member.memberID);
+
+      // 3. Confirmed payments
       html += buildConfirmedHTML(data.payments || []);
 
-      // 3. Rejected / errors
+      // 4. Rejected / errors
       html += buildRejectedHTML(split.past);
 
       content.innerHTML = html || '<div class="empty">No payment activity found.</div>';

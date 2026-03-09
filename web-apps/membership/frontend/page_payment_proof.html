@@ -23,13 +23,16 @@
     .msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
     .msg.success { background: #e8f5e9; color: #2d7d46; display: block; }
     .msg.error { background: #fdecea; color: #c62828; display: block; }
+    .language-selector { padding: 5px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.12); color: #fff; font-size: 13px; cursor: pointer; }
+    .language-selector:hover { background: rgba(255,255,255,0.22); }
   </style>
 </head>
 <body>
 <div class="topbar">
-  <h1>🏃 Misty Mountain Runners</h1>
-  <!-- ✅ CORRECT — absolute URL, window.top, from direct onclick -->
-  <button onclick="window.top.location.href = appBaseUrl + '?page=dashboard'">
+  <div style="display:flex;align-items:center;gap:16px;flex:1;"><h1>🏃 Misty Mountain Runners</h1>
+    <select id="languageSelector" class="language-selector"><option value="en">EN</option><option value="zh">中文</option></select></div>
+  <!-- ✅ CORRECT — absolute URL, navigateToPage, from direct onclick -->
+  <button onclick="navigateToPage('dashboard')">
     ← Dashboard
   </button>
 </div>
@@ -57,7 +60,6 @@
         <option value="">— Select a payment method —</option>
         <option value="Zelle">Zelle</option>
         <option value="Venmo">Venmo</option>
-        <option value="PayPal">PayPal</option>
       </select>
     </div>
     <div class="field">
@@ -86,8 +88,75 @@
 </div>
 
 <script>
+  // ── i18n ─────────────────────────────────────────────────
+  var TRANSLATIONS = {
+    "en": {
+        "appTitle": "🏃 Misty Mountain Runners",
+        "navDashboard": "← Dashboard"
+    },
+    "zh": {
+        "appTitle": "🏃 岚山跑团",
+        "navDashboard": "← 主页"
+    }
+};
+
+  function applyTranslations(lang) {
+    var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    var titleEl = document.getElementById('appTitle');
+    if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
+    var els = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < els.length; i++) {
+      var k = els[i].getAttribute('data-i18n');
+      if (t[k] !== undefined) els[i].textContent = t[k];
+    }
+    var pls = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var j = 0; j < pls.length; j++) {
+      var k2 = pls[j].getAttribute('data-i18n-placeholder');
+      if (t[k2] !== undefined) pls[j].placeholder = t[k2];
+    }
+  }
+
+  function getCurrentLanguage() {
+    var stored = localStorage.getItem('portal_lang');
+    if (stored && ['en','zh'].indexOf(stored) !== -1) return stored;
+    var lang = (navigator.language || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+  }
+
+  function setLanguage(lang) {
+    if (['en','zh'].indexOf(lang) !== -1) {
+      localStorage.setItem('portal_lang', lang);
+      var sel = document.getElementById('languageSelector');
+      if (sel) sel.value = lang;
+      applyTranslations(lang);
+    }
+  }
+
+  function initLanguageSelector() {
+    var lang = getCurrentLanguage();
+    var sel = document.getElementById('languageSelector');
+    if (sel) {
+      sel.value = lang;
+      sel.addEventListener('change', function(e) { setLanguage(e.target.value); });
+    }
+    applyTranslations(lang);
+  }
+  document.addEventListener('DOMContentLoaded', initLanguageSelector);
+
 console.log('[MMR][paymentproof] page script started');
 var appBaseUrl = '__SCRIPT_URL__';
+
+// Navigate top frame (GAS iframe requires target="_top")
+function navigateToPage(page) {
+  var url = appBaseUrl + '?page=' + page;
+  console.log('[MMR] navigateToPage:', url);
+  var a = document.createElement('a');
+  a.href = url;
+  a.target = '_top';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+}
 const SERVER_PARAMS = __URL_PARAMS__;   // injected by doGet - no quotes!
 const SESSION_ID = Math.random().toString(36).slice(2);
 let member = null;
