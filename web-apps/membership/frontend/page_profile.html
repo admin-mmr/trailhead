@@ -325,23 +325,13 @@
 
   // ---- Load from session or server ----
   const cached = sessionStorage.getItem('member');
-  if (cached) {
-    try {
-      const m = JSON.parse(cached);
-      console.log('[MMR][profile] loaded member from sessionStorage:', m.memberID);
-      loadProfile(m);
-    } catch (e) {
-      console.error('[MMR][profile] failed to parse cached member:', e);
-    }
-  }
-
   var memberEmail = '';
   if (cached) {
     try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {}
   }
-  console.log('[MMR][profile] calling getOrCreateMemberProfile with email:', memberEmail);
 
-  // Load districts from Config (with sessionStorage caching to avoid repeated fetches)
+  // FIRST: Load districts (ensure dropdown is populated before we try to set member.district)
+  // Try cache first
   var cachedDistricts = sessionStorage.getItem('districts_list');
   if (cachedDistricts) {
     try {
@@ -353,12 +343,11 @@
     }
   }
 
-  // Always fetch fresh districts in case they've changed (cache is just an optimization)
+  // Fetch fresh districts and update cache
   callApi('getDistrictsFromConfig', {})
     .then(function(data) {
       console.log('[MMR][profile] districts loaded fresh:', data.districts && data.districts.length);
       if (data.districts && Array.isArray(data.districts)) {
-        // Update cache for next page load
         sessionStorage.setItem('districts_list', JSON.stringify(data.districts));
         populateDistricts(data.districts);
       }
@@ -367,6 +356,20 @@
       console.warn('[MMR][profile] failed to load districts:', err && err.message);
     });
 
+  // SECOND: Load member profile (now that districts dropdown is ready)
+  // Show cached member immediately if available
+  if (cached) {
+    try {
+      const m = JSON.parse(cached);
+      console.log('[MMR][profile] loaded member from sessionStorage:', m.memberID);
+      loadProfile(m);
+    } catch (e) {
+      console.error('[MMR][profile] failed to parse cached member:', e);
+    }
+  }
+
+  // Fetch fresh member profile from server
+  console.log('[MMR][profile] calling getOrCreateMemberProfile with email:', memberEmail);
   callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID })
     .then(function(data) {
       console.log('[MMR][profile] getOrCreateMemberProfile success, memberID:', data.member && data.member.memberID);

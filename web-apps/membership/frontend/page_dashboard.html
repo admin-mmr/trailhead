@@ -143,7 +143,17 @@
         "adminPanel": "Admin Panel",
         "profileCardTitle": "Is your information accurate?",
         "profileWarning": "Some fields are empty — please update your profile.",
-        "updateProfile": "Update Profile"
+        "updateProfile": "Update Profile",
+        "viewPendingRequests": "⏳ View Pending Requests",
+        "upgradePending": "⏳ Upgrade Pending",
+        "paymentPending": "⏳ Payment Pending",
+        "submitPaymentProof": "Submit Payment Proof",
+        "manageFamily": "Manage Family",
+        "cancelUpgrade": "Cancel Upgrade",
+        "switchToFamily": "Switch to Family",
+        "upgradeToFamily": "Upgrade to Family",
+        "continueToPayment": "Continue to Payment →",
+        "reloadDashboard": "Reload Dashboard →"
     },
     "zh": {
         "appTitle": "🏃 岚山跑团",
@@ -153,9 +163,26 @@
         "adminPanel": "管理面板",
         "profileCardTitle": "请确认您的信息是否准确",
         "profileWarning": "部分信息未填写，请更新您的个人资料。",
-        "updateProfile": "更新资料"
+        "updateProfile": "更新资料",
+        "viewPendingRequests": "⏳ 查看待审请求",
+        "upgradePending": "⏳ 升级等待中",
+        "paymentPending": "⏳ 支付待审",
+        "submitPaymentProof": "提交支付证明",
+        "manageFamily": "管理家庭成员",
+        "cancelUpgrade": "取消升级",
+        "switchToFamily": "转换为家庭会员",
+        "upgradeToFamily": "升级为家庭会员",
+        "continueToPayment": "继续支付 →",
+        "reloadDashboard": "重新加载主页 →"
     }
 };
+
+  // Helper to get translated string for dynamic labels
+  function t(key) {
+    var lang = getCurrentLanguage();
+    var trans = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    return trans[key] || key;
+  }
 
   function applyTranslations(lang) {
     var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
@@ -338,7 +365,7 @@
 
     // ── View Pending Requests — always show when any pending event ──────────
     if (hasAnyPending) {
-      addBtn(container, '⏳ View Pending Requests',
+      addBtn(container, t('viewPendingRequests'),
         '?page=payment_history&memberId=' + member.memberID, 'btn-pending');
       // Hide main action buttons and upgrade button when pending requests exist
       document.querySelector('.actions').style.display = 'none';
@@ -350,18 +377,18 @@
     if (member.status === 'pending_upgrade') {
       if (hasPendingPayment) {
         // Sub-state 1: proof submitted, awaiting review
-        addMsg(container, '⏳ Your upgrade payment is under review. We\'ll notify you of the result.', 'action-msg-info');
+        addMsg(container, t('paymentUnderReview'), 'action-msg-info');
       } else {
         // Sub-state 2: no proof submitted yet
-        addMsg(container, '⚠️ Please submit payment proof to complete your Family upgrade.', 'action-msg-warning');
-        addBtn(container, 'Submit Payment Proof',
+        addMsg(container, t('submitProofWarning'), 'action-msg-warning');
+        addBtn(container, t('submitPaymentProof'),
           '?page=payment_proof&memberId=' + member.memberID, 'btn-primary');
       }
-      addActionBtn(container, 'Cancel Upgrade', 'btn-danger', function() {
+      addActionBtn(container, t('cancelUpgrade'), 'btn-danger', function() {
         doCancelUpgrade(member);
       });
       if (member.type === 'Family') {
-        addBtn(container, 'Manage Family', '?page=family&memberId=' + member.memberID, 'btn-secondary');
+        addBtn(container, t('manageFamily'), '?page=family&memberId=' + member.memberID, 'btn-secondary');
       }
       return; // No further payment buttons when pending_upgrade
     }
@@ -374,42 +401,42 @@
         if (isInactiveOrExpiring) {
           // Pay Dues + Switch to Family
           addBtn(container,
-            'Pay Dues — $' + indivPrice,
+            t('payDues') + ' — $' + indivPrice,
             '?page=payment&intent=' + encodeURIComponent('Individual Membership') + '&amount=' + indivPrice,
             'btn-primary');
           addActionBtn(container,
-            'Switch to Family — $' + familyPrice,
+            t('switchToFamily') + ' — $' + familyPrice,
             'btn-secondary',
             function() { doInitiateSwitch(member, familyPrice); });
         } else if (days >= REMIND_DAYS && days <= THREE_MONTHS_DAYS) {
           // Both Switch and Upgrade (user's choice)
           addActionBtn(container,
-            'Switch to Family — $' + familyPrice,
+            t('switchToFamily') + ' — $' + familyPrice,
             'btn-secondary',
             function() { doInitiateSwitch(member, familyPrice); });
           addActionBtn(container,
-            'Upgrade to Family — $' + upgradePrice + ' (no expiry change)',
+            t('upgradeToFamily') + ' — $' + upgradePrice + ' (no expiry change)',
             'btn-secondary',
             function() { doInitiateUpgrade(member, upgradePrice); });
         } else {
           // Upgrade to Family only (> 3 months remaining)
           addActionBtn(container,
-            'Upgrade to Family — $' + upgradePrice,
+            t('upgradeToFamily') + ' — $' + upgradePrice,
             'btn-secondary',
             function() { doInitiateUpgrade(member, upgradePrice); });
         }
       } else if (member.type === 'Family') {
         if (isInactiveOrExpiring) {
           addBtn(container,
-            'Pay Dues — $' + familyPrice,
+            t('payDues') + ' — $' + familyPrice,
             '?page=payment&intent=' + encodeURIComponent('Family Membership') + '&amount=' + familyPrice,
             'btn-primary');
         }
-        addBtn(container, 'Manage Family',
+        addBtn(container, t('manageFamily'),
           '?page=family&memberId=' + member.memberID, 'btn-secondary');
       }
-      // submit payment proof 
-      addBtn(container, 'Submit Payment Proof',
+      // submit payment proof
+      addBtn(container, t('submitPaymentProof'),
         '?page=payment_proof&memberId=' + member.memberID, 'btn-primary');
 
     }
@@ -464,11 +491,11 @@
         var container = document.getElementById('actionButtons');
         container.innerHTML = '';
         addMsg(container,
-          '✅ Switched to Family. Please pay $' + amount + ' to activate your membership.',
+          t('switchedToFamily') + amount + '. ' + t('toActivate'),
           'action-msg-success');
         var cont = document.createElement('button');
         cont.className   = 'btn btn-primary';
-        cont.textContent = 'Continue to Payment →';
+        cont.textContent = t('continueToPayment');
         cont.addEventListener('click', function() {
           var _a1 = document.createElement('a');
           _a1.href = appBaseUrl + '?page=payment&intent=' + encodeURIComponent('Family Membership') + '&amount=' + amount;
@@ -508,11 +535,11 @@
         var container = document.getElementById('actionButtons');
         container.innerHTML = '';
         addMsg(container,
-          '✅ Upgrade initiated. Please pay $' + amount + ' upgrade fee. Your expiration date is unchanged.',
+          t('upgradeInitiated') + amount + ' ' + t('upgradeFeeNote'),
           'action-msg-success');
         var cont = document.createElement('button');
         cont.className   = 'btn btn-primary';
-        cont.textContent = 'Continue to Payment →';
+        cont.textContent = t('continueToPayment');
         cont.addEventListener('click', function() {
           var _a2 = document.createElement('a');
           _a2.href = appBaseUrl + '?page=payment&intent=' + encodeURIComponent('Family Upgrade') + '&amount=' + amount;
@@ -542,11 +569,11 @@
         var container = document.getElementById('actionButtons');
         container.innerHTML = '';
         addMsg(container,
-          '✅ Upgrade cancelled. All members reverted to Individual.',
+          t('upgradeCancelled'),
           'action-msg-success');
         var cont = document.createElement('button');
         cont.className   = 'btn btn-secondary';
-        cont.textContent = 'Reload Dashboard →';
+        cont.textContent = t('reloadDashboard');
         cont.addEventListener('click', function() {
           navigateToPage('dashboard');
         });
