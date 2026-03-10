@@ -135,12 +135,17 @@ function getMemberPaymentHistory(jsonRequest: string): string {
   const payload = req.payload;
   try {
     const email = payload.email.trim().toLowerCase();
+    console.log('[mmr][getMemberPaymentHistory] fetching for email:', email, '| sessionID:', payload.sessionID);
 
     // 1. Resolve member
     const found = findMemberByEmail(email);
-    if (!found) return jsonError(req.requestId, 'MEMBER_NOT_FOUND', 'Member not found.');
+    if (!found) {
+      console.log('[mmr][getMemberPaymentHistory] member not found for email:', email);
+      return jsonError(req.requestId, 'MEMBER_NOT_FOUND', 'Member not found.');
+    }
     const member = found.member;
     const memberID = member.memberID;
+    console.log('[mmr][getMemberPaymentHistory] found member:', memberID, '| status:', member.status, '| expiration:', member.expiration);
 
     // 2. Expand to family scope: self + anyone sharing the same FamilyID
     let allMemberIDs: string[] = [memberID];
@@ -150,19 +155,57 @@ function getMemberPaymentHistory(jsonRequest: string): string {
         .map(m => m.memberID)
         .filter(id => id !== memberID);
       allMemberIDs = [memberID, ...familyIDs];
+      console.log('[mmr][getMemberPaymentHistory] family scope expanded:', allMemberIDs.join(','));
     }
 
     // 3. Gather data across entire family scope
     const payments = allMemberIDs.flatMap(id => getPaymentHistoryByMemberID(id));
     const events   = allMemberIDs.flatMap(id => getWebAppEventsByMemberID(id));
 
-    auditLog('PAYMENTHISTORY_VIEW', { sessionID: payload.sessionID, memberID });
+    console.log('[mmr][getMemberPaymentHistory] found', payments.length, 'payments and', events.length, 'events');
+    console.log('[mmr][getMemberPaymentHistory] payment details:', payments.map(p => ({ intent: p.paymentIntent, amount: p.amount, date: p.paymentDate })).join(' | '));
+
+    // Find pending payment events
+    // Include: dues_payment, family_switch, family_upgrade, AND PaymentProof (payment screenshot awaiting review)
+    const PAYMENT_TYPES = ['dues_payment', 'family_switch', 'family_upgrade', 'PaymentProof'];
+    const pendingPayments = events.filter(e => PAYMENT_TYPES.includes(e.eventType) && e.status === 'Pending');
+    console.log('[mmr][getMemberPaymentHistory] event summary - total:', events.length, '| pending payments:', pendingPayments.length);
+    if (pendingPayments.length > 0) {
+      console.log('[mmr][getMemberPaymentHistory] pending payment details:', pendingPayments.map(p => ({
+        eventType: p.eventType,
+        status: p.status,
+        timestamp: p.timestamp,
+        amount: p.amount
+      })).join(' | '));
+    }
+
+    auditLog('PAYMENTHISTORY_VIEW', {
+      sessionID: payload.sessionID,
+      memberID: memberID,
+      state: {
+        paymentCount: payments.length,
+        eventCount: events.length,
+        pendingPaymentCount: pendingPayments.length,
+        memberStatus: member.status,
+        expiration: member.expiration
+      }
+    });
 
     // Return memberID so frontend knows who "self" is (to label family entries)
-    return jsonOk(req.requestId, { memberID, payments, events });
+    // Also return pending count so frontend can show correct status without re-filtering
+    return jsonOk(req.requestId, { memberID, payments, events, pendingPaymentCount: pendingPayments.length });
   } catch (e: any) {
+    console.error('[mmr][getMemberPaymentHistory] error:', String(e));
+    auditLog('PAYMENTHISTORY_ERROR', {
+      sessionID: payload.sessionID,
+      errorMessage: String(e)
+    });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
+}
+
+function testMemberHistory() {
+   console.log(getMemberPaymentHistory(JSON.stringify({'payload':{'email':'cathylin@gmail.com'}}))); 
 }
 
 (globalThis as any).getOrCreateMemberProfile  = getOrCreateMemberProfile;

@@ -75,33 +75,33 @@
   <div id="globalMsg"></div>
 
   <div class="tabs">
-    <button class="tab active" onclick="showTab('pending')">Pending Renewals</button>
-    <button class="tab" onclick="showTab('unmatched')">Unmatched Payments</button>
-    <button class="tab" onclick="showTab('payment-proofs')">Payment Proofs</button>
-    <button class="tab" onclick="showTab('config')">Config</button>
+    <button class="tab active" onclick="showTab('pending')" data-i18n="tabPendingRenewals">Pending Renewals</button>
+    <button class="tab" onclick="showTab('unmatched')" data-i18n="tabUnmatchedPayments">Unmatched Payments</button>
+    <button class="tab" onclick="showTab('payment-proofs')" data-i18n="tabPaymentProofs">Payment Proofs</button>
+    <button class="tab" onclick="showTab('config')" data-i18n="tabConfig">Config</button>
   </div>
 
   <!-- Pending Renewals -->
   <div class="panel active" id="panel-pending">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <div>
-        <button class="btn-reconcile btn" onclick="reconcile()">⚡ Auto-Reconcile</button>
-        <button class="refresh-btn" style="margin-left:8px;" onclick="loadPending()">↻ Refresh</button>
+        <button class="btn-reconcile btn" onclick="reconcile()" data-i18n="btnAutoReconcile">⚡ Auto-Reconcile</button>
+        <button class="refresh-btn" style="margin-left:8px;" onclick="loadPending()" data-i18n="btnRefresh">↻ Refresh</button>
       </div>
     </div>
-    <div id="pending-list"><div class="empty-state">Loading…</div></div>
+    <div id="pending-list"><div class="empty-state" data-i18n="loadingText">Loading…</div></div>
   </div>
 
   <!-- Unmatched Payments -->
   <div class="panel" id="panel-unmatched">
-    <button class="refresh-btn" style="margin-bottom:16px;" onclick="loadUnmatched()">↻ Refresh</button>
-    <div id="unmatched-list"><div class="empty-state">Loading…</div></div>
+    <button class="refresh-btn" style="margin-bottom:16px;" onclick="loadUnmatched()" data-i18n="btnRefresh">↻ Refresh</button>
+    <div id="unmatched-list"><div class="empty-state" data-i18n="loadingText">Loading…</div></div>
   </div>
 
   <!-- Payment Proofs -->
   <div class="panel" id="panel-payment-proofs">
-    <button class="refresh-btn" style="margin-bottom:16px;" onclick="loadPaymentProofs()">↻ Refresh</button>
-    <div id="payment-proofs-list"><div class="empty-state">Loading…</div></div>
+    <button class="refresh-btn" style="margin-bottom:16px;" onclick="loadPaymentProofs()" data-i18n="btnRefresh">↻ Refresh</button>
+    <div id="payment-proofs-list"><div class="empty-state" data-i18n="loadingText">Loading…</div></div>
   </div>
 
   <!-- Config -->
@@ -109,9 +109,9 @@
     <div class="card">
       <table class="config-table">
         <thead>
-          <tr><th>Key</th><th>Value</th><th>Description</th><th></th></tr>
+          <tr><th data-i18n="colKey">Key</th><th data-i18n="colValue">Value</th><th data-i18n="colDescription">Description</th><th></th></tr>
         </thead>
-        <tbody id="config-body"><tr><td colspan="4" class="empty-state">Loading…</td></tr></tbody>
+        <tbody id="config-body"><tr><td colspan="4" class="empty-state" data-i18n="loadingText">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -121,10 +121,76 @@
   // ── i18n ─────────────────────────────────────────────────
   var TRANSLATIONS = {
     "en": {
-        "appTitle": "🛡️ Admin — Misty Mountain Runners"
+        "appTitle": "🛡️ Admin — Misty Mountain Runners",
+        "navDashboard": "← Dashboard",
+        "tabPendingRenewals": "Pending Renewals",
+        "tabUnmatchedPayments": "Unmatched Payments",
+        "tabPaymentProofs": "Payment Proofs",
+        "tabConfig": "Config",
+        "btnAutoReconcile": "⚡ Auto-Reconcile",
+        "btnRefresh": "↻ Refresh",
+        "loadingText": "Loading…",
+        "emptyState": "No items",
+        "colKey": "Key",
+        "colValue": "Value",
+        "colDescription": "Description",
+        "colMemberId": "Member ID",
+        "colName": "Name",
+        "colEmail": "Email",
+        "colType": "Type",
+        "colStatus": "Status",
+        "colExpiration": "Expiration",
+        "colWeChat": "WeChat",
+        "colAction": "Action",
+        "btnApprove": "Approve",
+        "btnReject": "Reject",
+        "btnAssign": "Assign",
+        "btnRunOcr": "Run OCR",
+        "labelMemberId": "Member ID",
+        "labelEmail": "Email",
+        "labelScreenshotFileId": "Screenshot File ID",
+        "badgePending": "Pending",
+        "badgeMatched": "Matched",
+        "badgeApproved": "Approved",
+        "badgeRejected": "Rejected",
+        "successMsg": "Operation completed successfully",
+        "errorMsg": "An error occurred"
     },
     "zh": {
-        "appTitle": "🛡️ 管理员 — 岚山跑团"
+        "appTitle": "🛡️ 管理员 — 岚山跑团",
+        "navDashboard": "← 主页",
+        "tabPendingRenewals": "待处理续费",
+        "tabUnmatchedPayments": "未匹配的支付",
+        "tabPaymentProofs": "支付证明",
+        "tabConfig": "配置",
+        "btnAutoReconcile": "⚡ 自动对账",
+        "btnRefresh": "↻ 刷新",
+        "loadingText": "加载中…",
+        "emptyState": "无项目",
+        "colKey": "键",
+        "colValue": "值",
+        "colDescription": "描述",
+        "colMemberId": "会员编号",
+        "colName": "姓名",
+        "colEmail": "电子邮件",
+        "colType": "类型",
+        "colStatus": "状态",
+        "colExpiration": "过期日期",
+        "colWeChat": "微信",
+        "colAction": "操作",
+        "btnApprove": "批准",
+        "btnReject": "拒绝",
+        "btnAssign": "分配",
+        "btnRunOcr": "运行OCR",
+        "labelMemberId": "会员编号",
+        "labelEmail": "电子邮件",
+        "labelScreenshotFileId": "截图文件ID",
+        "badgePending": "待处理",
+        "badgeMatched": "已匹配",
+        "badgeApproved": "已批准",
+        "badgeRejected": "已拒绝",
+        "successMsg": "操作成功完成",
+        "errorMsg": "发生错误"
     }
 };
 
@@ -526,7 +592,7 @@
     // configData is already populated from auth check (line 554), no need to fetch again
     if (!configData || Object.keys(configData).length === 0) {
       console.warn('[MMR][admin] configData not cached, fetching now');
-      callApi('getConfig', { adminEmail: adminEmail, caller: 'admin-page-config' })
+      callApi('getConfig', { adminEmail: adminEmail, caller: 'admin-page-config', sessionID: SESSION_ID })
         .then(function(data) {
           configData = data.config || {};
           renderConfigTable();
@@ -624,7 +690,7 @@
     // Verify admin status server-side before loading any panels.
     // getConfig() returns FORBIDDEN if the email is not in AdminEmails config.
     console.log('[MMR][admin] verifying admin status for:', adminEmail);
-    callApi('getConfig', { adminEmail: adminEmail, caller: 'admin-page-auth-check' })
+    callApi('getConfig', { adminEmail: adminEmail, caller: 'admin-page-auth-check', sessionID: SESSION_ID })
       .then(function(data) {
         console.log('[MMR][admin] admin verified, loading panels in parallel');
         // Seed configData from the auth check so Config tab doesn't need a second call

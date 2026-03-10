@@ -57,8 +57,30 @@
     .profile-row span { font-size: 14px; color: #1a1a1a; }
     .profile-row span.empty { color: #bbb; font-style: italic; }
     .profile-warning { background: #fff3e0; border: 1px solid #ffb74d; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #e65100; margin-bottom: 14px; }
-    #loading { text-align: center; padding: 60px; color: #888; }
+
+    /* Loading state: full-screen blocking overlay with spinner */
+    #loading {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.95); backdrop-filter: blur(2px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999; flex-direction: column; gap: 20px;
+      text-align: center; color: #555; font-size: 16px;
+    }
+    #loading.hidden { display: none; }
+
+    /* Spinner animation */
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #e0e0e0; border-top: 3px solid #2d7d46;
+      border-radius: 50%; animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
     #content { display: none; }
+    #content.shown { display: block; }
   </style>
 </head>
 <body>
@@ -77,8 +99,12 @@
   </div>
 </div>
 
+<div id="loading">
+  <div class="spinner"></div>
+  <div data-i18n="loadingProfile">Loading your profile…</div>
+</div>
+
 <div class="container">
-  <div id="loading">Loading your profile…</div>
   <div id="content">
 
     <!-- Status card -->
@@ -88,19 +114,19 @@
       <span class="status-badge" id="statusBadge"></span>
       <div class="info-grid">
         <div class="info-item">
-          <label>Membership Expires</label>
+          <label data-i18n="labelExpires">Membership Expires</label>
           <span class="expiry-date" id="expiryDate">—</span>
         </div>
         <div class="info-item">
-          <label>Join Year</label>
+          <label data-i18n="labelJoinYear">Join Year</label>
           <span id="joinYear">—</span>
         </div>
         <div class="info-item">
-          <label>Membership Type</label>
+          <label data-i18n="labelMemberType">Membership Type</label>
           <span id="memberType">—</span>
         </div>
         <div class="info-item">
-          <label>District</label>
+          <label data-i18n="labelDistrict">District</label>
           <span id="district">—</span>
         </div>
       </div>
@@ -145,15 +171,31 @@
         "profileWarning": "Some fields are empty — please update your profile.",
         "updateProfile": "Update Profile",
         "viewPendingRequests": "⏳ View Pending Requests",
-        "upgradePending": "⏳ Upgrade Pending",
-        "paymentPending": "⏳ Payment Pending",
+        "upgradePending": "⏳ Upgrade Under Review",
+        "paymentPending": "⏳ Processing... Under Review",
         "submitPaymentProof": "Submit Payment Proof",
         "manageFamily": "Manage Family",
         "cancelUpgrade": "Cancel Upgrade",
         "switchToFamily": "Switch to Family",
         "upgradeToFamily": "Upgrade to Family",
         "continueToPayment": "Continue to Payment →",
-        "reloadDashboard": "Reload Dashboard →"
+        "reloadDashboard": "Reload Dashboard →",
+        "labelExpires": "Membership Expires",
+        "labelJoinYear": "Join Year",
+        "labelMemberType": "Membership Type",
+        "labelDistrict": "District",
+        "labelName": "Name",
+        "labelEmail": "Email",
+        "labelPhone": "Phone",
+        "labelWechatID": "WeChat ID",
+        "notSet": "Not set",
+        "payDues": "Pay Dues",
+        "statusUpgradePending": "⏳ Upgrade Under Review",
+        "statusPaymentPending": "⏳ Processing... Under Review",
+        "statusExpiringVerySoon": "🔴 Expiring Very Soon",
+        "statusRenewSoon": "🟡 Active — Renew Soon",
+        "statusActive": "🟢 Active",
+        "statusInactive": "🔴 Inactive"
     },
     "zh": {
         "appTitle": "🏃 岚山跑团",
@@ -173,7 +215,23 @@
         "switchToFamily": "转换为家庭会员",
         "upgradeToFamily": "升级为家庭会员",
         "continueToPayment": "继续支付 →",
-        "reloadDashboard": "重新加载主页 →"
+        "reloadDashboard": "重新加载主页 →",
+        "labelExpires": "会员到期日期",
+        "labelJoinYear": "加入年份",
+        "labelMemberType": "会员类型",
+        "labelDistrict": "小分队",
+        "labelName": "姓名",
+        "labelEmail": "电子邮件",
+        "labelPhone": "电话",
+        "labelWechatID": "微信ID",
+        "notSet": "未设置",
+        "payDues": "支付会费",
+        "statusUpgradePending": "⏳ 升级等待中",
+        "statusPaymentPending": "⏳ 支付待审",
+        "statusExpiringVerySoon": "🔴 会员即将到期，请续费",
+        "statusRenewSoon": "🟡 正式会员 — 可以续费",
+        "statusActive": "🟢 正式会员",
+        "statusInactive": "🔴 过期或未付会员费"
     }
 };
 
@@ -301,38 +359,54 @@
     var badgeEl  = document.getElementById('statusBadge');
     var expiryEl = document.getElementById('expiryDate');
     var days = getDaysUntilExpiry(member.expiration);
+    var lang = getCurrentLanguage();
+    var trans = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+
+    console.log('[MMR][dashboard] renderStatusBadge:', {
+      memberStatus: member.status,
+      daysUntilExpiry: days,
+      hasPendingPayment: hasPendingPayment,
+      pendingEvent: pendingEvent ? {type: pendingEvent.eventType, status: pendingEvent.status} : null
+    });
 
     if (member.status === 'pending_upgrade') {
-      badgeEl.textContent  = '⏳ Upgrade Pending';
+      console.log('[MMR][dashboard]   → showing: Upgrade Pending');
+      badgeEl.textContent  = trans['statusUpgradePending'];
       badgeEl.className    = 'status-badge status-pending';
       expiryEl.className   = 'expiry-date expiring';
     } else if (pendingEvent) {
       // Show custom pending payment message
+      console.log('[MMR][dashboard]   → showing: custom pending event message');
       var paymentDate = new Date(pendingEvent.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
       badgeEl.innerHTML = '<div style="font-weight:600;color:#e65100;">Thank you for <strong>' + esc(pendingEvent.paymentIntent) + '</strong> on <strong>' + paymentDate + '</strong>. It is Pending review. You will receive an email soon.</div>';
       badgeEl.className    = 'status-badge status-pending';
       expiryEl.className   = 'expiry-date expiring';
     } else if (hasPendingPayment) {
-      badgeEl.textContent  = '⏳ Payment Pending';
+      console.log('[MMR][dashboard]   → showing: Payment Pending');
+      badgeEl.textContent  = trans['statusPaymentPending'];
       badgeEl.className    = 'status-badge status-pending';
       expiryEl.className   = 'expiry-date expiring';
     } else if (member.status === 'active') {
       if (days <= 7) {
-        badgeEl.textContent = '🔴 Expiring Very Soon';
+        console.log('[MMR][dashboard]   → showing: Expiring Very Soon');
+        badgeEl.textContent = trans['statusExpiringVerySoon'];
         badgeEl.className   = 'status-badge status-inactive';
         expiryEl.className  = 'expiry-date expired';
       } else if (days <= 42) {
-        badgeEl.textContent = '🟡 Active — Renew Soon';
+        console.log('[MMR][dashboard]   → showing: Active — Renew Soon');
+        badgeEl.textContent = trans['statusRenewSoon'];
         badgeEl.className   = 'status-badge status-expiring';
         expiryEl.className  = 'expiry-date expiring';
       } else {
-        badgeEl.textContent = '🟢 Active';
+        console.log('[MMR][dashboard]   → showing: Active');
+        badgeEl.textContent = trans['statusActive'];
         badgeEl.className   = 'status-badge status-active';
         expiryEl.className  = 'expiry-date active';
       }
     } else {
       // inactive
-      badgeEl.textContent = '🔴 Inactive';
+      console.log('[MMR][dashboard]   → showing: Inactive');
+      badgeEl.textContent = trans['statusInactive'];
       badgeEl.className   = 'status-badge status-inactive';
       expiryEl.className  = 'expiry-date expired';
     }
@@ -346,7 +420,7 @@
     var container = document.getElementById('actionButtons');
     container.innerHTML = '';
 
-    var PAYMENT_TYPES = ['dues_payment', 'family_switch', 'family_upgrade'];
+    var PAYMENT_TYPES = ['dues_payment', 'family_switch', 'family_upgrade', 'PaymentProof'];
     var pendingPaymentEvents = (events || []).filter(function(e) {
       return PAYMENT_TYPES.indexOf(e.eventType) !== -1 && e.status === 'Pending';
     });
@@ -589,12 +663,12 @@
     // Combine first and last name
     var fullName = (member.firstName || '') + (member.lastName ? ' ' + member.lastName : '');
     var fields = [
-      { label: 'Name',       value: fullName.trim() },
-      { label: 'Email',      value: member.email },
-      { label: 'Phone',      value: member.phoneNumber },
-      { label: 'WeChat ID',  value: member.wechatID },
-      { label: 'District',   value: member.district },
-      { label: 'Join Year',  value: member.joinYear },
+      { labelKey: 'labelName',    label: 'Name',       value: fullName.trim() },
+      { labelKey: 'labelEmail',   label: 'Email',      value: member.email },
+      { labelKey: 'labelPhone',   label: 'Phone',      value: member.phoneNumber },
+      { labelKey: 'labelWechatID', label: 'WeChat ID',  value: member.wechatID },
+      { labelKey: 'labelDistrict', label: 'District',   value: member.district },
+      { labelKey: 'labelJoinYear', label: 'Join Year',  value: member.joinYear },
     ];
     var anyEmpty = !member.firstName || !member.lastName || !member.phoneNumber;
     document.getElementById('profileWarning').style.display = anyEmpty ? 'block' : 'none';
@@ -605,12 +679,12 @@
       var div = document.createElement('div');
       div.className = 'profile-row';
       var lbl = document.createElement('label');
-      lbl.textContent = f.label;
+      lbl.textContent = t(f.labelKey);
       var val = document.createElement('span');
       if (f.value) {
         val.textContent = f.value;
       } else {
-        val.textContent = 'Not set';
+        val.textContent = t('notSet');
         val.className = 'empty';
       }
       div.appendChild(lbl);
@@ -620,7 +694,7 @@
   }
 
   // ---- Main render ----
-  function renderMember(member, events) {
+  function renderMember(member, events, pendingPaymentCount) {
     currentMember = member;
     cachedEvents  = events || [];
 
@@ -629,10 +703,8 @@
     document.getElementById('memberMeta').textContent =
       member.memberID + (member.familyID ? ' · Family ' + member.familyID : '');
 
-    var PAYMENT_TYPES   = ['dues_payment', 'family_switch', 'family_upgrade'];
-    var hasPendingPayment = (events || []).some(function(e) {
-      return PAYMENT_TYPES.indexOf(e.eventType) !== -1 && e.status === 'Pending';
-    });
+    // Use the authoritative pendingPaymentCount from backend
+    var hasPendingPayment = (pendingPaymentCount > 0);
 
     // Find the first pending event for this member
     var pendingEvent = null;
@@ -656,14 +728,15 @@
     renderActionButtons(member, events);
 
     // Admin button (non-blocking)
-    callApi('getConfig', { adminEmail: member.email, caller: 'dashboard-admin-check' })
+    callApi('getConfig', { adminEmail: member.email, caller: 'dashboard-admin-check', sessionID: SESSION_ID })
       .then(function() {
         document.getElementById('adminBtn').style.display = 'inline-block';
       })
       .catch(function() { /* not admin */ });
 
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('content').style.display = 'block';
+    // Hide loading overlay and show content
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('content').classList.add('shown');
   }
 
   // ---- Load config + member + payment history in parallel ----
@@ -676,7 +749,7 @@
   if (cached) {
     try {
       var m = JSON.parse(cached);
-      renderMember(m, []);
+      renderMember(m, [], 0); // No events or pending count in cache yet
     } catch (e) {
       console.error('[MMR][dashboard] failed to parse cached member:', e);
     }
@@ -684,7 +757,7 @@
 
   // Load all three data sources in true parallel (none wait for others)
   Promise.all([
-    callApi('getPublicConfig', {})
+    callApi('getPublicConfig', { sessionID: SESSION_ID })
       .then(function(data) { configCache = data || {}; })
       .catch(function() { /* use defaults */ }),
     callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID }),
@@ -693,22 +766,52 @@
     var profileData = results[1];
     var historyData = results[2];
 
+    console.log('[MMR][dashboard] ===== Data Loaded =====');
+    console.log('[MMR][dashboard] member:', profileData.member.memberID, '| status:', profileData.member.status, '| expiration:', profileData.member.expiration);
+    console.log('[MMR][dashboard] events count:', (historyData.events || []).length);
+
+    // Get pendingPaymentCount from backend (preferred) or fallback to local filtering
+    var pendingPaymentCount = historyData.pendingPaymentCount !== undefined ? historyData.pendingPaymentCount : 0;
+
+    console.log('[MMR][dashboard] pendingPaymentCount from backend:', historyData.pendingPaymentCount);
+
+    if (historyData.events && historyData.events.length > 0) {
+      var PAYMENT_TYPES = ['dues_payment', 'family_switch', 'family_upgrade', 'PaymentProof'];
+      var pendingPayments = historyData.events.filter(function(e) {
+        return PAYMENT_TYPES.indexOf(e.eventType) !== -1 && e.status === 'Pending';
+      });
+      console.log('[MMR][dashboard] local pending payment filter result:', pendingPayments.length);
+      if (pendingPayments.length > 0) {
+        pendingPayments.forEach(function(e) {
+          console.log('[MMR][dashboard]   - type:', e.eventType, '| status:', e.status, '| amount:', e.amount, '| date:', e.timestamp);
+        });
+      }
+
+      // Show all events for debugging
+      historyData.events.forEach(function(e, idx) {
+        console.log('[MMR][dashboard] event[' + idx + ']:', e.eventType, '| status:', e.status, '| memberID:', e.memberID);
+      });
+    }
+
     // Guard against server returning wrong memberID (GAS admin account fallback)
     if (cached && profileData.member.memberID !== currentMember?.memberID) {
       console.warn('[MMR][dashboard] server memberID mismatch — keeping cached session');
       // Still update events with correct data
-      renderMember(currentMember, historyData.events || []);
+      renderMember(currentMember, historyData.events || [], pendingPaymentCount);
       return;
     }
 
     sessionStorage.setItem('member', JSON.stringify(profileData.member));
-    renderMember(profileData.member, historyData.events || []);
+    renderMember(profileData.member, historyData.events || [], pendingPaymentCount);
   }).catch(function(err) {
     console.error('[MMR][dashboard] load error:', err && err.message);
+    // Show error message in loading overlay instead of hiding it
+    var loadingEl = document.getElementById('loading');
+    loadingEl.classList.remove('hidden'); // Ensure it's visible
     if (!cached) {
-      var loadingEl = document.getElementById('loading');
-      loadingEl.style.display = 'block';
-      loadingEl.innerHTML = 'Session expired. <a href="?page=login" style="color:#2d7d46">Sign in again</a>';
+      loadingEl.innerHTML = '<div style="font-size:18px;color:#c62828;margin-bottom:12px;">Session Expired</div><div data-i18n="sessionExpiredMsg">Please sign in again to continue.</div><br><a href="?page=login" style="color:#2d7d46;text-decoration:underline;font-weight:600;">Sign in</a>';
+    } else {
+      loadingEl.innerHTML = '<div style="font-size:18px;color:#c62828;margin-bottom:12px;">Connection Error</div><div data-i18n="loadError">Failed to load profile. Please refresh the page.</div>';
     }
   });
 

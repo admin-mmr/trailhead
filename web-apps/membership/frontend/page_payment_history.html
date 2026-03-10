@@ -100,14 +100,14 @@
 <body>
 <div class="card">
   <div class="card-header">
-    <button class="back-link" onclick="goToDashboard()">← Dashboard</button>
+    <button class="back-link" onclick="goToDashboard()" data-i18n="backDash">← Dashboard</button>
     <select id="languageSelector" class="language-selector">
       <option value="en">English</option>
       <option value="zh">中文</option>
     </select>
   </div>
 
-  <h2>🧾 Payment History</h2>
+  <h2 data-i18n="h2Title">🧾 Payment History</h2>
   <div class="member-id" id="member-id-display"></div>
 
   <div id="loading"><div class="spinner"></div></div>
@@ -120,28 +120,85 @@
     "en": {
         "appTitle": "🏃 Misty Mountain Runners",
         "h2Title": "🧾 Payment History",
-        "backDash": "← Dashboard"
+        "backDash": "← Dashboard",
+        "awaitingApproval": "⏳ Awaiting Admin Approval",
+        "whyUnchanged": "Why is my membership status unchanged?",
+        "pendingExplainer": "Your payment submission is received and under review. Once an admin verifies the payment, your status will be updated automatically. This usually takes 1–3 business days.",
+        "submitted": "Submitted",
+        "paymentLocated": "✓ Payment located in bank records",
+        "paymentProofsSection": "Payment Proof Submissions",
+        "you": "You",
+        "familyMember": "Family member",
+        "viewScreenshot": "View Screenshot",
+        "viewAdminQueue": "View in Admin Queue",
+        "noteLabel": "Note:",
+        "noConfirmedPayments": "No confirmed payments yet.",
+        "confirmedPaymentsSection": "✅ Confirmed Payments",
+        "coverage": "📅 Coverage:",
+        "rejectedSection": "❌ Rejected / Error",
+        "statusPending": "Pending",
+        "statusMatched": "Matched",
+        "statusApproved": "Approved",
+        "statusRejected": "Rejected",
+        "statusError": "Error",
+        "intentIndividual": "Individual Membership",
+        "intentFamily": "Family Membership",
+        "intentDues": "Dues Payment",
+        "codeSentTo": "Code sent to",
+        "enterCodeLabel": "Enter the 6-digit code from your inbox."
     },
     "zh": {
         "appTitle": "🏃 岚山跑团",
         "h2Title": "🧾 支付记录",
-        "backDash": "← 主页"
+        "backDash": "← 主页",
+        "awaitingApproval": "⏳ 等待管理员审核",
+        "whyUnchanged": "为什么我的会员资格状态没有更改？",
+        "pendingExplainer": "您的支付提交已收到并在审查中。管理员验证付款后，您的状态将自动更新。通常需要 1-3 个工作日。",
+        "submitted": "提交于",
+        "paymentLocated": "✓ 已在银行记录中找到付款",
+        "paymentProofsSection": "支付证明提交",
+        "you": "您",
+        "familyMember": "家庭成员",
+        "viewScreenshot": "查看截图",
+        "viewAdminQueue": "在管理员队列中查看",
+        "noteLabel": "备注：",
+        "noConfirmedPayments": "还没有已确认的支付。",
+        "confirmedPaymentsSection": "✅ 已确认的支付",
+        "coverage": "📅 有效期：",
+        "rejectedSection": "❌ 被拒绝/错误",
+        "statusPending": "待审",
+        "statusMatched": "已匹配",
+        "statusApproved": "已批准",
+        "statusRejected": "已拒绝",
+        "statusError": "错误",
+        "intentIndividual": "个人会员",
+        "intentFamily": "家庭会员",
+        "intentDues": "会费支付",
+        "codeSentTo": "验证码已发送至",
+        "enterCodeLabel": "请输入您收件箱中的6位验证码。"
     }
 };
 
+  // Helper to get translated text for dynamic content
+  function t(key) {
+    var lang = getCurrentLanguage();
+    var trans = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    return trans[key] || key;
+  }
+
   function applyTranslations(lang) {
-    var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    var trans = TRANSLATIONS[lang] || TRANSLATIONS['en'];
     var titleEl = document.getElementById('appTitle');
-    if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
+    if (titleEl && trans.appTitle) titleEl.textContent = trans.appTitle;
     var els = document.querySelectorAll('[data-i18n]');
     for (var i = 0; i < els.length; i++) {
       var k = els[i].getAttribute('data-i18n');
-      if (t[k] !== undefined) els[i].textContent = t[k];
+      if (trans[k] !== undefined) els[i].textContent = trans[k];
     }
     var pls = document.querySelectorAll('[data-i18n-placeholder]');
     for (var j = 0; j < pls.length; j++) {
       var k2 = pls[j].getAttribute('data-i18n-placeholder');
-      if (t[k2] !== undefined) pls[j].placeholder = t[k2];
+      if (trans[k2] !== undefined) pls[j].placeholder = trans[k2];
     }
   }
 
@@ -152,13 +209,32 @@
     return lang.startsWith('zh') ? 'zh' : 'en';
   }
 
+  // Global cache for payment data (to re-render on language change)
+  var cachedPaymentData = null;
+  var cachedMemberData = null;
+
   function setLanguage(lang) {
     if (['en','zh'].indexOf(lang) !== -1) {
       localStorage.setItem('portal_lang', lang);
       var sel = document.getElementById('languageSelector');
       if (sel) sel.value = lang;
       applyTranslations(lang);
+      // Re-render payment history with new language if data is cached
+      if (cachedPaymentData && cachedMemberData) {
+        renderPaymentHistory(cachedPaymentData, cachedMemberData);
+      }
     }
+  }
+
+  function renderPaymentHistory(data, member) {
+    var content = document.getElementById('content');
+    var split = renderEvents(data.events || []);
+    var html = '';
+    html += buildPendingHTML(split.pending);
+    html += buildProofsHTML(data.proofs || [], data.memberID || member.memberID);
+    html += buildConfirmedHTML(data.payments || []);
+    html += buildRejectedHTML(split.past);
+    content.innerHTML = html || '<div class="empty">No payment activity found.</div>';
   }
 
   function initLanguageSelector() {
@@ -235,12 +311,10 @@
 
   function buildPendingHTML(pending) {
     if (!pending.length) return '';
-    var html = '<div class="section-title">⏳ Awaiting Admin Approval</div>';
+    var html = '<div class="section-title">' + t('awaitingApproval') + '</div>';
     html += '<div class="pending-explainer">';
-    html += '<strong>Why is my membership status unchanged?</strong><br/>';
-    html += 'Your payment submission is received and under review. ';
-    html += 'Once an admin verifies the payment, your status will be updated automatically. ';
-    html += 'This usually takes 1–3 business days.';
+    html += '<strong>' + t('whyUnchanged') + '</strong><br/>';
+    html += t('pendingExplainer');
     html += '</div>';
     pending.forEach(function(e) {
       html += '<div class="row-card">';
@@ -253,9 +327,9 @@
       html += '<div class="row-meta">';
       html += '<span>$' + esc(e.amount) + '</span>';
       html += '<span>' + esc(e.paymentMethod) + '</span>';
-      html += '<span>Submitted ' + fmt(e.timestamp) + '</span>';
+      html += '<span>' + t('submitted') + ' ' + fmt(e.timestamp) + '</span>';
       if (e.status === 'Matched') {
-        html += '<span>✓ Payment located in bank records</span>';
+        html += '<span>' + t('paymentLocated') + '</span>';
       }
       html += '</div>';
       if (e.notes) {
@@ -270,13 +344,13 @@
     // --- NEW: build proofs section ---
   function buildProofsHTML(proofs, currentMemberID) {
     if (!proofs || !proofs.length) return '';
-    var html = '<div class="section-title">Payment Proof Submissions</div>';
+    var html = '<div class="section-title">' + t('paymentProofsSection') + '</div>';
     proofs.forEach(function(p) {
       var isOwn = p.memberID === currentMemberID;
-      var memberLabel = isOwn ? 'You' : 'Family member ' + esc(p.memberID);
+      var memberLabel = isOwn ? t('you') : t('familyMember') + ' ' + esc(p.memberID);
 
       var screenshotLink = p.screenshotFileId
-        ? ' &bull; <a href="https://drive.google.com/file/d/' + esc(p.screenshotFileId) + '/view" target="_blank">View Screenshot</a>'
+        ? ' &bull; <a href="https://drive.google.com/file/d/' + esc(p.screenshotFileId) + '/view" target="_blank">' + t('viewScreenshot') + '</a>'
         : '';
 
       // Deep-link into admin approval queue
@@ -284,7 +358,7 @@
       var approvalLink = isPending
         ? ' &bull; <a href="' + appBaseUrl + '?page=admin" target="_top" '
           + 'onclick="sessionStorage.setItem(\'adminFocusProof\',\'' + esc(p.eventID) + '\');return true;"'
-          + '>View in Admin Queue</a>'
+          + '>' + t('viewAdminQueue') + '</a>'
         : '';
 
       html += '<div class="row-card">';
@@ -301,7 +375,7 @@
       html += '</div>';
       if (p.notes) {
         html += '<div class="row-meta" style="margin-top:4px;color:#555">'
-              + '<span>Note: ' + esc(p.notes) + '</span></div>';
+              + '<span>' + t('noteLabel') + ' ' + esc(p.notes) + '</span></div>';
       }
       html += '</div>';
     });
@@ -312,8 +386,8 @@
 
 
   function buildConfirmedHTML(payments) {
-    if (!payments.length) return '<div class="empty">No confirmed payments yet.</div>';
-    var html = '<div class="section-title">✅ Confirmed Payments</div>';
+    if (!payments.length) return '<div class="empty">' + t('noConfirmedPayments') + '</div>';
+    var html = '<div class="section-title">' + t('confirmedPaymentsSection') + '</div>';
     payments.forEach(function(p) {
       html += '<div class="row-card">';
       html += '<div class="row-top">';
@@ -328,7 +402,7 @@
       if (p.memoField) html += '<span>' + esc(p.memoField) + '</span>';
       html += '</div>';
       if (p.periodStart && p.periodEnd) {
-        html += '<div class="period-bar">📅 Coverage: ' +
+        html += '<div class="period-bar">' + t('coverage') + ' ' +
           fmt(p.periodStart) + ' → ' + fmt(p.periodEnd) + '</div>';
       }
       html += '</div>';
@@ -341,7 +415,7 @@
       return e.status === 'Rejected' || e.status === 'Error';
     });
     if (!rejected.length) return '';
-    var html = '<div class="section-title">❌ Rejected / Error</div>';
+    var html = '<div class="section-title">' + t('rejectedSection') + '</div>';
     rejected.forEach(function(e) {
       html += '<div class="row-card">';
       html += '<div class="row-top">';
@@ -377,25 +451,13 @@
     })
     .then(function(data) {
       document.getElementById('loading').style.display = 'none';
-      var content = document.getElementById('content');
-      content.style.display = 'block';
+      document.getElementById('content').style.display = 'block';
 
-      var split = renderEvents(data.events || []);
-      var html = '';
+      // Cache data for language switching
+      cachedPaymentData = data;
+      cachedMemberData = member;
 
-      // 1. Pending submissions (with explainer)
-      html += buildPendingHTML(split.pending);
-
-      // 2. Payment proof submissions
-      html += buildProofsHTML(data.proofs || [], data.memberID || member.memberID);
-
-      // 3. Confirmed payments
-      html += buildConfirmedHTML(data.payments || []);
-
-      // 4. Rejected / errors
-      html += buildRejectedHTML(split.past);
-
-      content.innerHTML = html || '<div class="empty">No payment activity found.</div>';
+      renderPaymentHistory(data, member);
     })
     .catch(function(err) {
       document.getElementById('loading').style.display = 'none';

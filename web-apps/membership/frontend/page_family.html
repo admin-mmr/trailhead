@@ -52,52 +52,52 @@
 <body>
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:16px;flex:1;">
-    <h1>🏃 Misty Mountain Runners</h1>
-    <select id="languageSelector" class="language-selector"><option value="en">EN</option><option value="zh">中文</option></select>
+    <h1 id="appTitle" data-i18n="appTitle">🏃 Misty Mountain Runners</h1>
+    <select id="languageSelector" class="language-selector"><option value="en" data-i18n="langEnglish">English</option><option value="zh" data-i18n="langChinese">中文</option></select>
   </div>
-  <button onclick="navigateToPage('dashboard')">
+  <button onclick="navigateToPage('dashboard')" data-i18n="navDashboard">
     ← Dashboard
   </button>
 </div>
 
 <div class="container">
   <div class="card">
-    <h2>Family Members</h2>
+    <h2 data-i18n="pageTitle">Family Members</h2>
     <div id="msg" class="msg"></div>
 
     <!-- Family Members Table -->
     <div class="section" id="membersSection">
-      <h3>Current Family Members</h3>
+      <h3 data-i18n="sectionCurrent">Current Family Members</h3>
       <table id="membersTable">
         <thead>
           <tr>
-            <th>Member ID</th>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Type</th>
-            <th>Status</th>
-            <th>Expiration</th>
-            <th>WeChat</th>
-            <th>Action</th>
+            <th data-i18n="colMemberId">Member ID</th>
+            <th data-i18n="colName">Name</th>
+            <th data-i18n="colEmail">Email</th>
+            <th data-i18n="colType">Type</th>
+            <th data-i18n="colStatus">Status</th>
+            <th data-i18n="colExpiration">Expiration</th>
+            <th data-i18n="colWeChat">WeChat</th>
+            <th data-i18n="colAction">Action</th>
           </tr>
         </thead>
         <tbody id="membersBody">
         </tbody>
       </table>
-      <p id="noMembers" style="color: #999; font-size: 14px;">Loading family members...</p>
+      <p id="noMembers" style="color: #999; font-size: 14px;" data-i18n="noMembers">Loading family members...</p>
     </div>
 
     <!-- Add Family Member Section -->
     <div class="section">
-      <h3>Add Family Member</h3>
-      <p style="color: #666; font-size: 14px; margin-bottom: 16px;">Enter an email address to look up or invite a member.</p>
+      <h3 data-i18n="sectionAdd">Add Family Member</h3>
+      <p style="color: #666; font-size: 14px; margin-bottom: 16px;" data-i18n="addDesc">Enter an email address to look up or invite a member.</p>
 
       <div class="row">
         <div class="field">
-          <label>Email Address</label>
-          <input type="email" id="lookupEmail" placeholder="member@example.com" />
+          <label data-i18n="labelEmail">Email Address</label>
+          <input type="email" id="lookupEmail" data-i18n-placeholder="emailPlaceholder" placeholder="member@example.com" />
         </div>
-        <button class="btn btn-primary" onclick="lookupEmail()" id="lookupBtn">Look Up</button>
+        <button class="btn btn-primary" onclick="lookupEmail()" id="lookupBtn" data-i18n="btnLookUp">Look Up</button>
       </div>
 
       <!-- Lookup Result -->
@@ -107,35 +107,35 @@
 
       <!-- Create New Member Form (hidden initially) -->
       <div class="section-hidden" id="createNewMemberForm">
-        <h3 style="margin-top: 0;">Create New Family Member</h3>
-        <p style="color: #666; font-size: 14px; margin-bottom: 16px;">
+        <h3 style="margin-top: 0;" data-i18n="createNewTitle">Create New Family Member</h3>
+        <p style="color: #666; font-size: 14px; margin-bottom: 16px;" data-i18n="createNewDesc">
           This email is not in our system. Fill in their information below to add them to your family.
         </p>
 
         <div class="field">
-          <label>Email</label>
+          <label data-i18n="labelEmail">Email</label>
           <input type="email" id="newEmail" readonly />
         </div>
         <div class="field">
-          <label>First Name *</label>
-          <input type="text" id="newFirstName" placeholder="First name" required />
+          <label data-i18n="labelFirstName">First Name *</label>
+          <input type="text" id="newFirstName" data-i18n-placeholder="placeholderFirstName" placeholder="First name" required />
         </div>
         <div class="field">
-          <label>Last Name</label>
-          <input type="text" id="newLastName" placeholder="Last name" />
+          <label data-i18n="labelLastName">Last Name</label>
+          <input type="text" id="newLastName" data-i18n-placeholder="placeholderLastName" placeholder="Last name" />
         </div>
         <div class="field">
-          <label>Phone Number</label>
-          <input type="tel" id="newPhoneNumber" placeholder="Phone number" />
+          <label data-i18n="labelPhoneNumber">Phone Number</label>
+          <input type="tel" id="newPhoneNumber" data-i18n-placeholder="placeholderPhoneNumber" placeholder="Phone number" />
         </div>
         <div class="field">
-          <label>District</label>
-          <input type="text" id="newDistrict" placeholder="District" />
+          <label data-i18n="labelDistrict">District</label>
+          <input type="text" id="newDistrict" data-i18n-placeholder="placeholderDistrict" placeholder="District" />
         </div>
 
         <div style="display: flex; gap: 12px;">
-          <button class="btn btn-primary" onclick="submitNewMember()">Create & Add to Family</button>
-          <button class="btn btn-secondary" onclick="cancelNewMember()">Cancel</button>
+          <button class="btn btn-primary" onclick="submitNewMember()" data-i18n="btnCreate">Create & Add to Family</button>
+          <button class="btn btn-secondary" onclick="cancelNewMember()" data-i18n="btnCancel">Cancel</button>
         </div>
       </div>
     </div>
@@ -147,11 +147,83 @@
   var TRANSLATIONS = {
     "en": {
         "appTitle": "🏃 Misty Mountain Runners",
-        "navDashboard": "← Dashboard"
+        "navDashboard": "← Dashboard",
+        "langEnglish": "English",
+        "langChinese": "中文",
+        "pageTitle": "Family Members",
+        "sectionCurrent": "Current Family Members",
+        "sectionAdd": "Add Family Member",
+        "addDesc": "Enter an email address to look up or invite a member.",
+        "colMemberId": "Member ID",
+        "colName": "Name",
+        "colEmail": "Email",
+        "colType": "Type",
+        "colStatus": "Status",
+        "colExpiration": "Expiration",
+        "colWeChat": "WeChat",
+        "colAction": "Action",
+        "labelEmail": "Email Address",
+        "emailPlaceholder": "member@example.com",
+        "btnLookUp": "Look Up",
+        "noMembers": "Loading family members...",
+        "createNewTitle": "Create New Family Member",
+        "createNewDesc": "This email is not in our system. Fill in their information below to add them to your family.",
+        "labelFirstName": "First Name *",
+        "labelLastName": "Last Name",
+        "labelPhoneNumber": "Phone Number",
+        "labelDistrict": "District",
+        "placeholderFirstName": "First name",
+        "placeholderLastName": "Last name",
+        "placeholderPhoneNumber": "Phone number",
+        "placeholderDistrict": "District",
+        "btnCreate": "Create & Add to Family",
+        "btnCancel": "Cancel",
+        "btnRemove": "Remove",
+        "btnAdd": "Add to Family",
+        "btnEdit": "Edit",
+        "successMsg": "Operation completed successfully",
+        "errorMsg": "An error occurred",
+        "loadingText": "Loading…"
     },
     "zh": {
         "appTitle": "🏃 岚山跑团",
-        "navDashboard": "← 主页"
+        "navDashboard": "← 主页",
+        "langEnglish": "English",
+        "langChinese": "中文",
+        "pageTitle": "家庭成员",
+        "sectionCurrent": "当前家庭成员",
+        "sectionAdd": "添加家庭成员",
+        "addDesc": "输入电子邮件地址以查找或邀请成员。",
+        "colMemberId": "会员编号",
+        "colName": "姓名",
+        "colEmail": "电子邮件",
+        "colType": "类型",
+        "colStatus": "状态",
+        "colExpiration": "过期日期",
+        "colWeChat": "微信",
+        "colAction": "操作",
+        "labelEmail": "电子邮件地址",
+        "emailPlaceholder": "member@example.com",
+        "btnLookUp": "查找",
+        "noMembers": "加载家庭成员中...",
+        "createNewTitle": "创建新的家庭成员",
+        "createNewDesc": "该电子邮件不在我们的系统中。请填写以下信息以将其添加到您的家庭。",
+        "labelFirstName": "名字 *",
+        "labelLastName": "姓氏",
+        "labelPhoneNumber": "电话号码",
+        "labelDistrict": "地区",
+        "placeholderFirstName": "名字",
+        "placeholderLastName": "姓氏",
+        "placeholderPhoneNumber": "电话号码",
+        "placeholderDistrict": "地区",
+        "btnCreate": "创建并添加到家庭",
+        "btnCancel": "取消",
+        "btnRemove": "移除",
+        "btnAdd": "添加到家庭",
+        "btnEdit": "编辑",
+        "successMsg": "操作成功完成",
+        "errorMsg": "发生错误",
+        "loadingText": "加载中…"
     }
 };
 
@@ -293,7 +365,7 @@ async function loadFamilyMembers() {
         <td>
           ${m.memberID === member.memberID ?
             '<em style="color:#999">Primary</em>' :
-            `<button class="btn btn-danger" onclick="removeMember('${m.email}')">Remove</button>`
+            `<button class="btn btn-danger" onclick="removeMember('${m.email}')">` + t('btnRemove') + `</button>`
           }
         </td>
       </tr>
@@ -329,7 +401,7 @@ async function lookupEmail() {
           Email: ${result.member.email}<br/>
           Member ID: ${result.member.memberID}
         </p>
-        <button class="btn btn-primary" onclick="addExistingMember('${email}')">Add to Family</button>
+        <button class="btn btn-primary" onclick="addExistingMember('${email}')">` + t('btnAdd') + `</button>
       `;
       resultDiv.classList.add('show');
       createForm.classList.add('section-hidden');

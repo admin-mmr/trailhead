@@ -255,6 +255,9 @@ let configMapCache: ConfigMap | null = null;
 let configCacheTime = 0;
 const CONFIG_CACHE_TTL_MS = 60000; // 60 second cache per GAS execution
 
+// Session-based config cache — keyed by sessionID to avoid repeated fetches within a session
+const configCacheBySession: Record<string, ConfigMap> = {};
+
 function getSheet(name: string): GoogleAppsScript.Spreadsheet.Sheet {
   const id = GMAIL_SHEETS.has(name) ? GMAIL_SPREADSHEET_ID : MEMBERSHIP_SPREADSHEET_ID;
   const ss = SpreadsheetApp.openById(id);
@@ -282,11 +285,20 @@ function getSheet(name: string): GoogleAppsScript.Spreadsheet.Sheet {
   return sheet;
 }
 
-function getConfigMap(): ConfigMap {
-  // Check cache first — reduces duplicate sheet reads during admin operations
+function getConfigMap(sessionID?: string): ConfigMap {
+  // Check session-based cache first (if sessionID provided)
+  if (sessionID && configCacheBySession[sessionID]) {
+    console.log('[config] getConfigMap session cache hit for:', sessionID);
+    return configCacheBySession[sessionID];
+  }
+
+  // Check global cache — reduces duplicate sheet reads during single GAS execution
   const now = Date.now();
   if (configMapCache !== null && (now - configCacheTime) < CONFIG_CACHE_TTL_MS) {
-    console.log('[config] getConfigMap cache hit, skipping sheet read');
+    console.log('[config] getConfigMap global cache hit, skipping sheet read');
+    if (sessionID) {
+      configCacheBySession[sessionID] = configMapCache;
+    }
     return configMapCache;
   }
 
@@ -301,15 +313,19 @@ function getConfigMap(): ConfigMap {
     if (key) map[key] = value;
   }
 
-  // Store in cache
+  // Store in both caches
   configMapCache = map;
   configCacheTime = now;
+  if (sessionID) {
+    configCacheBySession[sessionID] = map;
+  }
 
+  console.log('[config] getConfigMap loaded', Object.keys(map).length, 'config entries');
   return map;
 }
 
-function getConfigValue(key: string): string {
-  return getConfigMap()[key] ?? '';
+function getConfigValue(key: string, sessionID?: string): string {
+  return getConfigMap(sessionID)[key] ?? '';
 }
 
 function setConfigValue(key: string, value: string): void {

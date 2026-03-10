@@ -336,7 +336,174 @@ function navigateToPage(url) {
   }
 }
 
+// ============================================================
+// Translation Validation Utility
+// Helps identify untranslated text on pages
+// ============================================================
+
+/**
+ * Validates that all user-visible text has translations
+ * Warnings are logged to console for any missing translations
+ * Returns array of issues found
+ */
+function validateTranslations(options = {}) {
+  const {
+    debugHighlight = false,     // Highlight untranslated text in page
+    logToConsole = true,        // Log warnings to console
+    ignoreTags = ['SCRIPT', 'STYLE', 'META']  // Ignore these tags
+  } = options;
+
+  const issues = [];
+  const seenText = new Set();  // Track duplicates
+
+  // Helper to check if element has translation attribute
+  function hasTranslation(el) {
+    return el.hasAttribute('data-i18n') ||
+           el.hasAttribute('data-i18n-placeholder') ||
+           el.hasAttribute('data-i18n-title');
+  }
+
+  // Walk through all text nodes
+  function walkTextNodes(node) {
+    for (let i = 0; i < node.childNodes.length; i++) {
+      const child = node.childNodes[i];
+
+      if (child.nodeType === Node.TEXT_NODE) {
+        const text = child.textContent.trim();
+        // Skip empty, whitespace-only, or numeric text
+        if (text.length > 2 && !/^\d+$/.test(text) && !seenText.has(text)) {
+          seenText.add(text);
+
+          const parent = child.parentElement;
+          // Check if parent or ancestor has translation attribute
+          let hasTranslationAttr = false;
+          let el = parent;
+          while (el && el.tagName !== 'BODY') {
+            if (hasTranslation(el)) {
+              hasTranslationAttr = true;
+              break;
+            }
+            el = el.parentElement;
+          }
+
+          // Check if this is obviously not user-facing (internal UI)
+          const isUserFacing = parent && !ignoreTags.includes(parent.tagName);
+
+          if (isUserFacing && !hasTranslationAttr) {
+            issues.push({
+              text: text.substring(0, 100),  // Truncate long text
+              element: parent.tagName,
+              elementId: parent.id,
+              elementClass: parent.className,
+              recommendation: `Add data-i18n="${text.toLowerCase().replace(/\s+/g, '_')}" to parent element`
+            });
+
+            if (debugHighlight) {
+              parent.style.outline = '2px solid red';
+              parent.title = `UNTRANSLATED: "${text}"`;
+            }
+          }
+        }
+      } else if (child.nodeType === Node.ELEMENT_NODE && !ignoreTags.includes(child.tagName)) {
+        walkTextNodes(child);
+      }
+    }
+  }
+
+  // Start validation from body
+  if (document.body) {
+    walkTextNodes(document.body);
+  }
+
+  // Log results
+  if (logToConsole) {
+    if (issues.length === 0) {
+      console.log('✅ [Translation Validation] All visible text appears to have translation attributes');
+    } else {
+      console.warn(`⚠️  [Translation Validation] Found ${issues.length} potentially untranslated text nodes:`);
+      issues.forEach((issue, idx) => {
+        console.warn(`  ${idx + 1}. "${issue.text}" in <${issue.element}${issue.elementId ? '#' + issue.elementId : ''}>`);
+        console.warn(`     Recommendation: ${issue.recommendation}`);
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Enable translation validation debug mode
+ * Highlights untranslated text with red outline and shows console warnings
+ * Useful during development to catch missing translations
+ */
+function enableTranslationDebugMode() {
+  console.log('[MMR] Translation Debug Mode ENABLED');
+  window.MMR_TRANSLATION_DEBUG = true;
+
+  // Validate on load
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      validateTranslations({
+        debugHighlight: true,
+        logToConsole: true
+      });
+    }, 500);  // Wait for translations to apply
+  });
+
+  // Re-validate when language changes
+  const originalSetLanguage = window.setLanguage;
+  window.setLanguage = function(lang) {
+    originalSetLanguage.call(this, lang);
+    setTimeout(() => {
+      validateTranslations({
+        debugHighlight: true,
+        logToConsole: true
+      });
+    }, 500);
+  };
+}
+
+/**
+ * Get a summary of all translation keys used in TRANSLATIONS dictionary
+ * Useful for auditing what keys are defined
+ */
+function getTranslationKeySummary() {
+  const summary = {
+    english: Object.keys(I18N_MESSAGES.en || {}),
+    chinese: Object.keys(I18N_MESSAGES.zh || {}),
+    missingInChinese: [],
+    missingInEnglish: []
+  };
+
+  // Find keys in English but not Chinese
+  summary.english.forEach(key => {
+    if (!I18N_MESSAGES.zh || !I18N_MESSAGES.zh[key]) {
+      summary.missingInChinese.push(key);
+    }
+  });
+
+  // Find keys in Chinese but not English
+  Object.keys(I18N_MESSAGES.zh || {}).forEach(key => {
+    if (!I18N_MESSAGES.en || !I18N_MESSAGES.en[key]) {
+      summary.missingInEnglish.push(key);
+    }
+  });
+
+  console.log('[Translation Summary]', summary);
+  return summary;
+}
+
 // Export for use in pages
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { t, getCurrentLanguage, setLanguage, applyTranslations, initLanguageSelector, navigateToPage };
+  module.exports = {
+    t,
+    getCurrentLanguage,
+    setLanguage,
+    applyTranslations,
+    initLanguageSelector,
+    navigateToPage,
+    validateTranslations,
+    enableTranslationDebugMode,
+    getTranslationKeySummary
+  };
 }

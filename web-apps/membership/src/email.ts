@@ -57,7 +57,7 @@ Misty Mountain Runners`;
 
   sendEmail({
     to: m.email,
-    // cc: adminEmail,
+    cc: adminEmail,
     subject,
     body,
   });

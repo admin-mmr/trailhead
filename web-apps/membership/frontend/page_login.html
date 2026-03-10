@@ -97,7 +97,7 @@
 <div class="card">
   <div class="logo">🏃</div>
   <div class="header-row">
-    <div class="app-title">Misty Mountain Runners</div>
+    <div class="app-title" id="appTitle" data-i18n="appTitle">Misty Mountain Runners</div>
     <select id="languageSelector" class="language-selector">
       <option value="en">English</option>
       <option value="zh">中文</option>
@@ -132,8 +132,8 @@
   <div id="state-returning" style="display:none">
     <div class="result-box returning">
       <div class="result-icon">👋</div>
-      <h3>Welcome back, <span id="returning-name"></span>!</h3>
-      <p>Member ID: <strong id="returning-memberid"></strong></p>
+      <h3><span data-i18n="welcomeBack">Welcome back</span>, <span id="returning-name"></span>!</h3>
+      <p><span data-i18n="memberIDLabel">Member ID</span>: <strong id="returning-memberid"></strong></p>
     </div>
 
     <div id="msg-returning" class="msg"></div>
@@ -145,14 +145,14 @@
              inputmode="numeric" autocomplete="one-time-code"
              onkeydown="if(event.key==='Enter') verifyOtp('returning')" />
       <button class="btn btn-primary" id="verifyBtn-returning"
-              onclick="verifyOtp('returning')">
+              onclick="verifyOtp('returning')" data-i18n="verifyBtn">
         Verify Code →
       </button>
       <button class="btn btn-outline" id="sendBtn-returning"
-              onclick="sendOtp('returning')">
+              onclick="sendOtp('returning')" data-i18n="sendNewCodeBtn">
         Send Me a New Code
       </button>
-      <button class="btn-ghost" onclick="goBack()">← Try a different email</button>
+      <button class="btn-ghost" onclick="goBack()" data-i18n="backBtn">← Try a different email</button>
     </div>
   </div>
 
@@ -167,16 +167,16 @@
     </div>
 
     <div id="msg-new-ask" class="msg"></div>
-    <p style="font-size:14px;color:#444;margin-bottom:16px;text-align:center;">
+    <p style="font-size:14px;color:#444;margin-bottom:16px;text-align:center;" data-i18n="areYouNewMember">
       Are you a new member?
     </p>
 
     <button class="btn btn-primary" id="newMemberYesBtn"
-            onclick="startNewMemberOtp()">
+            onclick="startNewMemberOtp()" data-i18n="newMemberYes">
       Yes — Register Me →
     </button>
     <button class="btn-ghost" style="display:block;text-align:center;width:100%;margin-top:4px;"
-            onclick="goBack()">
+            onclick="goBack()" data-i18n="newMemberNo">
       ← No, go back and change email
     </button>
   </div>
@@ -187,27 +187,27 @@
   <div id="state-new-verify" style="display:none">
     <div class="result-box new-member">
       <div class="result-icon">✉️</div>
-      <h3>Verify your email</h3>
+      <h3 data-i18n="verifyEmailTitle">Verify your email</h3>
       <p>Code sent to<br/><strong id="new-verify-email"></strong></p>
     </div>
 
     <div id="msg-new-verify" class="msg"></div>
 
     <div class="otp-section">
-      <label>Enter the 6-digit code from your inbox.</label>
+      <label data-i18n="codeFromInbox">Enter the 6-digit code from your inbox.</label>
       <input type="text" id="otpInput-new"
              placeholder="6-digit code" maxlength="6"
              inputmode="numeric" autocomplete="one-time-code"
              onkeydown="if(event.key==='Enter') verifyOtp('new')" />
       <button class="btn btn-primary" id="verifyBtn-new"
-              onclick="verifyOtp('new')">
+              onclick="verifyOtp('new')" data-i18n="verifyBtn">
         Verify Code →
       </button>
       <button class="btn btn-outline" id="sendBtn-new"
-              onclick="sendOtp('new')">
+              onclick="sendOtp('new')" data-i18n="resendCodeBtn">
         Resend Code
       </button>
-      <button class="btn-ghost" onclick="goBack()">← Go back</button>
+      <button class="btn-ghost" onclick="goBack()" data-i18n="goBackBtn">← Go back</button>
     </div>
   </div>
 
@@ -216,7 +216,7 @@
   ════════════════════════════════════════════ -->
   <div id="state-continue" style="display:none">
     <div id="continue-msg" style="margin-bottom:20px;"></div>
-    <button class="btn btn-primary" id="continueBtn" onclick="onContinueClick()">
+    <button class="btn btn-primary" id="continueBtn" onclick="onContinueClick()" data-i18n="continueBtn">
       Continue →
     </button>
   </div>
@@ -231,42 +231,88 @@
         "appTitle": "🏃 Misty Mountain Runners",
         "subtitle": "Sign in or register",
         "checkEmailBtn": "Continue →",
+        "checking": "Checking",
         "otpLabel": "Enter your one-time login code, or request a new one.",
         "verifyBtn": "Verify Code →",
+        "verifying": "Verifying",
+        "sending": "Sending",
         "sendNewCodeBtn": "Send Me a New Code",
+        "resendCodeBtn": "Resend Code",
         "backBtn": "← Try a different email",
+        "welcomeBack": "Welcome back",
+        "memberIDLabel": "Member ID",
         "noAccountTitle": "No account found",
         "newMemberYes": "Yes — Register Me →",
-        "newMemberNo": "No — Try a different email"
+        "newMemberNo": "No — Try a different email",
+        "sendingCode": "Sending code",
+        "areYouNewMember": "Are you a new member?",
+        "verifyEmailTitle": "Verify your email",
+        "codeFromInbox": "Enter the 6-digit code from your inbox.",
+        "goBackBtn": "← Go back",
+        "otpInfoMsg": "Enter your login code from your email, or click below to request a new one.",
+        "continueBtn": "Continue →",
+        "loading": "Loading",
+        "invalidEmail": "Please enter a valid email address.",
+        "emailVerified": "Email verified!",
+        "setupAccount": "Let's set up your account for"
     },
     "zh": {
         "appTitle": "🏃 岚山跑团",
         "subtitle": "登录或注册",
         "checkEmailBtn": "继续 →",
+        "checking": "正在检查",
         "otpLabel": "请输入一次性验证码，或申请新验证码。",
         "verifyBtn": "验证 →",
+        "verifying": "正在验证",
+        "sending": "正在发送",
         "sendNewCodeBtn": "发送新验证码",
+        "resendCodeBtn": "重新发送验证码",
         "backBtn": "← 更换邮箱",
+        "welcomeBack": "欢迎回来",
+        "memberIDLabel": "会员编号",
         "noAccountTitle": "未找到账号",
         "newMemberYes": "是，帮我注册 →",
-        "newMemberNo": "否 — 更换邮箱"
+        "newMemberNo": "否 — 更换邮箱",
+        "sendingCode": "正在发送验证码",
+        "areYouNewMember": "您是新会员吗？",
+        "verifyEmailTitle": "验证您的邮箱",
+        "codeFromInbox": "请输入您收件箱中的6位验证码。",
+        "goBackBtn": "← 返回",
+        "otpInfoMsg": "请输入您邮箱中的登录码，或点击下方申请新验证码。",
+        "continueBtn": "继续 →",
+        "loading": "加载中",
+        "invalidEmail": "请输入有效的电子邮件地址。",
+        "emailVerified": "电子邮件已验证！",
+        "setupAccount": "让我们为以下账户设置您的信息"
     }
 };
 
   function applyTranslations(lang) {
     var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    console.log('[MMR][login] applyTranslations(' + lang + ') - found', Object.keys(t).length, 'translation keys');
     var titleEl = document.getElementById('appTitle');
     if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
     var els = document.querySelectorAll('[data-i18n]');
+    console.log('[MMR][login] found', els.length, 'elements with data-i18n attribute');
     for (var i = 0; i < els.length; i++) {
       var k = els[i].getAttribute('data-i18n');
-      if (t[k] !== undefined) els[i].textContent = t[k];
+      if (t[k] !== undefined) {
+        console.log('[MMR][login] translating [data-i18n="' + k + '"] to "' + t[k] + '"');
+        els[i].textContent = t[k];
+      }
     }
     var pls = document.querySelectorAll('[data-i18n-placeholder]');
     for (var j = 0; j < pls.length; j++) {
       var k2 = pls[j].getAttribute('data-i18n-placeholder');
       if (t[k2] !== undefined) pls[j].placeholder = t[k2];
     }
+  }
+
+  // Helper to get translated text for dynamic button updates
+  function t(key) {
+    var lang = getCurrentLanguage();
+    var trans = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    return trans[key] || key;
   }
 
   function getCurrentLanguage() {
@@ -281,8 +327,28 @@
       localStorage.setItem('portal_lang', lang);
       var sel = document.getElementById('languageSelector');
       if (sel) sel.value = lang;
+      console.log('[MMR][login] setLanguage(' + lang + ')');
       applyTranslations(lang);
     }
+  }
+
+  function initSessionConfig() {
+    // Pre-load config on page load to avoid repeated API calls during session
+    var cached = getSessionConfig();
+    if (cached) {
+      console.log('[MMR][login] using cached config from sessionStorage');
+      return; // Already loaded, skip server call
+    }
+    // Load config for this session (triggers server-side cache per sessionID)
+    callApi('initializeSessionConfig', { sessionID: SESSION_ID })
+      .then(function(data) {
+        setSessionConfig(data.config || {});
+        console.log('[MMR][login] session config initialized and cached');
+      })
+      .catch(function(err) {
+        console.warn('[MMR][login] failed to initialize session config:', err);
+        // Gracefully continue even if config load fails
+      });
   }
 
   function initLanguageSelector() {
@@ -294,7 +360,13 @@
     }
     applyTranslations(lang);
   }
-  document.addEventListener('DOMContentLoaded', initLanguageSelector);
+
+  function onPageReady() {
+    initLanguageSelector();
+    initSessionConfig(); // Pre-load config to avoid repeated API calls
+  }
+
+  document.addEventListener('DOMContentLoaded', onPageReady);
 
   console.log('[MMR][login] page loaded, location:', window.location.href);
   var appBaseUrl = '__SCRIPT_URL__';
@@ -313,6 +385,31 @@
   var SESSION_ID = Math.random().toString(36).slice(2);
   var pendingPage = 'dashboard';
   var currentEmail = '';
+
+  // ── Session Config Cache ──────────────────────────────────
+  // Store config in sessionStorage (shared across pages within same session)
+  // to avoid repeated API calls. Cache key doesn't include SESSION_ID because
+  // we want to reuse config across multiple page navigations.
+  function getSessionConfig() {
+    var cached = sessionStorage.getItem('MMR_CONFIG');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {
+        console.warn('[MMR][login] failed to parse cached config:', e);
+      }
+    }
+    return null;
+  }
+
+  function setSessionConfig(config) {
+    try {
+      sessionStorage.setItem('MMR_CONFIG', JSON.stringify(config));
+      console.log('[MMR][login] config cached in sessionStorage (persists across pages)');
+    } catch (e) {
+      console.warn('[MMR][login] failed to cache config:', e);
+    }
+  }
 
   // ── Utilities ──────────────────────────────────────────────
 
@@ -353,6 +450,8 @@
       if (el) el.style.display = (s === name) ? 'block' : 'none';
     });
     document.getElementById('dbg').textContent = 'State: ' + name;
+    // Re-apply translations to newly visible state
+    applyTranslations(getCurrentLanguage());
   }
 
   function goBack() {
@@ -378,7 +477,7 @@
           sessionStorage.setItem('pending_email', data.email);
           showContinue(
             '<div class="result-box new-member"><div class="result-icon">✅</div>' +
-            '<h3>Email verified</h3><p>New member registration for<br/><strong>' +
+            '<h3>' + t('emailVerified') + '</h3><p>' + t('setupAccount') + '<br/><strong>' +
             esc(data.email) + '</strong></p></div>',
             'newmember'
           );
@@ -386,8 +485,8 @@
           sessionStorage.setItem('member', JSON.stringify(data.member));
           showContinue(
             '<div class="result-box returning"><div class="result-icon">✅</div>' +
-            '<h3>Welcome back, ' + esc(data.member.firstName || data.member.email) + '!</h3>' +
-            '<p>Signed in with Google</p></div>',
+            '<h3>' + t('welcomeBack') + ', ' + esc(data.member.firstName || data.member.email) + '!</h3>' +
+            '<p>' + t('memberIDLabel') + ': <strong>' + esc(data.member.memberID) + '</strong></p></div>',
             'dashboard'
           );
         }
@@ -404,18 +503,18 @@
   function checkEmail() {
     var email = document.getElementById('emailInput').value.trim().toLowerCase();
     if (!email || !email.includes('@')) {
-      return showMsg('email', 'Please enter a valid email address.', 'error');
+      return showMsg('email', t('invalidEmail'), 'error');
     }
     currentEmail = email;
     clearMsg('email');
     var btn = document.getElementById('checkEmailBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Checking…';
+    btn.innerHTML = '<span class="spinner"></span> ' + t('checking') + '…';
 
     callApi('lookupEmail', { email: email, sessionID: SESSION_ID })
       .then(function(data) {
         btn.disabled = false;
-        btn.textContent = 'Continue →';
+        btn.textContent = t('checkEmailBtn');
         if (data.found) {
           // Returning member
           document.getElementById('returning-name').textContent =
@@ -426,7 +525,7 @@
           document.getElementById('otpInput-returning').focus();
           // Don't auto-send OTP — a valid code may already exist.
           // Show instructions instead; user types code from inbox or requests a new one.
-          showMsg('returning', 'Enter your login code from your email, or click below to request a new one.', 'info');
+          showMsg('returning', t('otpInfoMsg'), 'info');
         } else {
           // Not found — ask if new member
           document.getElementById('new-ask-email').textContent = email;
@@ -449,20 +548,20 @@
     var msgId = context === 'returning' ? 'returning' : 'new-verify';
     var btn = document.getElementById(btnId);
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Sending…';
+    btn.innerHTML = '<span class="spinner"></span> ' + t('sending') + '…';
     clearMsg(msgId);
 
     callApi('requestEmailOtp', { email: currentEmail, sessionID: SESSION_ID })
       .then(function() {
         btn.disabled = false;
-        btn.textContent = context === 'returning' ? 'Send Me a New Code' : 'Resend Code';
+        btn.textContent = context === 'returning' ? t('sendNewCodeBtn') : t('resendCodeBtn');
         showMsg(msgId, '✓ Code sent to ' + currentEmail + '. Check your inbox.', 'success');
         var inputId = context === 'returning' ? 'otpInput-returning' : 'otpInput-new';
         document.getElementById(inputId).focus();
       })
       .catch(function(err) {
         btn.disabled = false;
-        btn.textContent = context === 'returning' ? 'Send Me a New Code' : 'Resend Code';
+        btn.textContent = context === 'returning' ? t('sendNewCodeBtn') : t('resendCodeBtn');
         showMsg(msgId, err.message || 'Failed to send code. Please try again.', 'error');
       });
   }
@@ -472,13 +571,13 @@
   function startNewMemberOtp() {
     var btn = document.getElementById('newMemberYesBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Sending code…';
+    btn.innerHTML = '<span class="spinner"></span> ' + t('sendingCode') + '…';
     clearMsg('new-ask');
 
     callApi('requestEmailOtp', { email: currentEmail, sessionID: SESSION_ID })
       .then(function() {
         btn.disabled = false;
-        btn.textContent = 'Yes — Register Me →';
+        btn.textContent = t('newMemberYes');
         document.getElementById('new-verify-email').textContent = currentEmail;
         clearMsg('new-verify');
         showState('new-verify');
@@ -486,7 +585,7 @@
       })
       .catch(function(err) {
         btn.disabled = false;
-        btn.textContent = 'Yes — Register Me →';
+        btn.textContent = t('newMemberYes');
         showMsg('new-ask', err.message || 'Failed to send code. Please try again.', 'error');
       });
   }
@@ -506,13 +605,13 @@
 
     var btn = document.getElementById(btnId);
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Verifying…';
+    btn.innerHTML = '<span class="spinner"></span> ' + t('verifying') + '…';
     clearMsg(msgId);
 
     callApi('verifyEmailOtp', { email: currentEmail, otpCode: otpCode, sessionID: SESSION_ID })
       .then(function(data) {
         btn.disabled = false;
-        btn.textContent = 'Verify Code →';
+        btn.textContent = t('verifyBtn');
 
         if (data.otpNotFound) {
           // Stay on the same screen, but show the message from the server
@@ -524,23 +623,23 @@
           sessionStorage.setItem('pending_email', data.email);
           showContinue(
             '<div class="result-box new-member"><div class="result-icon">✅</div>' +
-            '<h3>Email verified!</h3>' +
-            '<p>Let\'s set up your account for<br/><strong>' + esc(data.email) + '</strong></p></div>',
+            '<h3>' + t('emailVerified') + '</h3>' +
+            '<p>' + t('setupAccount') + '<br/><strong>' + esc(data.email) + '</strong></p></div>',
             'newmember'
           );
         } else {
           sessionStorage.setItem('member', JSON.stringify(data.member));
           showContinue(
             '<div class="result-box returning"><div class="result-icon">✅</div>' +
-            '<h3>Welcome back, ' + esc(data.member.firstName || data.member.email) + '!</h3>' +
-            '<p>Member ID: <strong>' + esc(data.member.memberID) + '</strong></p></div>',
+            '<h3>' + t('welcomeBack') + ', ' + esc(data.member.firstName || data.member.email) + '!</h3>' +
+            '<p>' + t('memberIDLabel') + ': <strong>' + esc(data.member.memberID) + '</strong></p></div>',
             'dashboard'
           );
         }
       })
       .catch(function(err) {
         btn.disabled = false;
-        btn.textContent = 'Verify Code →';
+        btn.textContent = t('verifyBtn');
         showMsg(msgId, err.message || 'Invalid or expired code. Please try again.', 'error');
       });
   }
@@ -554,14 +653,17 @@
 
   function showContinue(msgHtml, page) {
     console.log('[MMR][login] showContinue:', page);
-    // Navigate immediately — no extra button click needed
-    navigateTo(page);
+    // Show the success message and a button to continue
+    // This ensures navigation happens with user activation (click)
+    document.getElementById('continue-msg').innerHTML = msgHtml;
+    pendingPage = page;
+    showState('continue');
   }
 
   function onContinueClick() {
     var btn = document.getElementById('continueBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Loading…';
+    btn.innerHTML = '<span class="spinner"></span> ' + t('loading') + '…';
     navigateTo(pendingPage);
   }
 

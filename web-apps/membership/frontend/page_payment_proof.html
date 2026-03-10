@@ -39,51 +39,51 @@
 
 <div class="container">
   <div class="card" id="formCard">
-    <h2>Submit Payment Proof</h2>
+    <h2 data-i18n="formTitle">Submit Payment Proof</h2>
     <div id="msg" class="msg"></div>
 
     <div class="field">
-      <label>Payment For</label>
+      <label data-i18n="paymentFor">Payment For</label>
       <select id="eventName"></select>
     </div>
     <div class="field">
-      <label>Amount</label>
+      <label data-i18n="amount">Amount</label>
       <input type="number" id="amount" placeholder="e.g. 30" />
     </div>
     <div class="field">
-      <label>Payment Date</label>
+      <label data-i18n="paymentDate">Payment Date</label>
       <input type="date" id="paymentDate" />
     </div>
     <div class="field">
-      <label>Payment Method</label>
+      <label data-i18n="paymentMethod">Payment Method</label>
       <select id="paymentMethod" required>
-        <option value="">— Select a payment method —</option>
+        <option value="" data-i18n="selectPaymentMethod">— Select a payment method —</option>
         <option value="Zelle">Zelle</option>
         <option value="Venmo">Venmo</option>
       </select>
     </div>
     <div class="field">
-      <label>Payer Name</label>
-      <input type="text" id="payerName" placeholder="Name on the account used for payment" />
+      <label data-i18n="payerName">Payer Name</label>
+      <input type="text" id="payerName" data-i18n-placeholder="payerNamePlaceholder" placeholder="Name on the account used for payment" />
     </div>
     <div class="field">
-      <label>Last 4 Digits of Confirmation/Transaction #</label>
-      <input type="text" id="last4Digits" placeholder="e.g. 5678" maxlength="4" />
+      <label data-i18n="last4Digits">Last 4 Digits of Confirmation/Transaction #</label>
+      <input type="text" id="last4Digits" data-i18n-placeholder="last4DigitsPlaceholder" placeholder="e.g. 5678" maxlength="4" />
     </div>
     <div class="field">
-      <label>Memo</label>
-      <input type="text" id="memoField" placeholder="e.g. memo in the transfer" />
+      <label data-i18n="memo">Memo</label>
+      <input type="text" id="memoField" data-i18n-placeholder="memoPlaceholder" placeholder="e.g. memo in the transfer" />
     </div>
     <div class="field">
-      <label>Notes</label>
-      <textarea id="notes" placeholder="Anything else we should know?"></textarea>
+      <label data-i18n="notes">Notes</label>
+      <textarea id="notes" data-i18n-placeholder="notesPlaceholder" placeholder="Anything else we should know?"></textarea>
     </div>
     <div class="field">
-      <label>Confirmation Screenshot (optional)</label>
+      <label data-i18n="screenshot">Confirmation Screenshot (optional)</label>
       <input type="file" id="screenshot" accept="image/*" />
     </div>
 
-    <button class="btn btn-primary" id="submitBtn" onclick="submitProof()">Submit</button>
+    <button class="btn btn-primary" id="submitBtn" onclick="submitProof()" data-i18n="submitBtn">Submit</button>
   </div>
 </div>
 
@@ -92,11 +92,51 @@
   var TRANSLATIONS = {
     "en": {
         "appTitle": "🏃 Misty Mountain Runners",
-        "navDashboard": "← Dashboard"
+        "navDashboard": "← Dashboard",
+        "formTitle": "Submit Payment Proof",
+        "paymentFor": "Payment For",
+        "amount": "Amount",
+        "paymentDate": "Payment Date",
+        "paymentMethod": "Payment Method",
+        "selectPaymentMethod": "— Select a payment method —",
+        "payerName": "Payer Name",
+        "payerNamePlaceholder": "Name on the account used for payment",
+        "last4Digits": "Last 4 Digits of Confirmation/Transaction #",
+        "last4DigitsPlaceholder": "e.g. 5678",
+        "memo": "Memo",
+        "memoPlaceholder": "e.g. memo in the transfer",
+        "notes": "Notes",
+        "notesPlaceholder": "Anything else we should know?",
+        "screenshot": "Confirmation Screenshot (optional)",
+        "submitBtn": "Submit",
+        "submitting": "Submitting...",
+        "successTitle": "Success!",
+        "successMessage": "Your payment proof has been submitted for review.",
+        "backToDashboard": "Back to Dashboard"
     },
     "zh": {
         "appTitle": "🏃 岚山跑团",
-        "navDashboard": "← 主页"
+        "navDashboard": "← 主页",
+        "formTitle": "提交支付证明",
+        "paymentFor": "支付用途",
+        "amount": "金额",
+        "paymentDate": "支付日期",
+        "paymentMethod": "支付方式",
+        "selectPaymentMethod": "— 选择支付方式 —",
+        "payerName": "付款人姓名",
+        "payerNamePlaceholder": "用于支付的账户名称",
+        "last4Digits": "确认/交易号的最后4位数字",
+        "last4DigitsPlaceholder": "例如 5678",
+        "memo": "备忘录",
+        "memoPlaceholder": "例如 转账中的备忘录",
+        "notes": "备注",
+        "notesPlaceholder": "还有其他我们应该知道的信息吗？",
+        "screenshot": "确认截图（可选）",
+        "submitBtn": "提交",
+        "submitting": "提交中...",
+        "successTitle": "成功！",
+        "successMessage": "您的支付证明已提交审核。",
+        "backToDashboard": "返回主页"
     }
 };
 
@@ -106,8 +146,17 @@
     if (titleEl && t.appTitle) titleEl.textContent = t.appTitle;
     var els = document.querySelectorAll('[data-i18n]');
     for (var i = 0; i < els.length; i++) {
-      var k = els[i].getAttribute('data-i18n');
-      if (t[k] !== undefined) els[i].textContent = t[k];
+      var el = els[i];
+      var k = el.getAttribute('data-i18n');
+      if (t[k] !== undefined) {
+        if (el.tagName === 'BUTTON') {
+          el.textContent = t[k];
+        } else if (el.tagName === 'OPTION') {
+          el.textContent = t[k];
+        } else {
+          el.textContent = t[k];
+        }
+      }
     }
     var pls = document.querySelectorAll('[data-i18n-placeholder]');
     for (var j = 0; j < pls.length; j++) {
@@ -222,7 +271,9 @@ function prefillFromParams() {
 async function submitProof() {
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
-  btn.textContent = 'Submitting...';
+  var lang = getCurrentLanguage();
+  var trans = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+  btn.textContent = trans['submitting'] || 'Submitting...';
   try {
     const fileInput = document.getElementById('screenshot');
     let screenshotBase64 = null;
@@ -247,14 +298,14 @@ async function submitProof() {
     await callApi('submitPaymentProof', payload);
     document.getElementById('formCard').innerHTML = `
       <div class="msg success" style="text-align:center">
-        <h2>Success!</h2>
-        <p>Your payment proof has been submitted for review.</p>
-        <a href="${appBaseUrl}?page=dashboard" class="btn btn-primary" style="margin-top:16px">Back to Dashboard</a>
+        <h2>${trans['successTitle'] || 'Success!'}</h2>
+        <p>${trans['successMessage'] || 'Your payment proof has been submitted for review.'}</p>
+        <a href="${appBaseUrl}?page=dashboard" class="btn btn-primary" style="margin-top:16px">${trans['backToDashboard'] || 'Back to Dashboard'}</a>
       </div>`;
   } catch(err) {
     showMsg(err.message + ' — An error occurred.', 'error');
     btn.disabled = false;
-    btn.textContent = 'Submit';
+    btn.textContent = trans['submitBtn'] || 'Submit';
   }
 }
 

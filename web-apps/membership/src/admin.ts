@@ -67,18 +67,33 @@ function getPaymentProofs(jsonRequest: string): string {
 }
 
 function getConfig(jsonRequest: string): string {
-  const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string; caller?: string }>;
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string; caller?: string; sessionID?: string }>;
+  const { payload } = req;
   try {
-    console.log('[mmr][getConfig] called by:', req.payload.caller || 'unknown', '| adminEmail:', req.payload.adminEmail);
-    if (!isAdmin(req.payload.adminEmail)) {
-      console.log('[mmr][getConfig] FORBIDDEN for:', req.payload.adminEmail);
+    console.log('[mmr][getConfig] called by:', payload.caller || 'unknown', '| adminEmail:', payload.adminEmail, '| sessionID:', payload.sessionID || 'none');
+    if (!isAdmin(payload.adminEmail)) {
+      console.log('[mmr][getConfig] FORBIDDEN for:', payload.adminEmail);
+      auditLog('CONFIG_UNAUTHORIZED', {
+        email: payload.adminEmail,
+        sessionID: payload.sessionID
+      });
       return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
     }
-    const config = getConfigMap();
-    console.log('[mmr][getConfig] returning', Object.keys(config).length, 'config keys');
+    const config = getConfigMap(payload.sessionID);
+    console.log('[mmr][getConfig] returning', Object.keys(config).length, 'config entries');
+    auditLog('CONFIG_RETRIEVED', {
+      email: payload.adminEmail,
+      sessionID: payload.sessionID,
+      state: { configKeys: Object.keys(config).join(','), caller: payload.caller }
+    });
     return jsonOk(req.requestId, { config });
   } catch (e: any) {
     console.error('[mmr][getConfig] error:', String(e));
+    auditLog('CONFIG_ERROR', {
+      email: payload.adminEmail,
+      sessionID: payload.sessionID,
+      errorMessage: String(e)
+    });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
@@ -102,25 +117,80 @@ function updateConfigEntry(jsonRequest: string): string {
 } 
 
 function getPublicConfig(jsonRequest: string): string {
-  const req = JSON.parse(jsonRequest) as ApiRequest<{}>;
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ sessionID?: string }>;
+  const { payload } = req;
   try {
-    console.log('mmr:getPublicConfig called, requestId =', req.requestId);
-    const allConfig = getConfigMap();
-    console.log('mmr:getPublicConfig allConfig keys =', Object.keys(allConfig).join(', '));
+    console.log('[mmr][getPublicConfig] called | sessionID:', payload.sessionID || 'none', '| requestId:', req.requestId);
+    const allConfig = getConfigMap(payload.sessionID);
+    console.log('[mmr][getPublicConfig] all config keys:', Object.keys(allConfig).length, 'entries');
 
     const publicConfig: Record<string, string> = {};
     const publicKeys = ['ZelleHandle','VenmoHandle','PayPalHandle',
                         'ZelleQRCodeFileId','VenmoQRCodeFileId',
-                        'IndividualPrice','FamilyPrice','FamilyUpgradePrice'];
+                        'IndividualPrice','FamilyPrice','FamilyUpgradePrice','Districts'];
     for (const key of publicKeys) {
-      console.log(`mmr:getPublicConfig key="${key}" value="${allConfig[key] ?? '(missing)'}" `);
-      if (allConfig[key]) publicConfig[key] = allConfig[key];
+      const val = allConfig[key];
+      console.log(`[mmr][getPublicConfig] key="${key}" value="${val ?? '(missing)'}" `);
+      if (val) publicConfig[key] = val;
     }
 
-    console.log('mmr:getPublicConfig returning keys =', Object.keys(publicConfig).join(', '));
+    console.log('[mmr][getPublicConfig] returning keys:', Object.keys(publicConfig).join(','), '| sessionID:', payload.sessionID);
+    console.log('[mmr][getPublicConfig] Districts value in publicConfig:', publicConfig['Districts'] ?? '(missing)');
+    console.log('[mmr][getPublicConfig] full publicConfig object:', JSON.stringify(publicConfig));
+    auditLog('PUBLIC_CONFIG_RETRIEVED', {
+      sessionID: payload.sessionID,
+      state: { configKeys: Object.keys(publicConfig).join(',') }
+    });
     return jsonOk(req.requestId, { config: publicConfig });
   } catch (e: any) {
-    console.error('mmr:getPublicConfig ERROR =', String(e));
+    console.error('[mmr][getPublicConfig] error:', String(e));
+    auditLog('PUBLIC_CONFIG_ERROR', {
+      sessionID: payload.sessionID,
+      errorMessage: String(e)
+    });
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
+// ── initializeSessionConfig ────────────────────────────────────────────────
+// Optimized: Load config + publicConfig in a single call at session start.
+// This ensures getConfigMap is called once per session (with sessionID),
+// triggering server-side session cache and avoiding repeated sheet reads.
+// Frontend should cache this result in sessionStorage per sessionID.
+function initializeSessionConfig(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ sessionID?: string }>;
+  const { payload } = req;
+  try {
+    console.log('[mmr][initializeSessionConfig] called | sessionID:', payload.sessionID || 'none');
+
+    // Load config once (triggers session cache if sessionID provided)
+    const allConfig = getConfigMap(payload.sessionID);
+    console.log('[mmr][initializeSessionConfig] config loaded:', Object.keys(allConfig).length, 'entries');
+
+    // Extract public config keys
+    const publicConfig: Record<string, string> = {};
+    const publicKeys = ['ZelleHandle','VenmoHandle','PayPalHandle',
+                        'ZelleQRCodeFileId','VenmoQRCodeFileId',
+                        'IndividualPrice','FamilyPrice','FamilyUpgradePrice','Districts'];
+    for (const key of publicKeys) {
+      const val = allConfig[key];
+      if (val) publicConfig[key] = val;
+    }
+
+    console.log('[mmr][initializeSessionConfig] returning:', Object.keys(publicConfig).join(','));
+    console.log('[mmr][initializeSessionConfig] Districts value:', publicConfig['Districts'] ?? '(missing)');
+    console.log('[mmr][initializeSessionConfig] full publicConfig:', JSON.stringify(publicConfig));
+    auditLog('SESSION_CONFIG_INITIALIZED', {
+      sessionID: payload.sessionID,
+      state: { publicKeys: Object.keys(publicConfig).join(',') }
+    });
+    return jsonOk(req.requestId, { config: publicConfig });
+  } catch (e: any) {
+    console.error('[mmr][initializeSessionConfig] error:', String(e));
+    auditLog('SESSION_CONFIG_ERROR', {
+      sessionID: payload.sessionID,
+      errorMessage: String(e)
+    });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
@@ -411,13 +481,14 @@ function adminCreatePaymentProof(jsonRequest: string): string {
   }
 }
 
-(globalThis as any).getPendingEvents     = getPendingEvents;
-(globalThis as any).getUnmatchedPayments = getUnmatchedPayments;
-(globalThis as any).getConfig            = getConfig;
-(globalThis as any).updateConfigEntry    = updateConfigEntry;
-(globalThis as any).getPaymentProofs     = getPaymentProofs;
-(globalThis as any).getPublicConfig      = getPublicConfig;
-(globalThis as any).manualMatch          = manualMatch;
-(globalThis as any).getMemberSummaryForAdmin = getMemberSummaryForAdmin;
-(globalThis as any).adminCreatePaymentProof = adminCreatePaymentProof;
+(globalThis as any).getPendingEvents           = getPendingEvents;
+(globalThis as any).getUnmatchedPayments      = getUnmatchedPayments;
+(globalThis as any).getConfig                 = getConfig;
+(globalThis as any).updateConfigEntry         = updateConfigEntry;
+(globalThis as any).getPaymentProofs          = getPaymentProofs;
+(globalThis as any).getPublicConfig           = getPublicConfig;
+(globalThis as any).initializeSessionConfig   = initializeSessionConfig;
+(globalThis as any).manualMatch               = manualMatch;
+(globalThis as any).getMemberSummaryForAdmin  = getMemberSummaryForAdmin;
+(globalThis as any).adminCreatePaymentProof   = adminCreatePaymentProof;
 

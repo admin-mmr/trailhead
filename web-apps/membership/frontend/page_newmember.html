@@ -37,50 +37,50 @@
 
 <div class="card">
   <div class="logo">🏃</div>
-  <div style="display:flex;align-items:center;gap:16px;"><h1>🏃 Misty Mountain Runners</h1>
+  <div style="display:flex;align-items:center;gap:16px;"><h1 id="appTitle" data-i18n="appTitle">🏃 Misty Mountain Runners</h1>
     <select id="languageSelector" class="language-selector"><option value="en">EN</option><option value="zh">中文</option></select></div>
 
   <!-- Registration form -->
   <div id="formView">
     <div class="notice">
-      We don't recognize <span class="email-highlight" id="emailDisplay">this email</span>. If this is your correct email and you're signing up, please complete the form below.
+      <span data-i18n="notRecognized">We don't recognize</span> <span class="email-highlight" id="emailDisplay">this email</span>. <span data-i18n="completeForm">If this is your correct email and you're signing up, please complete the form below.</span>
     </div>
 
     <div id="msg" class="msg"></div>
 
     <div class="field">
-      <label>Email (verified)</label>
+      <label data-i18n="emailVerified">Email (verified)</label>
       <input type="text" id="emailField" readonly />
     </div>
     <div class="field">
-      <label>First Name <span class="required">*</span></label>
-      <input type="text" id="firstName" placeholder="Your first name" />
+      <label data-i18n="firstName">First Name <span class="required">*</span></label>
+      <input type="text" id="firstName" data-i18n-placeholder="firstNamePlaceholder" placeholder="Your first name" />
     </div>
     <div class="field">
-      <label>Last Name <span class="required">*</span></label>
-      <input type="text" id="lastName" placeholder="Your last name" />
+      <label data-i18n="lastName">Last Name <span class="required">*</span></label>
+      <input type="text" id="lastName" data-i18n-placeholder="lastNamePlaceholder" placeholder="Your last name" />
     </div>
     <div class="field">
-      <label>Phone Number</label>
-      <input type="tel" id="phoneNumber" placeholder="e.g. 917-555-1234" />
+      <label data-i18n="phoneNumber">Phone Number</label>
+      <input type="tel" id="phoneNumber" data-i18n-placeholder="phonePlaceholder" placeholder="e.g. 917-555-1234" />
     </div>
     <div class="field">
-      <label>District</label>
-      <input type="text" id="district" placeholder="e.g. Queens, Brooklyn" />
+      <label data-i18n="district">District</label>
+      <input type="text" id="district" data-i18n-placeholder="districtPlaceholder" placeholder="e.g. Queens, Brooklyn" />
     </div>
 
-    <button class="btn btn-primary" id="submitBtn" onclick="submitRegistration()">Register →</button>
-    <button class="btn-link" onclick="goToLogin()">← Not your email? Sign in again</button>
+    <button class="btn btn-primary" id="submitBtn" onclick="submitRegistration()" data-i18n="registerBtn">Register →</button>
+    <button class="btn-link" onclick="goToLogin()" data-i18n="notYourEmail">← Not your email? Sign in again</button>
   </div>
 
   <!-- Success view -->
   <div id="successView" class="success-view">
     <div class="success-icon">🎉</div>
-    <h2 style="font-size:20px;color:#1a1a1a;margin-bottom:8px;">Welcome to Misty Mountain Runners!</h2>
-    <p>Your registration is complete. Your member ID is:</p>
+    <h2 style="font-size:20px;color:#1a1a1a;margin-bottom:8px;" data-i18n="welcome">Welcome to Misty Mountain Runners!</h2>
+    <p data-i18n="registrationComplete">Your registration is complete. Your member ID is:</p>
     <div class="member-id-badge" id="memberIdBadge">—</div>
-    <p>Next, set up your membership by submitting your annual fee.</p>
-    <button class="btn btn-primary" id="toRenewalBtn" onclick="onGoToRenewal()">Set Up Membership →</button>
+    <p data-i18n="nextSetup">Next, set up your membership by submitting your annual fee.</p>
+    <button class="btn btn-primary" id="toRenewalBtn" onclick="onGoToRenewal()" data-i18n="setupMembership">Set Up Membership →</button>
   </div>
 </div>
 
@@ -88,10 +88,44 @@
   // ── i18n ─────────────────────────────────────────────────
   var TRANSLATIONS = {
     "en": {
-        "appTitle": "🏃 Misty Mountain Runners"
+        "appTitle": "🏃 Misty Mountain Runners",
+        "notRecognized": "We don't recognize",
+        "completeForm": "If this is your correct email and you're signing up, please complete the form below.",
+        "emailVerified": "Email (verified)",
+        "firstName": "First Name",
+        "lastName": "Last Name",
+        "phoneNumber": "Phone Number",
+        "district": "District",
+        "registerBtn": "Register →",
+        "notYourEmail": "← Not your email? Sign in again",
+        "welcome": "Welcome to Misty Mountain Runners!",
+        "registrationComplete": "Your registration is complete. Your member ID is:",
+        "nextSetup": "Next, set up your membership by submitting your annual fee.",
+        "setupMembership": "Set Up Membership →",
+        "firstNamePlaceholder": "Your first name",
+        "lastNamePlaceholder": "Your last name",
+        "phonePlaceholder": "e.g. 917-555-1234",
+        "districtPlaceholder": "e.g. Queens, Brooklyn"
     },
     "zh": {
-        "appTitle": "🏃 岚山跑团"
+        "appTitle": "🏃 岚山跑团",
+        "notRecognized": "我们无法识别",
+        "completeForm": "如果这是您正确的电子邮件且您正在注册，请完成下面的表单。",
+        "emailVerified": "电子邮件（已验证）",
+        "firstName": "名字",
+        "lastName": "姓氏",
+        "phoneNumber": "电话号码",
+        "district": "地区",
+        "registerBtn": "注册 →",
+        "notYourEmail": "← 不是您的电子邮件？重新登录",
+        "welcome": "欢迎加入岚山跑团！",
+        "registrationComplete": "您的注册已完成。您的会员编号是：",
+        "nextSetup": "接下来，通过提交年费来设置您的会员资格。",
+        "setupMembership": "设置会员资格 →",
+        "firstNamePlaceholder": "您的名字",
+        "lastNamePlaceholder": "您的姓氏",
+        "phonePlaceholder": "例如 917-555-1234",
+        "districtPlaceholder": "例如 Queens, Brooklyn"
     }
 };
 

@@ -56,7 +56,7 @@
 <div id="loadingOverlay" class="loading-overlay">
   <div class="loading-spinner">
     <div class="spinner"></div>
-    <div class="loading-text">Loading payment details...</div>
+    <div class="loading-text" data-i18n="loadingText">Loading payment details...</div>
   </div>
 </div>
 
@@ -64,7 +64,7 @@
   <div id="msg" class="msg"></div>
 
   <div class="card">
-    <h2>Send Your Payment</h2>
+    <h2 data-i18n="sendPayment">Send Your Payment</h2>
     <div class="payment-summary">
       <div>
         <div class="desc" id="paymentIntent">Membership Renewal</div>
@@ -73,39 +73,68 @@
     </div>
 
     <div class="instructions-box">
-      <h3>Payment Instructions</h3>
+      <h3 data-i18n="paymentInstructions">Payment Instructions</h3>
       <div class="payment-methods">
         <div class="method">
-          <h4>Zelle</h4>
-          <div class="handle">Handle: <strong id="zelleHandle"></strong></div>
+          <h4 data-i18n="zelleLabel">Zelle</h4>
+          <div class="handle"><span data-i18n="handleLabel">Handle:</span> <strong id="zelleHandle"></strong></div>
           <img id="zelleQrCode" alt="Zelle QR Code" class="qr-code" />
         </div>
         <div class="method">
-          <h4>Venmo</h4>
-          <div class="handle">Handle: <strong id="venmoHandle"></strong></div>
+          <h4 data-i18n="venmoLabel">Venmo</h4>
+          <div class="handle"><span data-i18n="handleLabel">Handle:</span> <strong id="venmoHandle"></strong></div>
           <img id="venmoQrCode" alt="Venmo QR Code" class="qr-code" />
         </div>
       </div>
       <div class="memo-tip">
-        <strong>Important:</strong> Please include your Member ID <strong id="memoMemberID"></strong> in the payment memo/note to help us match your payment.
+        <strong data-i18n="importantNote">Important:</strong> <span data-i18n="memoInstructions">Please include your Member ID</span> <strong id="memoMemberID"></strong> <span>in the payment memo/note to help us match your payment.</span>
       </div>
     </div>
-    <a href="#" id="continueBtn" class="btn btn-primary">Continue to Submit Proof →</a>
+    <a href="#" id="continueBtn" class="btn btn-primary" data-i18n="continueBtn">Continue to Submit Proof →</a>
   </div>
 </div>
 
 <script>
+  // Server-injected params - from backend doGet() replacement
+  const SERVER_PARAMS = __URL_PARAMS__;  // injected by doGet - no quotes!
+  console.log('[MMR][payment] SERVER_PARAMS initialized from backend:', SERVER_PARAMS);
+
   // ── i18n ─────────────────────────────────────────────────
   var TRANSLATIONS = {
     "en": {
         "appTitle": "🏃 Misty Mountain Runners",
-        "navDashboard": "← Dashboard"
+        "navDashboard": "← Dashboard",
+        "sendPayment": "Send Your Payment",
+        "paymentInstructions": "Payment Instructions",
+        "zelleLabel": "Zelle",
+        "venmoLabel": "Venmo",
+        "handleLabel": "Handle:",
+        "importantNote": "Important:",
+        "memoInstructions": "Please include your Member ID in the payment memo/note to help us match your payment. Keep a record of the last 4 digits of your transaction ID or screenshot the payment confirmation page for future reference.",
+        "continueBtn": "Continue to Submit Proof →",
+        "loadingText": "Loading payment details..."
     },
     "zh": {
         "appTitle": "🏃 岚山跑团",
-        "navDashboard": "← 主页"
+        "navDashboard": "← 主页",
+        "sendPayment": "发送您的支付",
+        "paymentInstructions": "支付说明",
+        "zelleLabel": "Zelle",
+        "venmoLabel": "Venmo",
+        "handleLabel": "账户：",
+        "importantNote": "重要：",
+        "memoInstructions": "请在支付备注/备忘录中包含您的会员编号，以帮助我们匹配您的支付。记下您的交易编号最后4位或截屏支付确认页面以备后续查询。",
+        "continueBtn": "继续提交证明 →",
+        "loadingText": "加载支付详情..."
     }
-};
+  };
+
+  // Helper to get translated text
+  function t(key) {
+    var lang = getCurrentLanguage();
+    var trans = TRANSLATIONS[lang] || TRANSLATIONS['en'];
+    return trans[key] || key;
+  }
 
   function applyTranslations(lang) {
     var t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
@@ -181,21 +210,53 @@
   let paymentAmount = 0;
 
   function getUrlParams() {
+    console.log('[MMR][payment] ===== DEBUG: Parsing URL Parameters =====');
+    console.log('[MMR][payment] window.location.href =', window.location.href);
+    console.log('[MMR][payment] window.location.search =', window.location.search);
+    console.log('[MMR][payment] window.location.hash =', window.location.hash);
     console.log('[MMR][payment] SERVER_PARAMS =', SERVER_PARAMS);
+    console.log('[MMR][payment] SERVER_PARAMS keys =', Object.keys(SERVER_PARAMS || {}));
+
+    // Check if SERVER_PARAMS has the params
+    if (SERVER_PARAMS) {
+      console.log('[MMR][payment] SERVER_PARAMS.intent =', SERVER_PARAMS['intent']);
+      console.log('[MMR][payment] SERVER_PARAMS.amount =', SERVER_PARAMS['amount']);
+    }
 
     // Use server-injected params (most reliable - no cross-origin issues)
     if (SERVER_PARAMS && SERVER_PARAMS['intent']) {
       paymentIntent = SERVER_PARAMS['intent'] || 'Membership Payment';
       paymentAmount = parseFloat(SERVER_PARAMS['amount']) || 0;
-      console.log('[MMR][payment] params from server injection: intent=', paymentIntent, 'amount=', paymentAmount);
+      console.log('[MMR][payment] ✓ Using server injection: intent=', paymentIntent, 'amount=', paymentAmount);
       return;
     }
 
     // Fallback: window.location.search (works in some GAS setups)
+    console.log('[MMR][payment] Trying URL search params...');
     const params = new URLSearchParams(window.location.search);
+    console.log('[MMR][payment] URLSearchParams.toString() =', params.toString());
+    console.log('[MMR][payment] params.get("intent") =', params.get('intent'));
+    console.log('[MMR][payment] params.get("amount") =', params.get('amount'));
+
     paymentIntent = params.get('intent') || 'Membership Payment';
     paymentAmount = parseFloat(params.get('amount')) || 0;
-    console.log('[MMR][payment] params from URL fallback: intent=', paymentIntent, 'amount=', paymentAmount);
+
+    if (paymentIntent === 'Membership Payment' && paymentAmount === 0) {
+      console.log('[MMR][payment] ⚠ WARNING: No parameters found! Checking hash...');
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      console.log('[MMR][payment] hash params.get("intent") =', hashParams.get('intent'));
+      console.log('[MMR][payment] hash params.get("amount") =', hashParams.get('amount'));
+
+      const hashIntent = hashParams.get('intent');
+      const hashAmount = hashParams.get('amount');
+      if (hashIntent) {
+        paymentIntent = hashIntent;
+        paymentAmount = parseFloat(hashAmount) || 0;
+        console.log('[MMR][payment] ✓ Found params in hash: intent=', paymentIntent, 'amount=', paymentAmount);
+      }
+    } else {
+      console.log('[MMR][payment] ✓ Found in search: intent=', paymentIntent, 'amount=', paymentAmount);
+    }
   }
 
   function callApi(fn, payload) {
@@ -227,6 +288,8 @@
   function hideLoading() {
     document.getElementById('loadingOverlay').classList.remove('active');
   }
+
+  const SESSION_ID = Math.random().toString(36).slice(2);
 
   function renderPaymentSummary() {
     // Fast render: show payment info immediately
@@ -294,7 +357,7 @@
       // ✅ FASTER: Load config in parallel with profile
       const configPromise = config && config['ZelleHandle']
         ? Promise.resolve(config)
-        : callApi('getPublicConfig', {}).then(data => data.config);
+        : callApi('getPublicConfig', { sessionID: SESSION_ID }).then(data => data.config);
 
       const profilePromise = callApi('getOrCreateMemberProfile', { email: member?.email, sessionID: SESSION_ID })
         .then(data => data.member);
