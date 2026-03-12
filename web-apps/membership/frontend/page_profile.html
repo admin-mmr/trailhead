@@ -238,7 +238,6 @@
     }
   });
 
-  const SESSION_ID = Math.random().toString(36).slice(2);
   let currentMemberID = null;
   let districtsList = [];
 
@@ -375,118 +374,71 @@
     try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {}
   }
 
-  // FIRST: Load districts (ensure dropdown is populated before we try to set member.district)
-  // Try cache first (specific districts cache for backwards compatibility)
+  // Populate districts from cache immediately (so dropdown is ready before form renders)
   var cachedDistricts = sessionStorage.getItem('districts_list');
   if (cachedDistricts) {
     try {
       var districts = JSON.parse(cachedDistricts);
-      console.log('[MMR][profile] districts from legacy cache:', districts.length);
+      console.log('[MMR][profile] districts from cache:', districts.length);
       populateDistricts(districts);
     } catch (e) {
       console.warn('[MMR][profile] failed to parse cached districts:', e);
     }
-  } else {
-    // Try new unified config cache (populated by initializeSessionConfig on login page)
-    console.log('[MMR][profile] legacy districts_list cache empty, checking MMR_CONFIG cache...');
-    var configCache = getSessionConfig();
-    console.log('[MMR][profile] getSessionConfig() returned:', configCache ? 'object' : 'null');
-    if (configCache) {
-      console.log('[MMR][profile] configCache keys:', Object.keys(configCache).join(','));
-      console.log('[MMR][profile] configCache.Districts:', configCache.Districts ? '"' + configCache.Districts + '"' : '(missing)');
-    }
-    if (configCache && configCache.Districts) {
-      var districtsStr = configCache.Districts || '';
-      console.log('[MMR][profile] found Districts in configCache, parsing:', '"' + districtsStr + '"');
-      var districts = districtsStr
-        .split(',')
-        .map(function(d) { return d.trim(); })
-        .filter(function(d) { return d.length > 0; });
-      console.log('[MMR][profile] districts from MMR_CONFIG cache:', districts.length, 'items');
-      populateDistricts(districts);
-    } else {
-      console.log('[MMR][profile] MMR_CONFIG cache empty or no Districts key');
-    }
   }
 
-  // Fetch fresh config and extract districts (will use server-side session cache)
-  // This runs in parallel and updates the dropdown if config has changed
-  callApi('getPublicConfig', { sessionID: SESSION_ID })
-    .then(function(data) {
-      console.log('[MMR][profile] getPublicConfig response received');
-      console.log('[MMR][profile] response keys:', Object.keys(data || {}).join(','));
-      console.log('[MMR][profile] full response:', JSON.stringify(data));
-
-      // API returns { config: { Districts: "...", ... } }
-      // Debug: check both data.Districts and data.config.Districts
-      console.log('[MMR][profile] data.Districts:', data.Districts);
-      console.log('[MMR][profile] data.config:', data.config ? 'exists' : 'missing');
-      if (data.config) {
-        console.log('[MMR][profile] data.config.Districts:', data.config.Districts);
-      }
-
-      // Extract districts - try data.config.Districts first, fallback to data.Districts
-      var configObj = data.config || data;
-      var districtsStr = (configObj && configObj.Districts) || '';
-
-      console.log('[MMR][profile] districtsStr before split:', '"' + districtsStr + '"', '(length: ' + districtsStr.length + ')');
-
-      var districts = [];
-      if (districtsStr && districtsStr.length > 0) {
-        districts = districtsStr
-          .split(',')
-          .map(function(d) { return d.trim(); })
-          .filter(function(d) { return d.length > 0; });
-      }
-
-      console.log('[MMR][profile] districts parsed:', districts.length, 'items');
-      for (var i = 0; i < districts.length; i++) {
-        console.log('[MMR][profile]   [' + i + '] "' + districts[i] + '"');
-      }
-
-      if (districts.length === 0) {
-        console.error('[MMR][profile] ERROR: No districts extracted! Response structure might be wrong. Received:', data);
-      }
-
-      sessionStorage.setItem('districts_list', JSON.stringify(districts));
-      setSessionConfig(data); // Update unified config cache
-      populateDistricts(districts);
-    })
-    .catch(function(err) {
-      console.warn('[MMR][profile] failed to load config/districts:', err && err.message);
-      console.warn('[MMR][profile] error object:', err);
-      // If we have cached data, that's OK - we already showed it above
-    });
-
-  // SECOND: Load member profile (now that districts dropdown is ready)
-  // Show cached member immediately if available
+  // Render cached member immediately while fresh data loads
   if (cached) {
     try {
       const m = JSON.parse(cached);
-      console.log('[MMR][profile] loaded member from sessionStorage:', m.memberID);
+      console.log('[MMR][profile] rendering cached member:', m.memberID);
       loadProfile(m);
-      hideLoadingAndShowForm(); // Hide loading spinner and show form with cached data
+      hideLoadingAndShowForm();
     } catch (e) {
       console.error('[MMR][profile] failed to parse cached member:', e);
     }
   }
 
-  // Fetch fresh member profile from server
-  console.log('[MMR][profile] calling getOrCreateMemberProfile with email:', memberEmail);
-  callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID })
+  // ---- Single composite call: member + config in ONE server execution ----
+  // Previously: getPublicConfig + getOrCreateMemberProfile = 2 separate GAS
+  // executions, each reading the config sheet independently.
+  // Now: 1 call, config sheet read once, member lookup once.
+  console.log('[MMR][profile] calling loadProfileData with email:', memberEmail);
+  callApi('loadProfileData', { email: memberEmail })
     .then(function(data) {
-      console.log('[MMR][profile] getOrCreateMemberProfile success, memberID:', data.member && data.member.memberID);
+      console.log('[MMR][profile] loadProfileData success');
+      console.log('[MMR][profile] member:', data.member && data.member.memberID);
+
+      // Extract and cache config
+      var configObj = data.config || {};
+      console.log('[MMR][profile] config keys:', Object.keys(configObj).join(','));
+
+      // Update sessionStorage caches for other pages
+      setSessionConfig(configObj);
       sessionStorage.setItem('member', JSON.stringify(data.member));
+
+      // Extract and populate districts
+      var districtsStr = configObj.Districts || '';
+      console.log('[MMR][profile] Districts from server:', '"' + districtsStr + '"');
+      if (districtsStr) {
+        var districts = districtsStr
+          .split(',')
+          .map(function(d) { return d.trim(); })
+          .filter(function(d) { return d.length > 0; });
+        console.log('[MMR][profile] districts parsed:', districts.length, 'items');
+        sessionStorage.setItem('districts_list', JSON.stringify(districts));
+        populateDistricts(districts);
+      }
+
+      // Render fresh member data
       loadProfile(data.member);
-      hideLoadingAndShowForm(); // Hide loading spinner once profile is loaded
+      hideLoadingAndShowForm();
     })
     .catch(function(err) {
-      console.error('[MMR][profile] getOrCreateMemberProfile failed:', err && err.message);
+      console.error('[MMR][profile] loadProfileData failed:', err && err.message);
       if (!cached) {
-        // No cached data at all — show error card, don't navigate
         showError('Session expired or profile not found. Please sign in again.');
       }
-      // If we had cached member already rendered, don't blank the page
+      // If cached data was already rendered, keep it visible
     });
 </script>
 </body>

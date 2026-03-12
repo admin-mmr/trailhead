@@ -382,7 +382,6 @@
     document.body.appendChild(a);
     a.click();
   }
-  var SESSION_ID = Math.random().toString(36).slice(2);
   var pendingPage = 'dashboard';
   var currentEmail = '';
 
@@ -470,7 +469,7 @@
   function loginWithGoogle() {
     document.getElementById('googleBtn').disabled = true;
     document.getElementById('googleSpinner').style.display = 'inline';
-    callApi('handleGoogleLogin', { email: '', sessionID: SESSION_ID })
+    callApi('handleGoogleLogin', { email: '' })
       .then(function(data) {
         document.getElementById('googleSpinner').style.display = 'none';
         if (data.isNewMember) {
@@ -511,7 +510,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> ' + t('checking') + '…';
 
-    callApi('lookupEmail', { email: email, sessionID: SESSION_ID })
+    callApi('lookupEmail', { email: email })
       .then(function(data) {
         btn.disabled = false;
         btn.textContent = t('checkEmailBtn');
@@ -551,7 +550,7 @@
     btn.innerHTML = '<span class="spinner"></span> ' + t('sending') + '…';
     clearMsg(msgId);
 
-    callApi('requestEmailOtp', { email: currentEmail, sessionID: SESSION_ID })
+    callApi('requestEmailOtp', { email: currentEmail })
       .then(function() {
         btn.disabled = false;
         btn.textContent = context === 'returning' ? t('sendNewCodeBtn') : t('resendCodeBtn');
@@ -574,7 +573,7 @@
     btn.innerHTML = '<span class="spinner"></span> ' + t('sendingCode') + '…';
     clearMsg('new-ask');
 
-    callApi('requestEmailOtp', { email: currentEmail, sessionID: SESSION_ID })
+    callApi('requestEmailOtp', { email: currentEmail })
       .then(function() {
         btn.disabled = false;
         btn.textContent = t('newMemberYes');
@@ -608,7 +607,7 @@
     btn.innerHTML = '<span class="spinner"></span> ' + t('verifying') + '…';
     clearMsg(msgId);
 
-    callApi('verifyEmailOtp', { email: currentEmail, otpCode: otpCode, sessionID: SESSION_ID })
+    callApi('verifyEmailOtp', { email: currentEmail, otpCode: otpCode })
       .then(function(data) {
         btn.disabled = false;
         btn.textContent = t('verifyBtn');

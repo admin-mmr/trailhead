@@ -261,7 +261,6 @@
     document.body.appendChild(a);
     a.click();
   }
-  var SESSION_ID = Math.random().toString(36).slice(2);
 
   function goToDashboard() {
     navigateToPage('dashboard');
@@ -447,7 +446,6 @@
 
     callApi('getMemberPaymentHistory', {
       email: member.email,
-      sessionID: SESSION_ID
     })
     .then(function(data) {
       document.getElementById('loading').style.display = 'none';

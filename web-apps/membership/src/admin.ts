@@ -70,30 +70,22 @@ function getConfig(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string; caller?: string; sessionID?: string }>;
   const { payload } = req;
   try {
-    console.log('[mmr][getConfig] called by:', payload.caller || 'unknown', '| adminEmail:', payload.adminEmail, '| sessionID:', payload.sessionID || 'none');
+    console.log('[mmr][getConfig] called by:', payload.caller || 'unknown', '| adminEmail:', payload.adminEmail);
     if (!isAdmin(payload.adminEmail)) {
       console.log('[mmr][getConfig] FORBIDDEN for:', payload.adminEmail);
-      auditLog('CONFIG_UNAUTHORIZED', {
-        email: payload.adminEmail,
-        sessionID: payload.sessionID
-      });
+      auditLog('CONFIG_UNAUTHORIZED', { email: payload.adminEmail });
       return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
     }
-    const config = getConfigMap(payload.sessionID);
+    const config = getConfigMap();
     console.log('[mmr][getConfig] returning', Object.keys(config).length, 'config entries');
     auditLog('CONFIG_RETRIEVED', {
       email: payload.adminEmail,
-      sessionID: payload.sessionID,
       state: { configKeys: Object.keys(config).join(','), caller: payload.caller }
     });
     return jsonOk(req.requestId, { config });
   } catch (e: any) {
     console.error('[mmr][getConfig] error:', String(e));
-    auditLog('CONFIG_ERROR', {
-      email: payload.adminEmail,
-      sessionID: payload.sessionID,
-      errorMessage: String(e)
-    });
+    auditLog('CONFIG_ERROR', { email: payload.adminEmail, errorMessage: String(e) });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
@@ -120,8 +112,8 @@ function getPublicConfig(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<{ sessionID?: string }>;
   const { payload } = req;
   try {
-    console.log('[mmr][getPublicConfig] called | sessionID:', payload.sessionID || 'none', '| requestId:', req.requestId);
-    const allConfig = getConfigMap(payload.sessionID);
+    console.log('[mmr][getPublicConfig] called | requestId:', req.requestId);
+    const allConfig = getConfigMap();
     console.log('[mmr][getPublicConfig] all config keys:', Object.keys(allConfig).length, 'entries');
 
     const publicConfig: Record<string, string> = {};
@@ -134,37 +126,27 @@ function getPublicConfig(jsonRequest: string): string {
       if (val) publicConfig[key] = val;
     }
 
-    console.log('[mmr][getPublicConfig] returning keys:', Object.keys(publicConfig).join(','), '| sessionID:', payload.sessionID);
-    console.log('[mmr][getPublicConfig] Districts value in publicConfig:', publicConfig['Districts'] ?? '(missing)');
-    console.log('[mmr][getPublicConfig] full publicConfig object:', JSON.stringify(publicConfig));
+    console.log('[mmr][getPublicConfig] returning keys:', Object.keys(publicConfig).join(','));
     auditLog('PUBLIC_CONFIG_RETRIEVED', {
-      sessionID: payload.sessionID,
       state: { configKeys: Object.keys(publicConfig).join(',') }
     });
     return jsonOk(req.requestId, { config: publicConfig });
   } catch (e: any) {
     console.error('[mmr][getPublicConfig] error:', String(e));
-    auditLog('PUBLIC_CONFIG_ERROR', {
-      sessionID: payload.sessionID,
-      errorMessage: String(e)
-    });
+    auditLog('PUBLIC_CONFIG_ERROR', { errorMessage: String(e) });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
 
 // ── initializeSessionConfig ────────────────────────────────────────────────
-// Optimized: Load config + publicConfig in a single call at session start.
-// This ensures getConfigMap is called once per session (with sessionID),
-// triggering server-side session cache and avoiding repeated sheet reads.
-// Frontend should cache this result in sessionStorage per sessionID.
+// Load publicConfig at login to populate sessionStorage cache across pages.
 function initializeSessionConfig(jsonRequest: string): string {
   const req = JSON.parse(jsonRequest) as ApiRequest<{ sessionID?: string }>;
-  const { payload } = req;
   try {
-    console.log('[mmr][initializeSessionConfig] called | sessionID:', payload.sessionID || 'none');
+    console.log('[mmr][initializeSessionConfig] called');
 
-    // Load config once (triggers session cache if sessionID provided)
-    const allConfig = getConfigMap(payload.sessionID);
+    // Load config once
+    const allConfig = getConfigMap();
     console.log('[mmr][initializeSessionConfig] config loaded:', Object.keys(allConfig).length, 'entries');
 
     // Extract public config keys
@@ -178,19 +160,13 @@ function initializeSessionConfig(jsonRequest: string): string {
     }
 
     console.log('[mmr][initializeSessionConfig] returning:', Object.keys(publicConfig).join(','));
-    console.log('[mmr][initializeSessionConfig] Districts value:', publicConfig['Districts'] ?? '(missing)');
-    console.log('[mmr][initializeSessionConfig] full publicConfig:', JSON.stringify(publicConfig));
     auditLog('SESSION_CONFIG_INITIALIZED', {
-      sessionID: payload.sessionID,
       state: { publicKeys: Object.keys(publicConfig).join(',') }
     });
     return jsonOk(req.requestId, { config: publicConfig });
   } catch (e: any) {
     console.error('[mmr][initializeSessionConfig] error:', String(e));
-    auditLog('SESSION_CONFIG_ERROR', {
-      sessionID: payload.sessionID,
-      errorMessage: String(e)
-    });
+    auditLog('SESSION_CONFIG_ERROR', { errorMessage: String(e) });
     return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
   }
 }
@@ -481,6 +457,143 @@ function adminCreatePaymentProof(jsonRequest: string): string {
   }
 }
 
+// ── Composite endpoints ────────────────────────────────────────────────────
+// These combine multiple data fetches into a SINGLE GAS execution so the
+// config sheet is read only once and the frontend makes one round-trip
+// instead of 3-4 separate google.script.run calls.
+// ────────────────────────────────────────────────────────────────────────────
+
+function loadDashboardData(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string; sessionID?: string }>;
+  const { payload } = req;
+  try {
+    const email = (payload.email || '').trim().toLowerCase();
+    console.log('[mmr][loadDashboardData] called | email:', email);
+
+    if (!email) {
+      return jsonError(req.requestId, 'AUTH_REQUIRED', 'No email available. Please sign in again.');
+    }
+
+    // 1. Load config ONCE (all subsequent getConfigValue calls within this
+    //    execution will hit the in-memory cache)
+    const allConfig = getConfigMap();
+    console.log('[mmr][loadDashboardData] config loaded:', Object.keys(allConfig).length, 'entries');
+
+    // 2. Extract public config
+    const publicConfig: Record<string, string> = {};
+    const publicKeys = ['ZelleHandle','VenmoHandle','PayPalHandle',
+                        'ZelleQRCodeFileId','VenmoQRCodeFileId',
+                        'IndividualPrice','FamilyPrice','FamilyUpgradePrice','Districts'];
+    for (const key of publicKeys) {
+      const val = allConfig[key];
+      if (val) publicConfig[key] = val;
+    }
+
+    // 3. Resolve member
+    const found = findMemberByEmail(email);
+    if (!found) {
+      console.log('[mmr][loadDashboardData] member not found for:', email);
+      return jsonError(req.requestId, 'NOT_FOUND', 'Member not found. Please sign in again.');
+    }
+    const member = found.member;
+    console.log('[mmr][loadDashboardData] member found:', member.memberID, '| status:', member.status);
+
+    // 4. Family members
+    let familyMembers: Member[] = [];
+    if (member.familyID) {
+      familyMembers = findMembersByFamilyID(member.familyID).map(r => r.member);
+    }
+
+    // 5. Payment history + events (expand to family scope)
+    let allMemberIDs: string[] = [member.memberID];
+    if (member.familyID) {
+      const fam = getMembersByFamilyID(member.familyID);
+      const famIDs = fam.map((m: Member) => m.memberID).filter((id: string) => id !== member.memberID);
+      allMemberIDs = [member.memberID, ...famIDs];
+    }
+
+    const payments = allMemberIDs.flatMap(id => getPaymentHistoryByMemberID(id));
+    const events   = allMemberIDs.flatMap(id => getWebAppEventsByMemberID(id));
+
+    const PAYMENT_TYPES = ['dues_payment', 'family_switch', 'family_upgrade', 'PaymentProof'];
+    const pendingPayments = events.filter(e => PAYMENT_TYPES.includes(e.eventType) && e.status === 'Pending');
+
+    console.log('[mmr][loadDashboardData] payments:', payments.length, '| events:', events.length, '| pending:', pendingPayments.length);
+
+    // 6. Admin check (uses same in-memory config — no extra sheet read)
+    const adminEmails = (allConfig['AdminEmails'] || '')
+      .split(',')
+      .map((e: string) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const isUserAdmin = adminEmails.includes(email);
+    console.log('[mmr][loadDashboardData] isAdmin:', isUserAdmin);
+
+    auditLog('DASHBOARD_DATA_LOADED', {
+      memberID: member.memberID,
+      state: { payments: payments.length, events: events.length, isAdmin: isUserAdmin }
+    });
+
+    return jsonOk(req.requestId, {
+      member,
+      familyMembers,
+      config: publicConfig,
+      events,
+      pendingPaymentCount: pendingPayments.length,
+      isAdmin: isUserAdmin,
+    });
+  } catch (e: any) {
+    console.error('[mmr][loadDashboardData] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
+
+function loadProfileData(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ email: string; sessionID?: string }>;
+  const { payload } = req;
+  try {
+    const email = (payload.email || '').trim().toLowerCase();
+    console.log('[mmr][loadProfileData] called | email:', email);
+
+    if (!email) {
+      return jsonError(req.requestId, 'AUTH_REQUIRED', 'No email available. Please sign in again.');
+    }
+
+    // 1. Load config ONCE
+    const allConfig = getConfigMap();
+
+    // 2. Extract public config
+    const publicConfig: Record<string, string> = {};
+    const publicKeys = ['ZelleHandle','VenmoHandle','PayPalHandle',
+                        'ZelleQRCodeFileId','VenmoQRCodeFileId',
+                        'IndividualPrice','FamilyPrice','FamilyUpgradePrice','Districts'];
+    for (const key of publicKeys) {
+      const val = allConfig[key];
+      if (val) publicConfig[key] = val;
+    }
+
+    // 3. Resolve member
+    const found = findMemberByEmail(email);
+    if (!found) {
+      console.log('[mmr][loadProfileData] member not found for:', email);
+      return jsonError(req.requestId, 'NOT_FOUND', 'Member not found. Please sign in again.');
+    }
+
+    console.log('[mmr][loadProfileData] member found:', found.member.memberID, '| Districts:', publicConfig['Districts'] ? 'present' : 'missing');
+
+    auditLog('PROFILE_DATA_LOADED', { memberID: found.member.memberID });
+
+    return jsonOk(req.requestId, {
+      member: found.member,
+      config: publicConfig,
+    });
+  } catch (e: any) {
+    console.error('[mmr][loadProfileData] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
+
 (globalThis as any).getPendingEvents           = getPendingEvents;
 (globalThis as any).getUnmatchedPayments      = getUnmatchedPayments;
 (globalThis as any).getConfig                 = getConfig;
@@ -491,4 +604,6 @@ function adminCreatePaymentProof(jsonRequest: string): string {
 (globalThis as any).manualMatch               = manualMatch;
 (globalThis as any).getMemberSummaryForAdmin  = getMemberSummaryForAdmin;
 (globalThis as any).adminCreatePaymentProof   = adminCreatePaymentProof;
+(globalThis as any).loadDashboardData         = loadDashboardData;
+(globalThis as any).loadProfileData           = loadProfileData;
 

@@ -1,0 +1,23 @@
+{
+  "name": "mmrunners-nyrr",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "rm -f dist/* && tsc && cp appsscript.json dist/",
+    "build:copy": "rm -f dist/* && tsc && cp appsscript.json dist/",
+    "push": "clasp push",
+    "deploy": "clasp deploy",
+    "build:push": "npm run build:copy && npm run push",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "otp:cleanup": "clasp run cleanupExpiredOtps"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2",
+    "@types/google-apps-script": "^1.0.100",
+    "@types/jest": "^29.5.12",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.4",
+    "typescript": "^5.4.0"
+  }
+}

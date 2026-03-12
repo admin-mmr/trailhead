@@ -186,7 +186,6 @@
     document.body.appendChild(a);
     a.click();
   }
-  const SESSION_ID = Math.random().toString(36).slice(2);
   console.log('[MMR][newmember] appBaseUrl:', appBaseUrl);
 
   document.addEventListener('click', function(e) {
@@ -244,7 +243,7 @@
     btn.disabled = true;
     btn.textContent = 'Registering…';
 
-    callApi('createNewMember', { email, firstName, lastName, phoneNumber, district, sessionID: SESSION_ID })
+    callApi('createNewMember', { email, firstName, lastName, phoneNumber, district })
       .then(data => {
         console.log('[MMR][newmember] member created:', data.member && data.member.memberID);
         sessionStorage.setItem('member', JSON.stringify(data.member));

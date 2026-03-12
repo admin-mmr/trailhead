@@ -53,6 +53,8 @@ const MM_COL = {
   LAST_LOGIN_DATE: 21,
   PROFILE_LAST_UPDATED: 22,
   NOTES: 23,
+  NYRR_MEMBER_ID: 24,
+  NYRR_MEMBER_NAME: 25,
 };
 
 // Membership-Master-Log column indices (0-based)
@@ -250,13 +252,13 @@ const DEFAULT_PAYMENT_EVENTS_ROWS: string[][] = [
 // Spreadsheet + Config helpers
 // ============================================================
 
-// Config caching — reduces repeated sheet reads during page load
+// Config caching — reduces repeated sheet reads during single GAS execution
+// Only use global cache with TTL. Session-based caching is not effective
+// because each page load creates a new sessionID and each google.script.run
+// call is a separate GAS execution with fresh memory.
 let configMapCache: ConfigMap | null = null;
 let configCacheTime = 0;
 const CONFIG_CACHE_TTL_MS = 60000; // 60 second cache per GAS execution
-
-// Session-based config cache — keyed by sessionID to avoid repeated fetches within a session
-const configCacheBySession: Record<string, ConfigMap> = {};
 
 function getSheet(name: string): GoogleAppsScript.Spreadsheet.Sheet {
   const id = GMAIL_SHEETS.has(name) ? GMAIL_SPREADSHEET_ID : MEMBERSHIP_SPREADSHEET_ID;
@@ -285,20 +287,11 @@ function getSheet(name: string): GoogleAppsScript.Spreadsheet.Sheet {
   return sheet;
 }
 
-function getConfigMap(sessionID?: string): ConfigMap {
-  // Check session-based cache first (if sessionID provided)
-  if (sessionID && configCacheBySession[sessionID]) {
-    console.log('[config] getConfigMap session cache hit for:', sessionID);
-    return configCacheBySession[sessionID];
-  }
-
+function getConfigMap(): ConfigMap {
   // Check global cache — reduces duplicate sheet reads during single GAS execution
   const now = Date.now();
   if (configMapCache !== null && (now - configCacheTime) < CONFIG_CACHE_TTL_MS) {
-    console.log('[config] getConfigMap global cache hit, skipping sheet read');
-    if (sessionID) {
-      configCacheBySession[sessionID] = configMapCache;
-    }
+    console.log('[config] getConfigMap cache hit, skipping sheet read');
     return configMapCache;
   }
 
@@ -313,19 +306,16 @@ function getConfigMap(sessionID?: string): ConfigMap {
     if (key) map[key] = value;
   }
 
-  // Store in both caches
+  // Store in cache
   configMapCache = map;
   configCacheTime = now;
-  if (sessionID) {
-    configCacheBySession[sessionID] = map;
-  }
 
   console.log('[config] getConfigMap loaded', Object.keys(map).length, 'config entries');
   return map;
 }
 
-function getConfigValue(key: string, sessionID?: string): string {
-  return getConfigMap(sessionID)[key] ?? '';
+function getConfigValue(key: string): string {
+  return getConfigMap()[key] ?? '';
 }
 
 function setConfigValue(key: string, value: string): void {

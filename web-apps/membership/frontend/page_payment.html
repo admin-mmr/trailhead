@@ -289,7 +289,6 @@
     document.getElementById('loadingOverlay').classList.remove('active');
   }
 
-  const SESSION_ID = Math.random().toString(36).slice(2);
 
   function renderPaymentSummary() {
     // Fast render: show payment info immediately
@@ -357,9 +356,9 @@
       // ✅ FASTER: Load config in parallel with profile
       const configPromise = config && config['ZelleHandle']
         ? Promise.resolve(config)
-        : callApi('getPublicConfig', { sessionID: SESSION_ID }).then(data => data.config);
+        : callApi('getPublicConfig', {}).then(data => data.config);
 
-      const profilePromise = callApi('getOrCreateMemberProfile', { email: member?.email, sessionID: SESSION_ID })
+      const profilePromise = callApi('getOrCreateMemberProfile', { email: member?.email })
         .then(data => data.member);
 
       // Handle profile load first (usually faster than config)

@@ -301,7 +301,6 @@
   var currentMember = null;
   var cachedEvents  = [];
   var configCache   = {};
-  const SESSION_ID = Math.random().toString(36).slice(2);
 
   // Intercept relative ?page= links and navigate top frame
   document.addEventListener('click', function(e) {
@@ -552,7 +551,7 @@
     btn.disabled    = true;
     btn.textContent = 'Processing…';
 
-    callApi('initiateSwitch', { memberID: member.memberID, email: member.email, sessionID: SESSION_ID })
+    callApi('initiateSwitch', { memberID: member.memberID, email: member.email })
       .then(function(data) {
         // Update local cache so the "Continue" button navigates with correct state
         var updated = Object.assign({}, member, {
@@ -598,7 +597,7 @@
     btn.disabled    = true;
     btn.textContent = 'Processing…';
 
-    callApi('initiateUpgrade', { memberID: member.memberID, email: member.email, sessionID: SESSION_ID })
+    callApi('initiateUpgrade', { memberID: member.memberID, email: member.email })
       .then(function(data) {
         var updated = Object.assign({}, member, {
           status: 'pending_upgrade', type: 'Family', familyID: data.familyID,
@@ -638,7 +637,7 @@
       'Continue?'
     )) return;
 
-    callApi('cancelUpgrade', { memberID: member.memberID, email: member.email, sessionID: SESSION_ID })
+    callApi('cancelUpgrade', { memberID: member.memberID, email: member.email })
       .then(function() {
         var container = document.getElementById('actionButtons');
         container.innerHTML = '';
@@ -694,7 +693,7 @@
   }
 
   // ---- Main render ----
-  function renderMember(member, events, pendingPaymentCount) {
+  function renderMember(member, events, pendingPaymentCount, isAdmin) {
     currentMember = member;
     cachedEvents  = events || [];
 
@@ -727,20 +726,21 @@
     renderProfileCard(member);
     renderActionButtons(member, events);
 
-    // Admin button (non-blocking)
-    callApi('getConfig', { adminEmail: member.email, caller: 'dashboard-admin-check', sessionID: SESSION_ID })
-      .then(function() {
-        document.getElementById('adminBtn').style.display = 'inline-block';
-      })
-      .catch(function() { /* not admin */ });
+    // Admin button — use isAdmin from composite response (no extra API call!)
+    if (isAdmin) {
+      document.getElementById('adminBtn').style.display = 'inline-block';
+    }
 
     // Hide loading overlay and show content
     document.getElementById('loading').classList.add('hidden');
     document.getElementById('content').classList.add('shown');
   }
 
-  // ---- Load config + member + payment history in parallel ----
-  // All three are independent and can load concurrently for maximum speed
+  // ---- Load ALL dashboard data in a SINGLE server call ----
+  // Previously this was 4 separate google.script.run calls (getPublicConfig,
+  // getOrCreateMemberProfile, getMemberPaymentHistory, getConfig).
+  // Each was an independent GAS execution with no shared memory.
+  // Now it's 1 call: config sheet read once, member lookup once.
   var cached = sessionStorage.getItem('member');
   var memberEmail = '';
   if (cached) { try { memberEmail = JSON.parse(cached).email || ''; } catch (_) {} }
@@ -749,71 +749,56 @@
   if (cached) {
     try {
       var m = JSON.parse(cached);
-      renderMember(m, [], 0); // No events or pending count in cache yet
+      renderMember(m, [], 0, false); // No events or admin status from cache
     } catch (e) {
       console.error('[MMR][dashboard] failed to parse cached member:', e);
     }
   }
 
-  // Load all three data sources in true parallel (none wait for others)
-  Promise.all([
-    callApi('getPublicConfig', { sessionID: SESSION_ID })
-      .then(function(data) { configCache = data || {}; })
-      .catch(function() { /* use defaults */ }),
-    callApi('getOrCreateMemberProfile', { email: memberEmail, sessionID: SESSION_ID }),
-    callApi('getMemberPaymentHistory',   { email: memberEmail, sessionID: SESSION_ID }),
-  ]).then(function(results) {
-    var profileData = results[1];
-    var historyData = results[2];
+  // Single composite call replaces 4 separate API calls
+  callApi('loadDashboardData', { email: memberEmail })
+    .then(function(data) {
+      console.log('[MMR][dashboard] ===== loadDashboardData response =====');
+      console.log('[MMR][dashboard] member:', data.member.memberID, '| status:', data.member.status);
+      console.log('[MMR][dashboard] events:', (data.events || []).length, '| pending:', data.pendingPaymentCount, '| isAdmin:', data.isAdmin);
 
-    console.log('[MMR][dashboard] ===== Data Loaded =====');
-    console.log('[MMR][dashboard] member:', profileData.member.memberID, '| status:', profileData.member.status, '| expiration:', profileData.member.expiration);
-    console.log('[MMR][dashboard] events count:', (historyData.events || []).length);
-
-    // Get pendingPaymentCount from backend (preferred) or fallback to local filtering
-    var pendingPaymentCount = historyData.pendingPaymentCount !== undefined ? historyData.pendingPaymentCount : 0;
-
-    console.log('[MMR][dashboard] pendingPaymentCount from backend:', historyData.pendingPaymentCount);
-
-    if (historyData.events && historyData.events.length > 0) {
-      var PAYMENT_TYPES = ['dues_payment', 'family_switch', 'family_upgrade', 'PaymentProof'];
-      var pendingPayments = historyData.events.filter(function(e) {
-        return PAYMENT_TYPES.indexOf(e.eventType) !== -1 && e.status === 'Pending';
-      });
-      console.log('[MMR][dashboard] local pending payment filter result:', pendingPayments.length);
-      if (pendingPayments.length > 0) {
-        pendingPayments.forEach(function(e) {
-          console.log('[MMR][dashboard]   - type:', e.eventType, '| status:', e.status, '| amount:', e.amount, '| date:', e.timestamp);
-        });
+      // Cache config in sessionStorage for other pages (profile, payment, etc.)
+      if (data.config) {
+        try {
+          sessionStorage.setItem('MMR_CONFIG', JSON.stringify(data.config));
+          // Also cache districts separately for legacy compatibility
+          if (data.config.Districts) {
+            var districts = data.config.Districts.split(',').map(function(d) { return d.trim(); }).filter(function(d) { return d.length > 0; });
+            sessionStorage.setItem('districts_list', JSON.stringify(districts));
+          }
+          configCache = data.config;
+        } catch (e) {
+          console.warn('[MMR][dashboard] failed to cache config:', e);
+        }
       }
 
-      // Show all events for debugging
-      historyData.events.forEach(function(e, idx) {
-        console.log('[MMR][dashboard] event[' + idx + ']:', e.eventType, '| status:', e.status, '| memberID:', e.memberID);
-      });
-    }
+      var pendingPaymentCount = data.pendingPaymentCount || 0;
 
-    // Guard against server returning wrong memberID (GAS admin account fallback)
-    if (cached && profileData.member.memberID !== currentMember?.memberID) {
-      console.warn('[MMR][dashboard] server memberID mismatch — keeping cached session');
-      // Still update events with correct data
-      renderMember(currentMember, historyData.events || [], pendingPaymentCount);
-      return;
-    }
+      // Guard against server returning wrong memberID (GAS admin account fallback)
+      if (cached && data.member.memberID !== currentMember?.memberID) {
+        console.warn('[MMR][dashboard] server memberID mismatch — keeping cached session');
+        renderMember(currentMember, data.events || [], pendingPaymentCount, data.isAdmin);
+        return;
+      }
 
-    sessionStorage.setItem('member', JSON.stringify(profileData.member));
-    renderMember(profileData.member, historyData.events || [], pendingPaymentCount);
-  }).catch(function(err) {
-    console.error('[MMR][dashboard] load error:', err && err.message);
-    // Show error message in loading overlay instead of hiding it
-    var loadingEl = document.getElementById('loading');
-    loadingEl.classList.remove('hidden'); // Ensure it's visible
-    if (!cached) {
-      loadingEl.innerHTML = '<div style="font-size:18px;color:#c62828;margin-bottom:12px;">Session Expired</div><div data-i18n="sessionExpiredMsg">Please sign in again to continue.</div><br><a href="?page=login" style="color:#2d7d46;text-decoration:underline;font-weight:600;">Sign in</a>';
-    } else {
-      loadingEl.innerHTML = '<div style="font-size:18px;color:#c62828;margin-bottom:12px;">Connection Error</div><div data-i18n="loadError">Failed to load profile. Please refresh the page.</div>';
-    }
-  });
+      sessionStorage.setItem('member', JSON.stringify(data.member));
+      renderMember(data.member, data.events || [], pendingPaymentCount, data.isAdmin);
+    })
+    .catch(function(err) {
+      console.error('[MMR][dashboard] loadDashboardData error:', err && err.message);
+      var loadingEl = document.getElementById('loading');
+      loadingEl.classList.remove('hidden');
+      if (!cached) {
+        loadingEl.innerHTML = '<div style="font-size:18px;color:#c62828;margin-bottom:12px;">Session Expired</div><div data-i18n="sessionExpiredMsg">Please sign in again to continue.</div><br><a href="?page=login" style="color:#2d7d46;text-decoration:underline;font-weight:600;">Sign in</a>';
+      } else {
+        loadingEl.innerHTML = '<div style="font-size:18px;color:#c62828;margin-bottom:12px;">Connection Error</div><div data-i18n="loadError">Failed to load profile. Please refresh the page.</div>';
+      }
+    });
 
 </script>
 </body>

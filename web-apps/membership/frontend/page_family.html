@@ -292,7 +292,6 @@ var appBaseUrl = '__SCRIPT_URL__';
   }
 })();
 const SERVER_PARAMS = __URL_PARAMS__;
-const SESSION_ID = Math.random().toString(36).slice(2);
 let member = null;
 let familyMembers = [];
 
@@ -336,7 +335,7 @@ async function loadFamilyMembers() {
     console.log('[MMR][family] loading family members for:', member?.memberID);
     const result = await callApi('getFamilyMembers', {
       memberID: member.memberID,
-      sessionID: SESSION_ID,
+      
     });
 
     familyMembers = result.members || [];
@@ -438,7 +437,7 @@ async function addExistingMember(email) {
     const result = await callApi('addFamilyMember', {
       memberID: member.memberID,
       targetEmail: email,
-      sessionID: SESSION_ID,
+      
     });
 
     showMsg(`✅ ${result.message}`, 'success');
@@ -480,7 +479,7 @@ async function submitNewMember() {
       lastName,
       phoneNumber,
       district,
-      sessionID: SESSION_ID,
+      
     });
 
     console.log('[MMR][family] new member created:', createResult.member.memberID);
@@ -489,7 +488,7 @@ async function submitNewMember() {
     const addResult = await callApi('addFamilyMember', {
       memberID: member.memberID,
       targetEmail: email,
-      sessionID: SESSION_ID,
+      
     });
 
     showMsg(`✅ New member created and added to family!`, 'success');
@@ -533,7 +532,7 @@ async function removeMember(email) {
     const result = await callApi('removeFamilyMember', {
       memberID: member.memberID,
       targetEmail: email,
-      sessionID: SESSION_ID,
+      
     });
 
     showMsg(`✅ ${result.message}`, 'success');

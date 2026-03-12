@@ -11,15 +11,13 @@
  *   promoteCompletedEvents       → daily, 1–2am
  */
 
-import {
-  processAllPendingNyrrEvents,
-  refreshUpcomingNyrrEvents,
-  promoteCompletedEvents,
-  matchNyrrResultsToMembers,
-  backfillMemberResults,
-  ingestEvent,
-} from './pipeline';
-import { getAllNyrrEvents, getResultsForMember } from './sheets';
+/// <reference path="./types.ts" />
+/// <reference path="./config.ts" />
+/// <reference path="./sheets.ts" />
+/// <reference path="./pipeline.ts" />
+/// <reference path="./nyrrApi.ts" />
+
+
 
 // ---------------------------------------------------------------------------
 // Scheduled triggers (called by GAS time-based triggers)
