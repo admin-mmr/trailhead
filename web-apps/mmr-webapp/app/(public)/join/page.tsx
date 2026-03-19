@@ -1,217 +1,488 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useLang } from '@/lib/i18n/context'
-import { Check, Loader2 } from 'lucide-react'
-import { loadStripe } from '@stripe/stripe-js'
+import { t } from '@/lib/i18n/translations'
+import Image from 'next/image'
+import { CheckCircle, Upload, CreditCard, User, ClipboardList } from 'lucide-react'
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+// ── Types ──────────────────────────────────────────────────────────────────
+type Plan = 'individual' | 'family' | 'family_upgrade'
+type Step = 'plan' | 'info' | 'payment' | 'proof' | 'done'
 
-const INDIVIDUAL_BENEFITS = [
-  { en: 'Official MMR Member ID card',      zh: '官方会员编号证书' },
-  { en: 'NYRR club team eligibility',       zh: 'NYRR 队伍参赛资格' },
-  { en: 'Member-only group runs',            zh: '专属会员集训' },
-  { en: 'Race gear discounts (10–20%)',      zh: '比赛装备折扣 10–20%' },
-  { en: 'Access to member portal & results', zh: '会员中心及成绩查询' },
+interface MemberInfo {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  address: string
+  city: string
+  state: string
+  zip: string
+  dateOfBirth: string
+  emergencyName: string
+  emergencyPhone: string
+  nyrrId: string
+  shirtSize: string
+  pronouns: string
+}
+
+const PLANS: Record<Plan, { label: string; labelZh: string; amount: number; desc: string; descZh: string }> = {
+  individual: {
+    label: 'Individual Membership',
+    labelZh: '个人会员',
+    amount: 30,
+    desc: 'One runner, full club access',
+    descZh: '单人跑者，完整俱乐部访问权限',
+  },
+  family: {
+    label: 'Family Membership',
+    labelZh: '家庭会员',
+    amount: 50,
+    desc: 'Up to 4 family members at one address',
+    descZh: '同住家庭最多4名成员',
+  },
+  family_upgrade: {
+    label: 'Family Upgrade',
+    labelZh: '升级家庭会员',
+    amount: 20,
+    desc: 'Upgrade existing Individual to Family',
+    descZh: '将现有个人会员升级为家庭会员',
+  },
+}
+
+const STEPS: { id: Step; label: string; icon: React.ReactNode }[] = [
+  { id: 'plan', label: 'Plan', icon: <ClipboardList className="w-4 h-4" /> },
+  { id: 'info', label: 'Info', icon: <User className="w-4 h-4" /> },
+  { id: 'payment', label: 'Pay', icon: <CreditCard className="w-4 h-4" /> },
+  { id: 'proof', label: 'Proof', icon: <Upload className="w-4 h-4" /> },
+  { id: 'done', label: 'Done', icon: <CheckCircle className="w-4 h-4" /> },
 ]
 
-const FAMILY_BENEFITS = [
-  { en: 'All Individual benefits',          zh: '所有个人会员权益' },
-  { en: 'Up to 4 family members',           zh: '最多4名家庭成员' },
-  { en: 'Family team race registration',    zh: '家庭团队参赛' },
-]
+const STEP_ORDER: Step[] = ['plan', 'info', 'payment', 'proof', 'done']
 
+// ── Component ──────────────────────────────────────────────────────────────
 export default function JoinPage() {
-  const { T, lang } = useLang()
-  const [selected, setSelected] = useState<'individual' | 'family'>('individual')
-  const [loading,  setLoading]  = useState(false)
-  const [form, setForm] = useState({
-    email: '', englishName: '', chineseName: '', phone: '', wechatId: '',
+  const { lang } = useLang()
+  const [step, setStep] = useState<Step>('plan')
+  const [plan, setPlan] = useState<Plan>('individual')
+  const [payMethod, setPayMethod] = useState<'zelle' | 'venmo'>('zelle')
+  const [info, setInfo] = useState<MemberInfo>({
+    firstName: '', lastName: '', email: '', phone: '',
+    address: '', city: '', state: '', zip: '',
+    dateOfBirth: '', emergencyName: '', emergencyPhone: '',
+    nyrrId: '', shirtSize: '', pronouns: '',
   })
+  const [payForm, setPayForm] = useState({ payerName: '', paymentDate: '', memoField: '', last4: '' })
+  const [eventId, setEventId] = useState<string | null>(null)
+  const [proofFile, setProofFile] = useState<File | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      // 1. Create/ensure member record
-      const memberRes = await fetch('/api/members/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, membershipType: selected }),
-      })
-      const memberData = await memberRes.json()
-      if (!memberData.ok) throw new Error(memberData.error)
+  const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'treasurer@mmrunners.org'
+  const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? '@MMRunners'
+  const currentPlan = PLANS[plan]
+  const stepIndex = STEP_ORDER.indexOf(step)
 
-      // 2. Create Stripe checkout session
-      const checkoutRes = await fetch('/api/stripe/create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          memberId:       memberData.data.memberId,
-          membershipType: selected,
-        }),
-      })
-      const checkoutData = await checkoutRes.json()
-      if (!checkoutData.ok) throw new Error(checkoutData.error)
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function nextStep() {
+    setStep(STEP_ORDER[stepIndex + 1])
+    setError('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
-      // 3. Redirect to Stripe
-      const stripe = await stripePromise
-      await stripe?.redirectToCheckout({ sessionId: checkoutData.data.sessionId })
-    } catch (err: any) {
-      alert(err.message ?? T('common.error'))
-    } finally {
-      setLoading(false)
+  function prevStep() {
+    if (stepIndex > 0) {
+      setStep(STEP_ORDER[stepIndex - 1])
+      setError('')
     }
   }
 
+  // ── Step 2: Submit member info + payment declaration → /api/payments/submit
+  async function handlePaymentSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError('')
+    try {
+      const res = await fetch('/api/payments/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan,
+          amount: currentPlan.amount,
+          paymentMethod: payMethod,
+          ...info,
+          ...payForm,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Submission failed')
+      setEventId(data.eventId)
+      nextStep()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ── Step 4: Upload proof screenshot → /api/payments/proof
+  async function handleProofUpload(e: React.FormEvent) {
+    e.preventDefault()
+    if (!proofFile || !eventId) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const fd = new FormData()
+      fd.append('proof', proofFile)
+      fd.append('eventId', eventId)
+      const res = await fetch('/api/payments/proof', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Upload failed')
+      nextStep()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ── Progress Bar ──────────────────────────────────────────────────────────
+  function ProgressBar() {
+    return (
+      <div className="flex items-center justify-between mb-10">
+        {STEPS.map((s, i) => {
+          const done = i < stepIndex
+          const active = s.id === step
+          return (
+            <div key={s.id} className="flex items-center flex-1">
+              <div className={`flex flex-col items-center ${i < STEPS.length - 1 ? 'flex-1' : ''}`}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold border-2 transition-colors
+                  ${done ? 'bg-green-500 border-green-500 text-white' : active ? 'bg-[#0A2342] border-[#0A2342] text-white' : 'bg-white border-gray-300 text-gray-400'}`}>
+                  {done ? <CheckCircle className="w-5 h-5" /> : s.icon}
+                </div>
+                <span className={`mt-1 text-xs font-medium ${active ? 'text-[#0A2342]' : done ? 'text-green-600' : 'text-gray-400'}`}>
+                  {s.label}
+                </span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={`h-0.5 flex-1 mx-1 mb-5 rounded ${i < stepIndex ? 'bg-green-400' : 'bg-gray-200'}`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="py-20">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h1 className="section-title">{T('join.title')}</h1>
-          <p className="section-subtitle">
-            {lang === 'zh' ? '选择适合您的会员套餐' : 'Choose the plan that works for you'}
+    <main className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-2xl mx-auto px-4">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-[#0A2342]">
+            {lang === 'zh' ? '加入我们' : 'Join Misty Mountain Runners'}
+          </h1>
+          <p className="text-gray-500 mt-2">
+            {lang === 'zh' ? '成为我们社区的一员' : 'Become part of our running community'}
           </p>
         </div>
 
-        {/* Plan selector */}
-        <div className="grid md:grid-cols-2 gap-6 mb-12">
-          {(['individual', 'family'] as const).map(type => {
-            const isSelected = selected === type
-            const benefits   = type === 'individual' ? INDIVIDUAL_BENEFITS : FAMILY_BENEFITS
-            return (
-              <button
-                key={type}
-                onClick={() => setSelected(type)}
-                className={`card p-8 text-left transition-all ${
-                  isSelected
-                    ? 'border-2 border-brand-orange ring-2 ring-brand-orange/20'
-                    : 'border-2 border-transparent hover:border-gray-200'
-                }`}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-brand-navy">
-                      {lang === 'zh'
-                        ? (type === 'individual' ? '个人会员' : '家庭会员')
-                        : (type === 'individual' ? 'Individual' : 'Family')}
-                    </h3>
-                    <p className="text-3xl font-bold text-brand-orange mt-1">
-                      {type === 'individual' ? '$30' : '$50'}
-                      <span className="text-base font-normal text-gray-400 ml-1">
-                        / {lang === 'zh' ? '年' : 'year'}
-                      </span>
-                    </p>
-                  </div>
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                    isSelected ? 'border-brand-orange bg-brand-orange' : 'border-gray-300'
-                  }`}>
-                    {isSelected && <Check className="h-3 w-3 text-white" />}
-                  </div>
-                </div>
-                <ul className="space-y-2">
-                  {benefits.map((b, i) => (
-                    <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                      <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
-                      {lang === 'zh' ? b.zh : b.en}
-                    </li>
-                  ))}
-                </ul>
-              </button>
-            )
-          })}
-        </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <ProgressBar />
 
-        {/* Registration form */}
-        <div className="card p-8 max-w-2xl mx-auto">
-          <h2 className="text-xl font-bold text-brand-navy mb-6">
-            {lang === 'zh' ? '填写注册信息' : 'Your Information'}
-          </h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {lang === 'zh' ? '英文姓名' : 'English Name'}
-                </label>
-                <input
-                  type="text"
-                  className="input-field"
-                  value={form.englishName}
-                  onChange={e => setForm(f => ({ ...f, englishName: e.target.value }))}
-                  placeholder={lang === 'zh' ? 'John Smith' : 'John Smith'}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {lang === 'zh' ? '中文姓名' : '中文姓名 (optional)'}
-                </label>
-                <input
-                  type="text"
-                  className="input-field"
-                  value={form.chineseName}
-                  onChange={e => setForm(f => ({ ...f, chineseName: e.target.value }))}
-                  placeholder="张三"
-                />
-              </div>
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {error}
             </div>
+          )}
+
+          {/* ── STEP 1: Plan Selection ─────────────────────────────── */}
+          {step === 'plan' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {lang === 'zh' ? '邮箱地址' : 'Email Address'}
-              </label>
-              <input
-                type="email"
-                className="input-field"
-                value={form.email}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                placeholder="you@example.com"
-                required
-              />
-            </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {lang === 'zh' ? '电话' : 'Phone (optional)'}
-                </label>
-                <input
-                  type="tel"
-                  className="input-field"
-                  value={form.phone}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                  placeholder="+1 (212) 555-0000"
-                />
+              <h2 className="text-xl font-semibold text-[#0A2342] mb-6">
+                {lang === 'zh' ? '选择会员套餐' : 'Choose Your Membership Plan'}
+              </h2>
+              <div className="grid gap-4">
+                {(Object.entries(PLANS) as [Plan, typeof PLANS[Plan]][]).map(([key, p]) => (
+                  <label key={key}
+                    className={`flex items-start gap-4 p-4 border-2 rounded-xl cursor-pointer transition-colors
+                      ${plan === key ? 'border-[#F47B20] bg-orange-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <input type="radio" name="plan" value={key} checked={plan === key}
+                      onChange={() => setPlan(key)} className="mt-1" />
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-[#0A2342]">
+                          {lang === 'zh' ? p.labelZh : p.label}
+                        </span>
+                        <span className="text-xl font-bold text-[#F47B20]">${p.amount}</span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {lang === 'zh' ? p.descZh : p.desc}
+                      </p>
+                    </div>
+                  </label>
+                ))}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  WeChat ID {lang === 'zh' ? '（可选）' : '(optional)'}
-                </label>
-                <input
-                  type="text"
-                  className="input-field"
-                  value={form.wechatId}
-                  onChange={e => setForm(f => ({ ...f, wechatId: e.target.value }))}
-                  placeholder="wechat_id"
-                />
-              </div>
+              <button onClick={nextStep}
+                className="mt-8 w-full bg-[#0A2342] text-white py-3 rounded-xl font-semibold hover:bg-[#0d2d55] transition-colors">
+                {lang === 'zh' ? '继续' : 'Continue →'}
+              </button>
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full flex items-center justify-center gap-2 mt-2"
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {lang === 'zh' ? '继续至付款 →' : 'Continue to Payment →'}
-            </button>
+          {/* ── STEP 2: Member Info ────────────────────────────────── */}
+          {step === 'info' && (
+            <form onSubmit={(e) => { e.preventDefault(); nextStep() }}>
+              <h2 className="text-xl font-semibold text-[#0A2342] mb-6">
+                {lang === 'zh' ? '填写个人信息' : 'Your Information'}
+              </h2>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { key: 'firstName', label: 'First Name', labelZh: '名', required: true },
+                  { key: 'lastName', label: 'Last Name', labelZh: '姓', required: true },
+                  { key: 'email', label: 'Email Address', labelZh: '电子邮件', required: true, type: 'email', colSpan: true },
+                  { key: 'phone', label: 'Phone', labelZh: '电话', required: true },
+                  { key: 'dateOfBirth', label: 'Date of Birth', labelZh: '出生日期', required: true, type: 'date' },
+                  { key: 'shirtSize', label: 'Shirt Size', labelZh: '衣服尺寸' },
+                  { key: 'pronouns', label: 'Pronouns', labelZh: '代词', colSpan: true },
+                  { key: 'address', label: 'Address', labelZh: '地址', required: true, colSpan: true },
+                  { key: 'city', label: 'City', labelZh: '城市', required: true },
+                  { key: 'state', label: 'State', labelZh: '州', required: true },
+                  { key: 'zip', label: 'ZIP Code', labelZh: '邮编', required: true },
+                  { key: 'emergencyName', label: 'Emergency Contact Name', labelZh: '紧急联系人', required: true, colSpan: true },
+                  { key: 'emergencyPhone', label: 'Emergency Contact Phone', labelZh: '紧急联系电话', required: true, colSpan: true },
+                  { key: 'nyrrId', label: 'NYRR ID (optional)', labelZh: 'NYRR编号（选填）', colSpan: true },
+                ].map(f => (
+                  <div key={f.key} className={f.colSpan ? 'col-span-2' : ''}>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {lang === 'zh' ? f.labelZh : f.label}
+                      {f.required && <span className="text-red-500 ml-1">*</span>}
+                    </label>
+                    <input
+                      type={f.type ?? 'text'}
+                      required={f.required}
+                      value={(info as Record<string, string>)[f.key]}
+                      onChange={e => setInfo(prev => ({ ...prev, [f.key]: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-4 mt-8">
+                <button type="button" onClick={prevStep}
+                  className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                  {lang === 'zh' ? '返回' : '← Back'}
+                </button>
+                <button type="submit"
+                  className="flex-1 bg-[#0A2342] text-white py-3 rounded-xl font-semibold hover:bg-[#0d2d55] transition-colors">
+                  {lang === 'zh' ? '继续' : 'Continue →'}
+                </button>
+              </div>
+            </form>
+          )}
 
-            <p className="text-center text-xs text-gray-400">
-              {lang === 'zh'
-                ? '安全支付由 Stripe 处理。支付完成后会员立即激活。'
-                : 'Secure payment via Stripe. Membership activates immediately after payment.'}
-            </p>
-          </form>
+          {/* ── STEP 3: Payment (Zelle / Venmo QR) ────────────────── */}
+          {step === 'payment' && (
+            <form onSubmit={handlePaymentSubmit}>
+              <h2 className="text-xl font-semibold text-[#0A2342] mb-2">
+                {lang === 'zh' ? '付款方式' : 'Complete Your Payment'}
+              </h2>
+              <p className="text-sm text-gray-500 mb-6">
+                {lang === 'zh'
+                  ? `请支付 $${currentPlan.amount}，选择 Zelle 或 Venmo。`
+                  : `Please send $${currentPlan.amount} via Zelle or Venmo.`}
+              </p>
+
+              {/* Method toggle */}
+              <div className="flex gap-3 mb-6">
+                {(['zelle', 'venmo'] as const).map(m => (
+                  <button key={m} type="button"
+                    onClick={() => setPayMethod(m)}
+                    className={`flex-1 py-2 rounded-xl border-2 font-semibold capitalize transition-colors
+                      ${payMethod === m ? 'border-[#F47B20] bg-orange-50 text-[#F47B20]' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                    {m.charAt(0).toUpperCase() + m.slice(1)}
+                  </button>
+                ))}
+              </div>
+
+              {/* QR + instructions */}
+              <div className="bg-gray-50 rounded-xl p-6 mb-6 text-center">
+                <div className="w-40 h-40 bg-white border-2 border-dashed border-gray-300 rounded-xl mx-auto flex items-center justify-center overflow-hidden">
+                  <Image
+                    src={`/images/qr-${payMethod}.png`}
+                    alt={`${payMethod} QR code`}
+                    width={144}
+                    height={144}
+                    className="object-contain"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  />
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
+                  {lang === 'zh' ? '扫描二维码付款' : 'Scan QR code to pay'}
+                </p>
+                <div className="mt-4 space-y-1">
+                  <p className="font-semibold text-[#0A2342] text-lg">
+                    {payMethod === 'zelle' ? zelleHandle : venmoHandle}
+                  </p>
+                  <p className="text-2xl font-bold text-[#F47B20]">${currentPlan.amount}</p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {lang === 'zh'
+                      ? `备注请填写: ${info.firstName} ${info.lastName} ${lang === 'zh' ? currentPlan.labelZh : currentPlan.label}`
+                      : `Memo: ${info.firstName} ${info.lastName} – ${currentPlan.label}`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Declaration form */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-gray-700">
+                  {lang === 'zh' ? '填写付款信息' : 'Record Your Payment'}
+                </h3>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '付款人姓名' : 'Name on Payment Account'} <span className="text-red-500">*</span>
+                  </label>
+                  <input required value={payForm.payerName}
+                    onChange={e => setPayForm(p => ({ ...p, payerName: e.target.value }))}
+                    placeholder={lang === 'zh' ? '付款账户上的姓名' : 'Name shown on your Zelle/Venmo'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '付款日期' : 'Payment Date'} <span className="text-red-500">*</span>
+                  </label>
+                  <input required type="date" value={payForm.paymentDate}
+                    onChange={e => setPayForm(p => ({ ...p, paymentDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '备注内容（填写的memo）' : 'Memo You Entered'}
+                  </label>
+                  <input value={payForm.memoField}
+                    onChange={e => setPayForm(p => ({ ...p, memoField: e.target.value }))}
+                    placeholder={lang === 'zh' ? '您在付款时输入的备注' : 'e.g. John Smith Individual Membership'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]" />
+                </div>
+                {payMethod === 'zelle' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {lang === 'zh' ? '确认号后4位（可选）' : 'Last 4 Digits of Confirmation # (optional)'}
+                    </label>
+                    <input maxLength={4} value={payForm.last4}
+                      onChange={e => setPayForm(p => ({ ...p, last4: e.target.value.replace(/\D/g, '') }))}
+                      placeholder="1234"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-4 mt-8">
+                <button type="button" onClick={prevStep}
+                  className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                  {lang === 'zh' ? '返回' : '← Back'}
+                </button>
+                <button type="submit" disabled={submitting}
+                  className="flex-1 bg-[#0A2342] text-white py-3 rounded-xl font-semibold hover:bg-[#0d2d55] transition-colors disabled:opacity-50">
+                  {submitting ? (lang === 'zh' ? '提交中…' : 'Submitting…') : (lang === 'zh' ? '提交付款信息' : 'Submit Payment Info →')}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ── STEP 4: Proof Upload ───────────────────────────────── */}
+          {step === 'proof' && (
+            <form onSubmit={handleProofUpload}>
+              <h2 className="text-xl font-semibold text-[#0A2342] mb-2">
+                {lang === 'zh' ? '上传付款截图' : 'Upload Payment Screenshot'}
+              </h2>
+              <p className="text-sm text-gray-500 mb-2">
+                {lang === 'zh'
+                  ? '请上传 Zelle 或 Venmo 的付款成功截图，帮助我们更快完成审核。'
+                  : 'Please upload a screenshot of your completed Zelle or Venmo payment to help us verify faster.'}
+              </p>
+              {eventId && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+                  {lang === 'zh' ? '参考号：' : 'Reference #: '}<strong>{eventId}</strong>
+                  {' — '}{lang === 'zh' ? '请保存此号码' : 'Save this for your records'}
+                </div>
+              )}
+
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-[#F47B20] transition-colors"
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  e.preventDefault()
+                  const f = e.dataTransfer.files[0]
+                  if (f) setProofFile(f)
+                }}>
+                <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                {proofFile ? (
+                  <p className="text-sm font-medium text-[#0A2342]">{proofFile.name}</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-gray-700">
+                      {lang === 'zh' ? '点击或拖拽上传截图' : 'Click or drag & drop your screenshot'}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">PNG, JPG, HEIC up to 10 MB</p>
+                  </>
+                )}
+                <input ref={fileRef} type="file" accept="image/*,.heic" className="hidden"
+                  onChange={e => { if (e.target.files?.[0]) setProofFile(e.target.files[0]) }} />
+              </div>
+
+              <div className="flex gap-4 mt-8">
+                <button type="button" onClick={nextStep}
+                  className="flex-1 border border-gray-300 text-gray-500 py-3 rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                  {lang === 'zh' ? '跳过（稍后上传）' : 'Skip for now'}
+                </button>
+                <button type="submit" disabled={!proofFile || submitting}
+                  className="flex-1 bg-[#0A2342] text-white py-3 rounded-xl font-semibold hover:bg-[#0d2d55] transition-colors disabled:opacity-50">
+                  {submitting ? (lang === 'zh' ? '上传中…' : 'Uploading…') : (lang === 'zh' ? '提交截图' : 'Submit Screenshot →')}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ── STEP 5: Done ──────────────────────────────────────── */}
+          {step === 'done' && (
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-9 h-9 text-green-500" />
+              </div>
+              <h2 className="text-2xl font-bold text-[#0A2342] mb-2">
+                {lang === 'zh' ? '申请已提交！' : 'Application Submitted!'}
+              </h2>
+              <p className="text-gray-600 mb-4">
+                {lang === 'zh'
+                  ? '我们正在审核您的付款。通常在 1–2 个工作日内完成。审核通过后，您将收到确认邮件。'
+                  : 'We\'re reviewing your payment. This typically takes 1–2 business days. You\'ll receive a confirmation email once approved.'}
+              </p>
+              {eventId && (
+                <div className="inline-block bg-gray-50 border border-gray-200 rounded-xl px-6 py-3 mb-6">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">
+                    {lang === 'zh' ? '参考号' : 'Reference Number'}
+                  </p>
+                  <p className="text-lg font-mono font-bold text-[#0A2342] mt-1">{eventId}</p>
+                </div>
+              )}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 text-left">
+                <strong>{lang === 'zh' ? '温馨提示：' : 'Reminder: '}</strong>
+                {lang === 'zh'
+                  ? '如果您尚未上传付款截图，请登录后前往会员中心补交。这将帮助我们更快激活您的会员资格。'
+                  : 'If you skipped the screenshot upload, you can still submit it from your member portal after logging in. It helps us activate your membership faster.'}
+              </div>
+              <a href="/login"
+                className="mt-6 inline-block bg-[#0A2342] text-white px-8 py-3 rounded-xl font-semibold hover:bg-[#0d2d55] transition-colors">
+                {lang === 'zh' ? '登录会员中心' : 'Log In to Member Portal'}
+              </a>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </main>
   )
 }

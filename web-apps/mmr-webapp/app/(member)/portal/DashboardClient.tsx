@@ -1,9 +1,19 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Trophy, Calendar, ArrowRight, AlertCircle } from 'lucide-react'
+import { Trophy, Calendar, ArrowRight, AlertCircle, Clock, Upload } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import type { Member } from '@/types'
+
+interface PendingEvent {
+  event_id: string
+  payment_intent: string
+  amount: number
+  payment_method: string
+  created_at: string
+  proof_url: string | null
+}
 
 interface Props {
   member: Member | null
@@ -12,6 +22,19 @@ interface Props {
 
 export default function DashboardClient({ member, payments }: Props) {
   const { lang } = useLang()
+  const [pendingEvents, setPendingEvents] = useState<PendingEvent[]>([])
+  const [loadingPending, setLoadingPending] = useState(false)
+
+  // Fetch open pending payment events on mount (PRDv4: derived at display time)
+  useEffect(() => {
+    if (!member) return
+    setLoadingPending(true)
+    fetch('/api/payments/pending')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.events) setPendingEvents(data.events) })
+      .catch(() => {})
+      .finally(() => setLoadingPending(false))
+  }, [member])
 
   if (!member) {
     return (
@@ -34,8 +57,55 @@ export default function DashboardClient({ member, payments }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* ── Pending payment banner (PRDv4 §3: show on return visit) ─────── */}
+      {!loadingPending && pendingEvents.length > 0 && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5">
+          <div className="flex items-start gap-3 mb-3">
+            <Clock className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-amber-800">
+                {lang === 'zh' ? '付款待审核' : 'Payment Pending Review'}
+              </p>
+              <p className="text-amber-700 text-sm mt-0.5">
+                {lang === 'zh'
+                  ? '我们收到了您的付款申请，正在等待确认。上传截图可加快审核速度。'
+                  : 'We received your payment submission and are waiting to verify it. Uploading a screenshot speeds up the review.'}
+              </p>
+            </div>
+          </div>
+          {pendingEvents.map(evt => (
+            <div key={evt.event_id}
+              className="bg-white rounded-xl p-4 border border-amber-200 mt-3 flex items-center justify-between gap-4">
+              <div className="text-sm">
+                <p className="font-semibold text-gray-800">{evt.payment_intent}</p>
+                <p className="text-gray-500 text-xs mt-0.5">
+                  {lang === 'zh' ? '金额：' : 'Amount: '}
+                  <strong>${evt.amount}</strong>
+                  {' · '}
+                  {evt.payment_method.charAt(0).toUpperCase() + evt.payment_method.slice(1)}
+                  {' · Ref: '}
+                  <span className="font-mono">{evt.event_id}</span>
+                </p>
+              </div>
+              {evt.proof_url ? (
+                <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full whitespace-nowrap">
+                  {lang === 'zh' ? '截图已上传' : 'Proof uploaded'}
+                </span>
+              ) : (
+                <Link
+                  href={`/portal/payment-proof?eventId=${evt.event_id}`}
+                  className="flex items-center gap-1.5 text-xs bg-[#0A2342] text-white px-3 py-2 rounded-xl hover:bg-[#0d2d55] transition-colors whitespace-nowrap">
+                  <Upload className="w-3.5 h-3.5" />
+                  {lang === 'zh' ? '上传截图' : 'Upload proof'}
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Membership status banner */}
-      {member.status !== 'active' && (
+      {member.status !== 'active' && pendingEvents.length === 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
           <div>
