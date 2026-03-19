@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Misty Mountain Runners — New Website Prototype</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --navy:#1F497D;--navy-dark:#163759;--navy-light:#2A5FA0;
+    --orange:#E86033;--orange-light:#F07A4F;--orange-dark:#C44F22;
+    --sky:#D6E4F0;--sky2:#EBF4FB;--gray:#F4F6F8;--text:#1A1A2E;
+    --muted:#6B7A99;--white:#fff;--border:#E2E8F0;
+    --font:'Inter','Segoe UI',system-ui,sans-serif;
+  }
+  html{scroll-behavior:smooth;font-family:var(--font)}
+  body{background:#fff;color:var(--text);overflow-x:hidden}
+
+  /* ── LAYOUT ────────────────────────────────────── */
+  .page{display:none;animation:fadeIn .35s ease}
+  .page.active{display:block}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+  /* ── NAV ───────────────────────────────────────── */
+  nav{position:sticky;top:0;z-index:100;background:var(--navy);
+    box-shadow:0 2px 16px rgba(0,0,0,.25)}
+  .nav-inner{max-width:1200px;margin:auto;display:flex;
+    align-items:center;justify-content:space-between;padding:0 24px;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;cursor:pointer}
+  .logo-circle{width:38px;height:38px;background:var(--orange);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:16px}
+  .logo-text{color:#fff;font-weight:800;font-size:18px;letter-spacing:-.3px;line-height:1.1}
+  .logo-text span{color:var(--orange)}
+  .nav-links{display:flex;gap:4px;align-items:center}
+  .nav-btn{background:none;border:none;color:rgba(255,255,255,.8);font-size:14px;
+    font-weight:500;padding:8px 14px;border-radius:8px;cursor:pointer;transition:.2s;font-family:inherit}
+  .nav-btn:hover,.nav-btn.active{color:#fff;background:rgba(255,255,255,.12)}
+  .nav-actions{display:flex;align-items:center;gap:10px}
+  .lang-toggle{display:flex;background:rgba(255,255,255,.12);border-radius:20px;overflow:hidden}
+  .lang-btn{border:none;background:none;color:rgba(255,255,255,.7);font-size:13px;
+    padding:6px 12px;cursor:pointer;font-family:inherit;transition:.2s;font-weight:500}
+  .lang-btn.on{background:var(--orange);color:#fff}
+  .cta-nav{background:var(--orange);color:#fff;border:none;border-radius:8px;
+    padding:9px 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:.2s}
+  .cta-nav:hover{background:var(--orange-dark)}
+  .login-nav{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);
+    border-radius:8px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;
+    font-family:inherit;transition:.2s}
+  .login-nav:hover{background:rgba(255,255,255,.25)}
+
+  /* ── HERO ──────────────────────────────────────── */
+  .hero{background:linear-gradient(135deg,var(--navy-dark) 0%,var(--navy) 60%,#1a3a6b 100%);
+    min-height:560px;display:flex;align-items:center;position:relative;overflow:hidden}
+  .hero::before{content:'';position:absolute;inset:0;
+    background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")}
+  .hero-orb{position:absolute;border-radius:50%;filter:blur(60px);opacity:.25}
+  .hero-orb1{width:400px;height:400px;background:var(--orange);top:-100px;right:-50px}
+  .hero-orb2{width:300px;height:300px;background:#4A90D9;bottom:-80px;left:10%}
+  .hero-inner{max-width:1200px;margin:auto;padding:80px 24px;position:relative;z-index:1}
+  .hero-tag{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.12);
+    border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:6px 14px;
+    color:rgba(255,255,255,.9);font-size:13px;font-weight:500;margin-bottom:24px}
+  .hero-tag span{width:6px;height:6px;border-radius:50%;background:var(--orange);
+    animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  h1.hero-title{color:#fff;font-size:clamp(36px,5vw,62px);font-weight:900;
+    line-height:1.1;margin-bottom:20px;letter-spacing:-1px}
+  h1.hero-title em{color:var(--orange);font-style:normal}
+  .hero-sub{color:rgba(255,255,255,.75);font-size:18px;line-height:1.7;
+    max-width:520px;margin-bottom:36px}
+  .hero-btns{display:flex;gap:14px;flex-wrap:wrap}
+  .btn-primary{background:var(--orange);color:#fff;border:none;border-radius:10px;
+    padding:14px 28px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;
+    transition:.2s;letter-spacing:.2px}
+  .btn-primary:hover{background:var(--orange-dark);transform:translateY(-1px)}
+  .btn-ghost{background:rgba(255,255,255,.1);color:#fff;border:1.5px solid rgba(255,255,255,.3);
+    border-radius:10px;padding:13px 24px;font-size:16px;font-weight:600;cursor:pointer;
+    font-family:inherit;transition:.2s}
+  .btn-ghost:hover{background:rgba(255,255,255,.18)}
+  .hero-stats{display:flex;gap:40px;margin-top:52px;flex-wrap:wrap}
+  .stat{color:#fff}
+  .stat-num{font-size:32px;font-weight:900;color:var(--orange)}
+  .stat-label{font-size:13px;color:rgba(255,255,255,.65);margin-top:2px}
+
+  /* ── SECTIONS ──────────────────────────────────── */
+  .section{padding:80px 24px}
+  .section-inner{max-width:1200px;margin:auto}
+  .section-tag{font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+    color:var(--orange);margin-bottom:12px}
+  h2.section-title{font-size:clamp(26px,3.5vw,40px);font-weight:800;
+    color:var(--navy);margin-bottom:16px;letter-spacing:-.5px}
+  .section-sub{color:var(--muted);font-size:16px;line-height:1.7;max-width:600px}
+  .section-header{display:flex;align-items:flex-end;justify-content:space-between;
+    margin-bottom:40px;flex-wrap:wrap;gap:16px}
+  .see-all{color:var(--orange);font-size:14px;font-weight:600;cursor:pointer;
+    text-decoration:none;border:none;background:none;font-family:inherit}
+  .see-all:hover{text-decoration:underline}
+  .gray-section{background:var(--gray)}
+
+  /* ── CARDS ─────────────────────────────────────── */
+  .card-grid{display:grid;gap:20px}
+  .card-grid-3{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+  .card-grid-4{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+  .card{background:#fff;border-radius:16px;overflow:hidden;
+    border:1px solid var(--border);transition:.25s;cursor:pointer}
+  .card:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(31,73,125,.12)}
+  .card-img{height:180px;object-fit:cover;width:100%;
+    background:linear-gradient(135deg,var(--sky) 0%,var(--sky2) 100%);
+    display:flex;align-items:center;justify-content:center;font-size:48px}
+  .card-body{padding:20px}
+  .card-tag{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+    color:var(--orange);margin-bottom:8px}
+  .card-title{font-size:17px;font-weight:700;color:var(--navy);margin-bottom:8px;
+    line-height:1.35}
+  .card-meta{font-size:13px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap}
+  .card-meta span{display:flex;align-items:center;gap:4px}
+
+  /* ── EVENT CARDS ───────────────────────────────── */
+  .event-card{background:#fff;border-radius:16px;border:1px solid var(--border);
+    overflow:hidden;transition:.25s;display:flex;align-items:stretch}
+  .event-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(31,73,125,.1)}
+  .event-date-col{background:var(--navy);color:#fff;min-width:72px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:16px 12px;text-align:center}
+  .event-month{font-size:11px;font-weight:700;letter-spacing:1.5px;
+    text-transform:uppercase;opacity:.7}
+  .event-day{font-size:32px;font-weight:900;line-height:1}
+  .event-body{padding:16px 20px;flex:1}
+  .event-title{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:6px}
+  .event-meta{font-size:13px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .event-badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;
+    border-radius:20px;letter-spacing:.5px}
+  .badge-open{background:#D1FAE5;color:#065F46}
+  .badge-members{background:#EDE9FE;color:#5B21B6}
+  .badge-upcoming{background:#FEF3C7;color:#92400E}
+
+  /* ── MEMBER PORTAL ─────────────────────────────── */
+  .portal-layout{display:grid;grid-template-columns:240px 1fr;gap:0;
+    min-height:calc(100vh - 64px);background:var(--gray)}
+  .sidebar{background:var(--navy-dark);padding:24px 0;position:sticky;
+    top:64px;height:calc(100vh - 64px);overflow-y:auto}
+  .sidebar-member{padding:20px 20px 24px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:8px}
+  .member-avatar{width:52px;height:52px;border-radius:50%;background:var(--orange);
+    display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;
+    font-size:20px;margin-bottom:10px}
+  .member-name{color:#fff;font-weight:700;font-size:15px}
+  .member-id{color:rgba(255,255,255,.5);font-size:12px;font-family:monospace;margin-top:2px}
+  .member-status{display:inline-block;background:#D1FAE5;color:#065F46;
+    font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin-top:6px}
+  .sidebar-nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;
+    color:rgba(255,255,255,.65);font-size:14px;font-weight:500;cursor:pointer;
+    transition:.2s;border:none;background:none;width:100%;text-align:left;font-family:inherit}
+  .sidebar-nav-item:hover,.sidebar-nav-item.on{background:rgba(255,255,255,.08);
+    color:#fff;border-left:3px solid var(--orange)}
+  .sidebar-nav-item span{font-size:18px}
+  .portal-main{padding:32px;overflow-y:auto}
+  .portal-panel{display:none}
+  .portal-panel.on{display:block;animation:fadeIn .3s ease}
+  .dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:28px}
+  .dash-stat{background:#fff;border-radius:14px;padding:20px;border:1px solid var(--border)}
+  .dash-stat-num{font-size:28px;font-weight:800;color:var(--navy)}
+  .dash-stat-label{font-size:13px;color:var(--muted);margin-top:4px}
+  .dash-stat-icon{font-size:24px;margin-bottom:8px}
+  .portal-card{background:#fff;border-radius:16px;padding:24px;border:1px solid var(--border);margin-bottom:20px}
+  .portal-card h3{font-size:17px;font-weight:700;color:var(--navy);margin-bottom:16px;
+    display:flex;align-items:center;gap:8px}
+  .chart-wrap{position:relative;height:260px}
+  .renewal-banner{background:linear-gradient(135deg,var(--orange) 0%,var(--orange-dark) 100%);
+    border-radius:14px;padding:20px 24px;display:flex;align-items:center;
+    justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+  .renewal-text{color:#fff}
+  .renewal-text h3{font-size:16px;font-weight:700}
+  .renewal-text p{font-size:13px;opacity:.85;margin-top:2px}
+  .btn-white{background:#fff;color:var(--orange);border:none;border-radius:8px;
+    padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+  .result-row{display:flex;align-items:center;gap:12px;padding:12px 0;
+    border-bottom:1px solid var(--border);font-size:14px}
+  .result-row:last-child{border-bottom:none}
+  .result-rank{width:32px;height:32px;border-radius:8px;background:var(--sky);
+    color:var(--navy);display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:13px;flex-shrink:0}
+  .result-rank.gold{background:#FEF3C7;color:#92400E}
+  .result-rank.silver{background:#F1F5F9;color:#475569}
+  .result-rank.bronze{background:#FEF2E8;color:#C44F22}
+  .result-name{flex:1;font-weight:600;color:var(--navy)}
+  .result-time{color:var(--muted);font-family:monospace}
+  .result-badge{font-size:11px;background:var(--sky);color:var(--navy);
+    padding:2px 8px;border-radius:20px;font-weight:600}
+
+  /* ── EDITOR ────────────────────────────────────── */
+  .editor-layout{display:grid;grid-template-columns:1fr 340px;gap:24px;
+    max-width:1200px;margin:auto;padding:32px 24px}
+  .editor-main{background:#fff;border:1px solid var(--border);border-radius:16px;
+    overflow:hidden;min-height:600px}
+  .editor-toolbar{background:var(--navy);padding:12px 16px;display:flex;
+    align-items:center;gap:8px;flex-wrap:wrap}
+  .tool-btn{background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:6px;
+    padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:.2s}
+  .tool-btn:hover{background:rgba(255,255,255,.22)}
+  .tool-btn.active-tool{background:var(--orange);color:#fff}
+  .toolbar-sep{width:1px;height:24px;background:rgba(255,255,255,.2);margin:0 4px}
+  .editor-body{padding:24px;min-height:500px}
+  .editor-title{border:none;outline:none;font-size:28px;font-weight:800;color:var(--navy);
+    width:100%;margin-bottom:8px;font-family:inherit;background:transparent}
+  .editor-title::placeholder{color:#CBD5E1}
+  .editor-subtitle{border:none;outline:none;font-size:15px;color:var(--muted);
+    width:100%;margin-bottom:20px;font-family:inherit;background:transparent}
+  .editor-subtitle::placeholder{color:#CBD5E1}
+  .block{border:2px solid transparent;border-radius:10px;padding:12px;margin-bottom:8px;
+    cursor:pointer;transition:.15s;position:relative}
+  .block:hover{border-color:var(--sky);background:var(--sky2)}
+  .block.selected{border-color:var(--orange)!important;background:rgba(232,96,51,.04)}
+  .block-handle{position:absolute;left:-28px;top:50%;transform:translateY(-50%);
+    color:#CBD5E1;font-size:16px;cursor:grab;opacity:0}
+  .block:hover .block-handle{opacity:1}
+  .block-text{font-size:15px;line-height:1.8;color:var(--text);
+    border:none;outline:none;width:100%;resize:none;font-family:inherit;background:transparent}
+  .block-image{width:100%;height:200px;background:var(--gray);border-radius:10px;
+    display:flex;align-items:center;justify-content:center;color:var(--muted);
+    font-size:14px;gap:8px;border:2px dashed var(--border)}
+  .add-block-btn{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px;
+    border:2px dashed var(--border);border-radius:10px;padding:12px 16px;cursor:pointer;
+    transition:.2s;background:none;width:100%;font-family:inherit;margin-top:4px}
+  .add-block-btn:hover{border-color:var(--orange);color:var(--orange);background:rgba(232,96,51,.04)}
+  .block-menu{background:#fff;border:1px solid var(--border);border-radius:12px;
+    padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);display:none;
+    position:absolute;z-index:50;min-width:220px}
+  .block-menu.show{display:block;animation:fadeIn .15s ease}
+  .block-menu-item{display:flex;align-items:center;gap:10px;padding:9px 12px;
+    border-radius:8px;cursor:pointer;font-size:14px;transition:.15s;
+    border:none;background:none;width:100%;font-family:inherit;text-align:left}
+  .block-menu-item:hover{background:var(--sky2);color:var(--navy)}
+  .block-menu-item span:first-child{width:28px;height:28px;background:var(--gray);
+    border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px}
+  .editor-sidebar{display:flex;flex-direction:column;gap:16px}
+  .editor-panel{background:#fff;border:1px solid var(--border);border-radius:16px;padding:20px}
+  .editor-panel h3{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:14px}
+  .field-label{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;
+    text-transform:uppercase;letter-spacing:.8px}
+  .field-input{width:100%;border:1px solid var(--border);border-radius:8px;
+    padding:9px 12px;font-size:14px;font-family:inherit;color:var(--text);margin-bottom:12px;
+    transition:.2s;outline:none}
+  .field-input:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(232,96,51,.1)}
+  .field-select{width:100%;border:1px solid var(--border);border-radius:8px;
+    padding:9px 12px;font-size:14px;font-family:inherit;color:var(--text);margin-bottom:12px;
+    background:#fff;cursor:pointer;outline:none}
+  .lang-field{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+  .lang-field .field-input{margin-bottom:0}
+  .lang-chip{font-size:10px;font-weight:700;background:var(--sky);color:var(--navy);
+    padding:2px 6px;border-radius:4px;letter-spacing:.5px}
+  .publish-btn{width:100%;background:var(--orange);color:#fff;border:none;border-radius:10px;
+    padding:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:.2s;margin-bottom:8px}
+  .publish-btn:hover{background:var(--orange-dark)}
+  .preview-btn{width:100%;background:var(--sky);color:var(--navy);border:none;border-radius:10px;
+    padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:.2s}
+  .preview-btn:hover{background:#BFD8EE}
+
+  /* ── JOIN PAGE ─────────────────────────────────── */
+  .join-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start}
+  .price-card{border-radius:20px;overflow:hidden;border:2px solid var(--border);transition:.25s}
+  .price-card:hover{border-color:var(--orange);transform:translateY(-4px);
+    box-shadow:0 16px 40px rgba(31,73,125,.12)}
+  .price-card.featured{border-color:var(--orange)}
+  .price-header{background:var(--navy);padding:24px;color:#fff;text-align:center}
+  .price-header.orange{background:var(--orange)}
+  .price-name{font-size:14px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;opacity:.8;margin-bottom:4px}
+  .price-amt{font-size:42px;font-weight:900;margin-bottom:2px}
+  .price-period{font-size:14px;opacity:.7}
+  .price-body{padding:24px;background:#fff}
+  .price-feature{display:flex;align-items:center;gap:10px;font-size:14px;
+    color:var(--text);margin-bottom:12px}
+  .price-feature:before{content:'✓';color:var(--orange);font-weight:700;font-size:16px}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  .form-field{margin-bottom:12px}
+  .form-field label{display:block;font-size:12px;font-weight:700;color:var(--navy);
+    margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase}
+
+  /* ── BLOG ──────────────────────────────────────── */
+  .blog-hero{background:var(--navy);color:#fff;padding:48px 24px}
+  .blog-tag-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}
+  .blog-filter{border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);
+    color:#fff;border-radius:20px;padding:6px 14px;font-size:13px;
+    cursor:pointer;transition:.2s;font-family:inherit}
+  .blog-filter.on{background:var(--orange);border-color:var(--orange)}
+
+  /* ── TOAST ─────────────────────────────────────── */
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--navy);color:#fff;
+    padding:14px 20px;border-radius:12px;font-size:14px;font-weight:500;
+    box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:999;
+    animation:slideIn .3s ease;display:flex;align-items:center;gap:10px;max-width:320px}
+  @keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:none;opacity:1}}
+  .toast span{font-size:20px}
+
+  /* ── FOOTER ────────────────────────────────────── */
+  footer{background:var(--navy-dark);color:rgba(255,255,255,.65);padding:48px 24px 24px}
+  .footer-inner{max-width:1200px;margin:auto}
+  .footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:32px;margin-bottom:40px}
+  .footer-brand .logo-text{font-size:20px;color:#fff}
+  .footer-desc{font-size:14px;line-height:1.7;margin-top:12px;color:rgba(255,255,255,.55)}
+  .footer-col h4{color:#fff;font-size:14px;font-weight:700;margin-bottom:16px;
+    letter-spacing:.5px;text-transform:uppercase}
+  .footer-col a{display:block;font-size:14px;color:rgba(255,255,255,.55);
+    text-decoration:none;margin-bottom:8px;transition:.2s;cursor:pointer}
+  .footer-col a:hover{color:#fff}
+  .footer-bottom{border-top:1px solid rgba(255,255,255,.1);padding-top:20px;
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:gap;
+    font-size:13px;gap:12px}
+  .social-links{display:flex;gap:10px}
+  .social-btn{width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,.1);
+    display:flex;align-items:center;justify-content:center;font-size:16px;
+    cursor:pointer;transition:.2s;text-decoration:none}
+  .social-btn:hover{background:var(--orange)}
+
+  /* ── LOGIN ─────────────────────────────────────── */
+  .login-wrap{min-height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,var(--sky2) 0%,#fff 100%);padding:40px 24px}
+  .login-box{background:#fff;border-radius:24px;box-shadow:0 16px 48px rgba(31,73,125,.12);
+    padding:40px;width:100%;max-width:420px}
+  .login-logo{text-align:center;margin-bottom:24px}
+  .login-logo .logo-circle{width:52px;height:52px;font-size:22px;margin:0 auto 12px}
+  .login-box h2{font-size:22px;font-weight:800;color:var(--navy);text-align:center;margin-bottom:6px}
+  .login-box p{font-size:14px;color:var(--muted);text-align:center;margin-bottom:28px}
+  .otp-row{display:flex;gap:8px;margin-bottom:20px}
+  .otp-input{flex:1;text-align:center;font-size:24px;font-weight:700;letter-spacing:8px;
+    border:2px solid var(--border);border-radius:12px;padding:14px;font-family:monospace;
+    outline:none;transition:.2s}
+  .otp-input:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(232,96,51,.1)}
+  .divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--muted);font-size:13px}
+  .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+
+  /* ── MISC ──────────────────────────────────────── */
+  .badge-new{background:var(--orange);color:#fff;font-size:10px;font-weight:800;
+    padding:2px 7px;border-radius:20px;letter-spacing:.5px;vertical-align:middle;margin-left:6px}
+  .member-only-gate{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-light) 100%);
+    border-radius:16px;padding:48px 32px;text-align:center;color:#fff;margin:32px 0}
+  .member-only-gate h3{font-size:22px;font-weight:800;margin-bottom:10px}
+  .member-only-gate p{opacity:.75;margin-bottom:24px;font-size:15px}
+  .spinner{width:20px;height:20px;border:3px solid rgba(255,255,255,.3);
+    border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  @media(max-width:768px){
+    .join-grid,.footer-grid,.portal-layout,.editor-layout{grid-template-columns:1fr}
+    .portal-layout{grid-template-columns:1fr}
+    .sidebar{position:static;height:auto}
+    .hero-stats{gap:24px}
+    .form-row,.lang-field{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- ── NAV ───────────────────────────────────────────── -->
+<nav>
+  <div class="nav-inner">
+    <div class="logo" onclick="showPage('home')">
+      <div class="logo-circle">MMR</div>
+      <div class="logo-text">Misty Mountain<br><span>Runners</span></div>
+    </div>
+    <div class="nav-links">
+      <button class="nav-btn active" onclick="showPage('home',this)" id="nav-home" data-en="Home" data-zh="首页">Home</button>
+      <button class="nav-btn" onclick="showPage('events',this)" id="nav-events" data-en="Events" data-zh="活动">Events</button>
+      <button class="nav-btn" onclick="showPage('blog',this)" id="nav-blog" data-en="News & Blog" data-zh="新闻">News &amp; Blog</button>
+      <button class="nav-btn" onclick="showPage('join',this)" id="nav-join" data-en="Join Us" data-zh="加入我们">Join Us</button>
+      <button class="nav-btn" onclick="showPage('editor',this)" id="nav-editor" data-en="✏️ Editor" data-zh="✏️ 编辑器">✏️ Editor</button>
+    </div>
+    <div class="nav-actions">
+      <div class="lang-toggle">
+        <button class="lang-btn on" onclick="setLang('en',this)">EN</button>
+        <button class="lang-btn" onclick="setLang('zh',this)">中文</button>
+      </div>
+      <button class="login-nav" onclick="showPage('login')" data-en="Log In" data-zh="登录">Log In</button>
+      <button class="cta-nav" onclick="showPage('join')" data-en="Join Now" data-zh="立即加入">Join Now</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- PAGE: HOME                                          -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="page active" id="page-home">
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-orb hero-orb1"></div>
+    <div class="hero-orb hero-orb2"></div>
+    <div class="hero-inner">
+      <div class="hero-tag"><span></span> <span data-en="New York City's Premier Chinese-American Running Club" data-zh="纽约最具活力的华人跑团">New York City's Premier Chinese-American Running Club</span></div>
+      <h1 class="hero-title" data-en="Run Together.<br><em>Rise Together.</em>" data-zh="一起跑步，<br><em>共同成长。</em>">Run Together.<br><em>Rise Together.</em></h1>
+      <p class="hero-sub" data-en="Join 500+ members in NYC's most supportive running community. From casual group runs to NYRR races, we run with heart." data-zh="加入500+会员，成为纽约最温暖的跑步社区一员。从轻松的团跑到NYRR赛事，我们用心奔跑。">Join 500+ members in NYC's most supportive running community. From casual group runs to NYRR races, we run with heart.</p>
+      <div class="hero-btns">
+        <button class="btn-primary" onclick="showPage('join')" data-en="🏃 Join the Club" data-zh="🏃 加入跑团">🏃 Join the Club</button>
+        <button class="btn-ghost" onclick="showPage('events')" data-en="View Upcoming Events" data-zh="查看活动">View Upcoming Events</button>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><div class="stat-num">500+</div><div class="stat-label" data-en="Active Members" data-zh="活跃会员">Active Members</div></div>
+        <div class="stat"><div class="stat-num">12</div><div class="stat-label" data-en="Group Runs / Month" data-zh="每月团跑">Group Runs / Month</div></div>
+        <div class="stat"><div class="stat-num">NYRR</div><div class="stat-label" data-en="Official Team" data-zh="官方队伍">Official Team</div></div>
+        <div class="stat"><div class="stat-num">501(c)(3)</div><div class="stat-label" data-en="Nonprofit" data-zh="非营利组织">Nonprofit</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upcoming Events -->
+  <div class="section">
+    <div class="section-inner">
+      <div class="section-header">
+        <div>
+          <div class="section-tag" data-en="WHAT'S COMING UP" data-zh="即将到来">WHAT'S COMING UP</div>
+          <h2 class="section-title" data-en="Upcoming Events" data-zh="近期活动">Upcoming Events</h2>
+        </div>
+        <button class="see-all" onclick="showPage('events')" data-en="View All Events →" data-zh="查看全部 →">View All Events →</button>
+      </div>
+      <div class="card-grid card-grid-3">
+        <div class="event-card">
+          <div class="event-date-col"><div class="event-month">APR</div><div class="event-day">12</div></div>
+          <div class="event-body">
+            <div class="event-title" data-en="Central Park Weekly Group Run" data-zh="中央公园每周团跑">Central Park Weekly Group Run</div>
+            <div class="event-meta"><span>📍 <span data-en="Central Park, 72nd St" data-zh="中央公园72街">Central Park, 72nd St</span></span><span>⏰ 7:30 AM</span></div>
+            <span class="event-badge badge-open" data-en="Open to All" data-zh="向所有人开放">Open to All</span>
+          </div>
+        </div>
+        <div class="event-card">
+          <div class="event-date-col"><div class="event-month">APR</div><div class="event-day">19</div></div>
+          <div class="event-body">
+            <div class="event-title" data-en="NYRR Brooklyn Half Training Run" data-zh="NYRR布鲁克林半马备战跑">NYRR Brooklyn Half Training Run</div>
+            <div class="event-meta"><span>📍 <span data-en="Prospect Park, Brooklyn" data-zh="布鲁克林展望公园">Prospect Park, Brooklyn</span></span><span>⏰ 8:00 AM</span></div>
+            <span class="event-badge badge-members" data-en="Members Only" data-zh="会员专属">Members Only</span>
+          </div>
+        </div>
+        <div class="event-card">
+          <div class="event-date-col"><div class="event-month">MAY</div><div class="event-day">3</div></div>
+          <div class="event-body">
+            <div class="event-title" data-en="2026 Spring Gala & Awards Night" data-zh="2026春季联欢晚会暨颁奖典礼">2026 Spring Gala &amp; Awards Night</div>
+            <div class="event-meta"><span>📍 <span data-en="Manhattan Venue TBD" data-zh="曼哈顿待定地点">Manhattan Venue TBD</span></span><span>⏰ 7:00 PM</span></div>
+            <span class="event-badge badge-upcoming" data-en="Registration Soon" data-zh="即将开放报名">Registration Soon</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent News -->
+  <div class="section gray-section">
+    <div class="section-inner">
+      <div class="section-header">
+        <div>
+          <div class="section-tag" data-en="NEWS & STORIES" data-zh="新闻动态">NEWS &amp; STORIES</div>
+          <h2 class="section-title" data-en="Battle Reports & Training Tips" data-zh="赛后报告与训练技巧">Battle Reports &amp; Training Tips</h2>
+        </div>
+        <button class="see-all" onclick="showPage('blog')" data-en="All Posts →" data-zh="全部文章 →">All Posts →</button>
+      </div>
+      <div class="card-grid card-grid-3">
+        <div class="card" onclick="showPage('blog')">
+          <div class="card-img">🏅</div>
+          <div class="card-body">
+            <div class="card-tag" data-en="RACE REPORT" data-zh="赛事报告">RACE REPORT</div>
+            <div class="card-title" data-en="NYC Half 2026: MMR's Best Season Yet" data-zh="2026纽约半马：MMR最佳赛季">NYC Half 2026: MMR's Best Season Yet</div>
+            <div class="card-meta"><span data-en="📅 Mar 16, 2026" data-zh="📅 2026年3月16日">📅 Mar 16, 2026</span><span data-en="👤 Li Wei" data-zh="👤 李伟">👤 Li Wei</span></div>
+          </div>
+        </div>
+        <div class="card" onclick="showPage('blog')">
+          <div class="card-img">💪</div>
+          <div class="card-body">
+            <div class="card-tag" data-en="TRAINING" data-zh="训练">TRAINING</div>
+            <div class="card-title" data-en="Marathon Fueling: What Actually Works" data-zh="马拉松补给：真正有效的方法">Marathon Fueling: What Actually Works</div>
+            <div class="card-meta"><span data-en="📅 Mar 10, 2026" data-zh="📅 2026年3月10日">📅 Mar 10, 2026</span><span data-en="👤 Coach Zhang" data-zh="👤 张教练">👤 Coach Zhang</span></div>
+          </div>
+        </div>
+        <div class="card" onclick="showPage('blog')">
+          <div class="card-img">📸</div>
+          <div class="card-body">
+            <div class="card-tag" data-en="GALLERY" data-zh="相册">GALLERY</div>
+            <div class="card-title" data-en="NYCM 2025 Cheering Station Highlights" data-zh="2025纽约马拉松加油站精彩瞬间">NYCM 2025 Cheering Station Highlights</div>
+            <div class="card-meta"><span data-en="📅 Nov 5, 2025" data-zh="📅 2025年11月5日">📅 Nov 5, 2025</span><span data-en="👤 Photo Team" data-zh="👤 摄影团队">👤 Photo Team</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Member CTA -->
+  <div class="section">
+    <div class="section-inner">
+      <div class="member-only-gate">
+        <div style="font-size:48px;margin-bottom:16px">🔒</div>
+        <h3 data-en="Members-Only Content Available" data-zh="会员专属内容">Members-Only Content Available</h3>
+        <p data-en="Log in to access NYRR rankings, training plans, exclusive discount codes, and event registration." data-zh="登录查看NYRR排名、训练计划、专属折扣码和活动报名。">Log in to access NYRR rankings, training plans, exclusive discount codes, and event registration.</p>
+        <button class="btn-primary" onclick="showPage('login')" data-en="Log In to Member Portal" data-zh="登录会员中心">Log In to Member Portal</button>
+        <div style="margin-top:14px;opacity:.6;font-size:14px">
+          <span data-en="Not a member? " data-zh="还不是会员？">Not a member? </span>
+          <span style="color:#fff;font-weight:700;cursor:pointer;text-decoration:underline" onclick="showPage('join')" data-en="Join for $30/year →" data-zh="年费$30，立即加入 →">Join for $30/year →</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="logo"><div class="logo-circle" style="width:40px;height:40px">MMR</div><div class="logo-text" style="color:#fff">Misty Mountain<br><span>Runners</span></div></div>
+          <p class="footer-desc" data-en="A 501(c)(3) nonprofit promoting running as a healthy lifestyle in Greater New York. We run together, rise together." data-zh="501(c)(3)非营利组织，致力于在大纽约地区推广跑步健康生活方式。">A 501(c)(3) nonprofit promoting running as a healthy lifestyle in Greater New York.</p>
+          <div class="social-links" style="margin-top:16px">
+            <a class="social-btn" title="WeChat">💬</a>
+            <a class="social-btn" title="YouTube">▶️</a>
+            <a class="social-btn" title="Instagram">📷</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <h4 data-en="Club" data-zh="关于">Club</h4>
+          <a data-en="About Us" data-zh="关于我们">About Us</a>
+          <a data-en="Board of Directors" data-zh="理事会">Board of Directors</a>
+          <a data-en="Mission" data-zh="使命">Mission</a>
+          <a data-en="Code of Conduct" data-zh="行为准则">Code of Conduct</a>
+        </div>
+        <div class="footer-col">
+          <h4 data-en="Running" data-zh="跑步">Running</h4>
+          <a data-en="Group Runs" data-zh="团跑">Group Runs</a>
+          <a data-en="NYRR Races" data-zh="NYRR赛事">NYRR Races</a>
+          <a data-en="Training Plans" data-zh="训练计划">Training Plans</a>
+          <a data-en="Resources" data-zh="资源">Resources</a>
+        </div>
+        <div class="footer-col">
+          <h4 data-en="Membership" data-zh="会员">Membership</h4>
+          <a onclick="showPage('join')" data-en="Join / Renew" data-zh="加入/续费">Join / Renew</a>
+          <a onclick="showPage('login')" data-en="Member Portal" data-zh="会员中心">Member Portal</a>
+          <a data-en="Member Lookup" data-zh="会员查询">Member Lookup</a>
+          <a data-en="FAQ" data-zh="常见问题">FAQ</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span data-en="© 2026 Misty Mountain Runners. All rights reserved." data-zh="© 2026 岚山跑团。保留所有权利。">© 2026 Misty Mountain Runners. All rights reserved.</span>
+        <span data-en="Built on Azure · Powered by 💙" data-zh="运行于Azure · 由💙驱动">Built on Azure · Powered by 💙</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- PAGE: LOGIN                                         -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="page" id="page-login">
+  <div class="login-wrap">
+    <div class="login-box">
+      <div class="login-logo">
+        <div class="logo-circle" style="width:52px;height:52px;font-size:20px">MMR</div>
+        <h2 style="margin-top:12px" data-en="Welcome Back" data-zh="欢迎回来">Welcome Back</h2>
+        <p data-en="Enter your email to receive a login code" data-zh="输入邮箱获取登录验证码">Enter your email to receive a login code</p>
+      </div>
+      <div id="login-step1">
+        <div class="form-field">
+          <label data-en="EMAIL ADDRESS" data-zh="邮箱地址">EMAIL ADDRESS</label>
+          <input class="field-input" type="email" placeholder="you@example.com" id="login-email" style="margin-bottom:0">
+        </div>
+        <div style="margin-top:16px">
+          <button class="publish-btn" onclick="sendOTP()" id="otp-btn" data-en="Send Login Code →" data-zh="发送验证码 →">Send Login Code →</button>
+        </div>
+        <div class="divider" data-en="or continue with" data-zh="或使用">or continue with</div>
+        <button style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--text);background:#fff;transition:.2s" onmouseover="this.style.background='var(--sky2)'" onmouseout="this.style.background='#fff'">
+          🇬 <span data-en="Continue with Google" data-zh="使用Google登录">Continue with Google</span>
+        </button>
+        <p style="font-size:13px;color:var(--muted);text-align:center;margin-top:20px">
+          <span data-en="Not a member? " data-zh="还不是会员？">Not a member? </span>
+          <span style="color:var(--orange);cursor:pointer;font-weight:600" onclick="showPage('join')" data-en="Join for $30/year" data-zh="年费$30加入">Join for $30/year</span>
+        </p>
+      </div>
+      <div id="login-step2" style="display:none">
+        <p style="font-size:14px;color:var(--muted);text-align:center;margin-bottom:16px">
+          <span data-en="We sent a 6-digit code to " data-zh="我们已发送6位验证码至">We sent a 6-digit code to </span><strong id="login-email-display"></strong>
+        </p>
+        <input class="otp-input" type="text" maxlength="6" placeholder="000000" id="otp-code" oninput="if(this.value.length===6)verifyOTP()">
+        <button class="publish-btn" onclick="verifyOTP()" data-en="Verify Code →" data-zh="验证 →">Verify Code →</button>
+        <p style="font-size:13px;color:var(--muted);text-align:center;margin-top:12px">
+          <span data-en="Didn't receive it? " data-zh="没收到？">Didn't receive it? </span>
+          <span style="color:var(--orange);cursor:pointer;font-weight:600" onclick="sendOTP()" data-en="Resend code" data-zh="重新发送">Resend code</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- PAGE: MEMBER PORTAL                                 -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="page" id="page-portal">
+  <div class="portal-layout">
+    <div class="sidebar">
+      <div class="sidebar-member">
+        <div class="member-avatar">CL</div>
+        <div class="member-name">Cathy Lin</div>
+        <div class="member-id">MMR-2026-0042</div>
+        <div class="member-status" data-en="✓ Active" data-zh="✓ 已激活">✓ Active</div>
+      </div>
+      <button class="sidebar-nav-item on" onclick="switchPanel('dash',this)"><span>🏠</span><span data-en="Dashboard" data-zh="首页">Dashboard</span></button>
+      <button class="sidebar-nav-item" onclick="switchPanel('nyrr',this)"><span>🏆</span><span data-en="NYRR Results" data-zh="NYRR成绩">NYRR Results</span></button>
+      <button class="sidebar-nav-item" onclick="switchPanel('events',this)"><span>📅</span><span data-en="Event Registration" data-zh="活动报名">Event Registration</span></button>
+      <button class="sidebar-nav-item" onclick="switchPanel('training',this)"><span>💪</span><span data-en="Training Plans" data-zh="训练计划">Training Plans</span></button>
+      <button class="sidebar-nav-item" onclick="switchPanel('discounts',this)"><span>🎟️</span><span data-en="Discounts" data-zh="折扣">Discounts</span></button>
+      <button class="sidebar-nav-item" onclick="switchPanel('profile',this)"><span>👤</span><span data-en="My Profile" data-zh="我的资料">My Profile</span></button>
+      <button class="sidebar-nav-item" style="margin-top:auto" onclick="showPage('home')"><span>🚪</span><span data-en="Sign Out" data-zh="退出登录">Sign Out</span></button>
+    </div>
+    <div class="portal-main">
+      <!-- Dashboard Panel -->
+      <div class="portal-panel on" id="panel-dash">
+        <h2 style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:6px" data-en="Good morning, Cathy 👋" data-zh="早上好，Cathy 👋">Good morning, Cathy 👋</h2>
+        <p style="color:var(--muted);font-size:14px;margin-bottom:20px" data-en="Membership expires Dec 31, 2026 · MMR-2026-0042" data-zh="会员有效期至2026年12月31日 · MMR-2026-0042">Membership expires Dec 31, 2026 · MMR-2026-0042</p>
+        <div class="dash-grid">
+          <div class="dash-stat"><div class="dash-stat-icon">🏃</div><div class="dash-stat-num">23</div><div class="dash-stat-label" data-en="Races This Year" data-zh="今年参赛场次">Races This Year</div></div>
+          <div class="dash-stat"><div class="dash-stat-icon">⏱️</div><div class="dash-stat-num">1:52</div><div class="dash-stat-label" data-en="Half Marathon PR" data-zh="半马个人最佳">Half Marathon PR</div></div>
+          <div class="dash-stat"><div class="dash-stat-icon">🏆</div><div class="dash-stat-num">#8</div><div class="dash-stat-label" data-en="MMR Team Rank (F)" data-zh="MMR团队排名(女)">MMR Team Rank (F)</div></div>
+          <div class="dash-stat"><div class="dash-stat-icon">📅</div><div class="dash-stat-num">Apr 12</div><div class="dash-stat-label" data-en="Next Group Run" data-zh="下次团跑">Next Group Run</div></div>
+        </div>
+        <div class="portal-card">
+          <h3>📊 <span data-en="My Finish Time Trend" data-zh="我的完赛时间趋势">My Finish Time Trend</span></h3>
+          <div class="chart-wrap"><canvas id="chartTrend"></canvas></div>
+        </div>
+        <div class="portal-card">
+          <h3>🏅 <span data-en="MMR Team — March 2026 Results" data-zh="MMR团队——2026年3月成绩">MMR Team — March 2026 Results</span></h3>
+          <div class="result-row"><div class="result-rank gold">1</div><div class="result-name">Wang Fang</div><div class="result-time">1:38:22</div><span class="result-badge">F</span></div>
+          <div class="result-row"><div class="result-rank silver">2</div><div class="result-name">Chen Wei</div><div class="result-time">1:39:05</div><span class="result-badge">M</span></div>
+          <div class="result-row"><div class="result-rank bronze">3</div><div class="result-name">Zhang Min</div><div class="result-time">1:41:11</div><span class="result-badge">F</span></div>
+          <div class="result-row"><div class="result-rank" style="background:var(--orange);color:#fff">8</div><div class="result-name">Cathy Lin <span style="color:var(--orange);font-size:12px">(You)</span></div><div class="result-time">1:52:44</div><span class="result-badge">F</span></div>
+          <div class="result-row"><div class="result-rank">12</div><div class="result-name">Li Dong</div><div class="result-time">2:01:33</div><span class="result-badge">M</span></div>
+        </div>
+      </div>
+      <!-- NYRR Panel -->
+      <div class="portal-panel" id="panel-nyrr">
+        <h2 style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:20px" data-en="NYRR Results & Rankings" data-zh="NYRR成绩与排名">NYRR Results &amp; Rankings</h2>
+        <div class="portal-card">
+          <h3>📈 <span data-en="Personal Bests by Distance" data-zh="各距离个人最佳成绩">Personal Bests by Distance</span></h3>
+          <div class="chart-wrap"><canvas id="chartBests"></canvas></div>
+        </div>
+        <div class="portal-card">
+          <h3>🗓️ <span data-en="2025–2026 Race History" data-zh="2025–2026赛事历史">2025–2026 Race History</span></h3>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:14px">
+              <thead><tr style="background:var(--sky);color:var(--navy);text-align:left">
+                <th style="padding:10px 12px;border-radius:8px 0 0 8px" data-en="Race" data-zh="赛事">Race</th>
+                <th style="padding:10px 12px" data-en="Date" data-zh="日期">Date</th>
+                <th style="padding:10px 12px" data-en="Distance" data-zh="距离">Distance</th>
+                <th style="padding:10px 12px" data-en="Time" data-zh="成绩">Time</th>
+                <th style="padding:10px 12px;border-radius:0 8px 8px 0" data-en="Place" data-zh="名次">Place</th>
+              </tr></thead>
+              <tbody>
+                <tr style="border-bottom:1px solid var(--border)"><td style="padding:10px 12px;font-weight:600">NYC Half Marathon</td><td style="padding:10px 12px;color:var(--muted)">Mar 16, 2026</td><td style="padding:10px 12px">13.1 mi</td><td style="padding:10px 12px;font-family:monospace;font-weight:700;color:var(--navy)">1:52:44</td><td style="padding:10px 12px"><span class="event-badge badge-open">#812 OA</span></td></tr>
+                <tr style="border-bottom:1px solid var(--border)"><td style="padding:10px 12px;font-weight:600">Fred Lebow Manhattan 5K</td><td style="padding:10px 12px;color:var(--muted)">Jan 11, 2026</td><td style="padding:10px 12px">3.1 mi</td><td style="padding:10px 12px;font-family:monospace;font-weight:700;color:var(--navy)">24:38</td><td style="padding:10px 12px"><span class="event-badge badge-members">#204 OA</span></td></tr>
+                <tr style="border-bottom:1px solid var(--border)"><td style="padding:10px 12px;font-weight:600">NYC Marathon</td><td style="padding:10px 12px;color:var(--muted)">Nov 3, 2025</td><td style="padding:10px 12px">26.2 mi</td><td style="padding:10px 12px;font-family:monospace;font-weight:700;color:var(--orange)">4:08:17 ⭐ PR</td><td style="padding:10px 12px"><span class="event-badge badge-upcoming">#14,822 OA</span></td></tr>
+                <tr><td style="padding:10px 12px;font-weight:600">Queens 10K</td><td style="padding:10px 12px;color:var(--muted)">Jun 15, 2025</td><td style="padding:10px 12px">6.2 mi</td><td style="padding:10px 12px;font-family:monospace;font-weight:700;color:var(--navy)">52:11</td><td style="padding:10px 12px"><span class="event-badge badge-open">#531 OA</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <!-- Events Panel -->
+      <div class="portal-panel" id="panel-events">
+        <h2 style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:20px" data-en="Event Registration" data-zh="活动报名">Event Registration</h2>
+        <div class="renewal-banner"><div class="renewal-text"><h3 data-en="Brooklyn Half Training Run — Apr 19" data-zh="布鲁克林半马备战跑——4月19日">Brooklyn Half Training Run — Apr 19</h3><p data-en="Members-only 14-mile training run at Prospect Park. Includes post-run brunch." data-zh="展望公园14英里会员专属备战跑，含赛后早午餐。">Members-only 14-mile training run at Prospect Park. Includes post-run brunch.</p></div><button class="btn-white" onclick="toast('✅','You are registered for Apr 19!')" data-en="Register Free →" data-zh="免费报名 →">Register Free →</button></div>
+        <div class="renewal-banner" style="background:linear-gradient(135deg,var(--navy) 0%,var(--navy-light) 100%)"><div class="renewal-text"><h3 data-en="Spring Gala — May 3, 2026" data-zh="春季联欢晚会——2026年5月3日">Spring Gala — May 3, 2026</h3><p data-en="Annual awards gala. Early bird tickets for members: $45 (regular $60)" data-zh="年度颁奖联欢晚会。会员早鸟票：$45（普通票$60）">Annual awards gala. Early bird tickets for members: $45 (regular $60)</p></div><button class="btn-white" onclick="toast('🎉','Gala registration opens April 1!')" data-en="Get Tickets →" data-zh="购票 →">Get Tickets →</button></div>
+      </div>
+      <!-- Training Panel -->
+      <div class="portal-panel" id="panel-training">
+        <h2 style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:20px" data-en="Training Plans" data-zh="训练计划">Training Plans</h2>
+        <div class="card-grid card-grid-3">
+          <div class="card"><div class="card-img">🏅</div><div class="card-body"><div class="card-tag" data-en="16-WEEK" data-zh="16周">16-WEEK</div><div class="card-title" data-en="NYC Marathon 2026 Plan" data-zh="2026纽约马拉松备战计划">NYC Marathon 2026 Plan</div><div class="card-meta"><span>📊 <span data-en="Intermediate" data-zh="中级">Intermediate</span></span></div></div></div>
+          <div class="card"><div class="card-img">⚡</div><div class="card-body"><div class="card-tag" data-en="8-WEEK" data-zh="8周">8-WEEK</div><div class="card-title" data-en="Half Marathon Speed Builder" data-zh="半马速度提升计划">Half Marathon Speed Builder</div><div class="card-meta"><span>📊 <span data-en="Advanced" data-zh="高级">Advanced</span></span></div></div></div>
+          <div class="card"><div class="card-img">🌱</div><div class="card-body"><div class="card-tag" data-en="12-WEEK" data-zh="12周">12-WEEK</div><div class="card-title" data-en="5K Beginner Plan" data-zh="5K新手入门计划">5K Beginner Plan</div><div class="card-meta"><span>📊 <span data-en="Beginner" data-zh="入门">Beginner</span></span></div></div></div>
+        </div>
+      </div>
+      <!-- Discounts Panel -->
+      <div class="portal-panel" id="panel-discounts">
+        <h2 style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:20px" data-en="Member Discounts" data-zh="会员折扣">Member Discounts</h2>
+        <div class="portal-card">
+          <h3>🎟️ <span data-en="Exclusive Member Codes" data-zh="专属会员折扣码">Exclusive Member Codes</span></h3>
+          <p style="color:var(--muted);font-size:14px;margin-bottom:16px" data-en="These codes are for MMR members only. Please do not share publicly." data-zh="以下折扣码仅供MMR会员使用，请勿对外分享。">These codes are for MMR members only. Please do not share publicly.</p>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="background:var(--sky2);border-radius:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+              <div><div style="font-weight:700;color:var(--navy)">Road Runner Sports</div><div style="font-size:13px;color:var(--muted)" data-en="15% off entire order online" data-zh="全场网购85折">15% off entire order online</div></div>
+              <div style="background:var(--navy);color:#fff;font-family:monospace;font-size:16px;font-weight:700;padding:8px 16px;border-radius:8px;cursor:pointer" onclick="toast('📋','MMR2026 copied!')">MMR2026</div>
+            </div>
+            <div style="background:var(--sky2);border-radius:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+              <div><div style="font-weight:700;color:var(--navy)">NYRR Race Entry</div><div style="font-size:13px;color:var(--muted)" data-en="$5 off any 2026 NYRR race" data-zh="2026年任意NYRR赛事优惠$5">$5 off any 2026 NYRR race</div></div>
+              <div style="background:var(--navy);color:#fff;font-family:monospace;font-size:16px;font-weight:700;padding:8px 16px;border-radius:8px;cursor:pointer" onclick="toast('📋','MTNRUN5 copied!')">MTNRUN5</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Profile Panel -->
+      <div class="portal-panel" id="panel-profile">
+        <h2 style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:20px" data-en="My Profile" data-zh="我的资料">My Profile</h2>
+        <div class="portal-card">
+          <h3>👤 <span data-en="Personal Information" data-zh="个人信息">Personal Information</span></h3>
+          <div class="form-row">
+            <div class="form-field"><label data-en="FIRST NAME" data-zh="名字">FIRST NAME</label><input class="field-input" value="Cathy" style="margin-bottom:0"></div>
+            <div class="form-field"><label data-en="LAST NAME" data-zh="姓氏">LAST NAME</label><input class="field-input" value="Lin" style="margin-bottom:0"></div>
+          </div>
+          <div class="form-field"><label data-en="EMAIL" data-zh="邮箱">EMAIL</label><input class="field-input" value="cathylin@gmail.com"></div>
+          <div class="form-row">
+            <div class="form-field"><label data-en="WECHAT ID" data-zh="微信号">WECHAT ID</label><input class="field-input" value="cathy_runs" style="margin-bottom:0"></div>
+            <div class="form-field"><label data-en="NYRR RUNNER ID" data-zh="NYRR号">NYRR RUNNER ID</label><input class="field-input" placeholder="e.g. 123456" style="margin-bottom:0"></div>
+          </div>
+          <button class="publish-btn" onclick="toast('✅','Profile saved!')" data-en="Save Profile" data-zh="保存资料">Save Profile</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- PAGE: EVENTS                                        -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="page" id="page-events">
+  <div style="background:var(--navy);padding:48px 24px;color:#fff">
+    <div style="max-width:1200px;margin:auto">
+      <div class="section-tag" style="color:var(--orange)" data-en="CALENDAR" data-zh="活动日历">CALENDAR</div>
+      <h2 class="section-title" style="color:#fff" data-en="Upcoming Events & Races" data-zh="近期活动与赛事">Upcoming Events &amp; Races</h2>
+      <p style="color:rgba(255,255,255,.7);font-size:16px" data-en="Group runs, NYRR races, social events, and more." data-zh="团跑、NYRR赛事、社交活动等。">Group runs, NYRR races, social events, and more.</p>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-inner">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:28px">
+        <button class="blog-filter on" data-en="All" data-zh="全部">All</button>
+        <button class="blog-filter" data-en="Group Runs" data-zh="团跑">Group Runs</button>
+        <button class="blog-filter" data-en="NYRR Races" data-zh="NYRR赛事">NYRR Races</button>
+        <button class="blog-filter" data-en="Social" data-zh="社交">Social</button>
+        <button class="blog-filter" data-en="Members Only" data-zh="会员专属">Members Only</button>
+      </div>
+      <div class="card-grid" style="grid-template-columns:1fr">
+        <div class="event-card" style="max-width:100%">
+          <div class="event-date-col"><div class="event-month">APR</div><div class="event-day">12</div></div>
+          <div class="event-body"><div class="event-title" data-en="Central Park Weekly Group Run" data-zh="中央公园每周团跑">Central Park Weekly Group Run</div><div class="event-meta"><span>📍 <span data-en="72nd St entrance, Central Park" data-zh="中央公园72街入口">72nd St entrance, Central Park</span></span><span>⏰ 7:30 AM</span><span>🏃 <span data-en="6–10 miles, all paces welcome" data-zh="6-10英里，各配速欢迎">6–10 miles, all paces welcome</span></span></div><span class="event-badge badge-open" data-en="Open to All" data-zh="向所有人开放">Open to All</span></div>
+        </div>
+        <div class="event-card" style="max-width:100%">
+          <div class="event-date-col"><div class="event-month">APR</div><div class="event-day">19</div></div>
+          <div class="event-body"><div class="event-title" data-en="Brooklyn Half Training Run (Members Only)" data-zh="布鲁克林半马备战跑（会员专属）">Brooklyn Half Training Run (Members Only)</div><div class="event-meta"><span>📍 <span data-en="Prospect Park, Flatbush Ave entrance" data-zh="展望公园Flatbush Ave入口">Prospect Park, Flatbush Ave entrance</span></span><span>⏰ 8:00 AM</span><span>🏃 <span data-en="14 miles + post-run brunch" data-zh="14英里+赛后早午餐">14 miles + post-run brunch</span></span></div><span class="event-badge badge-members" data-en="Members Only — Register in Portal" data-zh="会员专属——在会员中心报名">Members Only — Register in Portal</span></div>
+        </div>
+        <div class="event-card" style="max-width:100%">
+          <div class="event-date-col" style="background:var(--orange)"><div class="event-month">MAY</div><div class="event-day">3</div></div>
+          <div class="event-body"><div class="event-title" data-en="2026 Spring Gala & Awards Night 🎉" data-zh="2026春季联欢晚会暨颁奖典礼 🎉">2026 Spring Gala &amp; Awards Night 🎉</div><div class="event-meta"><span>📍 <span data-en="Manhattan Venue (TBA)" data-zh="曼哈顿（地点待定）">Manhattan Venue (TBA)</span></span><span>⏰ 7:00 PM</span><span>🎟️ <span data-en="Members $45 / Guests $60" data-zh="会员$45 / 嘉宾$60">Members $45 / Guests $60</span></span></div><span class="event-badge badge-upcoming" data-en="Tickets Opening April 1" data-zh="4月1日开售">Tickets Opening April 1</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- PAGE: JOIN                                          -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="page" id="page-join">
+  <div style="background:var(--navy);padding:48px 24px;color:#fff;text-align:center">
+    <div class="section-tag" style="color:var(--orange)" data-en="MEMBERSHIP" data-zh="会员">MEMBERSHIP</div>
+    <h2 class="section-title" style="color:#fff" data-en="Join Misty Mountain Runners" data-zh="加入岚山跑团">Join Misty Mountain Runners</h2>
+    <p style="color:rgba(255,255,255,.7);max-width:500px;margin:auto;font-size:16px" data-en="Annual membership includes all group runs, NYRR team status, exclusive events, and member discounts." data-zh="年度会员包含所有团跑、NYRR队员资格、专属活动及会员折扣。">Annual membership includes all group runs, NYRR team status, exclusive events, and member discounts.</p>
+  </div>
+  <div class="section">
+    <div class="section-inner">
+      <div class="join-grid">
+        <div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px">
+            <div class="price-card">
+              <div class="price-header"><div class="price-name" data-en="INDIVIDUAL" data-zh="个人会员">INDIVIDUAL</div><div class="price-amt">$30</div><div class="price-period" data-en="per year" data-zh="每年">per year</div></div>
+              <div class="price-body">
+                <div class="price-feature" data-en="One membership ID" data-zh="专属会员号">One membership ID</div>
+                <div class="price-feature" data-en="All group runs" data-zh="所有团跑">All group runs</div>
+                <div class="price-feature" data-en="NYRR team status" data-zh="NYRR队员资格">NYRR team status</div>
+                <div class="price-feature" data-en="Member portal access" data-zh="会员中心权限">Member portal access</div>
+                <div class="price-feature" data-en="Exclusive discounts" data-zh="专属折扣">Exclusive discounts</div>
+              </div>
+            </div>
+            <div class="price-card featured">
+              <div class="price-header orange"><div class="price-name" data-en="FAMILY" data-zh="家庭会员">FAMILY</div><div class="price-amt">$50</div><div class="price-period" data-en="per year" data-zh="每年">per year</div></div>
+              <div class="price-body">
+                <div class="price-feature" data-en="All Individual benefits" data-zh="包含个人会员权益">All Individual benefits</div>
+                <div class="price-feature" data-en="Covers entire family" data-zh="涵盖全家">Covers entire family</div>
+                <div class="price-feature" data-en="Individual IDs for each" data-zh="每人独立会员号">Individual IDs for each</div>
+                <div class="price-feature" data-en="Single payment checkout" data-zh="一次付款">Single payment checkout</div>
+                <div class="price-feature" style="color:var(--orange);font-weight:600" data-en="Best value!" data-zh="最优惠！">Best value!</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3 style="font-size:20px;font-weight:800;color:var(--navy);margin-bottom:24px" data-en="Create Your Account" data-zh="创建账户">Create Your Account</h3>
+          <div class="form-row">
+            <div class="form-field"><label data-en="FIRST NAME" data-zh="名字">FIRST NAME</label><input class="field-input" placeholder="Jane" style="margin-bottom:0"></div>
+            <div class="form-field"><label data-en="LAST NAME" data-zh="姓氏">LAST NAME</label><input class="field-input" placeholder="Smith" style="margin-bottom:0"></div>
+          </div>
+          <div class="form-field"><label data-en="EMAIL ADDRESS" data-zh="邮箱">EMAIL ADDRESS</label><input class="field-input" placeholder="jane@example.com"></div>
+          <div class="form-field"><label data-en="PHONE (optional)" data-zh="电话（选填）">PHONE (optional)</label><input class="field-input" placeholder="+1 (555) 000-0000"></div>
+          <div class="form-field"><label data-en="WECHAT ID (optional)" data-zh="微信号（选填）">WECHAT ID (optional)</label><input class="field-input" placeholder="wechat_handle"></div>
+          <div class="form-field"><label data-en="MEMBERSHIP TYPE" data-zh="会员类型">MEMBERSHIP TYPE</label>
+            <select class="field-select"><option data-en="Individual — $30/year" data-zh="个人会员 — $30/年">Individual — $30/year</option><option data-en="Family — $50/year" data-zh="家庭会员 — $50/年">Family — $50/year</option></select>
+          </div>
+          <button class="publish-btn" onclick="toast('💳','Redirecting to secure Stripe checkout...')" data-en="Continue to Payment →" data-zh="继续付款 →">Continue to Payment →</button>
+          <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px" data-en="🔒 Secure payment via Stripe · Your member ID is generated instantly after payment" data-zh="🔒 通过Stripe安全支付 · 付款后立即生成您的会员号">🔒 Secure payment via Stripe · Your member ID is generated instantly after payment</p>
+          <p style="font-size:13px;color:var(--muted);text-align:center;margin-top:12px">
+            <span data-en="Already a member? " data-zh="已是会员？">Already a member? </span>
+            <span style="color:var(--orange);cursor:pointer;font-weight:600" onclick="showPage('login')" data-en="Log In" data-zh="登录">Log In</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- PAGE: BLOG                                          -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="page" id="page-blog">
+  <div class="blog-hero">
+    <div style="max-width:1200px;margin:auto">
+      <div class="section-tag" style="color:var(--orange)" data-en="COMMUNITY" data-zh="社区动态">COMMUNITY</div>
+      <h2 class="section-title" style="color:#fff" data-en="News, Battle Reports & Training Tips" data-zh="新闻、赛事报告与训练技巧">News, Battle Reports &amp; Training Tips</h2>
+      <div class="blog-tag-row">
+        <button class="blog-filter on" data-en="All" data-zh="全部">All</button>
+        <button class="blog-filter" data-en="Race Reports" data-zh="赛事报告">Race Reports</button>
+        <button class="blog-filter" data-en="Training" data-zh="训练">Training</button>
+        <button class="blog-filter" data-en="News" data-zh="新闻">News</button>
+        <button class="blog-filter" data-en="Gallery" data-zh="相册">Gallery</button>
+      </div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-inner">
+      <div class="card-grid card-grid-3">
+        <div class="card"><div class="card-img">🏅</div><div class="card-body"><div class="card-tag" data-en="RACE REPORT" data-zh="赛事报告">RACE REPORT</div><div class="card-title" data-en="NYC Half 2026: MMR's Best Season Yet" data-zh="2026纽约半马：MMR最佳赛季">NYC Half 2026: MMR's Best Season Yet</div><div class="card-meta"><span>Mar 16</span><span data-en="👤 Li Wei" data-zh="👤 李伟">👤 Li Wei</span></div></div></div>
+        <div class="card"><div class="card-img">💪</div><div class="card-body"><div class="card-tag" data-en="TRAINING" data-zh="训练">TRAINING</div><div class="card-title" data-en="Marathon Fueling: What Actually Works" data-zh="马拉松补给：真正有效的方法">Marathon Fueling: What Actually Works</div><div class="card-meta"><span>Mar 10</span><span data-en="👤 Coach Zhang" data-zh="👤 张教练">👤 Coach Zhang</span></div></div></div>
+        <div class="card"><div class="card-img">📸</div><div class="card-body"><div class="card-tag" data-en="GALLERY" data-zh="相册">GALLERY</div><div class="card-title" data-en="NYCM 2025 Cheering Station Highlights" data-zh="2025纽约马拉松加油站精彩瞬间">NYCM 2025 Cheering Station Highlights</div><div class="card-meta"><span>Nov 5</span><span data-en="👤 Photo Team" data-zh="👤 摄影团队">👤 Photo Team</span></div></div></div>
+        <div class="card"><div class="card-img">🌟</div><div class="card-body"><div class="card-tag" data-en="NEWS" data-zh="新闻">NEWS</div><div class="card-title" data-en="MMR Receives Azure Nonprofit Grant" data-zh="MMR获得Azure非营利组织资助">MMR Receives Azure Nonprofit Grant</div><div class="card-meta"><span>Feb 28</span><span data-en="👤 Board" data-zh="👤 理事会">👤 Board</span></div></div></div>
+        <div class="card"><div class="card-img">🏃</div><div class="card-body"><div class="card-tag" data-en="TRAINING" data-zh="训练">TRAINING</div><div class="card-title" data-en="Negative Splits: The Secret to Better Races" data-zh="负分割跑法：更好成绩的秘诀">Negative Splits: The Secret to Better Races</div><div class="card-meta"><span>Feb 15</span><span data-en="👤 Coach Li" data-zh="👤 李教练">👤 Coach Li</span></div></div></div>
+        <div class="card"><div class="card-img">🎉</div><div class="card-body"><div class="card-tag" data-en="SOCIAL" data-zh="社交">SOCIAL</div><div class="card-title" data-en="2026 Winter Gala Recap" data-zh="2026冬季联欢晚会回顾">2026 Winter Gala Recap</div><div class="card-meta"><span>Jan 20</span><span data-en="👤 Events Team" data-zh="👤 活动团队">👤 Events Team</span></div></div></div>
+      </div>
+      <div style="text-align:center;margin-top:32px">
+        <button class="btn-ghost" style="color:var(--navy);border-color:var(--border)" onclick="toast('📰','Loading more posts...')" data-en="Load More Posts" data-zh="加载更多">Load More Posts</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- PAGE: EDITOR (Volunteer Tool)                       -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="page" id="page-editor">
+  <div style="background:var(--navy);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div>
+      <div style="color:var(--orange);font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px" data-en="VOLUNTEER CONTENT EDITOR" data-zh="志愿者内容编辑器">VOLUNTEER CONTENT EDITOR</div>
+      <div style="color:#fff;font-weight:700;font-size:16px" data-en="Add New Post — Block Editor" data-zh="添加新文章——块编辑器">Add New Post — Block Editor</div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="preview-btn" style="width:auto;padding:9px 16px" onclick="toast('👀','Preview mode — showing how it looks on the website')">👀 <span data-en="Preview" data-zh="预览">Preview</span></button>
+      <button class="publish-btn" style="width:auto;padding:9px 20px;margin-bottom:0" onclick="toast('🎉','Post published! It\'s now live on the website.')">🚀 <span data-en="Publish" data-zh="发布">Publish</span></button>
+    </div>
+  </div>
+  <div class="editor-layout">
+    <!-- Editor canvas -->
+    <div class="editor-main">
+      <div class="editor-toolbar">
+        <button class="tool-btn active-tool" data-en="Text" data-zh="文字">Text</button>
+        <button class="tool-btn" data-en="Heading" data-zh="标题">Heading</button>
+        <button class="tool-btn" data-en="Image" data-zh="图片">Image</button>
+        <button class="tool-btn" data-en="Race Results" data-zh="成绩表">Race Results</button>
+        <button class="tool-btn" data-en="Event Card" data-zh="活动卡片">Event Card</button>
+        <div class="toolbar-sep"></div>
+        <button class="tool-btn" onclick="toast('↩️','Undo')">↩ <span data-en="Undo" data-zh="撤销">Undo</span></button>
+        <button class="tool-btn" onclick="insertBlock('image')">🖼️ <span data-en="Add Photo" data-zh="添加图片">Add Photo</span></button>
+        <button class="tool-btn" onclick="insertBlock('divider')">― <span data-en="Divider" data-zh="分隔线">Divider</span></button>
+      </div>
+      <div class="editor-body" id="editor-body">
+        <input class="editor-title" id="post-title" placeholder="Post title..." data-en-placeholder="Post title..." data-zh-placeholder="文章标题...">
+        <input class="editor-subtitle" placeholder="Short description (appears in search results and cards)..." data-en-placeholder="Short description..." data-zh-placeholder="简短描述（显示在搜索结果和卡片中）...">
+        <div id="blocks-container">
+          <div class="block" onclick="selectBlock(this)">
+            <span class="block-handle">⠿</span>
+            <textarea class="block-text" rows="3" placeholder="Start writing here, or click + to add a block...">NYC Half Marathon 2026 was a landmark race for Misty Mountain Runners. With 47 members crossing the finish line, this was our largest team showing in the event's history.</textarea>
+          </div>
+          <div class="block" onclick="selectBlock(this)">
+            <span class="block-handle">⠿</span>
+            <textarea class="block-text" rows="3">The weather was perfect — 48°F with light winds, ideal conditions for a personal best. Coach Zhang's 16-week program clearly paid off, with 12 members setting new half marathon PRs.</textarea>
+          </div>
+        </div>
+        <div style="position:relative">
+          <button class="add-block-btn" onclick="toggleBlockMenu(event)">
+            <span style="width:24px;height:24px;border-radius:6px;background:var(--orange);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">+</span>
+            <span data-en="Add a block  — text, image, race results, event card…" data-zh="添加内容块 — 文字、图片、成绩表、活动卡片……">Add a block — text, image, race results, event card…</span>
+          </button>
+          <div class="block-menu" id="block-menu">
+            <button class="block-menu-item" onclick="insertBlock('text')"><span>📝</span><div><strong data-en="Text" data-zh="文字">Text</strong><div style="font-size:12px;color:var(--muted)" data-en="A paragraph of text" data-zh="文字段落">A paragraph of text</div></div></button>
+            <button class="block-menu-item" onclick="insertBlock('heading')"><span>H</span><div><strong data-en="Heading" data-zh="标题">Heading</strong><div style="font-size:12px;color:var(--muted)" data-en="Section heading" data-zh="章节标题">Section heading</div></div></button>
+            <button class="block-menu-item" onclick="insertBlock('image')"><span>🖼️</span><div><strong data-en="Image / Photo" data-zh="图片">Image / Photo</strong><div style="font-size:12px;color:var(--muted)" data-en="Upload from computer or Google Drive" data-zh="从电脑或Google云盘上传">Upload from computer or Google Drive</div></div></button>
+            <button class="block-menu-item" onclick="insertBlock('results')"><span>🏆</span><div><strong data-en="Race Results Table" data-zh="成绩表">Race Results Table</strong><div style="font-size:12px;color:var(--muted)" data-en="Import CSV or paste results" data-zh="导入CSV或粘贴成绩">Import CSV or paste results</div></div></button>
+            <button class="block-menu-item" onclick="insertBlock('event')"><span>📅</span><div><strong data-en="Event Card" data-zh="活动卡片">Event Card</strong><div style="font-size:12px;color:var(--muted)" data-en="Link to an upcoming event" data-zh="链接到即将举行的活动">Link to an upcoming event</div></div></button>
+            <button class="block-menu-item" onclick="insertBlock('nyrr')"><span>📊</span><div><strong data-en="NYRR Results Embed" data-zh="NYRR成绩嵌入">NYRR Results Embed</strong><div style="font-size:12px;color:var(--muted)" data-en="Auto-pull from our NYRR data" data-zh="自动从NYRR数据读取">Auto-pull from our NYRR data</div></div></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Sidebar -->
+    <div class="editor-sidebar">
+      <div class="editor-panel">
+        <h3 data-en="Publish Settings" data-zh="发布设置">Publish Settings</h3>
+        <div class="field-label" data-en="STATUS" data-zh="状态">STATUS</div>
+        <select class="field-select">
+          <option data-en="Draft (save only)" data-zh="草稿（仅保存）">Draft (save only)</option>
+          <option data-en="Published (live now)" data-zh="已发布（立即上线）">Published (live now)</option>
+          <option data-en="Scheduled" data-zh="定时发布">Scheduled</option>
+        </select>
+        <div class="field-label" data-en="CATEGORY" data-zh="分类">CATEGORY</div>
+        <select class="field-select">
+          <option data-en="Race Report" data-zh="赛事报告">Race Report</option>
+          <option data-en="Training" data-zh="训练">Training</option>
+          <option data-en="News" data-zh="新闻">News</option>
+          <option data-en="Gallery" data-zh="相册">Gallery</option>
+          <option data-en="Social" data-zh="社交">Social</option>
+        </select>
+        <div class="field-label" data-en="AUTHOR" data-zh="作者">AUTHOR</div>
+        <input class="field-input" value="Cathy Lin" data-en-placeholder="Author name" data-zh-placeholder="作者姓名">
+        <button class="publish-btn" onclick="toast('🎉','Post published successfully!')">🚀 <span data-en="Publish Now" data-zh="立即发布">Publish Now</span></button>
+        <button class="preview-btn" onclick="toast('👀','Opening preview...')">👀 <span data-en="Save Draft" data-zh="保存草稿">Save Draft</span></button>
+      </div>
+      <div class="editor-panel">
+        <h3>🌐 <span data-en="Bilingual Content" data-zh="双语内容">Bilingual Content</span></h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px" data-en="Each post can have English and Chinese versions. Toggle below." data-zh="每篇文章支持中英双语版本，在下方切换。">Each post can have English and Chinese versions. Toggle below.</p>
+        <div class="field-label" data-en="TITLE (EN)" data-zh="标题（英文）">TITLE (EN)</div>
+        <input class="field-input" value="NYC Half 2026: MMR's Best Season Yet" data-en-placeholder="English title" data-zh-placeholder="英文标题">
+        <div class="field-label" data-en="TITLE (中文)" data-zh="标题（中文）">TITLE (中文)</div>
+        <input class="field-input" placeholder="中文标题" data-en-placeholder="Chinese title" data-zh-placeholder="中文标题">
+        <div style="background:var(--sky2);border-radius:10px;padding:12px;font-size:13px;color:var(--navy)">
+          💡 <span data-en="Chinese version is optional. If empty, the English version is shown to all users." data-zh="中文版本为可选项。若留空，所有用户均显示英文版本。">Chinese version is optional. If empty, English is shown to all users.</span>
+        </div>
+      </div>
+      <div class="editor-panel">
+        <h3>📷 <span data-en="Cover Image" data-zh="封面图片">Cover Image</span></h3>
+        <div style="height:120px;background:var(--gray);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--border);cursor:pointer;margin-bottom:10px" onclick="toast('📁','File picker opened — choose from computer or Google Drive')">
+          <span style="font-size:32px">🖼️</span>
+          <span style="font-size:13px;color:var(--muted)" data-en="Click to upload or drag image here" data-zh="点击上传或拖拽图片至此">Click to upload or drag image here</span>
+        </div>
+        <button class="preview-btn" onclick="toast('📁','Google Drive picker opened')" data-en="Choose from Google Drive" data-zh="从Google云盘选择">Choose from Google Drive</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+// ── State ────────────────────────────────────────────
+let currentLang = 'en';
+let currentPage = 'home';
+let chartTrend, chartBests;
+
+// ── Language ─────────────────────────────────────────
+function setLang(lang, btn) {
+  currentLang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  applyLang();
+}
+function applyLang() {
+  const l = currentLang;
+  document.querySelectorAll('[data-en]').forEach(el => {
+    const val = el.getAttribute('data-' + l);
+    if (!val) return;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+      const ph = el.getAttribute('data-' + l + '-placeholder');
+      if (ph) el.placeholder = ph;
+    } else {
+      el.innerHTML = val;
+    }
+  });
+  document.querySelectorAll('[data-en-placeholder]').forEach(el => {
+    const ph = el.getAttribute('data-' + l + '-placeholder');
+    if (ph) el.placeholder = ph;
+  });
+  // Update filter buttons
+  document.querySelectorAll('.blog-filter,[data-en]').forEach(el => {
+    const v = el.getAttribute('data-' + l);
+    if (v && el.tagName === 'BUTTON' && !el.closest('nav') && !el.classList.contains('nav-btn')) return;
+  });
+}
+
+// ── Page routing ──────────────────────────────────────
+function showPage(name, btn) {
+  if (name === 'home' && currentPage !== 'home' && currentPage !== 'portal') {
+    name = 'home';
+  }
+  currentPage = name;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const target = document.getElementById('page-' + name);
+  if (target) target.classList.add('active');
+  if (btn) btn.classList.add('active');
+  window.scrollTo(0, 0);
+
+  // Special handling for portal
+  if (name === 'portal') {
+    setTimeout(initCharts, 100);
+  }
+  if (name === 'login') {
+    // nav items remain unchanged
+  }
+}
+
+// ── Login flow ────────────────────────────────────────
+function sendOTP() {
+  const email = document.getElementById('login-email').value;
+  if (!email || !email.includes('@')) { toast('⚠️', 'Please enter a valid email'); return; }
+  document.getElementById('login-email-display').textContent = email;
+  document.getElementById('login-step1').style.display = 'none';
+  document.getElementById('login-step2').style.display = 'block';
+  toast('📧', 'Login code sent to ' + email);
+}
+function verifyOTP() {
+  const code = document.getElementById('otp-code').value;
+  if (code.length < 4) { toast('⚠️', 'Please enter the 6-digit code'); return; }
+  toast('✅', 'Verified! Welcome back, Cathy');
+  setTimeout(() => {
+    document.getElementById('login-step1').style.display = 'block';
+    document.getElementById('login-step2').style.display = 'none';
+    document.getElementById('login-email').value = '';
+    document.getElementById('otp-code').value = '';
+    showPage('portal');
+  }, 800);
+}
+
+// ── Member portal sidebar ─────────────────────────────
+function switchPanel(name, btn) {
+  document.querySelectorAll('.portal-panel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.sidebar-nav-item').forEach(b => b.classList.remove('on'));
+  const panel = document.getElementById('panel-' + name);
+  if (panel) panel.classList.add('on');
+  if (btn) btn.classList.add('on');
+  if (name === 'nyrr') setTimeout(initNyrrChart, 100);
+}
+
+// ── Charts ────────────────────────────────────────────
+function initCharts() {
+  const tc = document.getElementById('chartTrend');
+  if (!tc) return;
+  if (chartTrend) chartTrend.destroy();
+  chartTrend = new Chart(tc, {
+    type: 'line',
+    data: {
+      labels: ['Jun 2025','Aug 2025','Sep 2025','Nov 2025','Jan 2026','Mar 2026'],
+      datasets: [{
+        label: 'Finish Time (min)',
+        data: [130, 126, 124, 128, 122, 112],
+        borderColor: '#E86033', backgroundColor: 'rgba(232,96,51,.1)',
+        tension: 0.4, fill: true, pointBackgroundColor: '#E86033', pointRadius: 5
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        y: { ticks: { callback: v => { const h=Math.floor(v/60),m=v%60; return h+':'+String(m).padStart(2,'0'); } }, grid: { color: '#F1F5F9' } },
+        x: { grid: { display: false } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+function initNyrrChart() {
+  const bc = document.getElementById('chartBests');
+  if (!bc) return;
+  if (chartBests) chartBests.destroy();
+  chartBests = new Chart(bc, {
+    type: 'bar',
+    data: {
+      labels: ['5K', '10K', '15K', 'Half', 'Marathon'],
+      datasets: [{
+        label: 'Personal Best (min)',
+        data: [24.6, 52.2, 82, 112, 248],
+        backgroundColor: ['#D6E4F0','#BFD8EE','#2A5FA0','#E86033','#1F497D'],
+        borderRadius: 8
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        y: { ticks: { callback: v => { const h=Math.floor(v/60),m=Math.round(v%60); return h>0?h+':'+String(m).padStart(2,'0'):m+"'"; } }, grid: { color: '#F1F5F9' } },
+        x: { grid: { display: false } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+// ── Block editor ──────────────────────────────────────
+function selectBlock(el) {
+  document.querySelectorAll('.block').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function toggleBlockMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('block-menu');
+  menu.classList.toggle('show');
+}
+document.addEventListener('click', () => {
+  const menu = document.getElementById('block-menu');
+  if (menu) menu.classList.remove('show');
+});
+function insertBlock(type) {
+  document.getElementById('block-menu').classList.remove('show');
+  const container = document.getElementById('blocks-container');
+  const block = document.createElement('div');
+  block.className = 'block';
+  block.onclick = function() { selectBlock(this); };
+  block.innerHTML = '<span class="block-handle">⠿</span>';
+
+  if (type === 'text') {
+    const ta = document.createElement('textarea');
+    ta.className = 'block-text'; ta.rows = 3;
+    ta.placeholder = currentLang === 'zh' ? '在此输入内容...' : 'Write something...';
+    block.appendChild(ta);
+    container.appendChild(block);
+    ta.focus();
+  } else if (type === 'heading') {
+    const h = document.createElement('h2');
+    h.contentEditable = true; h.style = 'font-size:24px;font-weight:700;color:var(--navy);outline:none;border:none;width:100%';
+    h.textContent = currentLang === 'zh' ? '新章节标题' : 'New Section Heading';
+    block.appendChild(h);
+    container.appendChild(block);
+    h.focus();
+  } else if (type === 'image') {
+    const d = document.createElement('div');
+    d.className = 'block-image';
+    d.innerHTML = '🖼️ <span>' + (currentLang === 'zh' ? '点击上传图片' : 'Click to upload an image') + '</span>';
+    d.onclick = () => toast('📁', currentLang === 'zh' ? '文件选择器已打开' : 'File picker opened');
+    block.appendChild(d);
+    container.appendChild(block);
+  } else if (type === 'results') {
+    block.innerHTML += `<div style="background:var(--gray);border-radius:10px;padding:16px">
+      <div style="font-weight:700;color:var(--navy);margin-bottom:12px">🏆 ${currentLang==='zh'?'成绩表':'Race Results Table'}</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input class="field-input" style="flex:1;margin-bottom:0" placeholder="${currentLang==='zh'?'活动名称':'Event name'}">
+        <button class="tool-btn" onclick="toast('📊','${currentLang==='zh'?'CSV导入器已打开':'CSV importer opened'}')" style="background:var(--orange);color:#fff">📊 ${currentLang==='zh'?'导入CSV':'Import CSV'}</button>
+      </div>
+      <div style="font-size:13px;color:var(--muted)">${currentLang==='zh'?'或直接粘贴成绩数据...':'Or paste results data...'}</div>
+    </div>`;
+    container.appendChild(block);
+  } else if (type === 'event') {
+    block.innerHTML += `<div style="background:var(--sky2);border-radius:10px;padding:16px;display:flex;align-items:center;gap:12px">
+      <div style="background:var(--navy);color:#fff;border-radius:8px;padding:12px;text-align:center;min-width:56px">
+        <div style="font-size:10px;opacity:.7">APR</div><div style="font-size:22px;font-weight:900">12</div>
+      </div>
+      <div><input class="field-input" style="margin-bottom:4px" value="${currentLang==='zh'?'中央公园团跑':'Central Park Group Run'}">
+      <input class="field-input" style="font-size:13px;margin-bottom:0" placeholder="${currentLang==='zh'?'地点 | 时间 | 说明':'Location | Time | Details'}"></div>
+    </div>`;
+    container.appendChild(block);
+  } else if (type === 'nyrr') {
+    block.innerHTML += `<div style="background:linear-gradient(135deg,var(--navy) 0%,var(--navy-light) 100%);border-radius:10px;padding:16px;color:#fff;display:flex;align-items:center;gap:12px">
+      <span style="font-size:32px">📊</span>
+      <div><div style="font-weight:700">${currentLang==='zh'?'NYRR成绩嵌入':'NYRR Results Embed'}</div>
+      <div style="font-size:13px;opacity:.75">${currentLang==='zh'?'自动从数据库读取最新数据':'Auto-fetches latest data from our database'}</div>
+      <select class="field-select" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;margin-top:8px;margin-bottom:0">
+        <option>${currentLang==='zh'?'团队成绩 — 最近赛事':'Team results — Latest event'}</option>
+        <option>${currentLang==='zh'?'个人排行榜':'Individual leaderboard'}</option>
+      </select></div>
+    </div>`;
+    container.appendChild(block);
+  } else if (type === 'divider') {
+    block.innerHTML += '<hr style="border:none;border-top:2px solid var(--border);margin:8px 0">';
+    container.appendChild(block);
+  }
+  block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  selectBlock(block);
+  toast('✅', currentLang === 'zh' ? '已添加内容块' : 'Block added');
+}
+
+// ── Toast ─────────────────────────────────────────────
+function toast(icon, msg) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+  c.appendChild(t);
+  setTimeout(() => { t.style.animation = 'none'; t.style.opacity = '0'; t.style.transform = 'translateX(100px)'; t.style.transition = '.3s'; setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+// ── Blog filter buttons ───────────────────────────────
+document.querySelectorAll('.blog-filter').forEach(btn => {
+  btn.addEventListener('click', function() {
+    this.closest('.blog-tag-row, div')?.querySelectorAll('.blog-filter').forEach(b => b.classList.remove('on'));
+    this.classList.add('on');
+  });
+});
+
+// ── Tool buttons ──────────────────────────────────────
+document.querySelectorAll('.tool-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    if (this.parentElement.className === 'editor-toolbar') {
+      this.parentElement.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active-tool'));
+      this.classList.add('active-tool');
+    }
+  });
+});
+
+// ── Init ──────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  applyLang();
+});
+// Apply lang immediately
+applyLang();
+</script>
+</body>
+</html>

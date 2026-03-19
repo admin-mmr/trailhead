@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+
+@layer base {
+  :root {
+    --brand-navy:        #1F497D;
+    --brand-orange:      #E86033;
+    --brand-navy-dark:   #163660;
+    --brand-navy-light:  #2A5FAA;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Bilingual font stack: Inter for Latin, Noto Sans SC for Chinese */
+  body {
+    font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-brand-orange text-white font-semibold px-6 py-3 rounded-full
+           hover:bg-brand-orange-light transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-brand-orange focus:ring-offset-2;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-brand-navy font-semibold px-6 py-3 rounded-full border-2
+           border-brand-navy hover:bg-brand-navy hover:text-white transition-all duration-200;
+  }
+
+  .btn-ghost {
+    @apply text-brand-navy font-medium px-4 py-2 rounded-lg
+           hover:bg-gray-100 transition-colors;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-gray-100
+           hover:shadow-md transition-shadow duration-200;
+  }
+
+  .section-title {
+    @apply text-3xl font-bold text-brand-navy mb-2;
+  }
+
+  .section-subtitle {
+    @apply text-gray-500 text-lg mb-10;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border border-gray-200
+           focus:outline-none focus:ring-2 focus:ring-brand-navy/30 focus:border-brand-navy
+           bg-white text-gray-900 placeholder-gray-400 text-sm transition-all;
+  }
+
+  .badge-active   { @apply bg-green-100 text-green-700 text-xs font-medium px-2.5 py-0.5 rounded-full; }
+  .badge-pending  { @apply bg-yellow-100 text-yellow-700 text-xs font-medium px-2.5 py-0.5 rounded-full; }
+  .badge-inactive { @apply bg-gray-100 text-gray-500 text-xs font-medium px-2.5 py-0.5 rounded-full; }
+}
+
+/* Animated hero orbs */
+.orb {
+  border-radius: 50%;
+  filter: blur(80px);
+  animation: pulse-orb 6s ease-in-out infinite;
+  pointer-events: none;
+}
+.orb-1 { animation-delay: 0s; }
+.orb-2 { animation-delay: -3s; }
+
+@keyframes pulse-orb {
+  0%, 100% { transform: scale(1);   opacity: 0.15; }
+  50%       { transform: scale(1.2); opacity: 0.25; }
+}
