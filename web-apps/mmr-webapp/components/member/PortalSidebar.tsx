@@ -1,0 +1,79 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import {
+  LayoutDashboard, Trophy, Calendar, Dumbbell, Tag, User
+} from 'lucide-react'
+import { useLang } from '@/lib/i18n/context'
+import type { SessionUser } from '@/types'
+import { clsx } from 'clsx'
+
+const NAV = [
+  { href: '/portal',          icon: LayoutDashboard, en: 'Dashboard',    zh: '概览' },
+  { href: '/portal/nyrr',     icon: Trophy,          en: 'NYRR Results', zh: '比赛成绩' },
+  { href: '/portal/events',   icon: Calendar,        en: 'Events',       zh: '活动' },
+  { href: '/portal/training', icon: Dumbbell,        en: 'Training',     zh: '训练' },
+  { href: '/portal/discounts',icon: Tag,             en: 'Discounts',    zh: '折扣' },
+  { href: '/portal/profile',  icon: User,            en: 'Profile',      zh: '个人信息' },
+]
+
+export default function PortalSidebar({ session }: { session: SessionUser }) {
+  const pathname = usePathname()
+  const { lang }  = useLang()
+
+  return (
+    <aside className="hidden md:flex flex-col w-56 flex-shrink-0">
+      {/* Member card */}
+      <div className="bg-brand-navy rounded-2xl p-5 text-white mb-4">
+        <div className="w-10 h-10 rounded-full bg-brand-orange flex items-center justify-center font-bold text-lg mb-3">
+          {(session.englishName ?? session.email)[0].toUpperCase()}
+        </div>
+        <p className="font-semibold text-sm leading-tight">
+          {session.englishName ?? session.email}
+        </p>
+        {session.chineseName && (
+          <p className="text-white/60 text-xs mt-0.5">{session.chineseName}</p>
+        )}
+        <div className="mt-3 pt-3 border-t border-white/20">
+          <p className="text-white/50 text-xs">{lang === 'zh' ? '会员编号' : 'Member ID'}</p>
+          <p className="text-brand-orange font-mono text-sm font-bold">{session.memberId}</p>
+        </div>
+        <div className="mt-2">
+          <span className={clsx(
+            'text-xs font-medium px-2 py-0.5 rounded-full',
+            session.status === 'active'
+              ? 'bg-green-500/20 text-green-300'
+              : 'bg-yellow-500/20 text-yellow-300'
+          )}>
+            {session.status === 'active'
+              ? (lang === 'zh' ? '有效' : 'Active')
+              : (lang === 'zh' ? '未激活' : 'Inactive')}
+          </span>
+        </div>
+      </div>
+
+      {/* Nav links */}
+      <nav className="space-y-1">
+        {NAV.map(({ href, icon: Icon, en, zh }) => {
+          const active = pathname === href || (href !== '/portal' && pathname.startsWith(href))
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={clsx(
+                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                active
+                  ? 'bg-brand-navy text-white'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-brand-navy'
+              )}
+            >
+              <Icon className="h-4 w-4 flex-shrink-0" />
+              {lang === 'zh' ? zh : en}
+            </Link>
+          )
+        })}
+      </nav>
+    </aside>
+  )
+}

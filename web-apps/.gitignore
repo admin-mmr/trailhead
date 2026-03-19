@@ -1,6 +1,32 @@
-nyrr/dist/config.js
-nyrr/dist/main.js
-nyrr/dist/nyrrApi.js
-nyrr/dist/pipeline.js
-nyrr/dist/sheets.js
-nyrr/dist/types.js
+# Build outputs / generated artifacts
+node_modules/
+**/node_modules/
+
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+*.log
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Test coverage
+coverage/
+**/coverage/
