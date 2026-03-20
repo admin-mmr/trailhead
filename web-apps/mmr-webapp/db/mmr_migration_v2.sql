@@ -146,24 +146,43 @@ CREATE TABLE IF NOT EXISTS photo_feedback (
 
 -- ============================================================
 -- 6. MEMBER_REFERENCE_PHOTOS
---    Face crops that members have added to their reference library.
---    Used by match.py to improve face matching accuracy.
---    No limit per member. Stored as face crops in Azure Blob.
+--    Face images that members have added to their reference library.
+--    Two sources:
+--      a) Crop from event photo (source='event_crop')
+--      b) Direct upload from device (source='direct_upload')
+--
+--    Active limit: MAX 20 active references per member.
+--    When the 21st is added, the oldest active one auto-deactivates
+--    (kept in DB for audit, not used by matcher).
+--
+--    photo_taken_at: when the photo was TAKEN (EXIF or user-supplied).
+--    The pipeline weights recent photo_taken_at more heavily in scoring.
+--    Refs older than 3 years get a UI freshness warning.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS member_reference_photos (
     id                  BIGINT          NOT NULL AUTO_INCREMENT,
     member_id           VARCHAR(10)     NOT NULL,
-    photo_id            VARCHAR(80)     NOT NULL,    -- source event photo
+    -- Source: event crop
+    photo_id            VARCHAR(80)     NULL,        -- source event photo (NULL if direct upload)
     detection_id        BIGINT          NULL,        -- which detection was cropped
-    blob_url            VARCHAR(500)    NULL,        -- Azure Blob URL for the face crop
-    face_embedding      JSON            NULL,        -- pre-computed embedding for this crop
-    is_active           BOOLEAN         NOT NULL DEFAULT TRUE,
+    -- Source: direct upload
+    original_filename   VARCHAR(255)    NULL,        -- original filename from device
+    -- Storage
+    blob_url            VARCHAR(500)    NULL,        -- Azure Blob URL (face crop or uploaded image)
+    face_embedding      JSON            NULL,        -- pre-computed 512-float ArcFace embedding
+    source              ENUM('event_crop','direct_upload') NOT NULL DEFAULT 'event_crop',
+    -- Dates
+    photo_taken_at      DATETIME        NULL,        -- when the photo was TAKEN (EXIF or user input)
     added_at            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Status
+    is_active           BOOLEAN         NOT NULL DEFAULT TRUE,
+    deactivated_at      DATETIME        NULL,        -- set when auto-aged-out or manually removed
+    deactivated_reason  ENUM('user_removed','auto_aged_out','admin') NULL,
 
     PRIMARY KEY (id),
-    INDEX idx_ref_member    (member_id),
-    INDEX idx_ref_photo     (photo_id),
-    FOREIGN KEY (photo_id)  REFERENCES photos(photo_id) ON DELETE CASCADE
+    INDEX idx_ref_member        (member_id, is_active),
+    INDEX idx_ref_photo         (photo_id),
+    INDEX idx_ref_taken_at      (member_id, photo_taken_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 

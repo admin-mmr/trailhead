@@ -514,6 +514,22 @@ function buildLastReminderMap(reminderType: string): Record<string, string> {
   return map;
 }
 
+// Build a map of memberID → count of successful sends within the last `windowDays` days.
+// Only rows with status='sent' are counted (getOutboundEmailLog already filters this).
+// Used to enforce hard send-count caps (e.g. max 3 renewal reminders per 9 months).
+function buildReminderCountMap(reminderType: string, windowDays: number): Record<string, number> {
+  const rows      = getOutboundEmailLog(reminderType);
+  const cutoffMs  = Date.now() - windowDays * 86_400_000;
+  const map: Record<string, number> = {};
+  for (const row of rows) {
+    if (!row.timestamp) continue;
+    const ts = new Date(row.timestamp).getTime();
+    if (isNaN(ts) || ts < cutoffMs) continue;    // outside window
+    map[row.memberID] = (map[row.memberID] || 0) + 1;
+  }
+  return map;
+}
+
 (globalThis as any).deriveStatus                   = deriveStatus;
 (globalThis as any).rowToMember                    = rowToMember;
 (globalThis as any).logMainTableRow                = logMainTableRow;
@@ -542,3 +558,4 @@ function buildLastReminderMap(reminderType: string): Record<string, string> {
 (globalThis as any).appendOutboundEmailLog      = appendOutboundEmailLog;
 (globalThis as any).getOutboundEmailLog         = getOutboundEmailLog;
 (globalThis as any).buildLastReminderMap        = buildLastReminderMap;
+(globalThis as any).buildReminderCountMap       = buildReminderCountMap;

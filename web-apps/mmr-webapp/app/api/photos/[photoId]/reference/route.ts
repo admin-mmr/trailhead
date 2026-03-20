@@ -35,6 +35,10 @@ export async function POST(
   // The nightly match.py will load this URL, crop the bbox, and re-encode the embedding.
   const blobUrl = rows[0].blob_thumb_url ?? ''
 
-  const refId = await addReferencePhoto(session.memberId, params.photoId, detectionId, blobUrl)
+  const refId = await addReferencePhoto(session.memberId, blobUrl, {
+    photoId:     params.photoId,
+    detectionId: Number(detectionId),
+    source:      'event_crop',
+  })
   return NextResponse.json({ ok: true, data: { refId } })
 }

@@ -1,16 +1,20 @@
 /**
  * photos.ts — Photo pipeline DB helpers
- * All queries against the v2 migration tables:
- * photo_events, photos, photo_detections, photo_favorites,
- * photo_feedback, member_reference_photos, member_bib_assignments,
- * photo_detection_corrections, photo_tag_invites
+ * All queries against the v2 migration tables.
  */
 
 import pool from './connection'
 import type {
-  Photo, PhotoEvent, PhotoDetection, PhotoFeedback,
+  Photo, PhotoEvent, PhotoDetection,
   MemberReferencePhoto, BibAssignment,
 } from '@/types'
+
+// Maximum number of ACTIVE reference photos per member.
+// When exceeded, the oldest active ref is auto-deactivated (still stored, not used).
+export const MAX_ACTIVE_REFS = 20
+
+// Freshness threshold: refs older than this get a UI warning (in days)
+export const REF_FRESHNESS_WARN_DAYS = 3 * 365  // 3 years
 
 // ─────────────────────────────────────────────────────────────
 // Photo Events (albums)
@@ -51,24 +55,41 @@ function rowToPhotoEvent(r: any): PhotoEvent {
 // Photos
 // ─────────────────────────────────────────────────────────────
 
+// Allowed sort values → SQL ORDER BY clause
+// Aggregate sorts (stars, comments) use subqueries so the main list stays efficient
+export type PhotoSortKey = 'date_asc' | 'date_desc' | 'rating' | 'stars' | 'comments'
+
+const SORT_SQL: Record<PhotoSortKey, string> = {
+  date_asc:  'p.taken_at ASC,  p.photo_id ASC',
+  date_desc: 'p.taken_at DESC, p.photo_id DESC',
+  rating:    '(SELECT AVG(rating) FROM photo_feedback WHERE photo_id = p.photo_id) DESC, p.taken_at DESC',
+  stars:     '(SELECT COUNT(*)   FROM photo_favorites  WHERE photo_id = p.photo_id) DESC, p.taken_at DESC',
+  comments:  '(SELECT COUNT(*)   FROM photo_feedback   WHERE photo_id = p.photo_id AND story IS NOT NULL AND story != "") DESC, p.taken_at DESC',
+}
+
+function sortClause(sort?: string): string {
+  return SORT_SQL[(sort as PhotoSortKey) ?? ''] ?? SORT_SQL.date_desc
+}
+
 /** Photos in an album, with detections + viewer-specific state */
 export async function getPhotosByEvent(
   eventId: string,
   viewerMemberId: string,
   page = 1,
-  pageSize = 40
+  pageSize = 40,
+  sort?: string
 ): Promise<Photo[]> {
   const offset = (page - 1) * pageSize
   const [rows] = await pool.query<any[]>(
     `SELECT p.*,
             pe.name_en AS event_name_en,
-            f.photo_id IS NOT NULL AS is_favorite
+            (f.photo_id IS NOT NULL) AS is_favorite
      FROM photos p
      JOIN photo_events pe ON pe.event_id = p.event_id
      LEFT JOIN photo_favorites f
             ON f.photo_id = p.photo_id AND f.member_id = ?
      WHERE p.event_id = ?
-     ORDER BY p.taken_at ASC, p.photo_id ASC
+     ORDER BY ${sortClause(sort)}
      LIMIT ? OFFSET ?`,
     [viewerMemberId, eventId, pageSize, offset]
   )
@@ -80,20 +101,21 @@ export async function getPhotosByMember(
   targetMemberId: string,
   viewerMemberId: string,
   page = 1,
-  pageSize = 40
+  pageSize = 40,
+  sort?: string
 ): Promise<Photo[]> {
   const offset = (page - 1) * pageSize
   const [rows] = await pool.query<any[]>(
     `SELECT DISTINCT p.*,
             pe.name_en AS event_name_en,
-            f.photo_id IS NOT NULL AS is_favorite
+            (f.photo_id IS NOT NULL) AS is_favorite
      FROM photos p
      JOIN photo_events pe ON pe.event_id = p.event_id
      JOIN photo_detections d ON d.photo_id = p.photo_id
      LEFT JOIN photo_favorites f
             ON f.photo_id = p.photo_id AND f.member_id = ?
      WHERE d.matched_member_id = ? AND d.is_wrong = FALSE
-     ORDER BY p.taken_at DESC
+     ORDER BY ${sortClause(sort)}
      LIMIT ? OFFSET ?`,
     [viewerMemberId, targetMemberId, pageSize, offset]
   )
@@ -104,16 +126,19 @@ export async function getPhotosByMember(
 export async function getFavoritePhotos(
   memberId: string,
   page = 1,
-  pageSize = 40
+  pageSize = 40,
+  sort?: string
 ): Promise<Photo[]> {
   const offset = (page - 1) * pageSize
+  // For favorites, default sort is when they were starred — override only for explicit sort
+  const orderBy = sort ? sortClause(sort) : 'fv.created_at DESC'
   const [rows] = await pool.query<any[]>(
     `SELECT p.*, pe.name_en AS event_name_en, TRUE AS is_favorite
      FROM photo_favorites fv
      JOIN photos p ON p.photo_id = fv.photo_id
      JOIN photo_events pe ON pe.event_id = p.event_id
      WHERE fv.member_id = ?
-     ORDER BY fv.created_at DESC
+     ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
     [memberId, pageSize, offset]
   )
@@ -266,38 +291,75 @@ export async function submitCorrection(
 
 export async function addReferencePhoto(
   memberId: string,
-  photoId: string,
-  detectionId: number,
-  blobUrl: string
+  blobUrl: string,
+  opts: {
+    photoId?:      string
+    detectionId?:  number
+    photoTakenAt?: string    // ISO datetime or date string
+    source?:       'event_crop' | 'direct_upload'
+    originalFilename?: string
+  } = {}
 ): Promise<number> {
+  const { photoId, detectionId, photoTakenAt, source = 'event_crop', originalFilename } = opts
+
+  // Auto-deactivate oldest active ref(s) if at limit
+  const [activeRows] = await pool.query<any[]>(
+    `SELECT id FROM member_reference_photos
+     WHERE member_id = ? AND is_active = TRUE
+     ORDER BY added_at ASC`,
+    [memberId]
+  )
+  if (activeRows.length >= MAX_ACTIVE_REFS) {
+    const toDeactivate = activeRows.slice(0, activeRows.length - MAX_ACTIVE_REFS + 1)
+    const ids = toDeactivate.map((r: any) => r.id)
+    await pool.query(
+      `UPDATE member_reference_photos
+       SET is_active = FALSE, deactivated_at = NOW(), deactivated_reason = 'auto_aged_out'
+       WHERE id IN (${ids.map(() => '?').join(',')})`,
+      ids
+    )
+  }
+
   const [result] = await pool.query<any>(
-    `INSERT INTO member_reference_photos (member_id, photo_id, detection_id, blob_url)
-     VALUES (?, ?, ?, ?)`,
-    [memberId, photoId, detectionId, blobUrl]
+    `INSERT INTO member_reference_photos
+       (member_id, photo_id, detection_id, blob_url, source, photo_taken_at, original_filename)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [memberId, photoId ?? null, detectionId ?? null, blobUrl, source,
+     photoTakenAt ?? null, originalFilename ?? null]
   )
   return result.insertId
 }
 
 export async function getMemberReferencePhotos(memberId: string): Promise<MemberReferencePhoto[]> {
   const [rows] = await pool.query<any[]>(
-    `SELECT id, photo_id, blob_url, added_at, is_active
+    `SELECT id, photo_id, blob_url, source, photo_taken_at, added_at, is_active
      FROM member_reference_photos
      WHERE member_id = ? AND is_active = TRUE
      ORDER BY added_at DESC`,
     [memberId]
   )
-  return rows.map(r => ({
-    id:       r.id,
-    photoId:  r.photo_id,
-    blobUrl:  r.blob_url,
-    addedAt:  String(r.added_at),
-    isActive: Boolean(r.is_active),
-  }))
+  const warnMs = REF_FRESHNESS_WARN_DAYS * 24 * 60 * 60 * 1000
+  const now    = Date.now()
+  return rows.map(r => {
+    const takenAt = r.photo_taken_at ? new Date(r.photo_taken_at).getTime() : null
+    const isFresh = takenAt === null ? true : (now - takenAt) < warnMs
+    return {
+      id:            r.id,
+      photoId:       r.photo_id ?? undefined,
+      blobUrl:       r.blob_url ?? undefined,
+      source:        r.source as 'event_crop' | 'direct_upload',
+      photoTakenAt:  r.photo_taken_at ? String(r.photo_taken_at) : undefined,
+      addedAt:       String(r.added_at),
+      isActive:      Boolean(r.is_active),
+      isFresh,
+    }
+  })
 }
 
 export async function removeReferencePhoto(memberId: string, refId: number): Promise<void> {
   await pool.query(
-    `UPDATE member_reference_photos SET is_active = FALSE
+    `UPDATE member_reference_photos
+     SET is_active = FALSE, deactivated_at = NOW(), deactivated_reason = 'user_removed'
      WHERE id = ? AND member_id = ?`,
     [refId, memberId]
   )

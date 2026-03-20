@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { pool } from '@/lib/db/connection'
 import { findOrCreateMember } from '@/lib/db/members'
-import { sendEmail } from '@/lib/email/client'
+import { sendApplicationReceivedEmail } from '@/lib/email/client'
 import { nanoid } from 'nanoid'
 
 // ── Validation schema ───────────────────────────────────────────────────────
@@ -102,20 +102,13 @@ export async function POST(req: NextRequest) {
 
     // 4. Send confirmation email to member
     try {
-      await sendEmail({
-        to: d.email,
-        subject: 'MMR Membership Application Received',
-        html: `
-          <p>Hi ${d.firstName},</p>
-          <p>We received your membership application for <strong>${PLAN_INTENT[d.plan]}</strong> ($${d.amount}).</p>
-          <p>Your reference number is: <strong>${eventId}</strong></p>
-          <p>Our team will verify your ${d.paymentMethod} payment and activate your membership within 1–2 business days.
-             You'll receive another email once your membership is active.</p>
-          <p>If you haven't already, please log in to your member portal to upload a screenshot of your payment.
-             This helps us process your application faster.</p>
-          <p>Thank you for joining Misty Mountain Runners!</p>
-          <p>— The MMR Team</p>
-        `,
+      await sendApplicationReceivedEmail({
+        to:            d.email,
+        firstName:     d.firstName,
+        planLabel:     PLAN_INTENT[d.plan],
+        amount:        d.amount,
+        paymentMethod: d.paymentMethod,
+        referenceId:   eventId,
       })
     } catch (emailErr) {
       // Non-fatal: log but don't fail the request

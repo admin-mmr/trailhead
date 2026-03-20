@@ -167,11 +167,14 @@ export interface PhotoFeedback {
 }
 
 export interface MemberReferencePhoto {
-  id:        number
-  photoId:   string
-  blobUrl?:  string
-  addedAt:   string
-  isActive:  boolean
+  id:             number
+  photoId?:       string        // null for direct_upload
+  blobUrl?:       string
+  source:         'event_crop' | 'direct_upload'
+  photoTakenAt?:  string        // when the photo was taken (EXIF or user input)
+  addedAt:        string
+  isActive:       boolean
+  isFresh:        boolean       // false if photoTakenAt > REF_FRESHNESS_WARN_DAYS old
 }
 
 export interface BibAssignment {

@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db/connection'
 import { sendEmail } from '@/lib/email/client'
+import { otpEmailHtml } from '@/lib/email/templates'
 
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES ?? 10)
 
@@ -23,16 +24,7 @@ export async function requestEmailOtp(email: string): Promise<void> {
   await sendEmail({
     to: email,
     subject: 'Your MMR login code · 岚山跑团验证码',
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;">
-        <h2 style="color:#1F497D;">Misty Mountain Runners · 岚山跑团</h2>
-        <p>Your one-time login code is:</p>
-        <p style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#E86033;">${code}</p>
-        <p style="color:#888;font-size:12px;">Expires in ${OTP_EXPIRY_MINUTES} minutes. Do not share this code.</p>
-        <hr/>
-        <p style="color:#888;font-size:12px;">你的登录验证码：<strong style="color:#E86033;">${code}</strong>，${OTP_EXPIRY_MINUTES}分钟内有效。</p>
-      </div>
-    `,
+    html: otpEmailHtml({ code, expiryMinutes: OTP_EXPIRY_MINUTES }),
   })
 }
 
