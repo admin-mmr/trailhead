@@ -1,2 +1,45 @@
 # Google App Engine generated folder
 appengine-generated/
+# Azure Functions generated folder
+.env.local
+node_modules/
+test-photos/
+results/
+azurite-data/
+azurite-debug.log
+dist/
+*.js.map
+
+# Python
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local photo albums (CV experiment inputs — not for repo)
+album_*/
+
+# CV experiment outputs
+output*.json
+best_photos.json
+rejected_photos.json
+debug_out/
+bib_results/
+profiles/
+
+# ML model weights (large binaries — download separately)
+*.pt
+*.pth
+*.onnx
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Temp Office lock files
+~$*.docx
+~$*.xlsx
+~$*.pptx
