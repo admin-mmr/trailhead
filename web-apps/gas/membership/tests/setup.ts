@@ -29,9 +29,13 @@ function makeSheet(name: string) {
   };
 }
 
-// Reset all sheet data between tests
+// Reset all sheet data and config cache between tests
 beforeEach(() => {
   Object.keys(sheetData).forEach(k => delete sheetData[k]);
+  // Clear the module-level config cache so each test seeds fresh config
+  if (typeof (global as any).clearConfigCache === 'function') {
+    (global as any).clearConfigCache();
+  }
 });
 
 // GAS globals — openById works for both spreadsheet IDs; sheets are keyed by name only

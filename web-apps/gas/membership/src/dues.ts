@@ -231,16 +231,42 @@ function approveDuesPayment(jsonRequest: string): string {
       membersToUpdate = [m];
     }
 
-    // Compute newExpiration = max(today + N years, currentExpiration + N years)
-    let newExpiration = new Date(today);
-    newExpiration.setFullYear(newExpiration.getFullYear() + renewalYears);
-    for (const { member } of membersToUpdate) {
-      if (member.expiration) {
-        const current = new Date(member.expiration);
-        if (!isNaN(current.getTime()) && current > today) {
-          const extended = new Date(current);
-          extended.setFullYear(extended.getFullYear() + renewalYears);
-          if (extended > newExpiration) newExpiration = extended;
+    // Compute newExpiration.
+    //
+    // Fixed year-end mode (MembershipYearEnd configured, e.g. "2027-03-31"):
+    //   Every payment this cycle expires on the same calendar date.
+    //   Result = max(membershipYearEnd, currentExpiration) — never regress.
+    //
+    // Rolling mode (MembershipYearEnd blank):
+    //   Result = max(today + renewalYears, currentExpiration + renewalYears)
+    const membershipYearEnd = getConfigValue('MembershipYearEnd').trim();
+    let newExpiration: Date;
+
+    if (membershipYearEnd) {
+      const yearEnd = new Date(membershipYearEnd);
+      if (!isNaN(yearEnd.getTime())) {
+        newExpiration = yearEnd;
+        for (const { member } of membersToUpdate) {
+          if (member.expiration) {
+            const current = new Date(member.expiration);
+            if (!isNaN(current.getTime()) && current > newExpiration) newExpiration = current;
+          }
+        }
+      }
+    }
+
+    if (!newExpiration!) {
+      // Rolling: max(today + N years, currentExpiration + N years)
+      newExpiration = new Date(today);
+      newExpiration.setFullYear(newExpiration.getFullYear() + renewalYears);
+      for (const { member } of membersToUpdate) {
+        if (member.expiration) {
+          const current = new Date(member.expiration);
+          if (!isNaN(current.getTime()) && current > today) {
+            const extended = new Date(current);
+            extended.setFullYear(extended.getFullYear() + renewalYears);
+            if (extended > newExpiration) newExpiration = extended;
+          }
         }
       }
     }

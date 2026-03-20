@@ -21,6 +21,7 @@ const SHEET_NAMES = {
   ACTIVITY_LOG:      'WebApp-ActivityLog',
   FETCH_GMAIL:       'Active',
   PAYMENT_EVENTS:    'Payment Confirmation Events',
+  OUTBOUND_EMAILS:   'Outbound-Emails',          // Log of all outbound reminder emails
 };
 
 // Sheets that live in the Fetch-Gmail spreadsheet (all others are in the membership spreadsheet)
@@ -140,6 +141,19 @@ const LOG_COL = {
   ERROR_MESSAGE: 9,
 };
 
+// Outbound-Emails column indices (0-based)
+// Tracks every outbound reminder email for throttling and audit purposes.
+const OE_COL = {
+  LOG_ID:        0,  // e.g. OE-1234567890-1234
+  TIMESTAMP:     1,  // ISO datetime sent
+  MEMBER_ID:     2,
+  EMAIL:         3,
+  REMINDER_TYPE: 4,  // 'IncompleteSignup' | 'RenewalReminder'
+  SUBJECT:       5,
+  STATUS:        6,  // 'sent' | 'failed'
+  NOTES:         7,
+};
+
 // Fetch Gmail column indices (0-based)
 const FG_COL = {
   TIMESTAMP: 0,
@@ -214,6 +228,10 @@ const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_NAMES.PAYMENT_EVENTS]: [
     'Event Name', 'Description', 'Confirmation Method',
   ],
+  [SHEET_NAMES.OUTBOUND_EMAILS]: [
+    'LogID', 'Timestamp', 'MemberID', 'Email',
+    'ReminderType', 'Subject', 'Status', 'Notes',
+  ],
 };
 
 // Default Config values seeded on first creation
@@ -233,6 +251,8 @@ const DEFAULT_CONFIG_ROWS: string[][] = [
   ['OTPValidHours',            '24',                      'Hours before OTP expires'],
   ['OTPCleanupDays',           '7',                       'Days before used/expired OTPs are deleted'],
   ['AdminEmails',              'admin@mmrunners.org',     'Comma-separated admin email addresses'],
+  ['MembershipCollectionStart','',                        'First day of annual membership collection window (YYYY-MM-DD). Auto-guess matching only runs within this window.'],
+  ['MembershipCollectionEnd',  '',                        'Last day of annual membership collection window (YYYY-MM-DD). Auto-guess matching only runs within this window.'],
   ['AppBaseUrl',               '',                        'Deployed web app URL (set after first deploy)'],
   ['PaymentProofFolderId',     '1I-FR4iTC8649XBzFSplyG2XARNBHwflz', 'Google Drive folder ID for payment proofs'],
   ['ZelleQRCodeFileId',        '',                        'Google Drive file ID for Zelle QR code image'],
@@ -285,6 +305,12 @@ function getSheet(name: string): GoogleAppsScript.Spreadsheet.Sheet {
   }
 
   return sheet;
+}
+
+/** Reset the in-process config cache. Call this in tests between seedings. */
+function clearConfigCache(): void {
+  configMapCache = null;
+  configCacheTime = 0;
 }
 
 function getConfigMap(): ConfigMap {
@@ -356,6 +382,7 @@ function getDistrictsFromConfig(jsonRequest: string): string {
 (globalThis as any).getConfigMap            = getConfigMap;
 (globalThis as any).getConfigValue          = getConfigValue;
 (globalThis as any).setConfigValue          = setConfigValue;
+(globalThis as any).clearConfigCache        = clearConfigCache;
 (globalThis as any).getDistrictsFromConfig  = getDistrictsFromConfig;
 
 // Export config constants so cross-module calls can resolve them in the test environment
@@ -368,6 +395,7 @@ function getDistrictsFromConfig(jsonRequest: string): string {
 (globalThis as any).PH_COL         = PH_COL;
 (globalThis as any).OTP_COL        = OTP_COL;
 (globalThis as any).LOG_COL        = LOG_COL;
+(globalThis as any).OE_COL         = OE_COL;
 (globalThis as any).FG_COL         = FG_COL;
 (globalThis as any).CFG_COL        = CFG_COL;
 (globalThis as any).PCE_COL        = PCE_COL;

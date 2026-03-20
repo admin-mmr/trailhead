@@ -2,50 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+/* ── Fonts ──────────────────────────────────────────────────────────────────
+   Cormorant Garamond  — elegant calligraphic display (closest web match to
+                         English 111 Adagio BT used on the MMR flag)
+   Noto Sans SC        — bilingual Chinese body copy
+   Inter               — clean Latin UI copy
+──────────────────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Noto+Sans+SC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
 
 @layer base {
   :root {
-    --brand-navy:        #1F497D;
-    --brand-orange:      #E86033;
-    --brand-navy-dark:   #163660;
-    --brand-navy-light:  #2A5FAA;
+    /* ── MMR Flag Palette ───────────────────────────────────────────────── */
+    --brand-crimson:       #C8102E;   /* flag red — primary              */
+    --brand-crimson-dark:  #8C0E20;   /* deep crimson — hover / dark bg  */
+    --brand-crimson-light: #E53050;   /* bright crimson — hover states   */
+    --brand-gold:          #D4A843;   /* flag calligraphy gold           */
+    --brand-gold-light:    #F2D57E;   /* pale gold — accents / glow      */
+    --brand-gold-dark:     #A07820;   /* deep gold — text on light bg    */
+    --brand-cream:         #FFF8F2;   /* warm off-white background       */
+    --brand-charcoal:      #2C1810;   /* warm dark text                  */
   }
 
-  html {
-    scroll-behavior: smooth;
-  }
+  html { scroll-behavior: smooth; }
 
-  /* Bilingual font stack: Inter for Latin, Noto Sans SC for Chinese */
   body {
     font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+    background-color: var(--brand-cream);
+    color: var(--brand-charcoal);
+  }
+
+  /* Display headings use Cormorant Garamond (closest to English 111 Adagio BT) */
+  h1, h2, .font-display {
+    font-family: 'Cormorant Garamond', 'Noto Sans SC', Georgia, serif;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply bg-brand-orange text-white font-semibold px-6 py-3 rounded-full
-           hover:bg-brand-orange-light transition-all duration-200
-           focus:outline-none focus:ring-2 focus:ring-brand-orange focus:ring-offset-2;
+    @apply bg-brand-crimson text-white font-semibold px-6 py-3 rounded-full
+           hover:bg-brand-crimson-light transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-brand-crimson focus:ring-offset-2;
   }
 
   .btn-secondary {
-    @apply bg-white text-brand-navy font-semibold px-6 py-3 rounded-full border-2
-           border-brand-navy hover:bg-brand-navy hover:text-white transition-all duration-200;
+    @apply bg-transparent text-brand-crimson font-semibold px-6 py-3 rounded-full
+           border-2 border-brand-crimson hover:bg-brand-crimson hover:text-white
+           transition-all duration-200;
+  }
+
+  .btn-gold {
+    @apply bg-brand-gold text-white font-semibold px-6 py-3 rounded-full
+           hover:bg-brand-gold-dark transition-all duration-200;
   }
 
   .btn-ghost {
-    @apply text-brand-navy font-medium px-4 py-2 rounded-lg
-           hover:bg-gray-100 transition-colors;
+    @apply text-brand-crimson font-medium px-4 py-2 rounded-lg
+           hover:bg-brand-crimson/10 transition-colors;
   }
 
   .card {
-    @apply bg-white rounded-2xl shadow-sm border border-gray-100
+    @apply bg-white rounded-2xl shadow-sm border border-brand-gold/20
            hover:shadow-md transition-shadow duration-200;
   }
 
   .section-title {
-    @apply text-3xl font-bold text-brand-navy mb-2;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    @apply text-3xl font-bold text-brand-crimson mb-2;
   }
 
   .section-subtitle {
@@ -54,7 +76,7 @@
 
   .input-field {
     @apply w-full px-4 py-3 rounded-xl border border-gray-200
-           focus:outline-none focus:ring-2 focus:ring-brand-navy/30 focus:border-brand-navy
+           focus:outline-none focus:ring-2 focus:ring-brand-crimson/30 focus:border-brand-crimson
            bg-white text-gray-900 placeholder-gray-400 text-sm transition-all;
   }
 
@@ -63,10 +85,10 @@
   .badge-inactive { @apply bg-gray-100 text-gray-500 text-xs font-medium px-2.5 py-0.5 rounded-full; }
 }
 
-/* Animated hero orbs */
+/* ── Animated hero orbs ──────────────────────────────────────────────────── */
 .orb {
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(90px);
   animation: pulse-orb 6s ease-in-out infinite;
   pointer-events: none;
 }
@@ -74,6 +96,22 @@
 .orb-2 { animation-delay: -3s; }
 
 @keyframes pulse-orb {
-  0%, 100% { transform: scale(1);   opacity: 0.15; }
-  50%       { transform: scale(1.2); opacity: 0.25; }
+  0%, 100% { transform: scale(1);   opacity: 0.18; }
+  50%       { transform: scale(1.2); opacity: 0.28; }
+}
+
+/* ── Gold shimmer on display headings ────────────────────────────────────── */
+.text-gold-shimmer {
+  background: linear-gradient(135deg, #D4A843 0%, #F2D57E 45%, #D4A843 55%, #A07820 100%);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gold-shimmer 4s ease-in-out infinite;
+}
+
+@keyframes gold-shimmer {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }

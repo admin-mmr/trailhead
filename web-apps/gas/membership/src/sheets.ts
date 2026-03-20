@@ -440,6 +440,80 @@ function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
 }
 
 // ── globalThis exports for test environment ──────────────────
+// ---- Outbound-Emails ----
+
+function generateOutboundEmailID(): string {
+  return `OE-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+}
+
+// Append one row to the Outbound-Emails log.  Returns the generated LogID.
+function appendOutboundEmailLog(record: {
+  memberID:     string;
+  email:        string;
+  reminderType: 'IncompleteSignup' | 'RenewalReminder';
+  subject:      string;
+  status:       'sent' | 'failed';
+  notes?:       string;
+}): string {
+  const sheet   = getSheet(SHEET_NAMES.OUTBOUND_EMAILS);
+  const logID   = generateOutboundEmailID();
+  const timestamp = new Date().toISOString();
+  sheet.appendRow([
+    logID,
+    timestamp,
+    record.memberID,
+    record.email,
+    record.reminderType,
+    record.subject,
+    record.status,
+    record.notes || '',
+  ]);
+  return logID;
+}
+
+// Load the entire Outbound-Emails log, optionally filtered to one reminder type.
+// Returns rows as plain objects keyed by column name.
+// Callers use this to decide if/when to send the next reminder.
+function getOutboundEmailLog(reminderType?: string): Array<{
+  logID: string; timestamp: string; memberID: string; email: string;
+  reminderType: string; subject: string; status: string; notes: string;
+}> {
+  const sheet = getSheet(SHEET_NAMES.OUTBOUND_EMAILS);
+  const data  = sheet.getDataRange().getValues();
+  const rows  = [];
+  for (let i = 1; i < data.length; i++) {
+    const rowType = String(data[i][OE_COL.REMINDER_TYPE] || '');
+    if (reminderType && rowType !== reminderType) continue;
+    const status = String(data[i][OE_COL.STATUS] || '');
+    if (status !== 'sent') continue; // only count successful sends for throttling
+    rows.push({
+      logID:        String(data[i][OE_COL.LOG_ID]        || ''),
+      timestamp:    String(data[i][OE_COL.TIMESTAMP]     || ''),
+      memberID:     String(data[i][OE_COL.MEMBER_ID]     || ''),
+      email:        String(data[i][OE_COL.EMAIL]         || ''),
+      reminderType: rowType,
+      subject:      String(data[i][OE_COL.SUBJECT]       || ''),
+      status,
+      notes:        String(data[i][OE_COL.NOTES]         || ''),
+    });
+  }
+  return rows;
+}
+
+// Build a map of memberID → ISO timestamp of the most recent successful send
+// for the given reminderType.  O(n) single pass over the log.
+function buildLastReminderMap(reminderType: string): Record<string, string> {
+  const rows = getOutboundEmailLog(reminderType);
+  const map: Record<string, string> = {};
+  for (const row of rows) {
+    const existing = map[row.memberID];
+    if (!existing || row.timestamp > existing) {
+      map[row.memberID] = row.timestamp;
+    }
+  }
+  return map;
+}
+
 (globalThis as any).deriveStatus                   = deriveStatus;
 (globalThis as any).rowToMember                    = rowToMember;
 (globalThis as any).logMainTableRow                = logMainTableRow;
@@ -465,3 +539,6 @@ function getWebAppEventsByMemberID(memberID: string): WebAppEventSummary[] {
 (globalThis as any).generatePaymentID           = generatePaymentID;
 (globalThis as any).generateLogID               = generateLogID;
 (globalThis as any).updateMemberRow             = updateMemberRow;
+(globalThis as any).appendOutboundEmailLog      = appendOutboundEmailLog;
+(globalThis as any).getOutboundEmailLog         = getOutboundEmailLog;
+(globalThis as any).buildLastReminderMap        = buildLastReminderMap;

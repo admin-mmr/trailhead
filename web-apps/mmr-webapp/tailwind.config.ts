@@ -10,15 +10,26 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          navy:   '#1F497D',
-          orange: '#E86033',
-          'navy-dark':  '#163660',
-          'navy-light': '#2A5FAA',
-          'orange-light': '#F07A50',
+          // ── MMR Flag Palette ──────────────────────────────────────────
+          crimson:         '#C8102E',   // flag red — primary
+          'crimson-dark':  '#8C0E20',   // deep crimson — hover / dark bg
+          'crimson-light': '#E53050',   // bright crimson — hover states
+          gold:            '#D4A843',   // flag calligraphy gold
+          'gold-light':    '#F2D57E',   // pale gold — accents / glow
+          'gold-dark':     '#A07820',   // deep gold — text on light bg
+          cream:           '#FFF8F2',   // warm off-white background
+          charcoal:        '#2C1810',   // warm dark text
+          // Legacy aliases so portal pages still compile
+          navy:            '#8C0E20',
+          orange:          '#D4A843',
+          'navy-dark':     '#2C1810',
+          'navy-light':    '#C8102E',
+          'orange-light':  '#F2D57E',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'Noto Sans SC', 'sans-serif'],
+        display: ['Cormorant Garamond', 'Noto Sans SC', 'Georgia', 'serif'],
+        sans:    ['Inter', 'Noto Sans SC', 'sans-serif'],
       },
       animation: {
         'fade-in':  'fadeIn 0.4s ease-in-out',

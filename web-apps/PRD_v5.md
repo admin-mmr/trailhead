@@ -3,7 +3,7 @@
 **Organization**: Misty Mountain Runners (MMR)
 **Document owner**: Cathy Lin
 **Status**: Living document — update before starting any new feature sprint
-**Last updated**: 2026-03-18
+**Last updated**: 2026-03-19
 **Replaces**: MemberPortal_PRDv1–v4, membership/PRDv4.md, nyrr/PRDv5.md
 
 ---
@@ -126,8 +126,8 @@ Same as join flow but member is already logged in. Portal shows "Renew" banner w
 
 | Method | Handle |
 |---|---|
-| Zelle | `treasurer@mmrunners.org` |
-| Venmo | `@MMRunners` |
+| Zelle | `runningmmr@gmail.com` |
+| Venmo | `@MistyMountainRunners` |
 
 ### 5.2 Payment Matching Pipeline
 
@@ -137,19 +137,21 @@ The system automatically matches incoming Zelle/Venmo payments to pending member
 Gmail (treasurer@mmrunners.org)
     ↓  GAS scheduled trigger (every 15 min)
 Google Sheet "Fetch Gmail Data" — Active tab
-    ↓  Azure Function nightly sync (googleapis)
-MySQL: gmail_transactions table
-    ↓  Reconciliation job
-payment_events: status → "Approved"
-members: status → "active", Expiration updated
-    ↓  Nightly export
-Google Sheet "Membership Master" (read-only for volunteers)
+    ↓  Reconciliation job (GAS, triggered on schedule or manually)
+WebApp-Events: status → "Approved"   ← standard path (member used webapp)
+    OR
+Payment-History: direct entry        ← guessing path (member paid without webapp)
+    ↓
+Membership Master (Main): Status → "active", Expiration updated
 ```
 
-**Matching rules:**
+**Matching rules (standard path — member submitted via webapp):**
 - Match on TransactionNumber (Zelle confirmation # or Venmo ID) — highest confidence
 - Match on Amount + PayerName + approximate date — medium confidence
 - Unmatched payments queue for admin manual review
+
+**Known gap — direct payments without a webapp event (⚠️ active issue):**
+Many members pay $30 or $50 directly via Zelle/Venmo without ever opening the web app. There is no `payment_events` row to match against, so the standard reconciliation pipeline has nothing to connect to. These payments appear in the "Fetch Gmail Data" sheet but remain unmatched indefinitely. See §5.5 for the payment guessing logic that handles this case.
 
 ### 5.3 Payment Event States
 
@@ -166,6 +168,71 @@ Accessible at `/admin/payments`. Shows:
 - All auto-matched events awaiting confirmation (medium confidence)
 - Ability to manually link a Gmail transaction to a payment event
 - Approve / reject with notes
+- **Unmatched Payments tab**: payments from Fetch Gmail Data with no corresponding webapp event; includes a "Run Auto-Match" button to manually trigger the payment guessing job (see §5.5)
+
+### 5.5 Membership Collection Period & Payment Guessing Logic
+
+**Problem:** During the annual membership collection window (typically January–March), many returning members simply send $30 or $50 with their Member ID in the Zelle/Venmo memo field — they do not open the webapp at all. The standard reconciliation pipeline has no `payment_events` row to match against.
+
+**Solution — admin-configurable collection window + guessing logic:**
+
+The admin sets a collection period in the Config sheet (or Config tab in the Admin UI):
+
+| Config Key | Example Value | Description |
+|---|---|---|
+| `MembershipCollectionStart` | `2026-01-01` | First day of the collection window (inclusive) |
+| `MembershipCollectionEnd` | `2026-03-31` | Last day of the collection window (inclusive) |
+
+**Guessing algorithm** (`autoMatchUnmatchedPayments`):
+1. Scan all rows in "Fetch Gmail Data" (Active tab) where `Processed = false` (or blank).
+2. Filter to rows where `TransactionDate` falls within `[MembershipCollectionStart, MembershipCollectionEnd]`.
+3. For each qualifying row, check if `Amount` is exactly $30 or $50.
+4. Parse `Memo` field — if it contains a valid MemberID (format `A0001`), extract it.
+5. Verify the MemberID exists in Membership Master.
+6. Apply intent mapping:
+   - $30 → `Individual Membership` renewal
+   - $50 → `Family Membership` renewal
+7. Create a row in Payment-History directly (bypassing WebApp-Events since there is no webapp event).
+8. Update Membership Master: set `Status = "active"`, compute new `Expiration` date (March 31 of the next membership year), update `MembershipFeePaid`, `PaymentDate`, `PaymentTransaction`.
+9. Mark the Fetch Gmail Data row as `Processed = true` and note `Source = "AutoGuess"`.
+10. Log the action to WebApp-ActivityLog with action `AUTO_GUESS_MATCH`.
+11. Send payment confirmation email to the member (cc: admin@mmrunners.org), with a note that this was an auto-matched payment.
+
+**Confidence and safety guardrails:**
+- Only runs within the configured collection window.
+- Only processes amounts of exactly $30 or $50.
+- MemberID must be present and valid in the memo field — no MemberID, no auto-guess.
+- Each Gmail message is processed at most once (keyed on `MessageId`).
+- All guessed matches are logged with `Source = "AutoGuess"` and are reviewable in Payment-History.
+- Admin can undo a guess by reversing the Payment-History entry and re-running.
+
+**Triggering the guessing job:**
+- Automatically: include `autoMatchUnmatchedPayments` in the nightly reconciliation function, but only if today falls within the collection window.
+- Manually: "Run Auto-Match" button in the Unmatched Payments tab of the Admin UI. This is the recommended way to run it during testing.
+- GAS trigger: add as an additional step in the existing `autoReconcile` function (or as its own trigger).
+
+### 5.6 Payment History Review & Expiration Repair
+
+**Problem:** Some Payment-History rows exist (from prior manual entries, admin approvals, or guessed matches) where the corresponding member's Expiration date in Membership Master was never updated, or was updated incorrectly.
+
+**Solution — `reviewPaymentHistory` job:**
+
+This function scans every row in the Payment-History tab and checks whether the member's expiration date is correct given the payment. If not, it repairs it.
+
+**Logic:**
+1. Read all rows in Payment-History where `PaymentIntent` is `Individual Membership`, `Family Membership`, or `Family Upgrade`.
+2. For each row, look up the member in Membership Master by `MemberID`.
+3. Compute the expected `Expiration` date: `PeriodEnd` from the Payment-History row (or, if blank, `March 31` of the membership year following `PaymentDate`).
+4. If the member's current `Expiration` does not match the expected date (or is blank), update it and set `Status = "active"`.
+5. Log each repair to WebApp-ActivityLog with action `EXPIRATION_REPAIRED`.
+6. Send no email for repairs (these are backend corrections).
+
+**Payment-History sheet schema note:** The `MemberID` column (index 2) already exists. This column is required for this job — every Payment-History row must have a valid MemberID. Rows missing MemberID are flagged in the activity log as `EXPIRATION_REVIEW_SKIPPED`.
+
+**Triggering:**
+- Can be run manually from Admin UI.
+- Can be added to the nightly GAS trigger alongside `expirePaymentProofs` and `expireInactiveMemberships`.
+- Should be run after any bulk import or manual payment entry.
 
 ---
 
@@ -235,38 +302,82 @@ Admin routes require a member with `role = 'admin'` in the members table (field 
 
 ### 8.3 Reconciliation Job
 
-- Runs after each Gmail sync
+The reconciliation job runs in two phases. Both are triggered together (nightly or manually):
+
+**Phase 1 — Standard match (webapp events exist):**
 - Queries `payment_events` with status `pending` + `gmail_transactions` unmatched
 - Applies matching rules (see §5.2)
 - Updates `payment_events.Status`, `payment_events.MatchedMessageId`
 - If approved: updates `members.Status`, `members.Expiration`, `members.MembershipFeePaid`
-- Creates record in `payments` table
-- Logs to `member_log`
+- Creates record in `payments` / Payment-History
+- Logs to `member_log` / WebApp-ActivityLog
+
+**Phase 2 — Auto-guess match (no webapp event, direct payment):**
+- Only runs if today is within the configured `MembershipCollectionStart` / `MembershipCollectionEnd` window
+- Applies payment guessing logic (see §5.5) to remaining unprocessed Gmail rows
+- Writes directly to Payment-History with `Source = "AutoGuess"`
+- Updates Membership Master directly
+- Logs each action with `AUTO_GUESS_MATCH`
+
+**Manual trigger in Admin UI:**
+- "Unmatched Payments" tab shows all Gmail rows not yet processed
+- "Run Auto-Match" button triggers Phase 2 on demand
+- Admin can review all `Source = "AutoGuess"` rows in Payment-History before treating them as final
 
 ---
 
-## 9. Bilingual Support
+## 9. Email Audit Log
 
-All user-facing text supports English (EN) and Simplified Chinese (中文/ZH).
+### 9.1 Problem — Emails Not Arriving (⚠️ active bug)
 
-- All UI strings stored in `lib/i18n/translations.ts` as a key-value map
-- `LanguageProvider` context wraps the app; `useLang()` hook in all components
-- Language toggle in Navbar persists to localStorage
-- Default language: English
-- Admin-facing pages: English only (volunteers are bilingual)
+Emails are not appearing in admin@mmrunners.org even though the code calls `GmailApp.sendEmail()` with `cc: adminEmail`. The most likely cause is **GAS trigger identity**: when a function runs on a time-based trigger (e.g., nightly `expirePaymentProofs`), `Session.getActiveUser().getEmail()` returns an empty string. Passing an empty `from` address to `GmailApp.sendEmail()` causes it to fail silently — the call succeeds in GAS terms but the email is either rejected or sent from an unexpected address.
+
+**Fix required in `email.ts`:**
+- Replace `GmailApp.sendEmail()` with `MailApp.sendEmail()` for all outbound notifications. `MailApp` does not require an active user session and always sends from the script owner's Google account (the deployer).
+- Remove the `from: Session.getActiveUser().getEmail()` option entirely — `MailApp` does not accept a `from` override, which is fine since the script owner's address is the right sender for a club system.
+- Always CC `admin@mmrunners.org` (read from `AdminEmails` config key) on every outbound email. This is the current intent but was broken by the silent failure.
+
+### 9.2 Email Audit Log
+
+Every outbound email sent by the system must be recorded in WebApp-ActivityLog. This is the single source of truth for "what email was sent to whom and when."
+
+**Log entry format** (action = `EMAIL_SENT`):
+
+| Field | Value |
+|---|---|
+| Action | `EMAIL_SENT` |
+| MemberID | recipient's MemberID (or `SYSTEM` if no member) |
+| Email | recipient's email address |
+| State | JSON: `{ "subject": "...", "to": "...", "cc": "...", "trigger": "notifyPaymentApproved" }` |
+
+**Implementation note for `sendEmail()` in `email.ts`:**
+After every successful `MailApp.sendEmail()` call, immediately call `auditLog('EMAIL_SENT', {...})` with the payload details. If the send fails, log `EMAIL_SEND_FAILED` instead.
+
+### 9.3 Email Types Sent by the System
+
+| Trigger | Function | Recipient | CC |
+|---|---|---|---|
+| Payment approved (admin or auto) | `notifyPaymentApproved` | member email | admin@mmrunners.org |
+| Payment rejected (admin) | `notifyPaymentRejected` | member email | admin@mmrunners.org |
+| Payment proof expired | `notifyPaymentExpired` | member email | admin@mmrunners.org |
+| Auto-guessed payment matched | `notifyAutoGuessMatch` | member email | admin@mmrunners.org |
+| New member welcome (on join) | `notifyWelcome` | member email | admin@mmrunners.org |
+| OTP login code | (OTP flow) | member email | none |
+
+> Note: The welcome email and payment-success email are currently not being sent due to the `GmailApp` / active-user bug described in §9.1. Fix `email.ts` to use `MailApp` first, then verify all email types are firing by checking WebApp-ActivityLog for `EMAIL_SENT` entries and confirming admin@mmrunners.org receives CC copies.
 
 ---
 
-## 10. Blog & Events
+## 11. Blog & Events
 
-### 10.1 Volunteer Blog Editor (`/blog/editor`)
+### 11.1 Volunteer Blog Editor (`/blog/editor`)
 
 - Block-based editor (7 block types: heading, paragraph, image, video, divider, quote, gallery)
 - Each block has EN and ZH text fields
 - Only accessible to logged-in members with `role = 'editor'` or `role = 'admin'`
 - Published posts appear on `/events` (public)
 
-### 10.2 Meipian Event Posts
+### 11.2 Meipian Event Posts
 
 Historical event articles extracted from Meipian using `scripts/extract_meipian.py`.
 Stored as static HTML in `events/yyyymmdd-event-slug/`.
@@ -274,7 +385,7 @@ These are not managed by the CMS — they are static archives.
 
 ---
 
-## 11. NYRR Integration
+## 12. NYRR Integration
 
 - NYRR API client in `lib/nyrr/api.ts`
 - Sync pipeline in `lib/nyrr/pipeline.ts`
@@ -284,13 +395,13 @@ These are not managed by the CMS — they are static archives.
 
 ---
 
-## 12. Partner Project — 湘舍动公益文件系统
+## 13. Partner Project — 湘舍动公益文件系统
 
 Separate collaboration with 湘舍动公益 (another nonprofit) on a Google Drive file management system for a race face-detection application. Stored in `partner/湘舍动公益文件系统/`. Not part of MMR's Azure infrastructure. Progress tracked separately.
 
 ---
 
-## 13. Infrastructure
+## 14. Infrastructure
 
 ### 13.1 Azure Resources (resource group: `mmr-resources`)
 
@@ -327,7 +438,7 @@ npm run dev
 
 ---
 
-## 14. Database Schema Summary
+## 15. Database Schema Summary
 
 Full migration script: `mmr-webapp/db/mmr_migration_v1.sql`
 
@@ -346,7 +457,7 @@ Full migration script: `mmr-webapp/db/mmr_migration_v1.sql`
 
 ---
 
-## 15. Key Design Decisions — Do Not Reverse Without Discussion
+## 16. Key Design Decisions — Do Not Reverse Without Discussion
 
 1. **No Stripe / no credit cards** — Zelle + Venmo only. Eliminates transaction fees for nonprofit.
 2. **Pending status is derived** — never stored on `members.Status`. Always query `payment_events` at display time.
@@ -359,31 +470,45 @@ Full migration script: `mmr-webapp/db/mmr_migration_v1.sql`
 
 ---
 
-## 16. Backlog (Prioritized)
+## 17. Backlog (Prioritized)
 
-### High Priority
+### 🔴 Critical — Active Bugs (fix before membership collection closes)
+
+- [ ] **Fix email delivery** — replace `GmailApp.sendEmail()` with `MailApp.sendEmail()` in `gas/membership/src/email.ts`; remove `from: Session.getActiveUser().getEmail()` (see §9.1). Verify welcome + payment-success emails arrive at admin@mmrunners.org.
+- [ ] **Add email audit log** — after every `MailApp.sendEmail()` call, write `EMAIL_SENT` (or `EMAIL_SEND_FAILED`) to WebApp-ActivityLog (see §9.2).
+- [ ] **Implement payment guessing logic** (`autoMatchUnmatchedPayments`) — new GAS function to handle $30/$50 direct payments with MemberID in memo, within configured collection window (see §5.5). Includes Config keys `MembershipCollectionStart` and `MembershipCollectionEnd`.
+- [ ] **Implement payment history review job** (`reviewPaymentHistory`) — scan Payment-History, repair any missing/wrong Expiration dates, log `EXPIRATION_REPAIRED` (see §5.6).
+- [ ] **Add "Run Auto-Match" button** to the Unmatched Payments tab in Admin UI — manually triggers `autoMatchUnmatchedPayments` (see §5.5, §8.3).
+- [ ] **Add Config tab fields** for `MembershipCollectionStart`, `MembershipCollectionEnd` in the Admin UI Config panel (see §5.5).
+- [ ] **Add `reviewPaymentHistory` to nightly GAS trigger** alongside existing `expirePaymentProofs` and `expireInactiveMemberships` (see §5.6 and §8.3).
+- [ ] **Include Phase 2 (auto-guess) in `autoReconcile` GAS function** — runs automatically when today is within the collection window (see §8.3).
+
+### 🟠 High Priority
+
 - [ ] `mmr-webapp/db/` — run `mmr_migration_v1.sql` against production MySQL
 - [ ] One-time import: Google Sheet Membership Master → MySQL (`members` table, ~600 rows)
-- [ ] Admin dashboard at `/admin` — payment approval queue, member search, CSV export
+- [ ] Admin dashboard at `/admin` — payment approval queue (including Unmatched Payments tab), member search, CSV export
 - [ ] Password login + forgot-password flow (bcrypt, `password_reset_tokens`)
 - [ ] Social login: Google, Microsoft, Apple via NextAuth.js
 - [ ] QR code images: add `qr-zelle.png` and `qr-venmo.png` to `mmr-webapp/public/images/`
 
-### Medium Priority
+### 🟡 Medium Priority
+
 - [ ] Nightly MySQL → Google Sheet sync (Azure Timer Function, `googleapis`)
 - [ ] Gmail sync Azure Function (reads Active sheet → upserts `gmail_transactions`)
-- [ ] Payment reconciliation job (auto-match `gmail_transactions` → `payment_events`)
+- [ ] Payment reconciliation job for MySQL (auto-match `gmail_transactions` → `payment_events`)
 - [ ] NYRR sync cron job (nightly, Azure Timer Function)
 - [ ] Admin role field on `members` table
 
-### Lower Priority
+### 🟢 Lower Priority
+
 - [ ] `partner/湘舍动公益文件系统` — continue system design
-- [ ] Repo restructure per proposed hierarchy (move `membership/` → `gas/membership/`, etc.)
+- [ ] Repo restructure per proposed hierarchy
 - [ ] Remove `mmr-webapp/app/api/stripe/` — dead code, decision is no Stripe
 
 ---
 
-## 17. Completed Work (Do Not Redo)
+## 18. Completed Work (Do Not Redo)
 
 - ✅ Full Next.js 14 project scaffolded (42+ files, App Router, TypeScript, Tailwind)
 - ✅ Email OTP auth system (login, session, JWT middleware)

@@ -294,6 +294,70 @@ function manualMatch(jsonRequest: string): string {
   }
 }
 
+// ── triggerAutoMatch ─────────────────────────────────────────────────────
+// API endpoint for the "Run Auto-Match" button in the Unmatched Payments tab.
+// Manually triggers the payment guessing logic for the current collection window.
+// Returns a summary of matched, skipped, and errored rows.
+function triggerAutoMatch(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string }>;
+  const { payload } = req;
+  try {
+    if (!isAdmin(payload.adminEmail)) {
+      return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
+    }
+
+    console.log('[mmr][triggerAutoMatch] called by:', payload.adminEmail);
+    auditLog('TRIGGER_AUTO_MATCH', { email: payload.adminEmail });
+
+    const stats = autoMatchUnmatchedPayments();
+
+    auditLog('TRIGGER_AUTO_MATCH_COMPLETE', {
+      email: payload.adminEmail,
+      state: stats,
+    });
+
+    return jsonOk(req.requestId, {
+      message: `Auto-match complete. Matched: ${stats.matched}, Skipped: ${stats.skipped}, Errors: ${stats.errors}`,
+      stats,
+    });
+  } catch (e: any) {
+    console.error('[mmr][triggerAutoMatch] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
+// ── triggerPaymentHistoryReview ───────────────────────────────────────────
+// API endpoint for the "Review Payment History" button in the Admin UI.
+// Manually triggers the payment history repair job.
+// Returns a summary of reviewed, repaired, and skipped rows.
+function triggerPaymentHistoryReview(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string }>;
+  const { payload } = req;
+  try {
+    if (!isAdmin(payload.adminEmail)) {
+      return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
+    }
+
+    console.log('[mmr][triggerPaymentHistoryReview] called by:', payload.adminEmail);
+    auditLog('TRIGGER_PAYMENT_HISTORY_REVIEW', { email: payload.adminEmail });
+
+    const stats = reviewPaymentHistory();
+
+    auditLog('TRIGGER_PAYMENT_HISTORY_REVIEW_COMPLETE', {
+      email: payload.adminEmail,
+      state: stats,
+    });
+
+    return jsonOk(req.requestId, {
+      message: `Payment history review complete. Reviewed: ${stats.reviewed}, Repaired: ${stats.repaired}, Skipped: ${stats.skipped}`,
+      stats,
+    });
+  } catch (e: any) {
+    console.error('[mmr][triggerPaymentHistoryReview] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
 function debugAdminCheck() {
   const raw = getConfigValue('AdminEmails');
   console.log('Raw AdminEmails value:', JSON.stringify(raw));
@@ -594,16 +658,128 @@ function loadProfileData(jsonRequest: string): string {
 }
 
 
-(globalThis as any).getPendingEvents           = getPendingEvents;
-(globalThis as any).getUnmatchedPayments      = getUnmatchedPayments;
-(globalThis as any).getConfig                 = getConfig;
-(globalThis as any).updateConfigEntry         = updateConfigEntry;
-(globalThis as any).getPaymentProofs          = getPaymentProofs;
-(globalThis as any).getPublicConfig           = getPublicConfig;
-(globalThis as any).initializeSessionConfig   = initializeSessionConfig;
-(globalThis as any).manualMatch               = manualMatch;
-(globalThis as any).getMemberSummaryForAdmin  = getMemberSummaryForAdmin;
-(globalThis as any).adminCreatePaymentProof   = adminCreatePaymentProof;
-(globalThis as any).loadDashboardData         = loadDashboardData;
-(globalThis as any).loadProfileData           = loadProfileData;
+// ============================================================
+// getMembershipStats  — Admin roster summary
+//
+// Single-pass scan of Membership Master.  Returns:
+//
+//   total / active / inactive
+//   byExpirationYear   — member count keyed by YYYY (or "(none)" / "(expired)")
+//   byType             — member count keyed by membership type string
+//   familySizeDistribution  — count of FamilyIDs that have exactly N members
+//                             e.g. { "1": 3, "2": 15, "3": 4 } means 3 FamilyIDs
+//                             have only 1 member, 15 have 2, etc.
+//   totalFamilyIDs     — distinct FamilyID count
+// ============================================================
+function buildMembershipStats() {
+  const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
+  const data  = sheet.getDataRange().getValues();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let total    = 0;
+  let active   = 0;
+  let inactive = 0;
+
+  const byExpirationYear: Record<string, number>  = {};
+  const byType:           Record<string, number>  = {};
+  const familyIDSizes:    Record<string, number>  = {};  // familyID → member count
+
+  for (let i = 1; i < data.length; i++) {
+    const memberID  = String(data[i][MM_COL.MEMBER_ID]  || '').trim();
+    const status    = String(data[i][MM_COL.STATUS]      || '').toLowerCase().trim();
+    const type      = String(data[i][MM_COL.TYPE]        || '').trim();
+    const familyID  = String(data[i][MM_COL.FAMILY_ID]   || '').trim();
+    const expRaw    = data[i][MM_COL.EXPIRATION];
+
+    if (!memberID) continue;
+    total++;
+
+    if (status === 'active') active++;
+    else inactive++;
+
+    // ── Expiration year bucket ──
+    const isoExp  = toISODateString(String(expRaw || ''));
+    let   yearKey: string;
+    if (!isoExp) {
+      yearKey = '(none)';
+    } else {
+      const expDate = new Date(isoExp);
+      yearKey = expDate < today ? '(expired)' : isoExp.slice(0, 4);
+    }
+    byExpirationYear[yearKey] = (byExpirationYear[yearKey] || 0) + 1;
+
+    // ── Type bucket ──
+    const typeKey = type || '(none)';
+    byType[typeKey] = (byType[typeKey] || 0) + 1;
+
+    // ── Family size tracking ──
+    if (familyID) {
+      familyIDSizes[familyID] = (familyIDSizes[familyID] || 0) + 1;
+    }
+  }
+
+  // Convert per-family-ID sizes into a distribution histogram
+  // e.g. "how many FamilyIDs have exactly 2 members?"
+  const familySizeDistribution: Record<string, number> = {};
+  for (const count of Object.values(familyIDSizes)) {
+    const key = String(count);
+    familySizeDistribution[key] = (familySizeDistribution[key] || 0) + 1;
+  }
+
+  // Sort numeric keys for cleaner presentation
+  const sortedFamilyDist: Record<string, number> = {};
+  Object.keys(familySizeDistribution)
+    .sort((a, b) => Number(a) - Number(b))
+    .forEach(k => { sortedFamilyDist[k] = familySizeDistribution[k]; });
+
+  const sortedExpYear: Record<string, number> = {};
+  Object.keys(byExpirationYear)
+    .sort()
+    .forEach(k => { sortedExpYear[k] = byExpirationYear[k]; });
+
+  return {
+    generatedAt:            new Date().toISOString(),
+    total,
+    active,
+    inactive,
+    byExpirationYear:       sortedExpYear,
+    byType,
+    familySizeDistribution: sortedFamilyDist,
+    totalFamilyIDs:         Object.keys(familyIDSizes).length,
+  };
+}
+
+function getMembershipStats(jsonRequest: string): string {
+  const req = JSON.parse(jsonRequest) as ApiRequest<{ adminEmail: string }>;
+  try {
+    if (!isAdmin(req.payload.adminEmail)) {
+      return jsonError(req.requestId, 'FORBIDDEN', 'Not authorized.');
+    }
+    const stats = buildMembershipStats();
+    console.log('[mmr][getMembershipStats] total:', stats.total,
+      'active:', stats.active, 'familyIDs:', stats.totalFamilyIDs);
+    return jsonOk(req.requestId, stats);
+  } catch (e: any) {
+    console.error('[mmr][getMembershipStats] error:', String(e));
+    return jsonError(req.requestId, 'INTERNAL_ERROR', String(e));
+  }
+}
+
+
+(globalThis as any).getPendingEvents                = getPendingEvents;
+(globalThis as any).getUnmatchedPayments           = getUnmatchedPayments;
+(globalThis as any).getConfig                      = getConfig;
+(globalThis as any).updateConfigEntry              = updateConfigEntry;
+(globalThis as any).getPaymentProofs               = getPaymentProofs;
+(globalThis as any).getPublicConfig                = getPublicConfig;
+(globalThis as any).initializeSessionConfig        = initializeSessionConfig;
+(globalThis as any).manualMatch                    = manualMatch;
+(globalThis as any).getMemberSummaryForAdmin       = getMemberSummaryForAdmin;
+(globalThis as any).adminCreatePaymentProof        = adminCreatePaymentProof;
+(globalThis as any).loadDashboardData              = loadDashboardData;
+(globalThis as any).loadProfileData                = loadProfileData;
+(globalThis as any).triggerAutoMatch               = triggerAutoMatch;
+(globalThis as any).triggerPaymentHistoryReview    = triggerPaymentHistoryReview;
+(globalThis as any).getMembershipStats             = getMembershipStats;
 

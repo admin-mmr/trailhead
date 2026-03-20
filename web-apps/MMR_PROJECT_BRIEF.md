@@ -226,6 +226,9 @@ Key-value app settings. Pre-seeded values:
 | PaymentMethods | Zelle,Venmo |
 | ReminderDaysBefore | 30 |
 | MembershipRenewalYears | 1 |
+| MembershipCollectionStart | (date) — first day of annual collection window |
+| MembershipCollectionEnd | (date) — last day of annual collection window |
+| AdminEmails | admin@mmrunners.org |
 
 ---
 
@@ -329,6 +332,15 @@ NEXT_PUBLIC_AZURE_STORAGE_ACCOUNT=mmrunnersstorage
 - This Gmail fetch is live and working — do not break it
 - Will become read-only roster export once MySQL migration is complete
 
+**Scheduled nightly jobs** (add all to GAS trigger, recommend 2 AM):
+- `expirePaymentProofs` — marks unreviewed WebApp-Events as Expired after PaymentProofReviewDays
+- `expireInactiveMemberships` — marks active members inactive when Expiration has passed
+- `reviewPaymentHistory` — ⚠️ NEW: scans Payment-History and repairs missing/wrong Expiration dates on Membership Master
+- `autoReconcile` — full reconciliation pipeline; includes Phase 2 auto-guess when within collection window
+
+**Known active bug — email delivery:**
+`email.ts` currently uses `GmailApp.sendEmail()` with `from: Session.getActiveUser().getEmail()`. In time-based triggers, `getActiveUser()` returns empty string → emails fail silently. Welcome emails and payment-success emails are not being sent. Fix: replace with `MailApp.sendEmail()` and remove the `from` option.
+
 ### gas/nyrr
 - Syncs NYRR race results into Google Sheets
 - Will be replaced by Azure Timer Function pulling from NYRR API directly
@@ -337,15 +349,33 @@ NEXT_PUBLIC_AZURE_STORAGE_ACCOUNT=mmrunnersstorage
 
 ## Backlog (High Priority First)
 
+### 🔴 Critical — Active Bugs (membership collection is open NOW)
+
+- [ ] **Fix email delivery bug** — `gas/membership/src/email.ts` uses `GmailApp.sendEmail()` with `from: Session.getActiveUser().getEmail()`, which returns empty string in time-based triggers → emails fail silently. Switch to `MailApp.sendEmail()` and remove the `from` option. Verify welcome + payment-success emails arrive at admin@mmrunners.org.
+- [ ] **Add email audit log** — every `MailApp.sendEmail()` call must write `EMAIL_SENT` / `EMAIL_SEND_FAILED` to WebApp-ActivityLog (Action field). See PRD_v5.md §9.2.
+- [ ] **Payment guessing logic** — new GAS function `autoMatchUnmatchedPayments`: for unmatched Gmail rows within `MembershipCollectionStart`/`MembershipCollectionEnd` window, $30 with valid MemberID in memo → Individual renewal; $50 → Family renewal. Writes directly to Payment-History, updates Membership Master, logs `AUTO_GUESS_MATCH`. See PRD_v5.md §5.5.
+- [ ] **Payment history review job** — new GAS function `reviewPaymentHistory`: scans Payment-History, checks each MemberID's Expiration against `PeriodEnd`, repairs if wrong or missing, logs `EXPIRATION_REPAIRED`. See PRD_v5.md §5.6.
+- [ ] **Add Config keys** `MembershipCollectionStart` and `MembershipCollectionEnd` to Config sheet and Admin UI Config panel.
+- [ ] **Add "Run Auto-Match" button** in Unmatched Payments tab of Admin UI to manually trigger `autoMatchUnmatchedPayments`.
+- [ ] **Add `reviewPaymentHistory` + Phase 2 auto-guess to nightly GAS trigger** (alongside existing `expirePaymentProofs` / `expireInactiveMemberships`). Include Phase 2 inside `autoReconcile` when within collection window.
+
+### 🟠 High Priority
+
 - [ ] Run `mmr-webapp/db/mmr_migration_v1.sql` against production MySQL
 - [ ] One-time import: Google Sheet (~600 rows) → MySQL `members` table
-- [ ] Admin dashboard `/admin`: payment queue, member search, CSV export
+- [ ] Admin dashboard `/admin`: payment queue (+ Unmatched Payments tab), member search, CSV export
 - [ ] Password login + forgot-password flow
 - [ ] Social login (Google, Microsoft, Apple) via NextAuth.js
 - [ ] Add `qr-zelle.png` + `qr-venmo.png` to `public/images/`
+
+### 🟡 Medium Priority
+
 - [ ] Nightly Azure Function: MySQL → Google Sheet sync
 - [ ] Azure Function: gmail_transactions sync + payment reconciliation
 - [ ] NYRR API sync cron job
+
+### 🟢 Lower Priority
+
 - [ ] **Delete** `mmr-webapp/app/api/stripe/` — dead code, no Stripe
 
 ## Completed Work (Do Not Redo)

@@ -102,14 +102,14 @@ for a race face-detection application. Work in progress — see development plan
 
 | Resource | Value |
 |---|---|
-| Website | https://mmrunners.org |
+| Website | https://www.mmrunners.org |
 | Azure resource group | `mmr-resources` |
 | Azure Static Web App | `mmr-webapp` |
 | MySQL server | `mmr-mysql.mysql.database.azure.com` / db: `mmrdb` |
 | Storage account | `mmrunnersstorage` |
 | Communication Services | `mmr-comms` |
-| Zelle | `treasurer@mmrunners.org` |
-| Venmo | `@MMRunners` |
+| Zelle | `runningmmr@gmail.com` |
+| Venmo | `@MistyMountainRunners` |
 
 ---
 
