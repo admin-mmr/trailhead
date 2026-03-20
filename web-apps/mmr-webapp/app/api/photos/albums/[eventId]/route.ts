@@ -1,0 +1,14 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { requireSession } from '@/lib/auth/session'
+import { getPhotosByEvent } from '@/lib/db/photos'
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { eventId: string } }
+) {
+  const session  = await requireSession()
+  const page     = Number(req.nextUrl.searchParams.get('page') ?? 1)
+  const pageSize = Number(req.nextUrl.searchParams.get('pageSize') ?? 40)
+  const photos   = await getPhotosByEvent(params.eventId, session.memberId, page, pageSize)
+  return NextResponse.json({ ok: true, data: photos })
+}

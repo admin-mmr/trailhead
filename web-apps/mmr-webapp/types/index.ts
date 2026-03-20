@@ -109,6 +109,88 @@ export interface BlogPost {
   createdAt: string
 }
 
+// ─── Photos ───────────────────────────────────────────────────────────────────
+
+export interface PhotoEvent {
+  eventId:        string          // e.g. "20260315-nyc-half"
+  nameEn:         string
+  nameZh?:        string
+  eventDate?:     string          // ISO date
+  syncStatus:     'pending' | 'syncing' | 'done' | 'error'
+  photosTotal:    number
+  photosAnalyzed: number
+  nyrrEventCode?: string
+}
+
+export interface FaceBbox {
+  x: number; y: number; w: number; h: number
+}
+
+export interface PhotoDetection {
+  id:               number
+  personIndex:      number
+  bibNormalized?:   string
+  bibConfidence?:   number
+  faceBbox?:        FaceBbox
+  headYaw?:         number
+  headPitch?:       number
+  hasGlasses?:      boolean
+  hasHat?:          boolean
+  faceOccluded?:    number
+  matchedMemberId?: string
+  matchedName?:     string        // joined from members table
+  matchScore?:      number
+  matchMethod?:     'auto' | 'manual' | 'bib_only' | 'face_only' | 'user_confirmed'
+  isWrong:          boolean
+}
+
+export interface Photo {
+  photoId:        string
+  eventId:        string
+  eventNameEn?:   string
+  blobThumbUrl?:  string
+  photographer?:  string
+  takenAt?:       string
+  widthPx?:       number
+  heightPx?:      number
+  qualityScore?:  number
+  peopleCount?:   number
+  detections:     PhotoDetection[]
+  // viewer-specific (joined per request)
+  isFavorite?:    boolean
+  myFeedback?:    PhotoFeedback
+}
+
+export interface PhotoFeedback {
+  rating?:  number              // 1–5
+  story?:   string
+}
+
+export interface MemberReferencePhoto {
+  id:        number
+  photoId:   string
+  blobUrl?:  string
+  addedAt:   string
+  isActive:  boolean
+}
+
+export interface BibAssignment {
+  id:           number
+  eventId:      string
+  eventNameEn?: string
+  bibNumber:    string
+  source:       'nyrr_auto' | 'member_self' | 'admin_import'
+  adminReviewed: boolean
+  createdAt:    string
+}
+
+export interface DetectionCorrection {
+  detectionId:        number
+  correctionType:     'wrong_person' | 'correct_person' | 'missing_person'
+  suggestedMemberId?: string
+  note?:              string
+}
+
 // ─── API Responses ────────────────────────────────────────────────────────────
 export interface ApiOk<T = void>  { ok: true;  data: T }
 export interface ApiErr           { ok: false; error: string }

@@ -99,3 +99,42 @@ export async function getRunnerResults(nyrrRunnerId: string) {
 export async function getRunnerDetails(nyrrRunnerId: string) {
   return nyrrPost<any>('/runners/details', { runnerId: nyrrRunnerId })
 }
+
+// ─── Event participants with bib numbers ──────────────────────
+// Returns all runners for an event with their bib numbers.
+// Used by the nightly bib-assignment sync to populate member_bib_assignments.
+//
+// Strategy: use getTeamRunners for MMR members first (smaller, faster),
+// then getEventFinishers for any remaining unmatched bibs.
+//
+// Each item returned has: { runnerId, bibNumber, firstName, lastName, teamCode }
+
+export interface NyrrParticipant {
+  runnerId:   string
+  bibNumber:  string
+  firstName:  string
+  lastName:   string
+  teamCode?:  string
+}
+
+export async function getMMRParticipants(eventCode: string): Promise<NyrrParticipant[]> {
+  const runners = await getTeamRunners(eventCode, 'MMR')
+  return runners.map((r: any) => ({
+    runnerId:  String(r.runnerId  ?? r.RunnerId  ?? ''),
+    bibNumber: String(r.bibNumber ?? r.BibNumber ?? ''),
+    firstName: String(r.firstName ?? r.FirstName ?? ''),
+    lastName:  String(r.lastName  ?? r.LastName  ?? ''),
+    teamCode:  'MMR',
+  })).filter((r: NyrrParticipant) => r.bibNumber)
+}
+
+export async function getAllParticipantsWithBibs(eventCode: string): Promise<NyrrParticipant[]> {
+  const finishers = await getEventFinishers(eventCode)
+  return finishers.map((r: any) => ({
+    runnerId:  String(r.runnerId  ?? r.RunnerId  ?? ''),
+    bibNumber: String(r.bibNumber ?? r.BibNumber ?? ''),
+    firstName: String(r.firstName ?? r.FirstName ?? ''),
+    lastName:  String(r.lastName  ?? r.LastName  ?? ''),
+    teamCode:  String(r.teamCode  ?? r.TeamCode  ?? ''),
+  })).filter((r: NyrrParticipant) => r.bibNumber)
+}
