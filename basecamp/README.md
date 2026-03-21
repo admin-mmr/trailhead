@@ -45,20 +45,43 @@ sync_google_sheets_to_mysql('Membership Master')
 member = get_member_by_email('user@example.com')
 ```
 
+## Latest Schema Migrations
+
+### ✅ Migration v4 (March 2026) — Member Schema Refactor
+**File**: `migrations/mmr_migration_v4.sql`
+
+Member schema refactored to align with Google Sheets canonical header:
+- **DROP**: `NYRRMemberID` column (no longer tracked)
+- **RENAME**: `NYRRMemberName` → `NYRRRunnerName` (more descriptive)
+- **ADD**: `YearBorn SMALLINT` (for age disambiguation in NYRR bib matching)
+
+**Related Changes**:
+- `types/index.ts` — Member interface updated
+- `lib/db/members.ts` — Functions updated for new fields
+- `basecamp/ops/sync_sheets_to_mysql.py` — Sync script fixed (3 critical bugs)
+
+**Verification**:
+✅ npm run typecheck (0 errors)
+✅ npm run lint (0 warnings)
+✅ npm run build (successful)
+
+---
+
 ## Creating Schema Changes
 
 When you need to add or modify the database:
 
 1. **Edit the source of truth**: `basecamp/schemas/members.sql`
-2. **Create a migration**: `basecamp/migrations/0003_add_new_field.sql`
+2. **Create a migration**: `migrations/0005_your_change.sql` (increment version number)
    ```sql
-   -- Example: Add year_born field
-   ALTER TABLE members ADD COLUMN year_born INT NULL;
-   UPDATE schema_migrations SET version = '0003' WHERE 1;
+   -- Example: Add new field
+   ALTER TABLE members ADD COLUMN your_field VARCHAR(100) NULL;
+   UPDATE schema_migrations SET version = '0005' WHERE 1;
    ```
 3. **Test locally** against your MySQL instance
 4. **Deploy to production**: See [`../DEPLOYMENT.md`](../DEPLOYMENT.md)
 5. **Update service code** that reads/writes the new field
+6. **Update documentation**: Add section to [`../PROJECT_PLAN.md`](../PROJECT_PLAN.md) under "Completed Work"
 
 ## Running Cron Jobs
 

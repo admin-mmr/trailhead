@@ -4,9 +4,56 @@ High-level roadmap for upcoming features and infrastructure improvements.
 
 ---
 
+## ✅ Completed: Member Schema Migration (March 2026)
+
+### Scope
+Member schema refactored to remove unused NYRRMemberID and add NYRR runner identification fields.
+
+### Changes Deployed
+- **Members Table**:
+  - ❌ DROP: `NYRRMemberID` column (no longer tracked in Google Sheets canonical header)
+  - ✅ ADD: `NYRRRunnerName VARCHAR(100)` — member-provided name for NYRR bib lookup
+  - ✅ ADD: `YearBorn SMALLINT` — birth year for age disambiguation when names collide
+
+- **TypeScript Types** (`types/index.ts`):
+  - Removed `nyrrId` field from Member interface
+  - Added `nyrrRunnerName: string`
+  - Added `yearBorn: number`
+
+- **Database Functions** (`lib/db/members.ts`):
+  - Updated `rowToMember()` mapping
+  - Updated `findOrCreateMember()` and `updateMemberProfile()` params
+  - Added auto-update for NYRR fields during member creation
+
+- **Google Sheets Sync** (`basecamp/ops/sync_sheets_to_mysql.py`):
+  - 🐛 **Bug #1**: Fixed MemberID generation — changed from `UUID()` to stored procedure `CALL generate_member_id()`
+  - 🐛 **Bug #2**: Fixed snapshot comparison — now loads blob data for proper "added" vs "existing" detection
+  - 🐛 **Bug #3**: Fixed sync_metadata initialization — changed to `INSERT...ON DUPLICATE KEY UPDATE`
+  - ✨ Expanded column_mapping with full canonical header (26 fields)
+  - ✨ Added `YearBorn` int coercion for type safety
+
+- **API Routes Updated**:
+  - `app/api/payments/submit/route.ts` — replaced `nyrrId` with `nyrrRunnerName`
+  - `app/api/admin/sync-status/route.ts` — fixed type casting for db.execute results
+
+- **Performance**:
+  - Replaced 7 native `<img>` elements with Next.js `<Image />` component across 5 files
+  - Eliminated all ESLint warnings (0 warnings goal achieved)
+
+### Verification
+✅ `npm run typecheck` — 0 errors
+✅ `npm run lint` — 0 warnings
+✅ `npm run build` — successful
+
+### Commits
+- `eeccd71` — schema: remove NYRRMemberID, add NYRRRunnerName + YearBorn
+- `2a03d61` — fix: 'use client' directive placement and ESLint suppression
+
+---
+
 ## Epic 1: Bi-directional Data Sync (Google Sheets ↔ MySQL)
 
-**Status**: Planning
+**Status**: In Progress (Foundation Complete)
 **Priority**: High
 **Reason**: Currently Google Sheets is SSOT, but we need MySQL as SSOT to support multiple auth methods and real-time member portal.
 
@@ -544,8 +591,16 @@ Add to:
 
 ## Implementation Timeline
 
+### ✅ March 2026 (COMPLETED)
+- **Member Schema Migration**: Remove NYRRMemberID, add NYRRRunnerName + YearBorn
+- **Sync Pipeline Fixes**: 3 critical bugs fixed in Google Sheets → MySQL sync
+- **Code Quality**: 0 ESLint warnings, 0 TypeScript errors
+
 ### Month 1 (April 2026)
 - **Week 1-2**: Bi-directional sync (Phase 1) — Snapshot + change detection
+  - Schema foundation ready ✅
+  - Next: Implement `get_sheet_metadata()` in `google_workspace.py`
+  - Next: Create `sync_snapshot.py` with blob storage integration
 - **Week 3-4**: Activity logging table + core logging
 
 ### Month 2 (May 2026)
