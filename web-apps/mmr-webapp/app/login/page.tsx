@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Mountain, Mail, Key, ArrowRight, Loader2 } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 
 type Step = 'email' | 'otp'
 
-export default function LoginPage() {
+function LoginContent() {
   const { T, lang } = useLang()
   const router      = useRouter()
   const params      = useSearchParams()
@@ -173,5 +173,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
   )
 }

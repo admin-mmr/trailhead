@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { pool } from '@/lib/db/connection'
 
+export const dynamic = 'force-dynamic'
+
 // ── GET /api/payments/pending ─────────────────────────────────────────────────
 // Returns open (Pending) payment events for the currently logged-in member.
 // Used by DashboardClient on every portal load to derive "pending" state (PRDv4).

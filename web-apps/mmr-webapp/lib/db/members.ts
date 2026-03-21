@@ -56,13 +56,19 @@ export async function findOrCreateMember(params: {
   if (existing) return existing
 
   // Create new member with available fields
-  return createNewMember({
+  const member = await createNewMember({
     email:          params.email,
     englishName:    params.firstName || undefined,
     phone:          params.phone || undefined,
-    nyrrId:         params.nyrrId || undefined,
     membershipType: params.membershipType || 'individual',
   })
+
+  // Update with nyrrId if provided (separate call since it's not in createNewMember)
+  if (params.nyrrId) {
+    await updateMemberProfile(member.memberId, { nyrrId: params.nyrrId })
+  }
+
+  return member
 }
 
 export async function getMemberById(memberId: string): Promise<Member | null> {
@@ -138,7 +144,7 @@ export async function updateMemberProfile(
 ): Promise<void> {
   const db = getDb()
   const fields: string[] = []
-  const values: unknown[] = []
+  const values: (string | null | undefined)[] = []
 
   if (updates.chineseName !== undefined) { fields.push('chinese_name = ?'); values.push(updates.chineseName) }
   if (updates.englishName !== undefined) { fields.push('english_name = ?'); values.push(updates.englishName) }
@@ -151,7 +157,7 @@ export async function updateMemberProfile(
 
   await db.execute(
     `UPDATE members SET ${fields.join(', ')} WHERE member_id = ?`,
-    values
+    values as any
   )
 }
 

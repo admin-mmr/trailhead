@@ -86,8 +86,8 @@ function InactiveContent() {
                   payment and activate your membership within <strong>1–2 business days</strong>.
                 </p>
                 <p className="text-gray-600 text-sm mb-6">
-                  Once activated you'll have full access to the member portal, photo service, race
-                  results, and club events. You'll receive a confirmation email when your membership
+                  Once activated you&apos;ll have full access to the member portal, photo service, race
+                  results, and club events. You&apos;ll receive a confirmation email when your membership
                   goes live.
                 </p>
                 <p className="text-gray-500 text-sm mb-6">
