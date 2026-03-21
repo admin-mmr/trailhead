@@ -1,8 +1,10 @@
-# Misty Mountain Runners — Web Apps Repository
+# Misty Mountain Runners — Web Apps
 
 **Organization**: Misty Mountain Runners (MMR) | [mmrunners.org](https://mmrunners.org)
 **Type**: Chinese-American running nonprofit, New York
 **Tech lead**: Cathy Lin
+
+> **Note**: This is part of the **trailhead monorepo**. For context on how web-apps integrates with photo-manager and basecamp, see [`../MONOREPO.md`](../MONOREPO.md). For deployment instructions, see [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 ---
 
@@ -35,7 +37,7 @@ Auto-deploys to Azure Static Web Apps on every push to `main`.
 
 **Quick start:**
 ```bash
-cd mmr-webapp
+cd web-apps/mmr-webapp              # From trailhead root
 cp .env.local.example .env.local   # fill in secrets — never commit this file
 npm install
 npm run dev                         # http://localhost:3000
@@ -52,9 +54,9 @@ Includes a scheduled trigger to fetch Gmail payment data (Zelle/Venmo) automatic
 Remains in production during MySQL migration; will be read-only roster export once migration is complete.
 
 ```bash
-cd gas/membership
+cd web-apps/gas/membership          # From trailhead root
 npm install
-npx clasp push    # deploy to Google Apps Script
+npm run build:copy && npm run push  # deploy to Google Apps Script
 ```
 
 ---
@@ -63,9 +65,9 @@ npx clasp push    # deploy to Google Apps Script
 Google Apps Script that syncs NYRR race results into Google Sheets for member portal display.
 
 ```bash
-cd gas/nyrr
+cd web-apps/gas/nyrr               # From trailhead root
 npm install
-npx clasp push
+npm run build:copy && npm run push
 ```
 
 ---
