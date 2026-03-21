@@ -29,6 +29,42 @@ export async function findMemberByEmail(email: string): Promise<Member | null> {
   return rows.length ? rowToMember(rows[0]) : null
 }
 
+/**
+ * Find a member by email, or create one if not found.
+ * Used by the payment submission flow to ensure a member exists before recording payment.
+ */
+export async function findOrCreateMember(params: {
+  email: string
+  firstName?: string
+  lastName?: string
+  phone?: string
+  nyrrId?: string
+  membershipType?: MembershipType
+  // These fields are currently not stored (future: address/profile expansion)
+  address?: string
+  city?: string
+  state?: string
+  zip?: string
+  dateOfBirth?: string
+  emergencyName?: string
+  emergencyPhone?: string
+  shirtSize?: string
+  pronouns?: string
+}): Promise<Member> {
+  // Try to find existing member
+  const existing = await findMemberByEmail(params.email)
+  if (existing) return existing
+
+  // Create new member with available fields
+  return createNewMember({
+    email:          params.email,
+    englishName:    params.firstName || undefined,
+    phone:          params.phone || undefined,
+    nyrrId:         params.nyrrId || undefined,
+    membershipType: params.membershipType || 'individual',
+  })
+}
+
 export async function getMemberById(memberId: string): Promise<Member | null> {
   const db = getDb()
   const [rows] = await db.execute<any[]>(
