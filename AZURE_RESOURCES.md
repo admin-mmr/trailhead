@@ -140,11 +140,19 @@ MYSQL_DATABASE=mmrdb
 
 # Google Cloud
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-GOOGLE_SHEETS_MEMBERSHIP_ID=<sheets-id>
+
+# Google Sheets IDs (from URLs)
+GOOGLE_SHEETS_MEMBERSHIP_ID=11SFvgApmDtEv4jz5bTYI9_zEhCFMQAXC4b2z_4s3ljk  # Membership Master sheet
+GMAIL_SPREADSHEET_ID=<your-gmail-spreadsheet-id>                         # Payment emails sheet
 
 # Azure Storage
 AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=mmrunnersstorage;...
 ```
+
+**How to find Google Sheets ID:**
+1. Open the Google Sheet in browser
+2. URL: `https://docs.google.com/spreadsheets/d/SHEET_ID_HERE/edit`
+3. Copy the `SHEET_ID_HERE` part
 
 ---
 
@@ -160,7 +168,8 @@ All these secrets must be configured in `https://github.com/admin-mmr/trailhead/
 | `MYSQL_PASSWORD` | Your MySQL password | Sync job |
 | `MYSQL_DATABASE` | `mmrdb` | Sync job |
 | `GOOGLE_SERVICE_ACCOUNT` | Google Cloud Console → Service Account JSON | Sync job (Google Drive/Sheets) |
-| `GOOGLE_SHEETS_MEMBERSHIP_ID` | Google Sheets URL (ID part) | Sync job |
+| `GOOGLE_SHEETS_MEMBERSHIP_ID` | Google Sheets ID for "Membership Master" sheet | Sync job (sheets-to-mysql) |
+| `GMAIL_SPREADSHEET_ID` | Google Sheets ID for payment emails/transactions sheet | GAS sync (email → sheets) |
 | `AZURE_STORAGE_CONNECTION_STRING` | Azure Portal → mmrunnersstorage → Access keys | Sync job (blob storage) |
 
 ---
