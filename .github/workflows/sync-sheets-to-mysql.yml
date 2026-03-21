@@ -1,0 +1,86 @@
+name: Nightly Google Sheets → MySQL Sync
+
+on:
+  schedule:
+    # Run at 2 AM UTC daily (9 PM EST / 6 PM PST)
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    name: Sync Membership Master to MySQL
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r basecamp/requirements.txt
+
+      - name: Run sync
+        env:
+          # Google Cloud
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/google-creds.json
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_MEMBERSHIP_ID }}
+
+          # MySQL
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+
+          # Azure Storage
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+
+        run: |
+          # Write service account JSON to temp file
+          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT }}" > /tmp/google-creds.json
+
+          # Run sync
+          python basecamp/ops/sync_sheets_to_mysql.py \
+            --sheet "Membership Master" \
+            --spreadsheet-id "$GOOGLE_SHEETS_ID" \
+            --sheet-range "Membership Master!A:Z" \
+            --key-field "Email"
+
+          # Cleanup
+          rm /tmp/google-creds.json
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Nightly sync failed. Check the workflow run for details.'
+            })
+
+  # Optional: Monitor sync status
+  monitor:
+    runs-on: ubuntu-latest
+    name: Check sync status
+    if: always()
+    needs: sync
+
+    steps:
+      - name: Query sync status
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+
+        run: |
+          # Log sync status (optional)
+          echo "Sync completed at $(date)"
