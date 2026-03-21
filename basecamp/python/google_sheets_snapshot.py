@@ -63,41 +63,48 @@ class GoogleSheetsSnapshot:
     def get_sheet_metadata(self, spreadsheet_id: str) -> Dict[str, Any]:
         """
         Get file metadata from Google Drive.
+        Handles both regular Drive files and Shared Drive files.
 
         Returns:
             {
-                'modified_time': ISO datetime string,
-                'version': string (Drive internal version)
+                'modified_time': ISO datetime string or None,
+                'version': string or None
             }
         """
-        file = self.drive_service.files().get(
-            fileId=spreadsheet_id,
-            fields='modifiedTime,version'
-        ).execute()
-
-        return {
-            'modified_time': file.get('modifiedTime'),
-            'version': file.get('version')
-        }
+        try:
+            # supportsAllDrives=True is required for files on Shared Drives
+            file = self.drive_service.files().get(
+                fileId=spreadsheet_id,
+                fields='modifiedTime,version',
+                supportsAllDrives=True
+            ).execute()
+            return {
+                'modified_time': file.get('modifiedTime'),
+                'version': file.get('version')
+            }
+        except Exception as e:
+            # Drive metadata is optional — fall back gracefully
+            # Change detection will use snapshot hash comparison instead
+            logger.warning(f'Could not get Drive metadata (will use hash comparison): {e}')
+            return {'modified_time': None, 'version': None}
 
     def has_changed_since(self, spreadsheet_id: str, last_check_time: Optional[str]) -> bool:
         """
         Check if spreadsheet was modified after last_check_time.
-
-        Args:
-            spreadsheet_id: Google Sheets ID
-            last_check_time: ISO datetime string (or None)
-
-        Returns:
-            True if file was modified after last_check_time
+        Falls back to True (always sync) if Drive metadata is unavailable.
         """
         if last_check_time is None:
             return True  # First sync
 
         metadata = self.get_sheet_metadata(spreadsheet_id)
+
+        if not metadata['modified_time']:
+            # Drive API unavailable — let snapshot hash comparison decide
+            logger.info('Drive modified_time unavailable — proceeding to snapshot for hash comparison')
+            return True
+
         modified_time = datetime.fromisoformat(metadata['modified_time'].replace('Z', '+00:00'))
         last_check = datetime.fromisoformat(last_check_time)
-
         return modified_time > last_check
 
     def get_sheet_data(self, spreadsheet_id: str, sheet_range: str) -> List[Dict[str, Any]]:
