@@ -7,7 +7,7 @@ import { pool } from '@/lib/db/connection'
 // Used by DashboardClient on every portal load to derive "pending" state (PRDv4).
 export async function GET(req: NextRequest) {
   try {
-    const session = await getSession(req)
+    const session = await getSession()
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
