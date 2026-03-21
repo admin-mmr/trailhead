@@ -66,24 +66,18 @@ class GoogleSheetsSnapshot:
 
         Returns:
             {
-                'modified_time': ISO datetime,
-                'revision_id': string,
-                'version': int
+                'modified_time': ISO datetime string,
+                'version': string (Drive internal version)
             }
         """
         file = self.drive_service.files().get(
             fileId=spreadsheet_id,
-            fields='modifiedTime,revisions(id)'
+            fields='modifiedTime,version'
         ).execute()
 
-        modified_time = file.get('modifiedTime')
-        revisions = file.get('revisions', [])
-        revision_id = revisions[-1].get('id') if revisions else None
-
         return {
-            'modified_time': modified_time,
-            'revision_id': revision_id,
-            'version': len(revisions)
+            'modified_time': file.get('modifiedTime'),
+            'version': file.get('version')
         }
 
     def has_changed_since(self, spreadsheet_id: str, last_check_time: Optional[str]) -> bool:
