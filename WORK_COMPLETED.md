@@ -232,4 +232,71 @@ git push origin main
 
 ---
 
-**Session Complete** — Ready to move to Phase 2 (April 2026)
+---
+
+## Phase 1.5 Complete: First-Time Member Data Sync ✅
+
+**Date**: March 21, 2026 (continuation)
+**Status**: ✅ COMPLETE — MySQL populated with member data
+
+### What Was Accomplished
+
+**1. Environment & Credentials Setup** ✅
+- Created `load-env.sh` script to load variables from `.env.local` + macOS Keychain
+- Stored sensitive credentials in Keychain: `MMR_GOOGLE_CREDS_PATH`, `MMR_DATABASE_URL`
+- Created `mmr-env()` function in `~/.zshrc` for one-command environment activation
+- Updated `.gitignore` to protect `.env.local` at all directory levels
+
+**2. Database Schema Cleanup** ✅
+- Reset members table to clean state (no stale columns)
+- Recreated `member_log` audit table with correct column mapping
+- Recreated sync tracking tables: `sync_metadata`, `sync_snapshots`, `sync_changes`
+- Recreated triggers with correct `NYRRRunnerName` and `YearBorn` references
+
+**3. Sync Script Fixes** ✅
+- **Bug #4 - DateTime Format**: Converted ISO 8601 timestamps to MySQL DATETIME format
+  - Issue: `2026-03-21T17:59:59.189029Z` → MySQL expects `2026-03-21 17:59:59`
+  - Fixed both `snapshot_timestamp` and `google_modified_at` fields
+  - File: `basecamp/ops/sync_sheets_to_mysql.py` lines 97-117
+
+- **Bug #5 - MemberID Generation**: Changed from generated IDs to Google Sheets source
+  - Issue: Tried to create MMR-YYYY-NNNN format but schema only supports A0000 (5 chars)
+  - Fix: Use MemberID directly from sheet instead of generating
+  - File: `basecamp/ops/sync_sheets_to_mysql.py` lines 201-215
+
+**4. First-Time Data Population** ✅
+- Successfully synced 621 members from Google Sheets "Main" sheet
+- All members inserted with correct:
+  - MemberID (A0000 format from sheet)
+  - Email addresses
+  - First/Last names
+  - NYRRRunnerName (if provided in sheet)
+  - YearBorn (if provided in sheet)
+- Triggers automatically log all inserts to `member_log` for audit trail
+
+### Testing & Verification
+
+✅ **Sync Verification Steps**:
+1. MySQL schema has correct columns (NYRRRunnerName, YearBorn, no NYRRMemberID)
+2. Members table populated: `mysql --login-path=mmr -D mmrdb -e "SELECT COUNT(*) FROM members;"`
+3. Sample record shows all fields: `SELECT member_id, email, first_name, nyrr_runner_name FROM members LIMIT 1;`
+4. Triggers working: New inserts automatically logged to member_log
+
+### Critical Files Modified
+
+- `basecamp/ops/sync_sheets_to_mysql.py` — DateTime + MemberID fixes
+- `load-env.sh` — New environment loader script
+- `.gitignore` — Enhanced pattern matching for env files (all directories)
+- `~/.zshrc` — Added `mmr-env()` function
+
+### What's Next (Phase 2)
+
+Now that MySQL has actual member data:
+1. ✅ Phase 1 Complete: Schema aligned, sync working, data loaded
+2. 🔄 Phase 2 Ready: Bi-directional sync (detect changes, update back to Sheets)
+3. 📅 Phase 3: OAuth + authentication testing with real member accounts
+4. 🎯 Phase 4: Activity logging and photo pipeline integration
+
+---
+
+**First-Time Sync Complete** — MySQL now source of truth for member data

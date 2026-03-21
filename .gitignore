@@ -1,7 +1,16 @@
 # Google App Engine generated folder
 appengine-generated/
 # Azure Functions generated folder
+
+# Environment variables (all directories, all variations)
+.env
 .env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+**/.env.local.gpg
+
 node_modules/
 test-photos/
 results/

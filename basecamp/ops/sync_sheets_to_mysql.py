@@ -1,3 +1,4 @@
+# type: ignore
 #!/usr/bin/env python3
 """
 Nightly Sync: Google Sheets → MySQL
@@ -93,6 +94,23 @@ class SheetsToMySQLSync:
         try:
             cursor = self.connection.cursor()
 
+            # Convert ISO 8601 timestamps to MySQL DATETIME format (YYYY-MM-DD HH:MM:SS)
+            from datetime import datetime
+
+            def convert_iso_to_mysql_datetime(ts):
+                """Convert ISO 8601 string to MySQL DATETIME format"""
+                if not isinstance(ts, str):
+                    return ts
+                try:
+                    # Parse ISO format: '2026-03-21T17:59:59.189029Z' or '2026-03-21T16:12:31.667Z'
+                    dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    return dt.strftime('%Y-%m-%d %H:%M:%S')
+                except (ValueError, AttributeError):
+                    return ts  # Return as-is if parsing fails
+
+            snapshot_ts = convert_iso_to_mysql_datetime(snapshot['timestamp'])
+            google_modified_at = convert_iso_to_mysql_datetime(snapshot['google_modified_at'])
+
             cursor.execute("""
                 INSERT INTO sync_snapshots
                 (sheet_name, snapshot_hash, row_count, snapshot_timestamp, google_modified_at, snapshot_data_url)
@@ -101,8 +119,8 @@ class SheetsToMySQLSync:
                 snapshot['sheet_name'],
                 snapshot['hash'],
                 snapshot['row_count'],
-                snapshot['timestamp'],
-                snapshot['google_modified_at'],
+                snapshot_ts,
+                google_modified_at,
                 snapshot['blob_url']
             ))
 
@@ -181,25 +199,22 @@ class SheetsToMySQLSync:
                     return False  # Conflict
 
                 # Create new member
+                # MemberID comes from Google Sheets (A0000 format)
+                member_id  = row.get('MemberID', None)
+                if not member_id:
+                    logger.warning(f'No MemberID in sheet for {email}, skipping')
+                    cursor.close()
+                    return False
+
                 # GS canonical header uses "First Name" / "Last Name" (with spaces)
                 first_name = row.get('First Name', 'Unknown')
                 last_name  = row.get('Last Name', 'Unknown')
                 status     = row.get('Status', 'pending')
 
-                # Generate MemberID using the stored procedure (MMR format, race-safe)
-                cursor.execute('CALL generate_member_id(@next_id)')
-                cursor.execute('SELECT @next_id AS next_id')
-                id_row = cursor.fetchone()
-                new_member_id = id_row['next_id'] if id_row else None
-                if not new_member_id:
-                    logger.error(f'generate_member_id returned None for {email}')
-                    cursor.close()
-                    return False
-
                 cursor.execute("""
                     INSERT INTO members (MemberID, Email, FirstName, LastName, Status)
                     VALUES (%s, %s, %s, %s, %s)
-                """, (new_member_id, email, first_name, last_name, status))
+                """, (member_id, email, first_name, last_name, status))
 
                 self.connection.commit()
                 logger.info(f'Added member: {email}')
@@ -471,7 +486,7 @@ class SheetsToMySQLSync:
 
 def main():
     parser = argparse.ArgumentParser(description='Sync Google Sheets to MySQL')
-    parser.add_argument('--sheet', required=True, help='Sheet name (e.g., "Membership Master")')
+    parser.add_argument('--sheet', required=True, help='Sheet name (e.g., "Main")')
     parser.add_argument('--spreadsheet-id', required=True, help='Google Sheets ID')
     parser.add_argument('--sheet-range', default=None, help='Sheet range to sync (e.g. "Main!A:Z"). Defaults to <sheet>!A:Z.')
     parser.add_argument('--key-field', default='Email', help='Column to use as row key')
