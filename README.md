@@ -18,6 +18,14 @@ trailhead/
 ```
 
 ## Quick Start
+
+**First time?** Start here:
+- [`MONOREPO.md`](MONOREPO.md) — How all three services work together
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — How to deploy to production
+- [`PROJECT_PLAN.md`](PROJECT_PLAN.md) — Upcoming features (OAuth, data sync, activity logging)
+
+**Local development:**
+
 ```bash
 # Web app
 cd web-apps/mmr-webapp && npm install && npm run dev
@@ -28,3 +36,15 @@ cd photo-manager && pip install -r requirements.txt
 # Shared library
 cd basecamp && pip install -r requirements.txt
 ```
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [`MONOREPO.md`](MONOREPO.md) | Architecture, data flow, how services integrate |
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Azure secrets, GitHub Actions, GAS push, migrations |
+| [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Roadmap: data sync, OAuth, activity logging |
+| [`web-apps/README.md`](web-apps/README.md) | Web app structure, GAS scripts, events |
+| [`web-apps/mmr-webapp/DEVELOPMENT.md`](web-apps/mmr-webapp/DEVELOPMENT.md) | Local dev, pre-commit hooks, verification |
+| [`photo-manager/README.md`](photo-manager/README.md) | Photo CV pipeline, Azure Face, OCR |
+| [`basecamp/README.md`](basecamp/README.md) | Shared library, schema, Python utilities |
