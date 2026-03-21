@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Optional, Dict, List, Any
 
 from google.oauth2 import service_account
-from google.cloud import drive_v3, sheets_v4
+from googleapiclient.discovery import build
 from azure.storage.blob import BlobServiceClient
 import mysql.connector
 
@@ -43,8 +43,8 @@ class GoogleSheetsSnapshot:
         self.credentials = service_account.Credentials.from_service_account_file(
             google_credentials_path, scopes=SCOPES
         )
-        self.drive_service = drive_v3.DriveService(credentials=self.credentials)
-        self.sheets_service = sheets_v4.SheetsService(credentials=self.credentials)
+        self.drive_service = build('drive', 'v3', credentials=self.credentials)
+        self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
 
         # Azure Blob Storage
         self.blob_client = BlobServiceClient.from_connection_string(
