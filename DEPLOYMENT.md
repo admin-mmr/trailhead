@@ -23,7 +23,7 @@ The GitHub Actions workflow needs the Azure deployment token.
 **Step 1: Get the token from Azure Portal**
 
 1. Go to [portal.azure.com](https://portal.azure.com)
-2. Find your Static Web App resource (`mmr-webapp`)
+2. Find your Static Web App resource (`mmr-webapp`) in `mmr-resources` resource group
 3. Click **Manage deployment token** in the left sidebar
 4. Copy the token
 
@@ -160,12 +160,14 @@ Now the script runs nightly at 8 AM to send renewal reminders.
 brew install mysql-client
 
 # Connect
-mysql -h mmr-mysql.mysql.database.azure.com \
+mysql -h mmr-mysql-v4.mysql.database.azure.com \
       -u mmradmin \
       -p mmrdb
 
 # Type password when prompted
 ```
+
+**Note**: MySQL host is `mmr-mysql-v4.mysql.database.azure.com` (not `mmr-mysql`).
 
 ### B. Apply Schema Migrations
 
@@ -250,16 +252,16 @@ The web app needs secrets at runtime. Set them in Azure Static Web Apps settings
 ### A. In Azure Portal
 
 1. Go to `https://portal.azure.com`
-2. Find Static Web App `mmr-webapp`
+2. Find Static Web App **`mmr-webapp`** in resource group **`mmr-resources`**
 3. **Settings → Configuration**
 4. Add these **Application settings** (Environment variables):
 
 | Name | Value | Source |
 |------|-------|--------|
-| `DATABASE_URL` | `mysql://mmradmin:PASSWORD@mmr-mysql.mysql.database.azure.com:3306/mmrdb?ssl=true` | From `.env.local` |
+| `DATABASE_URL` | `mysql://mmradmin:PASSWORD@mmr-mysql-v4.mysql.database.azure.com:3306/mmrdb?ssl=true` | From `.env.local` |
 | `JWT_SECRET` | Long random string | From `.env.local` |
-| `AZURE_STORAGE_CONNECTION_STRING` | From Azure Storage account | Portal |
-| `AZURE_COMM_CONNECTION_STRING` | From Azure Comm Services | Portal |
+| `AZURE_STORAGE_CONNECTION_STRING` | From `mmrunnersstorage` account | Portal → mmrunnersstorage → Access keys |
+| `AZURE_COMM_CONNECTION_STRING` | From `mmr-comm` service | Portal → mmr-comm → Keys |
 | `NEXT_PUBLIC_APP_URL` | `https://www.mmrunners.org` | Fixed |
 
 **Critical:** Do NOT commit these to GitHub. They stay in Azure only.
@@ -386,6 +388,15 @@ For deployment issues:
 2. Look at GitHub Actions logs
 3. Check Azure Portal for errors
 4. See [`MONOREPO.md`](MONOREPO.md) for architecture overview
+5. Reference [`AZURE_RESOURCES.md`](AZURE_RESOURCES.md) for exact service names and connection strings
+
+---
+
+## See Also
+
+- [`AZURE_RESOURCES.md`](AZURE_RESOURCES.md) — Exact Azure resource names and connection details
+- [`MONOREPO.md`](MONOREPO.md) — Architecture overview
+- [`PROJECT_PLAN.md`](PROJECT_PLAN.md) — Upcoming features
 
 ---
 

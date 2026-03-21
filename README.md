@@ -43,6 +43,7 @@ cd basecamp && pip install -r requirements.txt
 |----------|---------|
 | [`MONOREPO.md`](MONOREPO.md) | Architecture, data flow, how services integrate |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Azure secrets, GitHub Actions, GAS push, migrations |
+| [`AZURE_RESOURCES.md`](AZURE_RESOURCES.md) | Exact Azure service names, connection strings, environment variables |
 | [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Roadmap: data sync, OAuth, activity logging |
 | [`web-apps/README.md`](web-apps/README.md) | Web app structure, GAS scripts, events |
 | [`web-apps/mmr-webapp/DEVELOPMENT.md`](web-apps/mmr-webapp/DEVELOPMENT.md) | Local dev, pre-commit hooks, verification |
