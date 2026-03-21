@@ -10,14 +10,16 @@ Handles:
 
 import hashlib
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 
+logger = logging.getLogger(__name__)
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from azure.storage.blob import BlobServiceClient
-import mysql.connector
 
 # Google API scopes
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
@@ -46,10 +48,17 @@ class GoogleSheetsSnapshot:
         self.drive_service = build('drive', 'v3', credentials=self.credentials)
         self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
 
-        # Azure Blob Storage
-        self.blob_client = BlobServiceClient.from_connection_string(
-            os.environ.get('AZURE_STORAGE_CONNECTION_STRING', '')
-        )
+        # Azure Blob Storage — lazy init, only connects when actually uploading
+        self._blob_client = None
+
+    @property
+    def blob_client(self) -> Optional['BlobServiceClient']:
+        """Lazy-initialize blob client only when needed (skipped in dry-run)"""
+        if self._blob_client is None:
+            conn_str = os.environ.get('AZURE_STORAGE_CONNECTION_STRING', '')
+            if conn_str:
+                self._blob_client = BlobServiceClient.from_connection_string(conn_str)
+        return self._blob_client
 
     def get_sheet_metadata(self, spreadsheet_id: str) -> Dict[str, Any]:
         """
@@ -176,16 +185,19 @@ class GoogleSheetsSnapshot:
         snapshot_hash = hashlib.sha256(snapshot_json.encode()).hexdigest()
         snapshot['hash'] = snapshot_hash
 
-        # Upload to Azure Blob Storage
-        container_name = 'mmr-snapshots'
-        blob_name = f'sheets/{sheet_name}/{snapshot["timestamp"]}-{snapshot_hash[:8]}.json'
-
-        try:
-            container_client = self.blob_client.get_container_client(container_name)
-            container_client.upload_blob(blob_name, snapshot_json)
-        except Exception as e:
-            print(f'Warning: Could not upload snapshot to blob storage: {e}')
-            blob_name = None
+        # Upload to Azure Blob Storage (skipped if AZURE_STORAGE_CONNECTION_STRING not set)
+        blob_name = None
+        if self.blob_client:
+            container_name = 'mmr-snapshots'
+            blob_name = f'sheets/{sheet_name}/{snapshot["timestamp"]}-{snapshot_hash[:8]}.json'
+            try:
+                container_client = self.blob_client.get_container_client(container_name)
+                container_client.upload_blob(blob_name, snapshot_json)
+            except Exception as e:
+                logger.warning(f'Could not upload snapshot to blob storage: {e}')
+                blob_name = None
+        else:
+            logger.info('AZURE_STORAGE_CONNECTION_STRING not set — skipping blob upload')
 
         return {
             'sheet_name': sheet_name,
