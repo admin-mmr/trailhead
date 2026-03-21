@@ -421,15 +421,40 @@ def main():
 
     args = parser.parse_args()
 
-    # MySQL config from environment
+    # In dry-run mode: just snapshot + diff Google Sheets, no MySQL needed
+    if args.dry_run:
+        logger.info('DRY RUN — connecting to Google Sheets only (no MySQL)')
+        snapshot_mgr = GoogleSheetsSnapshot()
+        snapshot = snapshot_mgr.create_snapshot(
+            args.sheet,
+            args.spreadsheet_id,
+            args.sheet_range,
+            args.key_field
+        )
+        logger.info(f'Snapshot created: hash={snapshot["hash"][:8]}, rows={snapshot["row_count"]}')
+        logger.info('DRY RUN complete. Pass --no-dry-run or omit --dry-run to sync to MySQL.')
+
+        # Print a sample of the data
+        sample = snapshot['rows'][:3]
+        logger.info(f'Sample rows (first 3): {sample}')
+        return
+
+    # Real sync: MySQL required
+    mysql_password = os.environ.get('MYSQL_PASSWORD', '')
+    if not mysql_password:
+        logger.error(
+            'MYSQL_PASSWORD is not set. Export it first:\n'
+            '  export MYSQL_PASSWORD="your-azure-mysql-password"'
+        )
+        sys.exit(1)
+
     mysql_config = {
-        'host': os.environ.get('MYSQL_HOST', 'mmr-mysql.mysql.database.azure.com'),
+        'host': os.environ.get('MYSQL_HOST', 'mmr-mysql-v4.mysql.database.azure.com'),
         'user': os.environ.get('MYSQL_USER', 'mmradmin'),
-        'password': os.environ.get('MYSQL_PASSWORD', ''),
+        'password': mysql_password,
         'database': os.environ.get('MYSQL_DATABASE', 'mmrdb'),
     }
 
-    # Run sync
     syncer = SheetsToMySQLSync(mysql_config)
     try:
         syncer.connect()
@@ -438,7 +463,7 @@ def main():
             args.spreadsheet_id,
             args.sheet_range,
             args.key_field,
-            args.dry_run
+            dry_run=False
         )
     finally:
         syncer.close()
