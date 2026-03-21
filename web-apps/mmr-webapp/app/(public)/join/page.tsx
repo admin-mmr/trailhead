@@ -263,7 +263,7 @@ export default function JoinPage() {
                     <input
                       type={f.type ?? 'text'}
                       required={f.required}
-                      value={(info as Record<string, string>)[f.key]}
+                      value={(info as unknown as Record<string, string>)[f.key]}
                       onChange={e => setInfo(prev => ({ ...prev, [f.key]: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
                     />

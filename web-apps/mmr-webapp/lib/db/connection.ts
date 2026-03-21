@@ -13,3 +13,9 @@ export function getDb(): mysql.Pool {
   }
   return pool
 }
+
+// Default export for convenience: import pool from '@/lib/db/connection'
+// Uses Proxy to lazily initialize the pool on first use
+export default new Proxy({} as mysql.Pool, {
+  get: (_, prop) => (getDb() as any)[prop],
+})
