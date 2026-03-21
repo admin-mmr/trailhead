@@ -84,7 +84,8 @@ function ImageBlockEditor({ block, onChange }: { block: ContentBlock; onChange: 
         className="input-field"
       />
       {block.dataEn && (
-        <Image src={block.dataEn} alt="preview" className="rounded-xl max-h-48 object-cover" />
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={block.dataEn} alt="preview" className="rounded-xl max-h-48 object-cover" />
       )}
     </div>
   )

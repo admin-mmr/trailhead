@@ -1,5 +1,6 @@
-import Image from 'next/image'
 'use client'
+
+import Image from 'next/image'
 
 import { useState } from 'react'
 import { Heart, Star, MessageSquare } from 'lucide-react'
