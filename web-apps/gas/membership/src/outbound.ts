@@ -13,6 +13,11 @@ const REMINDER_THROTTLE_DAYS = 8;
 // Days before expiration to start sending renewal reminders.
 const RENEWAL_LOOKAHEAD_DAYS = 14;
 
+// Hard cap: a member receives at most this many renewal reminders within
+// RENEWAL_REMINDER_WINDOW_DAYS days (rolling window, not calendar year).
+const RENEWAL_REMINDER_MAX    = 3;
+const RENEWAL_REMINDER_WINDOW = 270;   // ≈ 9 months
+
 
 // ── sendIncompleteSignupReminders ─────────────────────────
 //
@@ -122,8 +127,10 @@ function sendRenewalReminders(numEmails: number = 50): { sent: number; skipped: 
   const cutoff     = new Date(now);
   cutoff.setDate(cutoff.getDate() + RENEWAL_LOOKAHEAD_DAYS);
 
-  // Build throttle map: memberID → last RenewalReminder send time
-  const lastReminderMap = buildLastReminderMap('RenewalReminder');
+  // Build throttle map: memberID → last RenewalReminder send time (8-day gap)
+  const lastReminderMap  = buildLastReminderMap('RenewalReminder');
+  // Build count map: memberID → sends within the rolling 9-month window (hard cap)
+  const reminderCountMap = buildReminderCountMap('RenewalReminder', RENEWAL_REMINDER_WINDOW);
 
   // ── Collect eligible members in a single sheet scan ──────
   interface Candidate {
@@ -157,7 +164,15 @@ function sendRenewalReminders(numEmails: number = 50): { sent: number; skipped: 
     }
     if (!eligible) continue;
 
-    // Throttle check
+    // Hard cap: skip if member has already received RENEWAL_REMINDER_MAX reminders
+    // within the last RENEWAL_REMINDER_WINDOW days.
+    const countInWindow = reminderCountMap[memberID] || 0;
+    if (countInWindow >= RENEWAL_REMINDER_MAX) {
+      stats.skipped++;
+      continue;
+    }
+
+    // Throttle check: skip if reminded within the last REMINDER_THROTTLE_DAYS days
     const lastTs  = lastReminderMap[memberID];
     const lastMs  = lastTs ? new Date(lastTs).getTime() : 0;
     if (lastMs > 0 && (now.getTime() - lastMs) < throttleMs) {

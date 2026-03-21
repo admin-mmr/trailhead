@@ -11,6 +11,12 @@ export default async function MemberLayout({ children }: { children: React.React
     redirect('/login?from=/portal')
   }
 
+  // Belt-and-suspenders: middleware already enforces this at the edge,
+  // but we re-check here in case of SSR cache scenarios.
+  if (session.status !== 'active') {
+    redirect(`/membership/inactive?status=${session.status}&from=/portal`)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar isLoggedIn={true} />

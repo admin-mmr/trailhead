@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSession } from '@/lib/auth/session'
+import { requireActiveMember } from '@/lib/auth/session'
 import { upsertFeedback } from '@/lib/db/photos'
 
 // POST /api/photos/[photoId]/feedback
@@ -8,7 +8,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { photoId: string } }
 ) {
-  const session = await requireSession()
+  const session = await requireActiveMember()
   const body    = await req.json()
 
   const rating = typeof body.rating === 'number' ? Math.min(5, Math.max(1, body.rating)) : undefined

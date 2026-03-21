@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSession } from '@/lib/auth/session'
+import { requireActiveMember } from '@/lib/auth/session'
 import { addReferencePhoto } from '@/lib/db/photos'
 import { BlobServiceClient } from '@azure/storage-blob'
 
@@ -10,7 +10,7 @@ const CONTAINER            = 'media'
 // Multipart body: file (image), photoTakenAt? (ISO string)
 // Uploads the image to Azure Blob, adds an entry in member_reference_photos (source=direct_upload).
 export async function POST(req: NextRequest) {
-  const session = await requireSession()
+  const session = await requireActiveMember()
 
   const formData = await req.formData()
   const file     = formData.get('file') as File | null

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSession } from '@/lib/auth/session'
+import { requireActiveMember } from '@/lib/auth/session'
 import { addReferencePhoto } from '@/lib/db/photos'
 import pool from '@/lib/db/connection'
 
@@ -10,7 +10,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { photoId: string } }
 ) {
-  const session = await requireSession()
+  const session = await requireActiveMember()
   const { detectionId } = await req.json()
 
   if (!detectionId)

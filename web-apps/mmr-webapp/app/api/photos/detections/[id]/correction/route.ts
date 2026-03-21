@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSession } from '@/lib/auth/session'
+import { requireActiveMember } from '@/lib/auth/session'
 import { submitCorrection } from '@/lib/db/photos'
 
 // POST /api/photos/detections/[id]/correction
@@ -9,7 +9,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await requireSession()
+  const session = await requireActiveMember()
   const body    = await req.json()
   const { correctionType, suggestedMemberId, note } = body
 

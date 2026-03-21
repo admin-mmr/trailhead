@@ -70,34 +70,53 @@ function notifyPaymentApproved(memberID: string, paymentIntent: string): void {
     return;
   }
 
-  const m = result.member;
+  const m          = result.member;
+  const firstName  = m.firstName || 'there';
   const adminEmail = getConfigValue('AdminEmails').split(',')[0]?.trim() || 'admin@mmrunners.org';
+  const appUrl     = getConfigValue('AppBaseUrl') || 'https://mmrunners.org';
 
-  const subject = `Thank you for Your ${paymentIntent} Payment - MMR Membership`;
-  const body = `Hello ${m.firstName} ${m.lastName},
+  const subject   = `🎉 Your MMR membership is confirmed!`;
+  const htmlInner = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;font-weight:700;">Payment approved, ${firstName}! 🎉</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#555555;line-height:1.6;">
+      Your <strong>${paymentIntent}</strong> payment has been verified and your membership is now active.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f6ff;border:1px solid #e9e3ff;border-radius:10px;margin:0 0 20px;">
+      <tr><td style="padding:20px 22px;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:0 20px 12px 0;">
+              <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Member ID</div>
+              <div style="font-size:20px;font-weight:800;color:#5c35a8;">${m.memberID}</div>
+            </td>
+            <td style="padding:0 0 12px;">
+              <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Type</div>
+              <div style="font-size:15px;font-weight:600;color:#333333;">${m.type || 'Individual'}</div>
+            </td>
+          </tr>
+          <tr><td colspan="2">
+            <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Valid until</div>
+            <div style="font-size:15px;font-weight:600;color:#333333;">${m.expiration || '—'}</div>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 8px;font-size:15px;color:#555555;line-height:1.6;">
+      Log in to your member portal to view your profile, race results, club photos, and upcoming events.
+    </p>
+    ${ctaButton('Go to Member Portal', appUrl)}
+    <p style="margin:24px 0 0;font-size:13px;color:#999999;text-align:center;">
+      Questions? <a href="mailto:${adminEmail}" style="color:#5c35a8;text-decoration:none;">${adminEmail}</a>
+    </p>`;
 
-Your payment has been approved and processed successfully!
-
---- Your Updated Membership Profile ---
-Member ID:              ${m.memberID}
-Email:                  ${m.email}
-Membership Type:        ${m.type}
-Membership Expiration:  ${m.expiration || 'Not set'}
-Status:                 ${m.status}
-Payment Intent:         ${paymentIntent}
-
-Thank you for your membership with Misty Mountain Runners. 🏃
-
-If you have any questions, please contact us at ${adminEmail}.
-
-Best regards,
-Misty Mountain Runners`;
+  const body = `Hi ${firstName},\n\nYour ${paymentIntent} payment has been approved!\n\nMember ID: ${m.memberID}\nValid until: ${m.expiration || '—'}\n\n${appUrl}\n\nMisty Mountain Runners`;
 
   sendEmail({
-    to: m.email,
-    cc: adminEmail,
+    to:          m.email,
+    cc:          adminEmail,
     subject,
     body,
+    htmlBody:    buildEmailHtml(htmlInner),
     triggerName: 'notifyPaymentApproved',
     memberID,
   });
@@ -112,29 +131,39 @@ function notifyPaymentRejected(memberID: string, reason: string): void {
     return;
   }
 
-  const m = result.member;
+  const m          = result.member;
+  const firstName  = m.firstName || 'there';
   const adminEmail = getConfigValue('AdminEmails').split(',')[0]?.trim() || 'admin@mmrunners.org';
+  const joinUrl    = getConfigValue('AppBaseUrl') || 'https://mmrunners.org';
 
-  const subject = `Your MMR Membership Payment Was Rejected`;
-  const body = `Hello ${m.firstName} ${m.lastName},
+  const subject   = `Your MMR payment could not be verified`;
+  const htmlInner = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;font-weight:700;">Payment not verified, ${firstName}</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#555555;line-height:1.6;">
+      Unfortunately, we were unable to verify your recent membership payment.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#fff5f5;border:1px solid #fecaca;border-radius:10px;margin:0 0 20px;">
+      <tr><td style="padding:18px 22px;">
+        <div style="font-size:11px;color:#e57373;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Reason</div>
+        <div style="font-size:14px;color:#c62828;font-weight:500;">${reason}</div>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 16px;font-size:15px;color:#555555;line-height:1.6;">
+      Please resubmit your payment or contact us and we'll help sort it out.
+    </p>
+    ${ctaButton('Resubmit Payment', joinUrl)}
+    <p style="margin:24px 0 0;font-size:13px;color:#999999;text-align:center;">
+      Need help? <a href="mailto:${adminEmail}" style="color:#5c35a8;text-decoration:none;">${adminEmail}</a>
+    </p>`;
 
-Unfortunately, your membership payment has been rejected by our admin team.
-
-Reason: ${reason}
-
-Member ID: ${m.memberID}
-Membership Type: ${m.type}
-
-Please contact us at ${adminEmail} for more information or to resubmit your payment.
-
-Best regards,
-Misty Mountain Runners`;
+  const body = `Hi ${firstName},\n\nYour MMR payment could not be verified.\nReason: ${reason}\n\nPlease resubmit at ${joinUrl} or reply to this email.\n\nMisty Mountain Runners`;
 
   sendEmail({
-    to: m.email,
-    cc: adminEmail,
+    to:          m.email,
+    cc:          adminEmail,
     subject,
     body,
+    htmlBody:    buildEmailHtml(htmlInner),
     triggerName: 'notifyPaymentRejected',
     memberID,
   });
@@ -149,28 +178,35 @@ function notifyPaymentExpired(memberID: string, eventID: string): void {
     return;
   }
 
-  const m = result.member;
+  const m          = result.member;
+  const firstName  = m.firstName || 'there';
   const adminEmail = getConfigValue('AdminEmails').split(',')[0]?.trim() || 'admin@mmrunners.org';
+  const joinUrl    = getConfigValue('AppBaseUrl') || 'https://mmrunners.org';
 
-  const subject = `⏰ Your MMR Membership Payment Proof Expired`;
-  const body = `Hello ${m.firstName} ${m.lastName},
+  const subject   = `⏰ Your MMR payment proof has expired`;
+  const htmlInner = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;font-weight:700;">Payment proof expired, ${firstName}</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#555555;line-height:1.6;">
+      Your payment submission (ref <code style="background:#f0f0f0;padding:1px 6px;border-radius:4px;">${eventID}</code>)
+      expired before it could be reviewed by our team.
+    </p>
+    <p style="margin:0 0 16px;font-size:15px;color:#555555;line-height:1.6;">
+      If you've already paid, please resubmit your proof of payment so we can activate your membership.
+      If you have questions, just reply to this email.
+    </p>
+    ${ctaButton('Resubmit Payment Proof', joinUrl)}
+    <p style="margin:24px 0 0;font-size:13px;color:#999999;text-align:center;">
+      Questions? <a href="mailto:${adminEmail}" style="color:#5c35a8;text-decoration:none;">${adminEmail}</a>
+    </p>`;
 
-Your membership payment proof has expired without being verified or approved.
-
-Event ID: ${eventID}
-Member ID: ${m.memberID}
-Membership Type: ${m.type}
-
-If you believe this is a mistake or need to resubmit your payment, please contact us at ${adminEmail}.
-
-Best regards,
-Misty Mountain Runners`;
+  const body = `Hi ${firstName},\n\nYour payment proof (ref ${eventID}) has expired before being reviewed.\n\nPlease resubmit at ${joinUrl} or contact us at ${adminEmail}.\n\nMisty Mountain Runners`;
 
   sendEmail({
-    to: m.email,
-    cc: adminEmail,
+    to:          m.email,
+    cc:          adminEmail,
     subject,
     body,
+    htmlBody:    buildEmailHtml(htmlInner),
     triggerName: 'notifyPaymentExpired',
     memberID,
   });
@@ -186,36 +222,51 @@ function notifyAutoGuessMatch(memberID: string, paymentIntent: string, transacti
     return;
   }
 
-  const m = result.member;
+  const m          = result.member;
+  const firstName  = m.firstName || 'there';
   const adminEmail = getConfigValue('AdminEmails').split(',')[0]?.trim() || 'admin@mmrunners.org';
+  const appUrl     = getConfigValue('AppBaseUrl') || 'https://mmrunners.org';
 
-  const subject = `Your MMR Membership Payment Has Been Processed`;
-  const body = `Hello ${m.firstName} ${m.lastName},
+  const subject   = `✅ MMR payment matched — membership updated`;
+  const htmlInner = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;font-weight:700;">Payment matched, ${firstName}! ✅</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#555555;line-height:1.6;">
+      We found your <strong>${paymentIntent}</strong> payment and have updated your membership automatically.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f6ff;border:1px solid #e9e3ff;border-radius:10px;margin:0 0 20px;">
+      <tr><td style="padding:20px 22px;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:0 20px 12px 0;">
+              <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Member ID</div>
+              <div style="font-size:20px;font-weight:800;color:#5c35a8;">${m.memberID}</div>
+            </td>
+            <td style="padding:0 0 12px;">
+              <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Valid until</div>
+              <div style="font-size:15px;font-weight:600;color:#333333;">${m.expiration || '—'}</div>
+            </td>
+          </tr>
+          ${transactionRef ? `<tr><td colspan="2">
+            <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Transaction ref</div>
+            <div style="font-size:13px;font-family:monospace;color:#555555;">${transactionRef}</div>
+          </td></tr>` : ''}
+        </table>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 8px;font-size:13px;color:#888888;line-height:1.5;">
+      Your payment was matched automatically using your Member ID in the payment memo.
+      If you think this is a mistake, just reply to this email.
+    </p>
+    ${ctaButton('View My Portal', appUrl)}`;
 
-We received your ${paymentIntent} payment and have processed it for your membership.
-
---- Your Updated Membership Profile ---
-Member ID:              ${m.memberID}
-Email:                  ${m.email}
-Membership Type:        ${m.type}
-Membership Expiration:  ${m.expiration || 'Not set'}
-Status:                 ${m.status}
-Payment Intent:         ${paymentIntent}
-Transaction Reference:  ${transactionRef || 'N/A'}
-
-Note: Your payment was matched automatically based on your Member ID in the payment memo.
-If you believe this is incorrect, please contact us at ${adminEmail}.
-
-Thank you for your continued membership with Misty Mountain Runners! 🏃
-
-Best regards,
-Misty Mountain Runners`;
+  const body = `Hi ${firstName},\n\nWe matched your ${paymentIntent} payment and updated your membership.\nMember ID: ${m.memberID} | Valid until: ${m.expiration || '—'}${transactionRef ? '\nRef: ' + transactionRef : ''}\n\nIf this is incorrect, contact ${adminEmail}.\n\nMisty Mountain Runners`;
 
   sendEmail({
-    to: m.email,
-    cc: adminEmail,
+    to:          m.email,
+    cc:          adminEmail,
     subject,
     body,
+    htmlBody:    buildEmailHtml(htmlInner),
     triggerName: 'notifyAutoGuessMatch',
     memberID,
   });
@@ -231,35 +282,48 @@ function notifyExpirationRepaired(memberID: string, newExpiration: string): void
     return;
   }
 
-  const m = result.member;
+  const m          = result.member;
+  const firstName  = m.firstName || 'there';
   const adminEmail = getConfigValue('AdminEmails').split(',')[0]?.trim() || 'admin@mmrunners.org';
   const appUrl     = getConfigValue('AppBaseUrl') || 'https://mmrunners.org';
 
-  const subject = `Your MMR Membership Profile Has Been Updated`;
-  const body = `Hello ${m.firstName} ${m.lastName},
+  const subject   = `Your MMR membership record has been updated`;
+  const htmlInner = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;font-weight:700;">Membership record updated</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#555555;line-height:1.6;">
+      Hi ${firstName}, our system performed a routine payment verification and corrected your membership
+      expiration date. No action is needed from you.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f6ff;border:1px solid #e9e3ff;border-radius:10px;margin:0 0 20px;">
+      <tr><td style="padding:20px 22px;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:0 20px 0 0;">
+              <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Member ID</div>
+              <div style="font-size:18px;font-weight:800;color:#5c35a8;">${m.memberID}</div>
+            </td>
+            <td>
+              <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Updated expiration</div>
+              <div style="font-size:15px;font-weight:700;color:#2e7d32;">${newExpiration}</div>
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 8px;font-size:13px;color:#888888;line-height:1.5;">
+      If you think this is incorrect, please reply to this email or reach out to
+      <a href="mailto:${adminEmail}" style="color:#5c35a8;text-decoration:none;">${adminEmail}</a>.
+    </p>
+    ${ctaButton('View My Portal', appUrl)}`;
 
-Your membership profile has been updated by our system as part of a routine payment verification.
-
---- Your Updated Membership Profile ---
-Member ID:              ${m.memberID}
-Email:                  ${m.email}
-Membership Type:        ${m.type}
-Membership Expiration:  ${newExpiration}
-Status:                 ${m.status}
-
-You can view your full profile at:
-${appUrl}
-
-If you believe this change is incorrect or have any questions, please contact us at ${adminEmail}.
-
-Best regards,
-Misty Mountain Runners`;
+  const body = `Hi ${firstName},\n\nYour membership expiration has been corrected to ${newExpiration}.\nMember ID: ${m.memberID}\n\nView your profile at ${appUrl}.\n\nMisty Mountain Runners`;
 
   sendEmail({
-    to: m.email,
-    cc: adminEmail,
+    to:          m.email,
+    cc:          adminEmail,
     subject,
     body,
+    htmlBody:    buildEmailHtml(htmlInner),
     triggerName: 'notifyExpirationRepaired',
     memberID,
   });
@@ -274,34 +338,54 @@ function notifyWelcome(memberID: string): void {
     return;
   }
 
-  const m = result.member;
+  const m          = result.member;
+  const firstName  = m.firstName || 'there';
   const adminEmail = getConfigValue('AdminEmails').split(',')[0]?.trim() || 'admin@mmrunners.org';
   const appUrl     = getConfigValue('AppBaseUrl') || 'https://mmrunners.org';
 
-  const subject = `Welcome to Misty Mountain Runners! 🏃`;
-  const body = `Hello ${m.firstName} ${m.lastName},
+  const subject   = `Welcome to Misty Mountain Runners! 🏃`;
+  const htmlInner = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:#222222;font-weight:700;">Welcome, ${firstName}! 🎉</h2>
+    <p style="margin:0 0 20px;font-size:15px;color:#555555;line-height:1.6;">
+      We're so glad you've joined Misty Mountain Runners — New York's Chinese-American running community.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f6ff;border:1px solid #e9e3ff;border-radius:10px;margin:0 0 20px;">
+      <tr><td style="padding:20px 22px;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:0 20px 12px 0;">
+              <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Member ID</div>
+              <div style="font-size:20px;font-weight:800;color:#5c35a8;">${m.memberID}</div>
+            </td>
+            <td style="padding:0 0 12px;">
+              <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Type</div>
+              <div style="font-size:15px;font-weight:600;color:#333333;">${m.type || 'Individual'}</div>
+            </td>
+          </tr>
+          <tr><td colspan="2">
+            <div style="font-size:11px;color:#9b8ec4;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;">Valid until</div>
+            <div style="font-size:15px;font-weight:600;color:#333333;">${m.expiration || 'Pending activation'}</div>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 16px;font-size:15px;color:#555555;line-height:1.6;">
+      Your member portal gives you access to race results, club events, photos, and more.
+    </p>
+    ${ctaButton('Go to My Portal', appUrl)}
+    <p style="margin:24px 0 0;font-size:13px;color:#999999;text-align:center;line-height:1.5;">
+      Questions? Just reply to this email or write to
+      <a href="mailto:${adminEmail}" style="color:#5c35a8;text-decoration:none;">${adminEmail}</a>
+    </p>`;
 
-Welcome to Misty Mountain Runners! We're excited to have you as a member.
-
---- Your Member Profile ---
-Member ID:       ${m.memberID}
-Email:           ${m.email}
-Membership Type: ${m.type}
-Expiration:      ${m.expiration || 'Pending'}
-
-You can log into your member portal at:
-${appUrl}
-
-If you have any questions, please contact us at ${adminEmail}.
-
-Best regards,
-Misty Mountain Runners`;
+  const body = `Hi ${firstName},\n\nWelcome to Misty Mountain Runners!\nMember ID: ${m.memberID} | Type: ${m.type}\n\nLog in at: ${appUrl}\n\nMisty Mountain Runners`;
 
   sendEmail({
-    to: m.email,
-    cc: adminEmail,
+    to:          m.email,
+    cc:          adminEmail,
     subject,
     body,
+    htmlBody:    buildEmailHtml(htmlInner),
     triggerName: 'notifyWelcome',
     memberID,
   });

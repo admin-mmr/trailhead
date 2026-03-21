@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSession } from '@/lib/auth/session'
+import { requireActiveMember } from '@/lib/auth/session'
 import { removeReferencePhoto } from '@/lib/db/photos'
 
 // DELETE /api/photos/references/[id]
@@ -8,7 +8,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await requireSession()
+  const session = await requireActiveMember()
   const refId   = Number(params.id)
 
   if (!Number.isInteger(refId) || refId <= 0)

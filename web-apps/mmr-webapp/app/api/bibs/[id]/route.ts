@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSession } from '@/lib/auth/session'
+import { requireActiveMember } from '@/lib/auth/session'
 import pool from '@/lib/db/connection'
 
 // DELETE /api/bibs/[id]
@@ -8,7 +8,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const session = await requireSession()
+  const session = await requireActiveMember()
   const bibId   = Number(params.id)
 
   if (!Number.isInteger(bibId) || bibId <= 0)

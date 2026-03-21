@@ -32,6 +32,28 @@ export async function requireSession(): Promise<SessionUser> {
   return session
 }
 
+/**
+ * Like requireSession, but additionally verifies that the member's
+ * status is 'active'.  Use this in API route handlers for active-tier
+ * endpoints as a server-side guard (middleware handles page routes).
+ *
+ * Throws an error with code 403 if the member exists but isn't active.
+ */
+export async function requireActiveMember(): Promise<SessionUser> {
+  const session = await getSession()
+  if (!session) {
+    const err: any = new Error('Unauthorized')
+    err.status = 401
+    throw err
+  }
+  if (session.status !== 'active') {
+    const err: any = new Error('Active membership required')
+    err.status = 403
+    throw err
+  }
+  return session
+}
+
 export function setSessionCookie(token: string) {
   return {
     name: COOKIE,
