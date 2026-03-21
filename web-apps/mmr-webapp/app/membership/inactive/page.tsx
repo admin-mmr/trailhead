@@ -44,7 +44,7 @@ function InactiveContent() {
       } else {
         setError(
           data.status === 'pending'
-            ? 'Your payment is still being reviewed. We'll activate your membership within 1–2 business days.'
+            ? "Your payment is still being reviewed. We'll activate your membership within 1\u20132 business days."
             : 'Your membership is still inactive. Please renew to regain access.'
         )
       }
