@@ -1,3 +1,4 @@
+import Image from 'next/image'
 'use client'
 
 import { useState } from 'react'
@@ -41,7 +42,7 @@ export default function PhotoCard({ photo, viewerId, lang, onClick }: Props) {
     >
       {/* Thumbnail */}
       {photo.blobThumbUrl ? (
-        <img
+        <Image
           src={photo.blobThumbUrl}
           alt={`Photo from ${photo.eventNameEn ?? photo.eventId}`}
           className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"

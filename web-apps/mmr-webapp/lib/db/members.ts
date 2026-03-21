@@ -11,7 +11,8 @@ function rowToMember(row: any): Member {
     englishName:    row.english_name ?? undefined,
     phone:          row.phone ?? undefined,
     wechatId:       row.wechat_id ?? undefined,
-    nyrrId:         row.nyrr_id ?? undefined,
+    nyrrRunnerName: row.nyrr_runner_name ?? undefined,
+    yearBorn:       row.year_born != null ? Number(row.year_born) : undefined,
     membershipType: row.membership_type,
     status:         row.status,
     expiresAt:      row.expires_at?.toISOString() ?? undefined,
@@ -38,14 +39,15 @@ export async function findOrCreateMember(params: {
   firstName?: string
   lastName?: string
   phone?: string
-  nyrrId?: string
+  nyrrRunnerName?: string
+  yearBorn?: number
   membershipType?: MembershipType
   // These fields are currently not stored (future: address/profile expansion)
   address?: string
   city?: string
   state?: string
   zip?: string
-  dateOfBirth?: string
+  dateOfBirth?: string;
   emergencyName?: string
   emergencyPhone?: string
   shirtSize?: string
@@ -63,9 +65,12 @@ export async function findOrCreateMember(params: {
     membershipType: params.membershipType || 'individual',
   })
 
-  // Update with nyrrId if provided (separate call since it's not in createNewMember)
-  if (params.nyrrId) {
-    await updateMemberProfile(member.memberId, { nyrrId: params.nyrrId })
+  // Update NYRR fields if provided (separate call since they're not in createNewMember)
+  if (params.nyrrRunnerName || params.yearBorn != null) {
+    await updateMemberProfile(member.memberId, {
+      nyrrRunnerName: params.nyrrRunnerName,
+      yearBorn:       params.yearBorn,
+    })
   }
 
   return member
@@ -140,17 +145,20 @@ export async function activateMember(
 
 export async function updateMemberProfile(
   memberId: string,
-  updates: Partial<Pick<Member, 'chineseName' | 'englishName' | 'phone' | 'wechatId' | 'nyrrId'>>
+  updates: Partial<Pick<Member, 'chineseName' | 'englishName' | 'phone' | 'wechatId' | 'nyrrRunnerName' | 'yearBorn'>>
 ): Promise<void> {
   const db = getDb()
   const fields: string[] = []
-  const values: (string | null | undefined)[] = []
+  const values: (string | number | null | undefined)[] = []
 
-  if (updates.chineseName !== undefined) { fields.push('chinese_name = ?'); values.push(updates.chineseName) }
-  if (updates.englishName !== undefined) { fields.push('english_name = ?'); values.push(updates.englishName) }
-  if (updates.phone       !== undefined) { fields.push('phone = ?');        values.push(updates.phone) }
-  if (updates.wechatId    !== undefined) { fields.push('wechat_id = ?');    values.push(updates.wechatId) }
-  if (updates.nyrrId      !== undefined) { fields.push('nyrr_id = ?');      values.push(updates.nyrrId) }
+  if (updates.chineseName    !== undefined) { fields.push('chinese_name = ?');     values.push(updates.chineseName) }
+  if (updates.englishName    !== undefined) { fields.push('english_name = ?');     values.push(updates.englishName) }
+  if (updates.phone          !== undefined) { fields.push('phone = ?');            values.push(updates.phone) }
+  if (updates.wechatId       !== undefined) { fields.push('wechat_id = ?');        values.push(updates.wechatId) }
+  // nyrrRunnerName: set by member, used for NYRR bib lookup
+  if (updates.nyrrRunnerName !== undefined) { fields.push('nyrr_runner_name = ?'); values.push(updates.nyrrRunnerName) }
+  // yearBorn: used to disambiguate NYRR results (Age = EventYear - YearBorn)
+  if (updates.yearBorn       !== undefined) { fields.push('year_born = ?');        values.push(updates.yearBorn ?? null) }
 
   if (!fields.length) return
   values.push(memberId)

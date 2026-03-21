@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
+import Image from 'next/image'
 import { useLang } from '@/lib/i18n/context'
 import Navbar from '@/components/layout/Navbar'
-import { Save, Eye, Send, Image, Tag, Globe } from 'lucide-react'
+import { Save, Eye, Send, ImageIcon, Tag, Globe } from 'lucide-react'
 import type { ContentBlock } from '@/types'
 
 // Dynamically import to avoid SSR issues with DOM manipulation
@@ -136,7 +137,7 @@ export default function ContentEditorPage() {
             {/* Cover image */}
             <div className="card p-5">
               <div className="flex items-center gap-2 mb-3">
-                <Image className="h-4 w-4 text-gray-500" />
+                <ImageIcon className="h-4 w-4 text-gray-500" />
                 <h3 className="font-semibold text-sm text-gray-700">
                   {lang === 'zh' ? '封面图片' : 'Cover Image'}
                 </h3>
@@ -149,7 +150,7 @@ export default function ContentEditorPage() {
                 className="input-field text-sm"
               />
               {coverUrl && (
-                <img src={coverUrl} alt="cover" className="rounded-xl mt-3 w-full h-32 object-cover" />
+                <Image src={coverUrl} alt="cover" className="rounded-xl mt-3 w-full h-32 object-cover" />
               )}
               <p className="text-xs text-gray-400 mt-2">
                 {lang === 'zh' ? '从 Azure Blob 存储上传图片后粘贴 URL。' : 'Upload to Azure Blob Storage, paste URL here.'}

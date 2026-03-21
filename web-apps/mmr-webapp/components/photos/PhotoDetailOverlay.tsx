@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useState } from 'react'
 import {
   X, Heart, Star, MessageSquare, AlertTriangle,
@@ -107,7 +108,7 @@ export default function PhotoDetailOverlay({ photo, viewerId, lang, onClose, onU
         {/* ── Left: Photo ── */}
         <div className="relative flex-1 bg-black flex items-center justify-center min-h-64">
           {photo.blobThumbUrl
-            ? <img src={photo.blobThumbUrl} alt="Photo" className="max-h-[70vh] object-contain w-full" />
+            ? <Image src={photo.blobThumbUrl} alt="Photo" className="max-h-[70vh] object-contain w-full" />
             : <span className="text-white/30 text-sm">{lang === 'zh' ? '无图片' : 'No image'}</span>
           }
 

@@ -67,9 +67,10 @@ class SheetsToMySQLSync:
         try:
             cursor = self.connection.cursor(dictionary=True)
 
-            # Get the last processed snapshot
+            # Get the last processed snapshot (include snapshot_data_url for blob fetch)
             cursor.execute("""
-                SELECT snapshot_id, sheet_name, snapshot_hash, row_count, snapshot_timestamp
+                SELECT snapshot_id, sheet_name, snapshot_hash, row_count,
+                       snapshot_timestamp, snapshot_data_url
                 FROM sync_snapshots
                 WHERE sheet_name = %s AND status = 'processed'
                 ORDER BY snapshot_timestamp DESC
@@ -180,14 +181,25 @@ class SheetsToMySQLSync:
                     return False  # Conflict
 
                 # Create new member
-                first_name = row.get('FirstName', 'Unknown')
-                last_name = row.get('LastName', 'Unknown')
-                status = row.get('Status', 'pending')
+                # GS canonical header uses "First Name" / "Last Name" (with spaces)
+                first_name = row.get('First Name', 'Unknown')
+                last_name  = row.get('Last Name', 'Unknown')
+                status     = row.get('Status', 'pending')
+
+                # Generate MemberID using the stored procedure (MMR format, race-safe)
+                cursor.execute('CALL generate_member_id(@next_id)')
+                cursor.execute('SELECT @next_id AS next_id')
+                id_row = cursor.fetchone()
+                new_member_id = id_row['next_id'] if id_row else None
+                if not new_member_id:
+                    logger.error(f'generate_member_id returned None for {email}')
+                    cursor.close()
+                    return False
 
                 cursor.execute("""
-                    INSERT INTO members (MemberID, Email, FirstName, LastName, Status, CreatedAt)
-                    VALUES (UUID(), %s, %s, %s, %s, NOW())
-                """, (email, first_name, last_name, status))
+                    INSERT INTO members (MemberID, Email, FirstName, LastName, Status)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (new_member_id, email, first_name, last_name, status))
 
                 self.connection.commit()
                 logger.info(f'Added member: {email}')
@@ -204,20 +216,44 @@ class SheetsToMySQLSync:
                 update_fields = []
                 update_values = []
 
-                # Map Google Sheets columns to MySQL
+                # Map Google Sheets header → MySQL column name.
+                # Keys must match the canonical GS header exactly (spaces included).
                 column_mapping = {
-                    'FirstName': 'FirstName',
-                    'LastName': 'LastName',
-                    'Status': 'Status',
-                    'District': 'District',
-                    'Gender': 'Gender',
-                    'PhoneNumber': 'PhoneNumber',
+                    'First Name':           'FirstName',
+                    'Last Name':            'LastName',
+                    'Status':               'Status',
+                    'Type':                 'Type',
+                    'Gender':               'Gender',
+                    'WeChatID':             'WeChatID',
+                    'District':             'District',
+                    'WebApp':               'WebApp',
+                    'Payment Check':        'PaymentCheck',
+                    'Info':                 'Info',
+                    'Membership Fee Paid':  'MembershipFeePaid',
+                    'Payment Date':         'PaymentDate',
+                    'Payment Transaction':  'PaymentTransaction',
+                    'JoinYear':             'JoinYear',
+                    'PhoneNumber':          'PhoneNumber',
+                    'Notes':                'Notes',
+                    # NYRRRunnerName: set by member, used to look up bib numbers.
+                    # YearBorn: disambiguates name collisions (Age = EventYear - YearBorn).
+                    'NYRRRunnerName':        'NYRRRunnerName',
+                    'YearBorn':             'YearBorn',
+                    # NYRRMemberID removed from canonical header — no longer synced.
                 }
 
                 for sheets_col, mysql_col in column_mapping.items():
-                    if sheets_col in row:
+                    if sheets_col in row and row[sheets_col] != '':
+                        value = row[sheets_col]
+                        # YearBorn is a 4-digit year stored as SMALLINT; coerce from string
+                        if mysql_col == 'YearBorn':
+                            try:
+                                value = int(value) if value else None
+                            except (ValueError, TypeError):
+                                logger.warning(f'Invalid YearBorn value "{value}" for {email}, skipping')
+                                continue
                         update_fields.append(f'{mysql_col} = %s')
-                        update_values.append(row[sheets_col])
+                        update_values.append(value)
 
                 if update_fields:
                     update_values.append(member_id)
@@ -266,11 +302,17 @@ class SheetsToMySQLSync:
         logger.info(f'Starting sync for {sheet_name}')
 
         try:
-            # Update sync status to 'syncing'
+            # Ensure sync_metadata row exists, then mark as 'syncing'.
+            # Uses UPSERT so the row is created automatically on first run
+            # even if migration 0001 wasn't applied manually.
             cursor = self.connection.cursor()
             cursor.execute("""
-                UPDATE sync_metadata SET sync_status = 'syncing' WHERE sheet_name = %s
-            """, (sheet_name,))
+                INSERT INTO sync_metadata (sheet_name, spreadsheet_id, sync_status)
+                VALUES (%s, %s, 'syncing')
+                ON DUPLICATE KEY UPDATE
+                    spreadsheet_id = VALUES(spreadsheet_id),
+                    sync_status = 'syncing'
+            """, (sheet_name, spreadsheet_id))
             self.connection.commit()
             cursor.close()
 
@@ -303,9 +345,25 @@ class SheetsToMySQLSync:
                     'deleted': []
                 }
             else:
-                # Load last snapshot data
+                # Load last snapshot row data from Azure Blob Storage.
+                # The DB only stores metadata (hash, row_count, url) — the actual
+                # row data lives in the blob referenced by snapshot_data_url.
+                prev_rows = []
+                blob_url = last_snapshot.get('snapshot_data_url')
+                if blob_url and self.snapshot_mgr.blob_client:
+                    try:
+                        container_client = self.snapshot_mgr.blob_client.get_container_client('mmr-snapshots')
+                        blob_bytes = container_client.get_blob_client(blob_url).download_blob().readall()
+                        prev_snapshot_json = json.loads(blob_bytes)
+                        prev_rows = prev_snapshot_json.get('data', [])
+                        logger.info(f'Loaded {len(prev_rows)} rows from previous snapshot blob')
+                    except Exception as e:
+                        logger.warning(f'Could not load previous snapshot from blob ({blob_url}): {e}. Treating all rows as added.')
+                else:
+                    logger.warning('No blob URL for previous snapshot or blob client unavailable. Treating all rows as added.')
+
                 last_snapshot_data = {
-                    'rows': last_snapshot.get('data', []),
+                    'rows': prev_rows,
                     'key_field': key_field
                 }
                 changes = self.snapshot_mgr.detect_changes(last_snapshot_data, current_snapshot)
@@ -415,11 +473,15 @@ def main():
     parser = argparse.ArgumentParser(description='Sync Google Sheets to MySQL')
     parser.add_argument('--sheet', required=True, help='Sheet name (e.g., "Membership Master")')
     parser.add_argument('--spreadsheet-id', required=True, help='Google Sheets ID')
-    parser.add_argument('--sheet-range', default='Membership Master!A:Z', help='Sheet range to sync')
+    parser.add_argument('--sheet-range', default=None, help='Sheet range to sync (e.g. "Main!A:Z"). Defaults to <sheet>!A:Z.')
     parser.add_argument('--key-field', default='Email', help='Column to use as row key')
     parser.add_argument('--dry-run', action='store_true', help='Detect changes but do not sync')
 
     args = parser.parse_args()
+
+    # Default sheet_range to <sheet>!A:Z if not provided
+    if not args.sheet_range:
+        args.sheet_range = f'{args.sheet}!A:Z'
 
     # In dry-run mode: just snapshot + diff Google Sheets, no MySQL needed
     if args.dry_run:
@@ -453,6 +515,8 @@ def main():
         'user': os.environ.get('MYSQL_USER', 'mmradmin'),
         'password': mysql_password,
         'database': os.environ.get('MYSQL_DATABASE', 'mmrdb'),
+        'ssl_disabled': False,   # Azure MySQL requires SSL
+        'use_pure': True,        # avoid C-extension SSL issues on macOS
     }
 
     syncer = SheetsToMySQLSync(mysql_config)

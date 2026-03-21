@@ -10,7 +10,14 @@ export interface Member {
   englishName?: string
   phone?: string
   wechatId?: string
-  nyrrId?: string
+  /** Runner name as it appears on NYRR. Used to look up bib numbers in NYRR results. */
+  nyrrRunnerName?: string
+  /**
+   * Member's birth year (YYYY). Used to disambiguate NYRR results when multiple
+   * runners share the same name. Bib lookup logic: Age = EventYear - YearBorn
+   * (or Age-1 for events earlier in the calendar year).
+   */
+  yearBorn?: number
   membershipType: MembershipType
   status: MemberStatus
   expiresAt?: string        // ISO date

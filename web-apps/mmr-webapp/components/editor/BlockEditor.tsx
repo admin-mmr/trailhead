@@ -84,7 +84,7 @@ function ImageBlockEditor({ block, onChange }: { block: ContentBlock; onChange: 
         className="input-field"
       />
       {block.dataEn && (
-        <img src={block.dataEn} alt="preview" className="rounded-xl max-h-48 object-cover" />
+        <Image src={block.dataEn} alt="preview" className="rounded-xl max-h-48 object-cover" />
       )}
     </div>
   )

@@ -178,8 +178,8 @@ export default function DashboardClient({ member, payments }: Props) {
             </p>
           </div>
           <div>
-            <p className="text-white/40 text-xs">NYRR ID</p>
-            <p className="text-white font-semibold mt-0.5">{member.nyrrId ?? '—'}</p>
+            <p className="text-white/40 text-xs">NYRR Runner Name</p>
+            <p className="text-white font-semibold mt-0.5">{member.nyrrRunnerName ?? '—'}</p>
           </div>
         </div>
       </div>

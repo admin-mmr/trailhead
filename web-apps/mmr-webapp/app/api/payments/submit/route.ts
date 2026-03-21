@@ -24,7 +24,7 @@ const SubmitSchema = z.object({
   dateOfBirth: z.string().min(1),
   emergencyName: z.string().min(1),
   emergencyPhone: z.string().min(7),
-  nyrrId: z.string().optional(),
+  nyrrRunnerName: z.string().optional(),
   shirtSize: z.string().optional(),
   pronouns: z.string().optional(),
 
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       dateOfBirth: d.dateOfBirth,
       emergencyName: d.emergencyName,
       emergencyPhone: d.emergencyPhone,
-      nyrrId: d.nyrrId,
+      nyrrRunnerName: d.nyrrRunnerName,
       shirtSize: d.shirtSize,
       pronouns: d.pronouns,
     })

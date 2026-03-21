@@ -118,6 +118,16 @@ class GoogleSheetsSnapshot:
         Returns:
             List of row dicts, where first row is headers
         """
+        # Sheets API requires single-quoting sheet names that contain spaces
+        # e.g., 'Membership Master'!A:Z  (not  Membership Master!A:Z)
+        if '!' in sheet_range:
+            sheet_name_part, cell_range = sheet_range.split('!', 1)
+            # Strip any existing quotes then re-add if name has spaces
+            sheet_name_part = sheet_name_part.strip("'")
+            if ' ' in sheet_name_part:
+                sheet_name_part = f"'{sheet_name_part}'"
+            sheet_range = f"{sheet_name_part}!{cell_range}"
+
         result = self.sheets_service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
             range=sheet_range

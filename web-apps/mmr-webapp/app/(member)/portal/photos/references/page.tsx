@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trash2, Upload, AlertTriangle, ChevronLeft, Loader2, Camera } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useLang } from '@/lib/i18n/context'
 import type { MemberReferencePhoto } from '@/types'
 
@@ -161,7 +162,7 @@ export default function ReferencesPage() {
             onClick={() => fileRef.current?.click()}
           >
             {preview ? (
-              <img src={preview} alt="Preview" className="mx-auto max-h-40 object-contain rounded-lg" />
+              <Image src={preview} alt="Preview" className="mx-auto max-h-40 object-contain rounded-lg" />
             ) : (
               <div className="text-gray-400">
                 <Camera className="h-10 w-10 mx-auto mb-2 text-gray-300" />
@@ -239,7 +240,7 @@ export default function ReferencesPage() {
                 {/* Thumb */}
                 <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                   {ref.blobUrl
-                    ? <img src={ref.blobUrl} alt="Reference" className="w-full h-full object-cover" />
+                    ? <Image src={ref.blobUrl} alt="Reference" className="w-full h-full object-cover" />
                     : <div className="w-full h-full flex items-center justify-center text-gray-300">
                         <Camera className="h-6 w-6" />
                       </div>
