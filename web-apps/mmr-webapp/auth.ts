@@ -1,7 +1,7 @@
 // ============================================================
 // auth.ts — NextAuth v5 configuration
 //
-// Handles OAuth social login (Google, Apple, Microsoft,
+// Handles OAuth social login (Google, Microsoft,
 // Facebook) plus email + password (Credentials).
 //
 // After any successful sign-in, NextAuth redirects to
@@ -13,7 +13,6 @@
 import NextAuth                from 'next-auth'
 import type { NextAuthConfig } from 'next-auth'
 import Google                  from 'next-auth/providers/google'
-import Apple                   from 'next-auth/providers/apple'
 import MicrosoftEntraId        from 'next-auth/providers/microsoft-entra-id'
 import Facebook                from 'next-auth/providers/facebook'
 import Credentials             from 'next-auth/providers/credentials'
@@ -29,11 +28,6 @@ const config: NextAuthConfig = {
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? [Google({
       clientId:     env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
-    })] : []),
-
-    ...(env.APPLE_ID && env.APPLE_SECRET ? [Apple({
-      clientId:     env.APPLE_ID,
-      clientSecret: env.APPLE_SECRET,
     })] : []),
 
     ...(env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET ? [MicrosoftEntraId({
