@@ -8,8 +8,12 @@ ENV_FILE="$SCRIPT_DIR/basecamp/.env.local"
 
 # Load from .env.local
 if [ -f "$ENV_FILE" ]; then
-    export $(grep -v '^#' "$ENV_FILE" | xargs)
+    set -a  # Mark all new variables for export
+    source "$ENV_FILE"
+    set +a  # Turn off export flag
     echo "✓ Loaded from .env.local"
+else
+    echo "⚠️  WARNING: .env.local not found at $ENV_FILE"
 fi
 
 # Load from macOS Keychain

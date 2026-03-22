@@ -54,8 +54,8 @@ const MM_COL = {
   LAST_LOGIN_DATE: 21,
   PROFILE_LAST_UPDATED: 22,
   NOTES: 23,
-  NYRR_MEMBER_ID: 24,
-  NYRR_MEMBER_NAME: 25,
+  NYRR_RUNNER_NAME: 24,
+  YEAR_BORN: 25,
 };
 
 // Membership-Master-Log column indices (0-based)
