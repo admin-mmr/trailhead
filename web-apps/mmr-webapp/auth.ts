@@ -2,7 +2,7 @@
 // auth.ts — NextAuth v5 configuration
 //
 // Handles OAuth social login (Google, Apple, Microsoft,
-// Facebook, Yahoo) plus email + password (Credentials).
+// Facebook) plus email + password (Credentials).
 //
 // After any successful sign-in, NextAuth redirects to
 // /auth/complete which creates the custom mmr_session cookie
@@ -19,22 +19,6 @@ import Facebook                from 'next-auth/providers/facebook'
 import Credentials             from 'next-auth/providers/credentials'
 import { findMemberByEmail }   from '@/lib/db/members'
 import { verifyPassword }      from '@/lib/auth/password'
-
-// ── Yahoo: custom OIDC provider (not built into NextAuth v5) ─────────────────
-// issuer is required — NextAuth appends /.well-known/openid-configuration to it.
-// We also set wellKnown explicitly because Yahoo's discovery URL is non-standard.
-const Yahoo = {
-  id:        'yahoo',
-  name:      'Yahoo',
-  type:      'oidc' as const,
-  issuer:    'https://api.login.yahoo.com',
-  wellKnown: 'https://login.yahoo.com/.well-known/openid-configuration',
-  clientId:     process.env.YAHOO_CLIENT_ID,
-  clientSecret: process.env.YAHOO_CLIENT_SECRET,
-  profile(profile: any) {
-    return { id: profile.sub, name: profile.name, email: profile.email, image: profile.picture }
-  },
-}
 
 // ── Only include a provider if its credentials are actually set ───────────────
 // This prevents NextAuth from crashing at startup when keys are blank/missing.
@@ -56,14 +40,22 @@ const config: NextAuthConfig = {
       clientId:     env.MICROSOFT_CLIENT_ID,
       clientSecret: env.MICROSOFT_CLIENT_SECRET,
       // tenantId defaults to 'common' — allows both personal and work accounts
+      profile(profile: any) {
+        // Work/tenant accounts often omit the 'email' claim; fall back to
+        // 'preferred_username' (the UPN, e.g. admin@mmrunners.onmicrosoft.com)
+        return {
+          id:    profile.sub ?? profile.oid,
+          name:  profile.name,
+          email: profile.email ?? profile.preferred_username ?? null,
+          image: profile.picture ?? null,
+        }
+      },
     })] : []),
 
     ...(env.FACEBOOK_CLIENT_ID && env.FACEBOOK_CLIENT_SECRET ? [Facebook({
       clientId:     env.FACEBOOK_CLIENT_ID,
       clientSecret: env.FACEBOOK_CLIENT_SECRET,
     })] : []),
-
-    ...(env.YAHOO_CLIENT_ID && env.YAHOO_CLIENT_SECRET ? [Yahoo as any] : []),
 
     Credentials({
       credentials: {

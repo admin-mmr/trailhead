@@ -46,14 +46,6 @@ function FacebookIcon() {
   )
 }
 
-function YahooIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="#6001D2" aria-hidden="true">
-      <path d="M0 0l6.6 14.4L0 24h4.2l3.9-6 3.9 6H16l-6.6-9.6L16 0H0zm14.4 0l4.2 9 4.2-9H14.4zM18.6 15l-4.2 9h3.9L24 15h-5.4z"/>
-    </svg>
-  )
-}
-
 // ── OAuth provider config ──────────────────────────────────────────────────────
 
 const PROVIDERS = [
@@ -61,7 +53,6 @@ const PROVIDERS = [
   { id: 'apple',               label: 'Apple',     Icon: AppleIcon,     bg: 'bg-black hover:bg-gray-900',                       text: 'text-white'    },
   { id: 'microsoft-entra-id',  label: 'Microsoft', Icon: MicrosoftIcon, bg: 'bg-white border border-gray-200 hover:bg-gray-50', text: 'text-gray-700' },
   { id: 'facebook',            label: 'Facebook',  Icon: FacebookIcon,  bg: 'bg-[#1877F2] hover:bg-[#166FE5]',                  text: 'text-white'    },
-  { id: 'yahoo',               label: 'Yahoo',     Icon: YahooIcon,     bg: 'bg-white border border-gray-200 hover:bg-gray-50', text: 'text-gray-700' },
 ] as const
 
 // ── Login form ────────────────────────────────────────────────────────────────
@@ -78,9 +69,20 @@ function LoginContent() {
   const [showPass,    setShowPass]    = useState(false)
   const [loading,     setLoading]     = useState(false)
   const [oauthLoading,setOauthLoading]= useState<string | null>(null)
-  const [error,       setError]       = useState(
-    urlError === 'CredentialsSignin' ? (lang === 'zh' ? '邮箱或密码错误。' : 'Incorrect email or password.') : ''
-  )
+  const [error,       setError]       = useState(() => {
+    if (!urlError) return ''
+    if (urlError === 'CredentialsSignin')
+      return lang === 'zh' ? '邮箱或密码错误。' : 'Incorrect email or password.'
+    if (urlError === 'oauth_failed')
+      return lang === 'zh'
+        ? '社交登录未能获取您的邮箱，请使用邮箱密码登录，或联系管理员。'
+        : 'Sign-in did not return an email address. Please use email/password login or contact the admin.'
+    if (urlError === 'Configuration')
+      return lang === 'zh'
+        ? '登录服务配置错误，请联系管理员。'
+        : 'Login service is not configured correctly. Please contact the admin.'
+    return lang === 'zh' ? '登录失败，请重试。' : 'Sign-in failed. Please try again.'
+  })
 
   // ── Email + password sign-in ───────────────────────────────────────────────
   async function handleCredentials(e: React.FormEvent) {
