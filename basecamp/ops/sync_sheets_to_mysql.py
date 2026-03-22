@@ -12,7 +12,7 @@ This script runs nightly to:
 6. Handle bidirectional sync (MySQL → Google Sheets for GAS-driven updates)
 
 Usage:
-    python sync_sheets_to_mysql.py --sheet "Membership Master" --spreadsheet-id <ID> [--dry-run]
+    python sync_sheets_to_mysql.py --sheet "Active" --table "gmail_transactions" --spreadsheet-id <ID> --key-field "TransactionID" [--dry-run]
 """
 
 import argparse
@@ -22,6 +22,7 @@ import os
 import sys
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+from urllib.parse import urlparse
 
 import mysql.connector
 from mysql.connector import Error as MySQLError
@@ -39,89 +40,168 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class SheetsToMySQLSync:
-    """Sync Google Sheets to MySQL with conflict detection"""
+def validate_status(value: str) -> str:
+    """
+    Validate and normalize Status field.
 
-    def __init__(self, mysql_config: Dict[str, str]):
-        """Initialize MySQL connection"""
-        self.mysql_config = mysql_config
-        self.connection = None
-        self.snapshot_mgr = GoogleSheetsSnapshot()
+    MySQL Status column is ENUM('active','not active','pending')
+    Maps common variations to valid values.
+    """
+    if not value:
+        return 'pending'
 
-    def connect(self):
-        """Connect to MySQL"""
-        try:
-            self.connection = mysql.connector.connect(**self.mysql_config)
-            logger.info('Connected to MySQL')
-        except MySQLError as e:
-            logger.error(f'MySQL connection failed: {e}')
-            raise
+    value = value.strip().lower()
 
-    def close(self):
-        """Close MySQL connection"""
-        if self.connection:
-            self.connection.close()
-            logger.info('MySQL connection closed')
+    # Map variations to valid ENUM values
+    valid_statuses = {
+        'active': 'active',
+        'inactive': 'not active',
+        'not active': 'not active',
+        'notactive': 'not active',
+        'pending': 'pending',
+        'draft': 'pending',
+    }
 
-    def get_last_snapshot(self, sheet_name: str) -> Optional[Dict[str, Any]]:
-        """Get the last processed snapshot from DB"""
+    return valid_statuses.get(value, 'pending')
+
+
+def parse_database_url(database_url: str) -> Dict[str, str]:
+    """
+    Parse DATABASE_URL in format: mysql://user:password@host:port/database
+    Returns dict suitable for mysql.connector.connect()
+    """
+    parsed = urlparse(database_url)
+
+    config = {
+        'user': parsed.username or 'root',
+        'password': parsed.password or '',
+        'host': parsed.hostname or 'localhost',
+        'port': parsed.port or 3306,
+        'database': parsed.path.lstrip('/') if parsed.path else '',
+    }
+
+    return config
+
+
+def convert_datetime_to_mysql(value: str) -> Optional[str]:
+    """
+    Convert various datetime formats to MySQL DATETIME format.
+
+    Handles:
+    - ISO 8601: "2026-03-19T20:26:21.843Z" → "2026-03-19 20:26:21"
+    - ISO 8601: "2026-03-19T20:26:21Z" → "2026-03-19 20:26:21"
+    - MySQL format: "2026-03-19 20:26:21" → unchanged
+    - Date only: "2026-03-19" → "2026-03-19 00:00:00"
+    - JavaScript: "Sun Jan 11 2026 00:00:00 GMT-0500 ..." → "2026-01-11 00:00:00"
+
+    Returns None for empty/invalid values
+    """
+    if not value or not isinstance(value, str):
+        return None
+
+    value = value.strip()
+    if not value:
+        return None
+
+    try:
+        # Handle JavaScript Date.toString() format: "Sun Jan 11 2026 00:00:00 GMT-0500 (Eastern Standard Time)"
+        if ' GMT' in value:
+            # Extract date/time part before GMT
+            parts = value.split(' GMT')[0].strip()
+            # Parse format like "Sun Jan 11 2026 00:00:00"
+            dt = datetime.strptime(parts, '%a %b %d %Y %H:%M:%S')
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Try ISO 8601 format with 'Z' (UTC)
+        if 'T' in value and value.endswith('Z'):
+            # Remove milliseconds if present
+            if '.' in value:
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00').split('.')[0] + '+00:00')
+            else:
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Try ISO 8601 format without 'Z'
+        elif 'T' in value:
+            dt = datetime.fromisoformat(value.split('.')[0])  # Remove milliseconds
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Try MySQL format
+        elif ' ' in value and len(value) >= 10:
+            # Assume it's already in MySQL format
+            return value[:19]
+
+        # Try date only
+        elif len(value) == 10 and value.count('-') == 2:
+            return f'{value} 00:00:00'
+
+        return None
+    except Exception:
+        return None
+
+
+class SheetSyncer:
+    """Syncs a single Google Sheet to MySQL"""
+
+    def __init__(self, table_name: str, connection: mysql.connector.MySQLConnection):
+        """
+        Initialize syncer for a specific table.
+
+        Args:
+            table_name: MySQL table name (members, gmail_transactions, payments, events, etc.)
+            connection: MySQL connection object
+        """
+        self.table_name = table_name
+        self.connection = connection
+
+    def get_table_schema(self) -> Dict[str, str]:
+        """
+        Get column definitions from MySQL database.
+        Returns dict of {column_name: data_type}
+        """
         try:
             cursor = self.connection.cursor(dictionary=True)
-
-            # Get the last processed snapshot (include snapshot_data_url for blob fetch)
-            cursor.execute("""
-                SELECT snapshot_id, sheet_name, snapshot_hash, row_count,
-                       snapshot_timestamp, snapshot_data_url
-                FROM sync_snapshots
-                WHERE sheet_name = %s AND status = 'processed'
-                ORDER BY snapshot_timestamp DESC
-                LIMIT 1
-            """, (sheet_name,))
-
-            result = cursor.fetchone()
+            cursor.execute(f"""
+                SELECT COLUMN_NAME, COLUMN_TYPE
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s
+            """, (self.table_name,))
+            columns = {}
+            for row in cursor.fetchall():
+                columns[row['COLUMN_NAME']] = row['COLUMN_TYPE']
             cursor.close()
-
-            return result
+            return columns
         except MySQLError as e:
-            logger.error(f'Failed to get last snapshot: {e}')
-            return None
+            logger.error(f'Failed to get schema for {self.table_name}: {e}')
+            return {}
 
-    def record_snapshot_in_db(
-        self,
-        snapshot: Dict[str, Any]
-    ) -> int:
-        """Record snapshot metadata in sync_snapshots table. Returns snapshot_id."""
+    def record_snapshot_in_db(self, current_snapshot: Dict[str, Any]) -> int:
+        """Record snapshot metadata in sync_snapshots table"""
         try:
+            snapshot_ts = convert_datetime_to_mysql(current_snapshot['timestamp'])
+            google_modified_at = convert_datetime_to_mysql(current_snapshot.get('google_modified_at')) if current_snapshot.get('google_modified_at') else None
+            blob_url = current_snapshot.get('blob_url')
+
+            # Store snapshot data as JSON in the database for later retrieval
+            snapshot_json = json.dumps({
+                'rows': current_snapshot.get('rows', []),
+                'hash': current_snapshot['hash'],
+                'key_field': current_snapshot.get('key_field', 'Email'),
+                'row_count': current_snapshot['row_count']
+            })
+
             cursor = self.connection.cursor()
-
-            # Convert ISO 8601 timestamps to MySQL DATETIME format (YYYY-MM-DD HH:MM:SS)
-            from datetime import datetime
-
-            def convert_iso_to_mysql_datetime(ts):
-                """Convert ISO 8601 string to MySQL DATETIME format"""
-                if not isinstance(ts, str):
-                    return ts
-                try:
-                    # Parse ISO format: '2026-03-21T17:59:59.189029Z' or '2026-03-21T16:12:31.667Z'
-                    dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                    return dt.strftime('%Y-%m-%d %H:%M:%S')
-                except (ValueError, AttributeError):
-                    return ts  # Return as-is if parsing fails
-
-            snapshot_ts = convert_iso_to_mysql_datetime(snapshot['timestamp'])
-            google_modified_at = convert_iso_to_mysql_datetime(snapshot['google_modified_at'])
-
             cursor.execute("""
                 INSERT INTO sync_snapshots
-                (sheet_name, snapshot_hash, row_count, snapshot_timestamp, google_modified_at, snapshot_data_url)
+                (sheet_name, row_count, snapshot_hash, snapshot_timestamp, google_modified_at, snapshot_data_url)
                 VALUES (%s, %s, %s, %s, %s, %s)
             """, (
-                snapshot['sheet_name'],
-                snapshot['hash'],
-                snapshot['row_count'],
+                self.table_name,
+                current_snapshot['row_count'],
+                current_snapshot['hash'],
                 snapshot_ts,
                 google_modified_at,
-                snapshot['blob_url']
+                snapshot_json  # Store the JSON here instead of blob URL
             ))
 
             snapshot_id = cursor.lastrowid
@@ -140,15 +220,17 @@ class SheetsToMySQLSync:
         self,
         sheet_name: str,
         snapshot_id: int,
-        change_type: str,  # 'added', 'modified', 'deleted'
-        row_key: str,
-        old_values: Optional[Dict],
-        new_values: Optional[Dict]
-    ) -> int:
-        """Record a detected change. Returns change_id."""
+        change_type: str,
+        key_value: str,
+        old_data: Optional[Dict[str, str]],
+        new_data: Optional[Dict[str, str]]
+    ) -> None:
+        """Record a sync change in sync_changes table"""
         try:
-            cursor = self.connection.cursor()
+            old_json = json.dumps(old_data) if old_data else None
+            new_json = json.dumps(new_data) if new_data else None
 
+            cursor = self.connection.cursor()
             cursor.execute("""
                 INSERT INTO sync_changes
                 (sheet_name, snapshot_id, change_type, row_key, old_values, new_values)
@@ -157,145 +239,151 @@ class SheetsToMySQLSync:
                 sheet_name,
                 snapshot_id,
                 change_type,
-                row_key,
-                json.dumps(old_values) if old_values else None,
-                json.dumps(new_values) if new_values else None
+                key_value,
+                old_json,
+                new_json
             ))
 
-            change_id = cursor.lastrowid
             self.connection.commit()
             cursor.close()
-
-            return change_id
 
         except MySQLError as e:
             logger.error(f'Failed to record change: {e}')
             self.connection.rollback()
             raise
 
-    def sync_member_row(self, row: Dict[str, str], change_type: str) -> bool:
+    def sync_row(self, row: Dict[str, str], change_type: str, key_field: str, key_value: str) -> bool:
         """
-        Sync a member row from Google Sheets to MySQL.
+        Sync a single row (generic for any table).
 
-        Returns:
-            True if synced successfully, False if conflict/error
+        Returns True if synced successfully, False if skipped/error
         """
         try:
-            email = row.get('Email', '').strip()
-            if not email:
-                logger.warning(f'Skipping row with missing email: {row}')
+            if not key_value:
                 return False
 
             cursor = self.connection.cursor(dictionary=True)
 
-            # Check if member exists
-            cursor.execute('SELECT MemberID FROM members WHERE Email = %s', (email,))
+            # Check if row exists
+            cursor.execute(f"SELECT * FROM {self.table_name} WHERE {key_field} = %s", (key_value,))
             existing = cursor.fetchone()
 
             if change_type == 'added':
                 if existing:
-                    logger.warning(f'Member {email} already exists (conflict)')
-                    cursor.close()
-                    return False  # Conflict
-
-                # Create new member
-                # MemberID comes from Google Sheets (A0000 format)
-                member_id  = row.get('MemberID', None)
-                if not member_id:
-                    logger.warning(f'No MemberID in sheet for {email}, skipping')
+                    # Row exists - skip (update handled separately if needed)
                     cursor.close()
                     return False
+                else:
+                    # New row - insert with columns that exist in this table
+                    schema = self.get_table_schema()
+                    insert_cols = []
+                    insert_vals = []
+                    insert_params = []
 
-                # GS canonical header uses "First Name" / "Last Name" (with spaces)
-                first_name = row.get('First Name', 'Unknown')
-                last_name  = row.get('Last Name', 'Unknown')
-                status     = row.get('Status', 'pending')
+                    for col_name, col_value in row.items():
+                        # Only insert columns that exist in this table
+                        if col_name in schema:
+                            col_value_clean = col_value.strip() if isinstance(col_value, str) else col_value
+                            if not col_value_clean:
+                                continue
 
-                cursor.execute("""
-                    INSERT INTO members (MemberID, Email, FirstName, LastName, Status)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (member_id, email, first_name, last_name, status))
+                            # Handle datetime conversion
+                            if 'datetime' in schema[col_name].lower() or 'timestamp' in schema[col_name].lower():
+                                converted = convert_datetime_to_mysql(str(col_value_clean))
+                                if converted:
+                                    col_value_clean = converted
+                                else:
+                                    # Skip columns with unparseable datetime values
+                                    logger.debug(f'Skipping unparseable datetime in {col_name}: {col_value_clean}')
+                                    continue
 
-                self.connection.commit()
-                logger.info(f'Added member: {email}')
+                            # Handle status validation
+                            if col_name == 'Status' and 'enum' in schema[col_name].lower():
+                                col_value_clean = validate_status(col_value_clean)
+
+                            insert_cols.append(col_name)
+                            insert_vals.append('%s')
+                            insert_params.append(col_value_clean)
+
+                    if insert_cols:
+                        query = f"INSERT INTO {self.table_name} ({', '.join(insert_cols)}) VALUES ({', '.join(insert_vals)})"
+                        cursor.execute(query, insert_params)
+                        self.connection.commit()
+                        logger.info(f'Added row to {self.table_name} with {key_field}={key_value}')
+                        cursor.close()
+                        return True
+                    else:
+                        cursor.close()
+                        return False
 
             elif change_type == 'modified':
                 if not existing:
-                    logger.warning(f'Member {email} not found for update')
                     cursor.close()
                     return False
 
-                # Update member
-                member_id = existing['MemberID']
-
+                # Update row
+                schema = self.get_table_schema()
                 update_fields = []
-                update_values = []
+                update_params = []
 
-                # Map Google Sheets header → MySQL column name.
-                # Keys must match the canonical GS header exactly (spaces included).
-                column_mapping = {
-                    'First Name':           'FirstName',
-                    'Last Name':            'LastName',
-                    'Status':               'Status',
-                    'Type':                 'Type',
-                    'Gender':               'Gender',
-                    'WeChatID':             'WeChatID',
-                    'District':             'District',
-                    'WebApp':               'WebApp',
-                    'Payment Check':        'PaymentCheck',
-                    'Info':                 'Info',
-                    'Membership Fee Paid':  'MembershipFeePaid',
-                    'Payment Date':         'PaymentDate',
-                    'Payment Transaction':  'PaymentTransaction',
-                    'JoinYear':             'JoinYear',
-                    'PhoneNumber':          'PhoneNumber',
-                    'Notes':                'Notes',
-                    # NYRRRunnerName: set by member, used to look up bib numbers.
-                    # YearBorn: disambiguates name collisions (Age = EventYear - YearBorn).
-                    'NYRRRunnerName':        'NYRRRunnerName',
-                    'YearBorn':             'YearBorn',
-                    # NYRRMemberID removed from canonical header — no longer synced.
-                }
+                for col_name, col_value in row.items():
+                    if col_name in schema and col_name != key_field:
+                        col_value_clean = col_value.strip() if isinstance(col_value, str) else col_value
+                        if col_value_clean:
+                            # Handle datetime conversion
+                            if 'datetime' in schema[col_name].lower() or 'timestamp' in schema[col_name].lower():
+                                converted = convert_datetime_to_mysql(str(col_value_clean))
+                                if converted:
+                                    col_value_clean = converted
+                                else:
+                                    # Skip columns with unparseable datetime values
+                                    logger.debug(f'Skipping unparseable datetime in {col_name}: {col_value_clean}')
+                                    continue
 
-                for sheets_col, mysql_col in column_mapping.items():
-                    if sheets_col in row and row[sheets_col] != '':
-                        value = row[sheets_col]
-                        # YearBorn is a 4-digit year stored as SMALLINT; coerce from string
-                        if mysql_col == 'YearBorn':
-                            try:
-                                value = int(value) if value else None
-                            except (ValueError, TypeError):
-                                logger.warning(f'Invalid YearBorn value "{value}" for {email}, skipping')
-                                continue
-                        update_fields.append(f'{mysql_col} = %s')
-                        update_values.append(value)
+                            # Handle status validation
+                            if col_name == 'Status' and 'enum' in schema[col_name].lower():
+                                col_value_clean = validate_status(col_value_clean)
+
+                            update_fields.append(f'{col_name} = %s')
+                            update_params.append(col_value_clean)
 
                 if update_fields:
-                    update_values.append(member_id)
-                    query = f"UPDATE members SET {', '.join(update_fields)} WHERE MemberID = %s"
-                    cursor.execute(query, update_values)
+                    update_params.append(key_value)
+                    query = f"UPDATE {self.table_name} SET {', '.join(update_fields)} WHERE {key_field} = %s"
+                    cursor.execute(query, update_params)
                     self.connection.commit()
-                    logger.info(f'Updated member: {email}')
+                    logger.info(f'Updated row in {self.table_name} with {key_field}={key_value}')
+                    cursor.close()
+                    return True
+                else:
+                    cursor.close()
+                    return False
 
             elif change_type == 'deleted':
                 if not existing:
-                    logger.warning(f'Member {email} not found for deletion')
                     cursor.close()
                     return False
 
-                # Mark as deleted (soft delete)
-                cursor.execute("""
-                    UPDATE members SET Status = 'deleted' WHERE Email = %s
-                """, (email,))
+                # Soft delete if Status column exists, otherwise hard delete
+                schema = self.get_table_schema()
+                if 'Status' in schema:
+                    cursor.execute(
+                        f"UPDATE {self.table_name} SET Status = 'deleted' WHERE {key_field} = %s",
+                        (key_value,)
+                    )
+                else:
+                    cursor.execute(f"DELETE FROM {self.table_name} WHERE {key_field} = %s", (key_value,))
+
                 self.connection.commit()
-                logger.info(f'Marked member as deleted: {email}')
+                logger.info(f'Deleted row in {self.table_name} with {key_field}={key_value}')
+                cursor.close()
+                return True
 
             cursor.close()
-            return True
+            return False
 
-        except MySQLError as e:
-            logger.error(f'Failed to sync member {email}: {e}')
-            self.connection.rollback()
+        except Exception as e:
+            logger.error(f'Error syncing row: {e}', exc_info=True)
             return False
 
     def sync_changes(
@@ -303,44 +391,16 @@ class SheetsToMySQLSync:
         sheet_name: str,
         spreadsheet_id: str,
         sheet_range: str,
-        key_field: str = 'Email',
+        key_field: str,
         dry_run: bool = False
-    ):
+    ) -> None:
         """
-        Main sync logic:
-        1. Check if sheet changed
-        2. Create snapshot
-        3. Detect changes
-        4. Sync to MySQL
-        5. Update sync_metadata
+        Full sync workflow: detect changes in Google Sheets and sync to MySQL.
         """
-        logger.info(f'Starting sync for {sheet_name}')
-
         try:
-            # Ensure sync_metadata row exists, then mark as 'syncing'.
-            # Uses UPSERT so the row is created automatically on first run
-            # even if migration 0001 wasn't applied manually.
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                INSERT INTO sync_metadata (sheet_name, spreadsheet_id, sync_status)
-                VALUES (%s, %s, 'syncing')
-                ON DUPLICATE KEY UPDATE
-                    spreadsheet_id = VALUES(spreadsheet_id),
-                    sync_status = 'syncing'
-            """, (sheet_name, spreadsheet_id))
-            self.connection.commit()
-            cursor.close()
-
-            # Check if sheet changed
-            last_sync_metadata = self._get_sync_metadata(sheet_name)
-            last_synced_at = last_sync_metadata['last_synced_at'] if last_sync_metadata else None
-
-            if not self.snapshot_mgr.has_changed_since(spreadsheet_id, last_synced_at):
-                logger.info(f'{sheet_name} has not changed, skipping sync')
-                return
-
             # Create snapshot
-            current_snapshot = self.snapshot_mgr.create_snapshot(
+            snapshot_mgr = GoogleSheetsSnapshot()
+            current_snapshot = snapshot_mgr.create_snapshot(
                 sheet_name,
                 spreadsheet_id,
                 sheet_range,
@@ -349,41 +409,22 @@ class SheetsToMySQLSync:
 
             logger.info(f'Created snapshot: {current_snapshot["hash"][:8]}, {current_snapshot["row_count"]} rows')
 
-            # Get last processed snapshot
-            last_snapshot = self.get_last_snapshot(sheet_name)
+            # Try to get previous snapshot
+            previous_snapshot = self._get_previous_snapshot(sheet_name)
 
-            if not last_snapshot:
-                logger.info('First sync for this sheet, treating all rows as added')
+            # Detect changes
+            if previous_snapshot:
+                changes = snapshot_mgr.detect_changes(previous_snapshot, current_snapshot)
+                logger.info(f'Detected changes: {changes["added"].__len__()} added, {changes["modified"].__len__()} modified, {changes["deleted"].__len__()} deleted')
+            else:
+                # First sync - treat all rows as added
                 changes = {
                     'added': current_snapshot['rows'],
                     'modified': [],
-                    'deleted': []
+                    'deleted': [],
+                    'total_changes': len(current_snapshot['rows'])
                 }
-            else:
-                # Load last snapshot row data from Azure Blob Storage.
-                # The DB only stores metadata (hash, row_count, url) — the actual
-                # row data lives in the blob referenced by snapshot_data_url.
-                prev_rows = []
-                blob_url = last_snapshot.get('snapshot_data_url')
-                if blob_url and self.snapshot_mgr.blob_client:
-                    try:
-                        container_client = self.snapshot_mgr.blob_client.get_container_client('mmr-snapshots')
-                        blob_bytes = container_client.get_blob_client(blob_url).download_blob().readall()
-                        prev_snapshot_json = json.loads(blob_bytes)
-                        prev_rows = prev_snapshot_json.get('data', [])
-                        logger.info(f'Loaded {len(prev_rows)} rows from previous snapshot blob')
-                    except Exception as e:
-                        logger.warning(f'Could not load previous snapshot from blob ({blob_url}): {e}. Treating all rows as added.')
-                else:
-                    logger.warning('No blob URL for previous snapshot or blob client unavailable. Treating all rows as added.')
-
-                last_snapshot_data = {
-                    'rows': prev_rows,
-                    'key_field': key_field
-                }
-                changes = self.snapshot_mgr.detect_changes(last_snapshot_data, current_snapshot)
-
-            logger.info(f'Detected changes: {len(changes["added"])} added, {len(changes["modified"])} modified, {len(changes["deleted"])} deleted')
+                logger.info(f'First sync for this sheet, treating all rows as added')
 
             if dry_run:
                 logger.info('DRY RUN: Not syncing changes')
@@ -399,96 +440,116 @@ class SheetsToMySQLSync:
             rows_deleted = 0
 
             for row in changes['added']:
-                if self.sync_member_row(row, 'added'):
+                key_value = row.get(key_field, '').strip()
+                if self.sync_row(row, 'added', key_field, key_value):
                     rows_added += 1
-                self.record_change(sheet_name, snapshot_id, 'added', row.get(key_field), None, row)
+                self.record_change(sheet_name, snapshot_id, 'added', key_value, None, row)
                 rows_synced += 1
 
             for change in changes['modified']:
-                if self.sync_member_row(change['new'], 'modified'):
+                key_value = change['key']
+                if self.sync_row(change['new'], 'modified', key_field, key_value):
                     rows_modified += 1
                 self.record_change(
                     sheet_name, snapshot_id, 'modified',
-                    change['key'],
+                    key_value,
                     change['old'],
                     change['new']
                 )
                 rows_synced += 1
 
             for row in changes['deleted']:
-                if self.sync_member_row(row, 'deleted'):
+                key_value = row.get(key_field, '').strip()
+                if self.sync_row(row, 'deleted', key_field, key_value):
                     rows_deleted += 1
-                self.record_change(sheet_name, snapshot_id, 'deleted', row.get(key_field), row, None)
+                self.record_change(sheet_name, snapshot_id, 'deleted', key_value, row, None)
                 rows_synced += 1
 
-            # Mark snapshot as processed
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                UPDATE sync_snapshots SET status = 'processed', processed_at = NOW()
-                WHERE snapshot_id = %s
-            """, (snapshot_id,))
-            self.connection.commit()
-            cursor.close()
+            # Mark snapshot as processed (optional)
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute("""
+                    UPDATE sync_snapshots SET status = 'processed'
+                    WHERE snapshot_id = %s
+                """, (snapshot_id,))
+                self.connection.commit()
+                cursor.close()
+            except Exception:
+                pass
 
-            # Update sync_metadata
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                UPDATE sync_metadata
-                SET last_synced_at = NOW(),
-                    last_sheets_modified = %s,
-                    last_snapshot_hash = %s,
-                    sync_status = 'idle',
-                    rows_synced = %s,
-                    rows_added = %s,
-                    rows_modified = %s,
-                    rows_deleted = %s
-                WHERE sheet_name = %s
-            """, (
-                current_snapshot['google_modified_at'],
-                current_snapshot['hash'],
-                rows_synced,
-                rows_added,
-                rows_modified,
-                rows_deleted,
-                sheet_name
-            ))
-            self.connection.commit()
-            cursor.close()
+            # Update sync_metadata (optional)
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute("""
+                    UPDATE sync_metadata
+                    SET last_synced_at = NOW(),
+                        last_snapshot_hash = %s,
+                        sync_status = 'idle',
+                        rows_synced = %s,
+                        rows_added = %s,
+                        rows_modified = %s,
+                        rows_deleted = %s
+                    WHERE sheet_name = %s
+                """, (
+                    current_snapshot['hash'],
+                    rows_synced,
+                    rows_added,
+                    rows_modified,
+                    rows_deleted,
+                    sheet_name
+                ))
+                self.connection.commit()
+                cursor.close()
+            except Exception:
+                pass
 
             logger.info(f'Sync completed: {rows_synced} total, {rows_added} added, {rows_modified} modified, {rows_deleted} deleted')
 
         except Exception as e:
             logger.error(f'Sync failed: {e}', exc_info=True)
-            cursor = self.connection.cursor()
-            cursor.execute("""
-                UPDATE sync_metadata
-                SET sync_status = 'error', last_error = %s
-                WHERE sheet_name = %s
-            """, (str(e), sheet_name))
-            self.connection.commit()
-            cursor.close()
             raise
 
-    def _get_sync_metadata(self, sheet_name: str) -> Optional[Dict]:
-        """Get sync metadata for a sheet"""
+    def _get_previous_snapshot(self, sheet_name: str) -> Optional[Dict[str, Any]]:
+        """Get previous snapshot from database"""
         try:
             cursor = self.connection.cursor(dictionary=True)
             cursor.execute("""
-                SELECT * FROM sync_metadata WHERE sheet_name = %s
+                SELECT snapshot_data_url
+                FROM sync_snapshots
+                WHERE sheet_name = %s
+                ORDER BY snapshot_id DESC
+                LIMIT 1
             """, (sheet_name,))
             result = cursor.fetchone()
             cursor.close()
-            return result
+
+            if not result or not result.get('snapshot_data_url'):
+                logger.info(f'No previous snapshot found for {sheet_name} - first sync')
+                return None
+
+            snapshot_data = result['snapshot_data_url']
+
+            # Try to parse as JSON (new format - stored in DB)
+            try:
+                previous_snapshot = json.loads(snapshot_data)
+                logger.info(f'Retrieved previous snapshot for {sheet_name}: hash={previous_snapshot.get("hash", "")[:8]}, rows={previous_snapshot.get("row_count", 0)}')
+                return previous_snapshot
+            except json.JSONDecodeError:
+                # Might be old format (blob URL) - just treat as first sync
+                logger.info(f'Previous snapshot format unrecognized - treating as first sync')
+                return None
+
         except MySQLError as e:
-            logger.error(f'Failed to get sync metadata: {e}')
+            logger.warning(f'Could not get previous snapshot from DB: {e}')
             return None
 
 
 def main():
     parser = argparse.ArgumentParser(description='Sync Google Sheets to MySQL')
-    parser.add_argument('--sheet', required=True, help='Sheet name (e.g., "Main")')
+    parser.add_argument('--sheet', required=True, help='Sheet name (e.g., "Active")')
+    parser.add_argument('--table', required=True, help='MySQL table name (e.g., "gmail_transactions")')
     parser.add_argument('--spreadsheet-id', required=True, help='Google Sheets ID')
-    parser.add_argument('--sheet-range', default=None, help='Sheet range to sync (e.g. "Main!A:Z"). Defaults to <sheet>!A:Z.')
+    parser.add_argument('--sheet-range', default=None, help='Sheet range to sync (e.g. "Active!A:Z"). Defaults to <sheet>!A:Z.')
     parser.add_argument('--key-field', default='Email', help='Column to use as row key')
     parser.add_argument('--dry-run', action='store_true', help='Detect changes but do not sync')
 
@@ -513,39 +574,30 @@ def main():
 
         # Print a sample of the data
         sample = snapshot['rows'][:3]
-        logger.info(f'Sample rows (first 3): {sample}')
+        if sample:
+            logger.info(f'Sample rows (first 3): {json.dumps(sample, indent=2, default=str)[:500]}...')
         return
 
-    # Real sync: MySQL required
-    mysql_password = os.environ.get('MYSQL_PASSWORD', '')
-    if not mysql_password:
-        logger.error(
-            'MYSQL_PASSWORD is not set. Export it first:\n'
-            '  export MYSQL_PASSWORD="your-azure-mysql-password"'
-        )
+    # Connect to MySQL
+    try:
+        database_url = os.environ.get('DATABASE_URL')
+        if not database_url:
+            raise ValueError('DATABASE_URL environment variable not set')
+
+        db_config = parse_database_url(database_url)
+        db_config['auth_plugin'] = 'mysql_native_password'
+
+        conn = mysql.connector.connect(**db_config)
+        logger.info('Connected to MySQL')
+    except MySQLError as e:
+        logger.error(f'Failed to connect to MySQL: {e}')
         sys.exit(1)
 
-    mysql_config = {
-        'host': os.environ.get('MYSQL_HOST', 'mmr-mysql-v4.mysql.database.azure.com'),
-        'user': os.environ.get('MYSQL_USER', 'mmradmin'),
-        'password': mysql_password,
-        'database': os.environ.get('MYSQL_DATABASE', 'mmrdb'),
-        'ssl_disabled': False,   # Azure MySQL requires SSL
-        'use_pure': True,        # avoid C-extension SSL issues on macOS
-    }
-
-    syncer = SheetsToMySQLSync(mysql_config)
     try:
-        syncer.connect()
-        syncer.sync_changes(
-            args.sheet,
-            args.spreadsheet_id,
-            args.sheet_range,
-            args.key_field,
-            dry_run=False
-        )
+        syncer = SheetSyncer(args.table, conn)
+        syncer.sync_changes(args.sheet, args.spreadsheet_id, args.sheet_range, args.key_field, args.dry_run)
     finally:
-        syncer.close()
+        conn.close()
 
 
 if __name__ == '__main__':
