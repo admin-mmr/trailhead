@@ -53,11 +53,10 @@ jobs:
       - name: Run Payments sync
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google-creds.json
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_PAYMENTS_ID }}
         run: |
           python basecamp/ops/sync_sheets_to_mysql.py \
             --sheet "Payment-History" \
-            --spreadsheet-id "$GOOGLE_SHEETS_ID" \
+            --spreadsheet-id "${{ secrets.GOOGLE_SHEETS_PAYMENTS_ID }}" \
             --sheet-range "Payment-History!A:Z" \
             --key-field "PaymentID" \
             2>&1 | tee sync-payments.log

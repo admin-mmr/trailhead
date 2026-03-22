@@ -53,11 +53,10 @@ jobs:
       - name: Run WebApp Events sync
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google-creds.json
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_WEBAPP_EVENTS_ID }}
         run: |
           python basecamp/ops/sync_sheets_to_mysql.py \
             --sheet "WebApp-Events" \
-            --spreadsheet-id "$GOOGLE_SHEETS_ID" \
+            --spreadsheet-id "${{ secrets.GOOGLE_SHEETS_WEBAPP_EVENTS_ID }}" \
             --sheet-range "WebApp-Events!A:Z" \
             --key-field "EventID" \
             2>&1 | tee sync-webapp-events.log

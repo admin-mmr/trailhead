@@ -53,16 +53,10 @@ jobs:
       - name: Run Members sync
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google-creds.json
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_MEMBERSHIP_ID }}
-          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
-          MYSQL_USER: ${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
-          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
         run: |
           python basecamp/ops/sync_sheets_to_mysql.py \
             --sheet "Main" \
-            --spreadsheet-id "$GOOGLE_SHEETS_ID" \
+            --spreadsheet-id "${{ secrets.GOOGLE_SHEETS_MEMBERSHIP_ID }}" \
             --sheet-range "Main!A:Z" \
             --key-field "Email" \
             2>&1 | tee sync-members.log
