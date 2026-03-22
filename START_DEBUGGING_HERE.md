@@ -1,190 +1,160 @@
 # Start Debugging Here
 
-Your sync setup has been created, but several issues need to be fixed for it to work. Here's exactly what to do:
+**Status**: ✅ Current
+**Last Updated**: March 22, 2026
+**Purpose**: Fast-path guide to reading live logs and diagnosing failures
 
-## ⚠️ CRITICAL ISSUE (Do This First!)
+---
 
-**Your Google Sheets use column names with spaces like "First Name", "Last Name", etc.**
+## 🔴 Production is broken — where do I look first?
 
-This BREAKS the sync because the code looks for exact column names without spaces.
+### 1. Azure Static Web App — live application logs
 
-**FIX:** Rename ALL column headers in your Google Sheets to remove spaces:
-- "First Name" → `FirstName`
-- "Last Name" → `LastName`
-- "Payment Check" → `PaymentCheck`
-- "Last Updated" → `LastUpdated`
-- Any other spaces: remove them
+Your web app runs on Azure Static Web Apps. Server-side (API route) logs stream to **Application Insights** and are also visible in the Azure portal.
 
-**All 4 sheets** need this fix:
-1. Main (Members)
-2. Payment-History
-3. WebApp-Events
-4. Active (Gmail)
+**Option A — Azure Portal (quickest)**
+```
+Azure Portal → Static Web Apps → mmr-webapp-prod
+→ Monitoring → Log stream
+```
+This shows real-time stdout/stderr from API routes as requests arrive.
 
-After fixing, run:
-```bash
-cd basecamp
-python3 ops/verify_sheets_structure.py
+**Option B — Application Insights (queryable history)**
+```
+Azure Portal → Application Insights → mmr-webapp-insights
+→ Logs → Run this query:
+
+traces
+| where timestamp > ago(1h)
+| order by timestamp desc
+| project timestamp, message, severityLevel
 ```
 
-This will confirm your column names are correct. Should show all ✓ marks.
-
----
-
-## Next Steps (In Order)
-
-### Step 1: Run the Diagnostic Script
-Get a complete status report:
-
+**Option C — `az` CLI (terminal)**
 ```bash
-cd basecamp
-chmod +x debug-setup.sh
-./debug-setup.sh
+# Tail the last 50 log lines from your Static Web App
+az monitor app-insights query \
+  --app mmr-webapp-insights \
+  --analytics-query "traces | order by timestamp desc | take 50" \
+  --resource-group mmr-rg \
+  --output table
 ```
 
-Fix any ✗ issues shown.
+**Option D — Deployment / build logs**
+```
+Azure Portal → Static Web Apps → mmr-webapp-prod → Deployment history
+→ Click latest deployment → View build logs
+```
+These show the output of `npm run build` and deployment steps from the GitHub Action.
 
-### Step 2: Fix Google Sheets Column Names
-See above - this is critical!
+---
 
-### Step 3: Test Locally
-Once sheets are fixed, test if syncs work locally:
+### 2. GitHub Actions — CI/CD pipeline logs
 
-```bash
-cd basecamp
-python3 ops/sync_sheets_to_mysql.py --sheet-name "Main" --table-name "members" --dry-run
+Every push triggers the Azure deploy workflow. Every 6 hours the sync workflows fire.
+
+**View logs in the GitHub UI:**
+```
+https://github.com/admin-mmr/trailhead/actions
+→ Click the workflow run
+→ Click the job (e.g. "build-and-deploy")
+→ Expand any step to see stdout
 ```
 
-### Step 4: Set Up GitHub Secrets
-Your GitHub Actions workflows need secrets configured:
+**Download full logs (keeps 30 days):**
+```
+Workflow run page → ⋯ menu (top right) → Download log archive
+```
+The zip contains one `.txt` file per job step.
 
-1. Go to your GitHub repo
-2. Settings → Secrets and variables → Actions
-3. Add these 11+ secrets:
-   - GOOGLE_SHEETS_MEMBERSHIP_ID
-   - GOOGLE_SHEETS_PAYMENTS_ID
-   - GOOGLE_SHEETS_WEBAPP_EVENTS_ID
-   - GOOGLE_SHEETS_GMAIL_ID
-   - GOOGLE_APPLICATION_CREDENTIALS
-   - DATABASE_URL
-   - AZURE_STORAGE_CONNECTION_STRING
-   - SMTP_USERNAME (Gmail address)
-   - SMTP_PASSWORD (Gmail App Password - NOT regular password!)
-   - SMTP_FROM_EMAIL
-   - NOTIFICATION_EMAIL
-
-### Step 5: Verify Workflows Are Enabled
-- Go to Actions tab
-- Check all 4 workflows are enabled
-- Each should show next scheduled run time
-
-### Step 6: Test Workflows Manually
+**Trigger a run manually to test:**
 ```bash
-gh workflow run sync-members-recurring.yml
+gh workflow run azure-static-web-apps-orange-tree-0d70d110f.yml
+# Then watch it:
+gh run watch
 ```
 
-Wait 1-2 minutes and check Actions tab for results.
-
 ---
 
-## Debugging Resources
+### 3. Sync jobs — log artifacts
 
-I've created several files to help you debug:
+Each sync workflow uploads a `.log` artifact for 30 days.
 
-### 📋 [DEBUG_SYNC_SETUP.md](DEBUG_SYNC_SETUP.md)
-Comprehensive debugging guide with explanations of common errors and how to fix them.
-
-### ✅ [TROUBLESHOOTING_CHECKLIST.md](TROUBLESHOOTING_CHECKLIST.md)
-Step-by-step checklist to work through systematically. Follow this if you want structured guidance.
-
-### 🧪 [basecamp/TEST_INDIVIDUAL_COMPONENTS.md](basecamp/TEST_INDIVIDUAL_COMPONENTS.md)
-Test each component separately to isolate which part is broken.
-
-### 🔧 Scripts to Run
-
-**Auto-diagnostic:**
-```bash
-cd basecamp && ./debug-setup.sh
+```
+GitHub Actions → Workflow run → Artifacts section → Download <table>-sync-logs
 ```
 
-**Verify Google Sheets structure:**
+Or fetch via CLI:
 ```bash
-cd basecamp && python3 ops/verify_sheets_structure.py
+# List artifacts for the latest run of a workflow
+gh run list --workflow sync-members-recurring.yml --limit 5
+gh run download <run-id>          # downloads all artifacts to ./
 ```
 
-**Test individual component:**
-Use the examples in `basecamp/TEST_INDIVIDUAL_COMPONENTS.md`
+---
+
+### 4. Database — check live row counts and recent errors
+
+```bash
+# Quick sanity check from your terminal
+mysql-mmr -e "
+  SELECT table_name, table_rows
+  FROM information_schema.tables
+  WHERE table_schema = 'mmrdb'
+  ORDER BY table_name;"
+
+# Check for members synced in the last 24h
+mysql-mmr -e "
+  SELECT COUNT(*) as synced_today
+  FROM members
+  WHERE UpdatedAt > NOW() - INTERVAL 1 DAY;"
+
+# Check most recent activity_log entries
+mysql-mmr -e "
+  SELECT CreatedAt, action, details
+  FROM activity_log
+  ORDER BY CreatedAt DESC
+  LIMIT 20;"
+```
 
 ---
 
-## What Should Happen When It Works
+### 5. Local dev — where do server logs print?
 
-✓ Syncs run automatically 4 times per day
-✓ Data flows from Google Sheets → MySQL Database
-✓ Snapshots saved to Azure Storage
-✓ Email notifications sent on failures
-✓ Manual test data appears in database tables
+When running `npm run dev` (via `start-dev.sh`), server-side logs go to the **terminal window** running the dev server. Client-side logs go to **browser DevTools → Console**.
 
----
+```bash
+# Start dev server (logs appear in this terminal)
+cd web-apps/mmr-webapp && bash start-dev.sh
 
-## The Three Most Common Issues
+# In a second terminal, watch for errors live:
+# (the dev server already tails its own output — just keep that terminal visible)
+```
 
-### 1. "Column not found" errors
-**Cause:** Google Sheets column names have spaces
-**Fix:** Rename columns to remove spaces (FirstName not "First Name")
-
-### 2. "Connection string error" or "Access denied"
-**Cause:** GitHub Secrets not set correctly
-**Fix:** Go to repo Settings → Secrets and verify all 11+ secrets are set
-
-### 3. "No data synced despite no errors"
-**Cause:** Column names still have spaces OR no test data in sheets
-**Fix:**
-- Run `verify_sheets_structure.py` to check columns
-- Add test data to Google Sheets
-- Make sure data isn't hidden/frozen
+To add temporary debug logging to an API route:
+```ts
+console.log('[DEBUG] /api/auth/forgot-password hit', { email })
+```
+This prints immediately in the `start-dev.sh` terminal.
 
 ---
 
-## Quick Checklist to Get Started
+## Common failure scenarios
 
-- [ ] Rename Google Sheets columns to remove spaces
-- [ ] Run `debug-setup.sh` and fix any ✗ issues
-- [ ] Set GitHub Secrets (11+ required)
-- [ ] Enable all 4 workflows
-- [ ] Manually trigger one workflow to test
-- [ ] Check database has synced data
-- [ ] Verify scheduled runs are working
-
----
-
-## Getting Detailed Help
-
-**For a specific error message:** Check [DEBUG_SYNC_SETUP.md](DEBUG_SYNC_SETUP.md) - search for your error
-
-**For step-by-step guidance:** Follow [TROUBLESHOOTING_CHECKLIST.md](TROUBLESHOOTING_CHECKLIST.md)
-
-**For technical deep-dive:** Read [basecamp/TEST_INDIVIDUAL_COMPONENTS.md](basecamp/TEST_INDIVIDUAL_COMPONENTS.md)
-
-**For GitHub Actions issues:** Check [GITHUB_ACTIONS_DEBUGGING.md](GITHUB_ACTIONS_DEBUGGING.md)
+| Symptom | Where to look | Likely cause |
+|---------|---------------|--------------|
+| Azure deploy fails | GitHub Actions → build-and-deploy job | TypeScript or lint error; run `npm run build` locally first |
+| API route returns 500 | Azure Log Stream or Application Insights | Missing env var, DB connection timeout, or code bug |
+| Sync job shows ✅ but DB is empty | Sync artifact `.log` file | Column name mismatch, empty sheet, or schema_migrations out of sync |
+| Email not sending | Azure Portal → Communication Services → Log Analytics | `AZURE_COMM_CONNECTION_STRING` missing or invalid |
+| Login redirects loop | App Insights or local dev terminal | `NEXTAUTH_SECRET` missing, or `/auth/complete` bridge failing |
+| Scheduled sync never runs | GitHub Actions → scheduled workflows tab | Cron expression wrong, or workflow disabled in Actions tab |
 
 ---
 
-## Still Stuck?
+## Related guides
 
-If after following all steps you're still having issues:
-
-1. Run all tests in `basecamp/TEST_INDIVIDUAL_COMPONENTS.md`
-2. Note which test(s) fail
-3. Get the exact error message
-4. Search for that error in the debugging guides above
-
-The tests help isolate whether the problem is:
-- Environment variables (Test 1)
-- Google credentials (Test 2)
-- Google Sheets API (Test 3)
-- MySQL database (Test 4)
-- Azure Storage (Test 5)
-- The sync logic itself (Test 6)
-
-Once you know which component fails, you can focus on fixing just that part.
+- [`GITHUB_ACTIONS_DEBUGGING.md`](GITHUB_ACTIONS_DEBUGGING.md) — Deep-dive on scheduled workflow failures
+- [`TROUBLESHOOTING_CHECKLIST.md`](TROUBLESHOOTING_CHECKLIST.md) — Systematic step-by-step checklist
+- [`DEBUG_SYNC_SETUP.md`](DEBUG_SYNC_SETUP.md) — Sync-specific debugging
+- [`AZURE_RESOURCES.md`](AZURE_RESOURCES.md) — All Azure service names and resource group info

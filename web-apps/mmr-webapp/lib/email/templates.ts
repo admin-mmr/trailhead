@@ -66,36 +66,6 @@ function wrap(firstName: string, body: string): string {
   `
 }
 
-// ── OTP / Login code ──────────────────────────────────────────────────────────
-
-export function otpEmailHtml(params: {
-  code:             string
-  expiryMinutes:    number
-}): string {
-  const { code, expiryMinutes } = params
-  return wrap('there', `
-    <h2 style="color:#1F497D;margin:0 0 8px;">Your login code</h2>
-    <p style="color:#555;margin:0 0 24px;">
-      Use the code below to sign in to your MMR member portal.
-    </p>
-    <div style="background:#f5f7fa;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px;">
-      <p style="margin:0;font-size:12px;color:#999;letter-spacing:1px;text-transform:uppercase;">
-        One-time code
-      </p>
-      <p style="margin:8px 0 0;font-size:42px;font-weight:700;letter-spacing:10px;color:#E86033;
-                font-family:monospace;">
-        ${code}
-      </p>
-      <p style="margin:8px 0 0;font-size:12px;color:#aaa;">
-        Expires in ${expiryMinutes} minutes · Do not share this code
-      </p>
-    </div>
-    <p style="font-size:13px;color:#888;margin:0;">
-      你的登录验证码：<strong style="color:#E86033;">${code}</strong>，${expiryMinutes} 分钟内有效。
-    </p>
-  `)
-}
-
 // ── Welcome (membership activated) ───────────────────────────────────────────
 
 export function welcomeEmailHtml(params: {

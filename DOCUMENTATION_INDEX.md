@@ -19,7 +19,7 @@
 | Database | Azure MySQL — `mmr-mysql-v4.mysql.database.azure.com / mmrdb` |
 | Email service | Azure Communication Services |
 | Payments | Zelle/Venmo records reconciling with WebApp events and payment proof to change status from Pending to Approved |
-| Auth | **NextAuth.js v5** for OAuth dance only → bridges to custom `mmr_session` JWT cookie at `/auth/complete`. Providers: Google, Apple, Microsoft (EntraId), Facebook, Yahoo. Also: email + bcrypt password. No OTP. |
+| Auth | **NextAuth.js v5** for OAuth dance only → bridges to custom `mmr_session` JWT cookie at `/auth/complete`. Providers: Google, Microsoft (EntraId). Also: email + bcrypt password. No OTP. |
 
 ### Secrets & Credentials — Rules
 - **No passwords or secrets in the repo, ever.**
@@ -103,9 +103,7 @@ node -e "const b=require('bcryptjs'); b.hash('YourPassword', 12).then(h => conso
 mysql-mmr -e "UPDATE members SET password_hash='\$2b\$12\$...' WHERE Email='you@example.com';"
 ```
 
-**New env vars needed** (see `.env.local.example`): `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `APPLE_ID/SECRET/TEAM_ID/KEY_ID`, `MICROSOFT_CLIENT_ID/SECRET`, `FACEBOOK_CLIENT_ID/SECRET`, `YAHOO_CLIENT_ID/SECRET`
-
-**Yahoo** is a custom OIDC provider (not built into NextAuth v5): `wellKnown: 'https://login.yahoo.com/.well-known/openid-configuration'`
+**Env vars needed** (see `.env.local.example`): `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `MICROSOFT_CLIENT_ID/SECRET`
 
 ### Google Sheets Sync
 **Google Sheets is the SSOT** for four tables. GitHub Actions sync Sheets → MySQL on a schedule:
@@ -123,7 +121,7 @@ Manual sync runner: `bash basecamp/run-sync.sh`
 ### Key Files
 | File | Purpose |
 |---|---|
-| `app/login/page.tsx` | Login UI — email+password form + 5 social login buttons |
+| `app/login/page.tsx` | Login UI — email+password form + Google and Microsoft social login buttons |
 | `app/auth/complete/route.ts` | NextAuth→mmr_session bridge (GET, called after any sign-in) |
 | `app/auth/forgot-password/page.tsx` | Forgot password page |
 | `app/auth/reset-password/page.tsx` | Reset password page (reads `?token=`) |
@@ -169,7 +167,7 @@ Manual sync runner: `bash basecamp/run-sync.sh`
 | 2026-03-22 | `families` table never queried in code — dropped in v8, replaced by `v_family_members` view |
 | 2026-03-22 | `lib/db/members.ts:getPaymentHistory` queried non-existent `payment_history` — fixed to `payments` |
 | 2026-03-22 | `familyId` type was `number` in TypeScript but `VARCHAR(10)` in DB — fixed to `string` |
-| 2026-03-22 | Social login implemented: NextAuth.js v5, 5 OAuth providers + email/password, `/auth/complete` bridge |
+| 2026-03-22 | Social login implemented: NextAuth.js v5, Google + Microsoft OAuth + email/password, `/auth/complete` bridge. Apple/Facebook/Yahoo removed (no test accounts). |
 | 2026-03-22 | OTP auth fully removed: deleted `lib/auth/otp.ts`, `api/auth/login/`, `api/auth/verify-otp/` |
 | 2026-03-22 | Forgot/reset password added: SHA-256 token in `password_reset_tokens`, bilingual email template |
 | 2026-03-22 | `password_reset_tokens` PascalCase columns confirmed — routes fixed to use correct casing |

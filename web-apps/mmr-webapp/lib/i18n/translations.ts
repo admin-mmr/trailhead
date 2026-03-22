@@ -46,11 +46,7 @@ export const translations = {
   // ─── Auth ────────────────────────────────────────────────────
   'auth.email.label':  { en: 'Email address',  zh: '邮箱地址' },
   'auth.email.ph':     { en: 'you@example.com',zh: '你的邮箱' },
-  'auth.otp.label':    { en: 'One-time code',  zh: '验证码' },
-  'auth.otp.ph':       { en: '6-digit code',   zh: '6位验证码' },
-  'auth.send':         { en: 'Send Code',       zh: '发送验证码' },
-  'auth.verify':       { en: 'Verify & Login',  zh: '验证登录' },
-  'auth.resend':       { en: 'Resend code',     zh: '重新发送' },
+
 
   // ─── Portal ──────────────────────────────────────────────────
   'portal.dashboard':  { en: 'Dashboard',    zh: '概览' },

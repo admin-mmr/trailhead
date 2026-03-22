@@ -4,10 +4,7 @@ import type { Member, MembershipType } from '@/types'
 // Maps NextAuth provider IDs → snake_case column names in members table
 const OAUTH_SUB_COLUMNS: Record<string, string> = {
   'google':              'google_sub',
-  'apple':               'apple_sub',
   'microsoft-entra-id':  'microsoft_sub',
-  'facebook':            'facebook_sub',
-  'yahoo':               'yahoo_sub',
 }
 
 /**
@@ -17,8 +14,7 @@ const OAUTH_SUB_COLUMNS: Record<string, string> = {
  *   v1-era columns  → PascalCase  (MemberID, Email, FirstName, LastName,
  *                                   Status, Expiration, FamilyID, PhoneNumber,
  *                                   WeChatID, NYRRRunnerName, YearBorn, Type…)
- *   Auth columns    → snake_case  (password_hash, google_sub, apple_sub,
- *                                   microsoft_sub, yahoo_sub, facebook_sub)
+ *   Auth columns    → snake_case  (password_hash, google_sub, microsoft_sub)
  *   Audit columns   → PascalCase  (CreatedAt, UpdatedAt)
  *
  * mysql2 returns result keys with the EXACT casing from the DB schema.

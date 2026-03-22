@@ -6,7 +6,7 @@ import 'next-auth/jwt'
 
 declare module 'next-auth' {
   interface Session {
-    /** OAuth provider id e.g. "google", "apple", "microsoft-entra-id" */
+    /** OAuth provider id e.g. "google", "microsoft-entra-id" */
     provider?: string
     /** Provider's subject ID for the user */
     providerAccountId?: string

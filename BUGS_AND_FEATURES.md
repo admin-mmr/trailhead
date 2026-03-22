@@ -57,22 +57,7 @@ here we should display their basic member info: Name, MemberID, email.
 ### 3. **renew page missing member info** (March 22, 2026)
 -  ** Issue**: renew page now has the same Info page as join. But we already have info in members table. use that for existing members. 
 
-### 4. **Apple, Miicrosoft, Facebook, Yahoo login not working** (March 22, 2026)
-- **Issue**: Forgot to add client IDs and secrets for these providers in .env.local, so they fail to initialize. Add placeholders for now to avoid breaking the entire login page.
- GET /api/auth/signin?callbackUrl=%2Fauth%2Fcomplete 302 in 6ms
- GET /login?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcomplete 200 in 31ms
- GET /.well-known/appspecific/com.chrome.devtools.json 404 in 45ms
- GET /api/auth/providers 200 in 33ms
- GET /api/auth/signin?callbackUrl=%2Fauth%2Fcomplete 302 in 14ms
- GET /login?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcomplete 200 in 41ms
- GET /.well-known/appspecific/com.chrome.devtools.json 404 in 69ms
- GET /api/auth/providers 200 in 13ms
- GET /api/auth/signin?callbackUrl=%2Fauth%2Fcomplete 302 in 7ms
- GET /login?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcomplete 200 in 27ms
- GET /.well-known/appspecific/com.chrome.devtools.json 404 in 51ms
-
-
-### 5. **logout not working** (March 22, 2026)
+### 4. **logout not working** (March 22, 2026)
 - **Issue**: Logout button on portal page does not log the user out. 
 
 ### 6. **no member account icon shown indicating login status** (March 22, 2026)
