@@ -105,6 +105,44 @@ The sync script needs permission to read the sheets.
 2. The service account email is in `GOOGLE_SERVICE_ACCOUNT` secret (look for `client_email` field in the JSON)
 3. Share with "Viewer" permission (read-only is sufficient)
 
+### Issue 5: MySQL Connection Timeout (Error 2003)
+
+**Error message:**
+```
+Can't connect to MySQL server on 'mmr-mysql.mysql.database.azure.com:3306' (110)
+```
+
+Error code 110 = ETIMEDOUT — the connection timed out before completing.
+
+**Possible causes:**
+1. **GitHub Actions IP address** is not allowed in MySQL firewall rules
+2. **MySQL server is down** or not accessible
+3. **Wrong host/credentials** in GitHub Secrets
+4. **Network timeout** — MySQL server is slow to respond
+
+**How to fix:**
+
+1. **For Azure MySQL**: Add GitHub Actions IP addresses to firewall:
+   - Go to Azure Portal → MySQL Server → Connection security
+   - Add "Allow access to Azure services" = ON
+   - OR add GitHub Actions IP address range to firewall rules
+
+2. **Test the credentials locally** first:
+   ```bash
+   source load-env.sh
+   mysql -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PASSWORD -D $MYSQL_DATABASE \
+     -e "SELECT 1;"
+   ```
+
+3. **Verify MySQL is accessible** from your network:
+   ```bash
+   curl -v telnet://$MYSQL_HOST:3306
+   ```
+
+4. **If using Azure**: Check that "Allow access to Azure services" is enabled in MySQL firewall settings
+
+The "Verify sync status" step in the workflow will fail if MySQL can't be reached, even if the sync succeeded. This doesn't mean the sync failed — it just means the verification step couldn't connect to verify.
+
 ---
 
 ## Step 3: Run Sync Locally to Test

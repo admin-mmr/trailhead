@@ -11,8 +11,8 @@
 | Email | Text | john@example.com | **Primary key** — must be unique |
 | First Name | Text | John | Exact spacing "First Name" |
 | Last Name | Text | Doe | Exact spacing "Last Name" |
-| Status | Text | Active | |
-| Type | Text | Member | |
+| Status | Text | active / not active / pending | Must be one of these values |
+| Type | Text | Individual / Family | |
 | Gender | Text | M / F | |
 | WeChatID | Text | john_doe123 | |
 | District | Text | Manhattan | |
@@ -25,18 +25,25 @@
 | JoinYear | Number | 2020 | 4-digit year |
 | PhoneNumber | Text | 555-1234 | |
 | Notes | Text | Any notes | |
-| NYRRRunnerName | Text | john doe | For race registration |
-| YearBorn | Number | 1985 | 4-digit year (age calculation) |
+| NYRRRunnerName | Text | john doe | For race registration lookup |
+| YearBorn | Number | 1985 | 4-digit year (for NYRR disambiguation) |
+
+**Note:** The following columns are in the database but are AUTO-GENERATED and should NOT be in the Google Sheet:
+- `MemberID` — auto-generated on first sync
+- `FamilyID` — managed separately via families table
+- `Created`, `Expiration`, `LastUpdated`, `LastLoginDate` — auto-managed by system
 
 **Minimum example row:**
 ```
-Email               | First Name | Last Name | Status | Type    | ...
-john@example.com    | John       | Doe       | Active | Member  | ...
+Email               | First Name | Last Name | Status           | Type       | Gender | ...
+john@example.com    | John       | Doe       | active           | Individual | M      | ...
 ```
 
 **Why syncs fail:**
 - ❌ Column header is "Firstname" (no space) → should be "First Name"
 - ❌ Column header is "first name" (lowercase) → should be "First Name"
+- ❌ Status value is "Active" → should be "active" (lowercase)
+- ❌ Type value is "Member" → should be "Individual" or "Family"
 - ❌ Email column missing or empty
 - ❌ No data in the sheet
 
@@ -51,19 +58,28 @@ john@example.com    | John       | Doe       | Active | Member  | ...
 | Column Name | Type | Example | Notes |
 |-------------|------|---------|-------|
 | PaymentID | Text | PAY-001 | **Primary key** — must be unique |
-| MemberID | Text | MMR-2020-0001 | Link to members table |
+| MemberID | Text | MMR-2020-0001 | Link to members table (optional — will be looked up) |
 | Amount | Number | 100.00 | Numeric value |
 | PaymentDate | Date | 2026-03-20 | Format: YYYY-MM-DD |
-| MembershipType | Text | Individual / Family | Must be one of these |
-| PaymentMethod | Text | Zelle / Venmo / Check | |
+| MembershipType | Text | Individual Membership / Family Membership | Exact values |
+| PaymentMethod | Text | Zelle / Venmo | |
+| PayerName | Text | John Doe | Who made the payment |
+| MemoField | Text | 2026 Membership | Payment description |
+| Last4Digits | Text | 4532 | Last 4 digits of account |
+| TransactionReference | Text | TXN123456 | Zelle/Venmo reference ID |
 | PeriodStart | Date | 2026-01-01 | Membership period start |
 | PeriodEnd | Date | 2026-12-31 | Membership period end |
+| ProcessedBy | Text | admin@example.com | Who processed the payment |
+| ProcessedDate | Date | 2026-03-20 | When payment was processed |
 | Source | Text | WebApp / Admin-Created | Where payment came from |
+| Notes | Text | Any notes | Additional information |
+
+**Note:** `EventID` is NOT in the Payments sheet — it's auto-populated from payment_events when matched.
 
 **Minimum example row:**
 ```
-PaymentID | MemberID      | Amount | PaymentDate | MembershipType | PaymentMethod
-PAY-001   | MMR-2020-0001 | 100.00 | 2026-03-20  | Individual     | Zelle
+PaymentID | Amount | PaymentDate | MembershipType        | PaymentMethod | PeriodStart | PeriodEnd
+PAY-001   | 100.00 | 2026-03-20  | Individual Membership | Zelle         | 2026-01-01  | 2026-12-31
 ```
 
 ---
@@ -77,17 +93,26 @@ PAY-001   | MMR-2020-0001 | 100.00 | 2026-03-20  | Individual     | Zelle
 | Column Name | Type | Example | Notes |
 |-------------|------|---------|-------|
 | EventID | Text | EVT-001 | **Primary key** — must be unique |
-| MemberID | Text | MMR-2020-0001 | Link to members table |
-| EventType | Text | Payment Submission | |
-| EventStatus | Text | Pending / Approved / Rejected | |
-| EventDate | Date | 2026-03-20 | |
-| Amount | Number | 50.00 | Optional |
-| Description | Text | Payment submitted | |
+| EventType | Text | PaymentProof | Type of event |
+| Email | Text | john@example.com | Member email address |
+| PaymentIntent | Text | Individual Membership / Family Membership | What they're paying for |
+| Amount | Number | 100.00 | Payment amount |
+| PaymentMethod | Text | Zelle / Venmo | |
+| PayerName | Text | John Doe | Name of payer |
+| MemoField | Text | 2026 Membership | Payment memo/description |
+| Last4Digits | Text | 4532 | Last 4 digits of account |
+| Status | Text | pending / approved / rejected | Workflow status |
+| Notes | Text | Any notes | Additional information |
+
+**Optional columns:**
+- `MemberID` — auto-filled from email lookup
+- `ScreenshotFileId`, `GDriveFilePath`, `OCRText` — for proof documents
+- `FamilyMemberEmails` — comma-separated for family plans
 
 **Minimum example row:**
 ```
-EventID | MemberID      | EventType             | EventStatus | EventDate
-EVT-001 | MMR-2020-0001 | Payment Submission    | Pending     | 2026-03-20
+EventID | EventType    | Email            | PaymentIntent            | Amount | PaymentMethod | Status
+EVT-001 | PaymentProof | john@example.com | Individual Membership    | 100.00 | Zelle         | pending
 ```
 
 ---
@@ -100,18 +125,29 @@ EVT-001 | MMR-2020-0001 | Payment Submission    | Pending     | 2026-03-20
 
 | Column Name | Type | Example | Notes |
 |-------------|------|---------|-------|
-| MessageId | Text | msg-12345 | **Primary key** — must be unique |
+| MessageId | Text | abc123def456 | **Primary key** — Gmail message ID, must be unique |
 | Sender | Email | payer@gmail.com | Email address of payer |
 | Amount | Number | 100.00 | Payment amount |
 | Memo | Text | Payment for 2026 | Payment reference/notes |
 | TransactionDate | Date | 2026-03-20 | When transaction occurred |
-| PaymentMethod | Text | Zelle / Venmo | How payment was sent |
-| Status | Text | Pending / Matched / Reconciled | Processing status |
+| TransactionNumber | Text | Zelle1234567 / Venmo-abc | Zelle confirmation or Venmo ID |
+| Subject | Text | Payment notification | Email subject |
+| OriginalMemo | Text | Full original memo | Original full text |
+| Source | Text | Zelle / Venmo / Other | Payment method source |
+| Notes | Text | Any notes | Additional information |
+
+**Optional columns:**
+- `TimeStamp` — when email was received
+- `ProcessedTime` — when payment was processed
+- `WebAppID` — EventID when matched to payment_events
+- `IsArchived` — Yes/No (instead of separate "Archive" sheet)
+
+**Note:** The "Active" vs "Archive" tabs can be combined into one sheet using an `IsArchived` column, OR you can have separate sheets named "Active" and "Archive" and load them separately.
 
 **Minimum example row:**
 ```
-MessageId | Sender          | Amount | Memo              | TransactionDate
-msg-12345 | payer@gmail.com | 100.00 | Payment for 2026  | 2026-03-20
+MessageId    | Sender          | Amount | Memo              | TransactionDate | TransactionNumber
+abc123def456 | payer@gmail.com | 100.00 | Payment for 2026  | 2026-03-20      | Zelle1234567
 ```
 
 ---
