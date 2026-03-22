@@ -40,8 +40,8 @@
 | 21 | LastLoginDate | Date | 2026-03-20 | Auto-managed |
 | 22 | ProfileLastUpdated | Date | 2026-03-20 | Auto-managed |
 | 23 | Notes | Text | Any notes | Optional |
-| 24 | NYRRMemberID | Text | 12345 | Optional |
-| 25 | NYRRMemberName | Text | john doe | For NYRR lookup |
+| 24 | NYRRRunnerName | Text | john doe | For NYRR lookup (renamed from NYRRMemberName in v4 migration) |
+| 25 | YearBorn | Number | 1985 | Birth year for NYRR bib disambiguation |
 
 **Minimum row for first-time sync:**
 ```
@@ -201,7 +201,7 @@ GMAIL_SPREADSHEET_ID = '1rVOvhXzSxCRpWdAw3jYq5tWrYdCYtXmfqblTHP_wPqA'
 
 Before syncing, verify:
 
-- [ ] "Main" sheet has columns: MemberID, Status, Created, Expiration, Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District, WebApp, PaymentCheck, Info, LastUpdated, MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, LastLoginDate, ProfileLastUpdated, Notes
+- [ ] "Main" sheet has columns: MemberID, Status, Created, Expiration, Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District, WebApp, PaymentCheck, Info, LastUpdated, MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, LastLoginDate, ProfileLastUpdated, Notes, NYRRRunnerName, YearBorn
 - [ ] "WebApp-Events" sheet has columns: EventID, EventType, Timestamp, ExpiresAt, MemberID, Email, PaymentIntent, Amount, PaymentMethod, PayerName, MemoField, Last4Digits, FamilyMemberEmails, Status, MatchedMessageId, MatchedTransactionNumber, AdminApprover, ApprovalDate, Notes, PaymentDate, ScreenshotFileId, GDriveFilePath, OCRText, OCRTimestamp
 - [ ] "Payment-History" sheet has columns: PaymentID, EventID, MemberID, PaymentDate, Amount, PaymentIntent, PaymentMethod, PayerName, MemoField, Last4Digits, TransactionReference, PeriodStart, PeriodEnd, ProcessedBy, ProcessedDate, Source, Notes
 - [ ] "Active" sheet (in GMAIL_SPREADSHEET_ID) has columns: Timestamp, Sender, Amount, Memo, TransactionDate, TransactionNumber, MessageId, Subject, OriginalMemo, Notes, Processed, Source, WebAppEventId
