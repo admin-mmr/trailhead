@@ -69,7 +69,7 @@ jobs:
             --sheet "Active" \
             --table "gmail_transactions" \
             --spreadsheet-id "$GMAIL_TRANSACTION_SHEET_ID" \
-            --key-field "TransactionID"
+            --key-field "MessageId"
         continue-on-error: true
 
       - name: Report results

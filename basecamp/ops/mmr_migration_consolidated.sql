@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS gmail_transactions (
     OriginalMemo        TEXT            NULL,
     Notes               TEXT            NULL,
     ProcessedTime       DATETIME        NULL,
-    Source              ENUM('Zelle','Venmo','Other') NULL,
+    Source              VARCHAR(50)     NULL,
     WebAppID            VARCHAR(50)     NULL,
     IsArchived          BOOLEAN         NOT NULL DEFAULT FALSE,
     SyncedAt            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

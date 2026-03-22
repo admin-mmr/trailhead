@@ -65,6 +65,41 @@ def validate_status(value: str) -> str:
     return valid_statuses.get(value, 'pending')
 
 
+def parse_enum_values(col_type: str) -> Optional[List[str]]:
+    """
+    Parse ENUM allowed values from a MySQL column type string.
+
+    E.g. "enum('Zelle','Venmo','Other')" → ['Zelle', 'Venmo', 'Other']
+    Returns None if the type is not an ENUM.
+    """
+    import re
+    col_type = col_type.strip()
+    if not col_type.lower().startswith('enum('):
+        return None
+    # Extract quoted values inside enum(...)
+    matches = re.findall(r"'([^']*)'", col_type)
+    return matches if matches else []
+
+
+def validate_enum_value(value: str, col_type: str) -> Optional[str]:
+    """
+    Validate a value against a MySQL ENUM column type.
+
+    Returns the correctly-cased value if valid, or None if not a valid option.
+    Comparison is case-insensitive.
+    """
+    allowed = parse_enum_values(col_type)
+    if allowed is None:
+        return value  # not an enum column, pass through
+
+    value_lower = value.strip().lower()
+    for option in allowed:
+        if option.lower() == value_lower:
+            return option  # return with correct casing
+
+    return None  # not a valid enum value
+
+
 def parse_database_url(database_url: str) -> Dict[str, str]:
     """
     Parse DATABASE_URL in format: mysql://user:password@host:port/database
@@ -83,18 +118,30 @@ def parse_database_url(database_url: str) -> Dict[str, str]:
     return config
 
 
-def convert_datetime_to_mysql(value: str) -> Optional[str]:
+def convert_datetime_to_mysql(value: str, date_only: bool = False) -> Optional[str]:
     """
-    Convert various datetime formats to MySQL DATETIME format.
+    Convert any date/datetime format from Google Sheets to MySQL DATE or DATETIME.
 
-    Handles:
-    - ISO 8601: "2026-03-19T20:26:21.843Z" → "2026-03-19 20:26:21"
-    - ISO 8601: "2026-03-19T20:26:21Z" → "2026-03-19 20:26:21"
-    - MySQL format: "2026-03-19 20:26:21" → unchanged
-    - Date only: "2026-03-19" → "2026-03-19 00:00:00"
-    - JavaScript: "Sun Jan 11 2026 00:00:00 GMT-0500 ..." → "2026-01-11 00:00:00"
+    Handles all formats Google Sheets can produce:
+    - ISO 8601:           "2026-03-19T20:26:21.843Z"          → "2026-03-19 20:26:21"
+    - ISO 8601 no Z:      "2026-03-19T20:26:21"               → "2026-03-19 20:26:21"
+    - JavaScript:         "Sun Jan 11 2026 00:00:00 GMT-0500"  → "2026-01-11 00:00:00"
+    - MySQL datetime:     "2026-03-19 20:26:21"               → "2026-03-19 20:26:21"
+    - MySQL date:         "2026-03-19"                        → "2026-03-19"
+    - Short month:        "Mar 21, 2026"                      → "2026-03-21"
+    - Long month:         "March 21, 2026"                    → "2026-03-21"
+    - Month with time:    "Mar 21, 2026 10:30 AM"             → "2026-03-21 10:30:00"
+    - US slash:           "03/21/2026"                        → "2026-03-21"
+    - US slash short:     "3/21/2026"                         → "2026-03-21"
+    - US slash datetime:  "03/21/2026 10:30 AM"               → "2026-03-21 10:30:00"
+    - Reverse slash:      "2026/03/21"                        → "2026-03-21"
+    - Sheets serial:      "45842"                             → "2026-03-21" (Excel epoch)
+    - dateutil fallback:  any other recognizable format
 
-    Returns None for empty/invalid values
+    Args:
+        date_only: If True, return YYYY-MM-DD. If False, return YYYY-MM-DD HH:MM:SS.
+
+    Returns None for empty/invalid values.
     """
     if not value or not isinstance(value, str):
         return None
@@ -103,39 +150,91 @@ def convert_datetime_to_mysql(value: str) -> Optional[str]:
     if not value:
         return None
 
+    dt = None
+
     try:
-        # Handle JavaScript Date.toString() format: "Sun Jan 11 2026 00:00:00 GMT-0500 (Eastern Standard Time)"
-        if ' GMT' in value:
-            # Extract date/time part before GMT
-            parts = value.split(' GMT')[0].strip()
-            # Parse format like "Sun Jan 11 2026 00:00:00"
-            dt = datetime.strptime(parts, '%a %b %d %Y %H:%M:%S')
-            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        # ── 1. Google Sheets / Excel serial number (integer-like, e.g. "45842") ──
+        if value.isdigit() and len(value) <= 6:
+            serial = int(value)
+            if 1 <= serial <= 99999:          # plausible date range
+                from datetime import timedelta
+                # Sheets uses Dec 30 1899 epoch (same as Excel, skipping the 1900 leap-year bug)
+                epoch = datetime(1899, 12, 30)
+                dt = epoch + timedelta(days=serial)
 
-        # Try ISO 8601 format with 'Z' (UTC)
-        if 'T' in value and value.endswith('Z'):
-            # Remove milliseconds if present
-            if '.' in value:
-                dt = datetime.fromisoformat(value.replace('Z', '+00:00').split('.')[0] + '+00:00')
-            else:
-                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
-            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        # ── 2. JavaScript Date.toString() ──────────────────────────────────────
+        # "Sun Jan 11 2026 00:00:00 GMT-0500 (Eastern Standard Time)"
+        if dt is None and ' GMT' in value:
+            part = value.split(' GMT')[0].strip()
+            dt = datetime.strptime(part, '%a %b %d %Y %H:%M:%S')
 
-        # Try ISO 8601 format without 'Z'
-        elif 'T' in value:
-            dt = datetime.fromisoformat(value.split('.')[0])  # Remove milliseconds
-            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        # ── 3. ISO 8601 with Z ─────────────────────────────────────────────────
+        if dt is None and 'T' in value and value.endswith('Z'):
+            clean = value.replace('Z', '+00:00')
+            if '.' in clean:
+                clean = clean.split('.')[0] + '+00:00'
+            dt = datetime.fromisoformat(clean).replace(tzinfo=None)
 
-        # Try MySQL format
-        elif ' ' in value and len(value) >= 10:
-            # Assume it's already in MySQL format
-            return value[:19]
+        # ── 4. ISO 8601 without Z ──────────────────────────────────────────────
+        if dt is None and 'T' in value:
+            dt = datetime.fromisoformat(value.split('.')[0])
 
-        # Try date only
-        elif len(value) == 10 and value.count('-') == 2:
-            return f'{value} 00:00:00'
+        # ── 5. Explicit named-month patterns ──────────────────────────────────
+        if dt is None:
+            named_month_patterns = [
+                '%b %d, %Y %I:%M %p',   # Mar 21, 2026 10:30 AM
+                '%B %d, %Y %I:%M %p',   # March 21, 2026 10:30 AM
+                '%b %d, %Y %H:%M:%S',   # Mar 21, 2026 10:30:00
+                '%B %d, %Y %H:%M:%S',   # March 21, 2026 10:30:00
+                '%b %d, %Y',            # Mar 21, 2026
+                '%B %d, %Y',            # March 21, 2026
+                '%b %d %Y',             # Mar 21 2026
+                '%B %d %Y',             # March 21 2026
+            ]
+            for fmt in named_month_patterns:
+                try:
+                    dt = datetime.strptime(value, fmt)
+                    break
+                except ValueError:
+                    continue
 
-        return None
+        # ── 6. Numeric date patterns ───────────────────────────────────────────
+        if dt is None:
+            numeric_patterns = [
+                '%Y-%m-%d %H:%M:%S',    # 2026-03-21 10:30:00  (MySQL)
+                '%Y-%m-%d %H:%M',       # 2026-03-21 10:30
+                '%Y-%m-%d %I:%M %p',    # 2026-03-21 10:30 AM
+                '%Y-%m-%d',             # 2026-03-21
+                '%Y/%m/%d %H:%M:%S',    # 2026/03/21 10:30:00
+                '%Y/%m/%d %H:%M',       # 2026/03/21 10:30
+                '%Y/%m/%d',             # 2026/03/21
+                '%m/%d/%Y %I:%M %p',    # 03/21/2026 10:30 AM
+                '%m/%d/%Y %H:%M:%S',    # 03/21/2026 10:30:00
+                '%m/%d/%Y %H:%M',       # 03/21/2026 10:30
+                '%m/%d/%Y',             # 03/21/2026
+                '%m-%d-%Y',             # 03-21-2026
+            ]
+            for fmt in numeric_patterns:
+                try:
+                    dt = datetime.strptime(value, fmt)
+                    break
+                except ValueError:
+                    continue
+
+        # ── 7. dateutil fallback (handles most remaining formats) ─────────────
+        if dt is None:
+            try:
+                from dateutil import parser as dateutil_parser
+                dt = dateutil_parser.parse(value, dayfirst=False)
+                dt = dt.replace(tzinfo=None)   # strip timezone for MySQL
+            except Exception:
+                pass
+
+        if dt is None:
+            return None
+
+        return dt.strftime('%Y-%m-%d') if date_only else dt.strftime('%Y-%m-%d %H:%M:%S')
+
     except Exception:
         return None
 
@@ -174,6 +273,31 @@ class SheetSyncer:
         except MySQLError as e:
             logger.error(f'Failed to get schema for {self.table_name}: {e}')
             return {}
+
+    def get_required_columns(self) -> set:
+        """
+        Get the set of column names that are NOT NULL and have no default value.
+        These columns MUST be present and non-empty in any INSERT or the row must be skipped.
+
+        Returns a set of column name strings.
+        """
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT COLUMN_NAME
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = %s
+                  AND IS_NULLABLE = 'NO'
+                  AND COLUMN_DEFAULT IS NULL
+                  AND EXTRA NOT LIKE '%auto_increment%'
+            """, (self.table_name,))
+            required = {row['COLUMN_NAME'] for row in cursor.fetchall()}
+            cursor.close()
+            return required
+        except MySQLError as e:
+            logger.warning(f'Could not determine required columns for {self.table_name}: {e}')
+            return set()
 
     def record_snapshot_in_db(self, current_snapshot: Dict[str, Any]) -> int:
         """Record snapshot metadata in sync_snapshots table"""
@@ -276,6 +400,7 @@ class SheetSyncer:
                 else:
                     # New row - insert with columns that exist in this table
                     schema = self.get_table_schema()
+                    required_cols = self.get_required_columns()
                     insert_cols = []
                     insert_vals = []
                     insert_params = []
@@ -287,23 +412,46 @@ class SheetSyncer:
                             if not col_value_clean:
                                 continue
 
-                            # Handle datetime conversion
-                            if 'datetime' in schema[col_name].lower() or 'timestamp' in schema[col_name].lower():
-                                converted = convert_datetime_to_mysql(str(col_value_clean))
+                            col_type = schema[col_name]       # preserve original casing for ENUM parsing
+                            col_type_lower = col_type.lower()
+
+                            # Handle date/datetime conversion
+                            if 'date' in col_type_lower or 'timestamp' in col_type_lower:
+                                date_only = col_type_lower.startswith('date') and 'datetime' not in col_type_lower
+                                converted = convert_datetime_to_mysql(str(col_value_clean), date_only=date_only)
                                 if converted:
                                     col_value_clean = converted
                                 else:
-                                    # Skip columns with unparseable datetime values
-                                    logger.debug(f'Skipping unparseable datetime in {col_name}: {col_value_clean}')
+                                    logger.debug(f'Skipping unparseable date in {col_name}: {col_value_clean}')
                                     continue
 
-                            # Handle status validation
-                            if col_name == 'Status' and 'enum' in schema[col_name].lower():
-                                col_value_clean = validate_status(col_value_clean)
+                            # Handle ENUM validation generically (Status, Source, etc.)
+                            if 'enum' in col_type_lower:
+                                if col_name == 'Status':
+                                    col_value_clean = validate_status(str(col_value_clean))
+                                else:
+                                    validated = validate_enum_value(str(col_value_clean), col_type)
+                                    if validated is None:
+                                        logger.warning(
+                                            f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
+                                            f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                        )
+                                        continue  # skip this column; it's NULL-able so omit it
+                                    col_value_clean = validated
 
                             insert_cols.append(col_name)
                             insert_vals.append('%s')
                             insert_params.append(col_value_clean)
+
+                    # Check that all NOT NULL / no-default columns are covered
+                    missing_required = required_cols - set(insert_cols)
+                    if missing_required:
+                        logger.warning(
+                            f'Skipping row {key_field}={key_value!r} in {self.table_name}: '
+                            f'missing required column(s) with no default: {sorted(missing_required)}'
+                        )
+                        cursor.close()
+                        return False
 
                     if insert_cols:
                         query = f"INSERT INTO {self.table_name} ({', '.join(insert_cols)}) VALUES ({', '.join(insert_vals)})"
@@ -330,19 +478,32 @@ class SheetSyncer:
                     if col_name in schema and col_name != key_field:
                         col_value_clean = col_value.strip() if isinstance(col_value, str) else col_value
                         if col_value_clean:
-                            # Handle datetime conversion
-                            if 'datetime' in schema[col_name].lower() or 'timestamp' in schema[col_name].lower():
-                                converted = convert_datetime_to_mysql(str(col_value_clean))
+                            col_type = schema[col_name]       # preserve original casing for ENUM parsing
+                            col_type_lower = col_type.lower()
+
+                            # Handle date/datetime conversion
+                            if 'date' in col_type_lower or 'timestamp' in col_type_lower:
+                                date_only = col_type_lower.startswith('date') and 'datetime' not in col_type_lower
+                                converted = convert_datetime_to_mysql(str(col_value_clean), date_only=date_only)
                                 if converted:
                                     col_value_clean = converted
                                 else:
-                                    # Skip columns with unparseable datetime values
-                                    logger.debug(f'Skipping unparseable datetime in {col_name}: {col_value_clean}')
+                                    logger.debug(f'Skipping unparseable date in {col_name}: {col_value_clean}')
                                     continue
 
-                            # Handle status validation
-                            if col_name == 'Status' and 'enum' in schema[col_name].lower():
-                                col_value_clean = validate_status(col_value_clean)
+                            # Handle ENUM validation generically (Status, Source, etc.)
+                            if 'enum' in col_type_lower:
+                                if col_name == 'Status':
+                                    col_value_clean = validate_status(str(col_value_clean))
+                                else:
+                                    validated = validate_enum_value(str(col_value_clean), col_type)
+                                    if validated is None:
+                                        logger.warning(
+                                            f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
+                                            f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                        )
+                                        continue  # skip this field update; leave DB value unchanged
+                                    col_value_clean = validated
 
                             update_fields.append(f'{col_name} = %s')
                             update_params.append(col_value_clean)

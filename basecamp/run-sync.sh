@@ -67,7 +67,7 @@ fi
 KEY_FIELD="Email"  # Default
 case "$TABLE_NAME" in
     gmail_transactions)
-        KEY_FIELD="TransactionID"
+        KEY_FIELD="MessageId"
         ;;
     payments)
         KEY_FIELD="PaymentID"
