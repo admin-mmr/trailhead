@@ -1,8 +1,8 @@
 // ============================================================
 // auth.ts — NextAuth v5 configuration
 //
-// Handles OAuth social login (Google, Microsoft,
-// Facebook) plus email + password (Credentials).
+// Handles OAuth social login (Google, Microsoft)
+// plus email + password (Credentials).
 //
 // After any successful sign-in, NextAuth redirects to
 // /auth/complete which creates the custom mmr_session cookie
@@ -14,7 +14,6 @@ import NextAuth                from 'next-auth'
 import type { NextAuthConfig } from 'next-auth'
 import Google                  from 'next-auth/providers/google'
 import MicrosoftEntraId        from 'next-auth/providers/microsoft-entra-id'
-import Facebook                from 'next-auth/providers/facebook'
 import Credentials             from 'next-auth/providers/credentials'
 import { findMemberByEmail }   from '@/lib/db/members'
 import { verifyPassword }      from '@/lib/auth/password'
@@ -44,11 +43,6 @@ const config: NextAuthConfig = {
           image: profile.picture ?? null,
         }
       },
-    })] : []),
-
-    ...(env.FACEBOOK_CLIENT_ID && env.FACEBOOK_CLIENT_SECRET ? [Facebook({
-      clientId:     env.FACEBOOK_CLIENT_ID,
-      clientSecret: env.FACEBOOK_CLIENT_SECRET,
     })] : []),
 
     Credentials({
