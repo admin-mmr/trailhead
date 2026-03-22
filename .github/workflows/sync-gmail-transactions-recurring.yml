@@ -1,0 +1,111 @@
+name: 📧 Recurring Gmail Transactions Sync (Every 6 Hours)
+
+on:
+  schedule:
+    # Run every 6 hours: 03:00, 09:00, 15:00, 21:00 UTC (offset to avoid peak load)
+    - cron: '0 3,9,15,21 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync-gmail-transactions:
+    runs-on: ubuntu-latest
+    name: Sync Gmail Transactions from Google Sheets
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r basecamp/requirements.txt
+
+      - name: Configure environment
+        env:
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+          GMAIL_TRANSACTION_SHEET_ID: ${{ secrets.GMAIL_TRANSACTION_SHEET_ID }}
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+        run: |
+          # Create .env.local for the sync script
+          cat > basecamp/.env.local << EOF
+          GOOGLE_APPLICATION_CREDENTIALS=/tmp/google-creds.json
+          GMAIL_TRANSACTION_SHEET_ID=$GMAIL_TRANSACTION_SHEET_ID
+          MYSQL_HOST=$MYSQL_HOST
+          MYSQL_USER=$MYSQL_USER
+          MYSQL_PASSWORD=$MYSQL_PASSWORD
+          MYSQL_DATABASE=$MYSQL_DATABASE
+          AZURE_STORAGE_CONNECTION_STRING=$AZURE_STORAGE_CONNECTION_STRING
+          EOF
+
+          # Write service account JSON to temp file
+          echo "$GOOGLE_SERVICE_ACCOUNT" > /tmp/google-creds.json
+
+      - name: Run Gmail Transactions sync
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/google-creds.json
+          GMAIL_TRANSACTION_SHEET_ID: ${{ secrets.GMAIL_TRANSACTION_SHEET_ID }}
+        run: |
+          python basecamp/ops/sync_sheets_to_mysql.py \
+            --sheet "Active" \
+            --spreadsheet-id "$GMAIL_TRANSACTION_SHEET_ID" \
+            --sheet-range "Active!A:Z" \
+            --key-field "MessageId" \
+            2>&1 | tee sync-gmail-transactions.log
+
+      - name: Upload sync logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: gmail-transactions-sync-logs
+          path: sync-gmail-transactions.log
+          retention-days: 30
+
+      - name: Send failure notification
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '❌ Gmail Transactions Sync Failed - GitHub Actions'
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: 'GitHub Actions <noreply@github.com>'
+          body: |
+            Workflow: Recurring Gmail Transactions Sync
+            Status: FAILED
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Time: ${{ github.event.head_commit.timestamp }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+
+            Sheet: Active (Gmail Transactions)
+            Check the logs for details.
+
+      - name: Send success notification
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '✓ Gmail Transactions Sync Completed Successfully'
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: 'GitHub Actions <noreply@github.com>'
+          body: |
+            Workflow: Recurring Gmail Transactions Sync
+            Status: SUCCESS
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Time: ${{ github.event.head_commit.timestamp }}
