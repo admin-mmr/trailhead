@@ -75,14 +75,14 @@ export async function POST(req: NextRequest) {
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const eventId = `EVT-${today}-${nanoid(5).toUpperCase()}`
 
-    // 3. Insert payment_events row with Status='Pending'
+    // 3. Insert webapp_events row with Status='Pending'
     const conn = await pool.getConnection()
     try {
       await conn.execute(
-        `INSERT INTO payment_events
-          (event_id, member_id, email, payment_intent, amount, payment_method,
-           payer_name, payment_date, memo_field, last4_digits, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', NOW())`,
+        `INSERT INTO webapp_events
+          (EventID, EventType, MemberID, Email, PaymentIntent, Amount, PaymentMethod,
+           PayerName, PaymentDate, MemoField, Last4Digits, Status)
+         VALUES (?, 'membership_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
         [
           eventId,
           member.memberId,
@@ -92,8 +92,8 @@ export async function POST(req: NextRequest) {
           d.paymentMethod,
           d.payerName,
           d.paymentDate,
-          d.memoField ?? '',
-          d.last4 ?? '',
+          d.memoField ?? null,
+          d.last4    ?? null,
         ]
       )
     } finally {

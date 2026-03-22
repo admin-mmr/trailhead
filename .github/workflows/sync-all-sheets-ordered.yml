@@ -124,11 +124,11 @@ jobs:
             echo "⚠️ Payments sync failed"
           fi
 
-  # Step 3: Sync WebApp-Events sheet (payment_events)
+  # Step 3: Sync WebApp-Events sheet (webapp_events)
   # Waits for sync-payments to complete
   # This depends on gmail_transactions existing (from sync-active)
   sync-events:
-    name: "Sync 3/4 - WebApp-Events (payment_events)"
+    name: "Sync 3/4 - WebApp-Events (webapp_events)"
     needs: sync-payments
     runs-on: ubuntu-latest
     outputs:
@@ -148,13 +148,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -q mysql-connector-python google-auth-httplib2 google-api-python-client google-auth-oauthlib azure-storage-blob python-dotenv
 
-      - name: Sync WebApp-Events sheet to payment_events table
+      - name: Sync WebApp-Events sheet to webapp_events table
         id: sync-events
         run: |
           cd basecamp
           python3 ops/sync_sheets_to_mysql.py \
             --sheet "WebApp-Events" \
-            --table "payment_events" \
+            --table "webapp_events" \
             --spreadsheet-id "$SPREADSHEET_ID" \
             --key-field "EventID"
         continue-on-error: true
@@ -262,7 +262,7 @@ jobs:
             Sync Results:
             • Active (gmail_transactions): ${{ needs.sync-active.outputs.status }}
             • Payment-History (payments): ${{ needs.sync-payments.outputs.status }}
-            • WebApp-Events (payment_events): ${{ needs.sync-events.outputs.status }}
+            • WebApp-Events (webapp_events): ${{ needs.sync-events.outputs.status }}
             • Main (members): ${{ needs.sync-members.outputs.status }}
 
             Details: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}

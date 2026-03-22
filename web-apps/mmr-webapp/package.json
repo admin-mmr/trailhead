@@ -11,20 +11,28 @@
     "verify": "bash .scripts/verify-build.sh"
   },
   "lint-staged": {
-    "*.{ts,tsx}": ["next lint --fix", "prettier --write"],
-    "*.{js,jsx}": ["eslint --fix", "prettier --write"]
+    "*.{ts,tsx}": [
+      "next lint --fix",
+      "prettier --write"
+    ],
+    "*.{js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@azure/communication-email": "^1.0.0",
     "@azure/storage-blob": "^12.24.0",
     "@tailwindcss/typography": "^0.5.13",
     "autoprefixer": "^10.0.1",
+    "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "jose": "^5.6.3",
     "lucide-react": "^0.383.0",
     "mysql2": "^3.10.2",
     "nanoid": "^5.0.7",
     "next": "14.2.5",
+    "next-auth": "^5.0.0-beta.30",
     "postcss": "^8",
     "react": "^18",
     "react-dom": "^18",
@@ -34,6 +42,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

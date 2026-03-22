@@ -285,9 +285,9 @@ class MySQLInspector:
         }
 
         expected_tables = {
-            'families', 'members', 'member_log', 'otp_tokens',
-            'password_reset_tokens', 'gmail_transactions', 'payment_events',
-            'webapp_events', 'payments', 'activity_log', 'config', 'schema_migrations'
+            'families', 'members', 'member_log', 'otp_codes',
+            'password_reset_tokens', 'gmail_transactions', 'webapp_events',
+            'payments', 'activity_log', 'config', 'schema_migrations'
         }
 
         actual_tables = set(self.get_tables())

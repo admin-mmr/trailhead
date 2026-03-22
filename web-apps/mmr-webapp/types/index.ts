@@ -21,8 +21,14 @@ export interface Member {
   membershipType: MembershipType
   status: MemberStatus
   expiresAt?: string        // ISO date
-  familyId?: number
+  familyId?: string   // VARCHAR(10) e.g. "F0001" — shared by all members in a family
   createdAt: string
+  /**
+   * bcrypt hash of the member's password.
+   * Present on rows returned from internal auth functions only.
+   * NEVER send this to the client.
+   */
+  passwordHash?: string
 }
 
 export interface SessionUser {
@@ -32,10 +38,6 @@ export interface SessionUser {
   chineseName?: string
   status: MemberStatus
 }
-
-// ─── OTP ─────────────────────────────────────────────────────────────────────
-export interface OtpRequest { email: string }
-export interface OtpVerify  { email: string; code: string }
 
 // ─── Payment ─────────────────────────────────────────────────────────────────
 export type PaymentStatus = 'pending' | 'paid' | 'refunded'

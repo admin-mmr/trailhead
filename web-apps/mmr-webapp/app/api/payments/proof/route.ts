@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     let eventRow: { event_id: string; status: string } | undefined
     try {
       const [rows] = await conn.execute(
-        'SELECT event_id, status FROM payment_events WHERE event_id = ? LIMIT 1',
+        'SELECT EventID AS event_id, Status AS status FROM webapp_events WHERE EventID = ? LIMIT 1',
         [eventId]
       ) as [{ event_id: string; status: string }[], unknown]
       eventRow = rows[0]
@@ -47,8 +47,9 @@ export async function POST(req: NextRequest) {
     if (!eventRow) {
       return NextResponse.json({ error: 'Payment event not found' }, { status: 404 })
     }
-    if (eventRow.status === 'Approved' || eventRow.status === 'Rejected') {
-      return NextResponse.json({ error: `Payment already ${eventRow.status.toLowerCase()}` }, { status: 409 })
+    // Status enum values are lowercase: 'pending', 'approved', 'rejected'
+    if (eventRow.status === 'approved' || eventRow.status === 'rejected') {
+      return NextResponse.json({ error: `Payment already ${eventRow.status}` }, { status: 409 })
     }
 
     // Upload to Azure Blob Storage
@@ -69,11 +70,13 @@ export async function POST(req: NextRequest) {
 
     const proofUrl = blockBlobClient.url
 
-    // Update payment_events with proof URL
+    // Update webapp_events with proof URL
     const conn2 = await pool.getConnection()
     try {
+      // ScreenshotFileId stores the Azure Blob proof URL (VARCHAR 255, fits all Azure URLs)
+      // UpdatedAt auto-updates via DB trigger (on update CURRENT_TIMESTAMP)
       await conn2.execute(
-        'UPDATE payment_events SET proof_url = ?, updated_at = NOW() WHERE event_id = ?',
+        'UPDATE webapp_events SET ScreenshotFileId = ? WHERE EventID = ?',
         [proofUrl, eventId]
       )
     } finally {

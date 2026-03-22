@@ -49,6 +49,9 @@ export const ACCESS_CONFIG: AccessRule[] = [
   { prefix: '/login',              tier: 'public' },
   { prefix: '/membership',         tier: 'public', note: 'Membership status / inactive page — must be reachable without active status' },
   { prefix: '/api/auth',           tier: 'public' },
+  { prefix: '/auth/forgot-password', tier: 'public', note: 'Forgot-password page — unauthenticated users only' },
+  { prefix: '/auth/reset-password',  tier: 'public', note: 'Reset-password page — unauthenticated users only' },
+  { prefix: '/auth/complete',        tier: 'public', note: 'NextAuth→mmr_session bridge — called after OAuth/Credentials sign-in' },
 
   // Admin area (not yet built — placeholder)
   { prefix: '/admin',              tier: 'active', note: 'Admin — requires active membership; add role check in each route' },

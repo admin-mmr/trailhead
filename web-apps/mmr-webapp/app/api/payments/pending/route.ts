@@ -18,10 +18,15 @@ export async function GET(req: NextRequest) {
     let events: unknown[]
     try {
       const [rows] = await conn.execute(
-        `SELECT event_id, payment_intent, amount, payment_method, created_at, proof_url
-         FROM payment_events
-         WHERE email = ? AND status = 'Pending'
-         ORDER BY created_at DESC
+        `SELECT EventID          AS event_id,
+                PaymentIntent    AS payment_intent,
+                Amount           AS amount,
+                PaymentMethod    AS payment_method,
+                CreatedAt        AS created_at,
+                ScreenshotFileId AS proof_url
+         FROM webapp_events
+         WHERE Email = ? AND Status = 'pending'
+         ORDER BY CreatedAt DESC
          LIMIT 10`,
         [session.email]
       )

@@ -29,10 +29,12 @@ export async function middleware(req: NextRequest) {
   if (tier === 'public') return NextResponse.next()
 
   const token = req.cookies.get('mmr_session')?.value
+  console.log(`[middleware] ${pathname} | tier=${tier} | mmr_session cookie: ${token ? `present (${token.length} chars)` : 'MISSING'}`)
   if (!token) return toLogin(req)
 
   try {
     const { payload } = await jwtVerify(token, SECRET)
+    console.log(`[middleware] ${pathname} | JWT valid | status=${payload.status}`)
 
     if (tier === 'active' && payload.status !== 'active') {
       // Authenticated but membership is inactive or pending
@@ -43,8 +45,9 @@ export async function middleware(req: NextRequest) {
     }
 
     return NextResponse.next()
-  } catch {
+  } catch (err) {
     // Token invalid or expired
+    console.log(`[middleware] ${pathname} | JWT verification FAILED:`, (err as Error).message)
     return toLogin(req)
   }
 }

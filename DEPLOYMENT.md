@@ -62,7 +62,17 @@ jobs:
 **What happens:**
 1. GitHub checks out the code
 2. Azure's Static Web Apps action builds and deploys
-3. Site goes live at `https://www.mmrunners.org`
+3. Site goes live at the Azure default URL
+
+### B1. Your Azure URLs (No Custom Domain)
+
+| URL | Purpose | Branch | Status |
+|-----|---------|--------|--------|
+| `https://orange-tree-0d70d110f.4.azurestaticapps.net` | **PRODUCTION** — Live MMR member portal | `main` | ✅ Production |
+| `https://preview-develop-*.azurestaticapps.net` | **STAGING** — Testing environment | `develop` | ✅ Staging |
+| `https://preview-feature-*.azurestaticapps.net` | **PR PREVIEWS** — Auto-created per PR | feature branches | ✅ Preview |
+
+**Decision**: Using Azure default URL as production. No custom domain needed. Simplifies deployment and DNS management.
 
 ### C. Before You Push
 

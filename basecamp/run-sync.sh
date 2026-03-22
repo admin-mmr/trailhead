@@ -40,7 +40,7 @@ if [ -z "$SHEET_NAME" ] || [ -z "$TABLE_NAME" ]; then
     echo "Examples:"
     echo "  $0 Main members --dry-run"
     echo "  $0 'Payment-History' payments"
-    echo "  $0 WebApp-Events payment_events --dry-run"
+    echo "  $0 WebApp-Events webapp_events --dry-run"
     echo "  $0 Active gmail_transactions --dry-run"
     exit 1
 fi
@@ -72,7 +72,7 @@ case "$TABLE_NAME" in
     payments)
         KEY_FIELD="PaymentID"
         ;;
-    payment_events)
+    webapp_events)
         KEY_FIELD="EventID"
         ;;
     events)
