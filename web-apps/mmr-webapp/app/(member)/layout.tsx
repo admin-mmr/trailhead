@@ -17,9 +17,11 @@ export default async function MemberLayout({ children }: { children: React.React
     redirect(`/membership/inactive?status=${session.status}&from=/portal`)
   }
 
+  const firstName = session.englishName?.split(' ')[0] ?? session.chineseName ?? undefined
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar isLoggedIn={true} />
+      <Navbar isLoggedIn={true} firstName={firstName} />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-8">
           <PortalSidebar session={session} />

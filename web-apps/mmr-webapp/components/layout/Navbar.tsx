@@ -8,10 +8,8 @@ import { useLang } from '@/lib/i18n/context'
 import { clsx } from 'clsx'
 
 const NAV_LINKS = [
-  { href: '/',        keyEn: 'nav.home'   as const },
-  { href: '/events',  keyEn: 'nav.events' as const },
-  { href: '/blog',    keyEn: 'nav.blog'   as const },
-  { href: '/join',    keyEn: 'nav.join'   as const },
+  { href: '/',     keyEn: 'nav.home' as const },
+  { href: '/join', keyEn: 'nav.join' as const },
 ] as const
 
 /** MMR logo — the 岚 calligraphy character styled in gold on crimson, matching the flag */
@@ -45,7 +43,7 @@ function MMRLogo({ size = 40 }: { size?: number }) {
   )
 }
 
-export default function Navbar({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
+export default function Navbar({ isLoggedIn = false, firstName }: { isLoggedIn?: boolean; firstName?: string }) {
   const { lang, setLang, T } = useLang()
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
@@ -92,6 +90,11 @@ export default function Navbar({ isLoggedIn = false }: { isLoggedIn?: boolean })
 
           {isLoggedIn ? (
             <>
+              {firstName && (
+                <span className="text-sm font-medium text-brand-gold border border-brand-gold/40 rounded-full px-3 py-1">
+                  {firstName}
+                </span>
+              )}
               <Link
                 href="/portal"
                 className={clsx(
@@ -160,6 +163,9 @@ export default function Navbar({ isLoggedIn = false }: { isLoggedIn?: boolean })
           ))}
           {isLoggedIn ? (
             <>
+              {firstName && (
+                <span className="text-sm font-medium text-brand-gold">{firstName}</span>
+              )}
               <Link href="/portal" onClick={() => setOpen(false)} className="text-sm text-white/80">
                 {T('nav.portal')}
               </Link>

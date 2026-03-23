@@ -2,19 +2,13 @@
 
 import Link from 'next/link'
 import { useLang } from '@/lib/i18n/context'
-import { ArrowRight, Users, Calendar, Trophy, Heart } from 'lucide-react'
+import { ArrowRight, Users, Calendar, Trophy, Heart, ExternalLink } from 'lucide-react'
 
 const STATS = [
-  { icon: Users,    keyEn: 'stats.members'  as const },
-  { icon: Calendar, keyEn: 'stats.runs'     as const },
-  { icon: Trophy,   keyEn: 'stats.team'     as const },
+  { icon: Users,    keyEn: 'stats.members'   as const },
+  { icon: Calendar, keyEn: 'stats.runs'      as const },
+  { icon: Trophy,   keyEn: 'stats.team'      as const },
   { icon: Heart,    keyEn: 'stats.nonprofit' as const },
-]
-
-const FEATURED_EVENTS = [
-  { date: 'MAR 22', title: 'Central Park Saturday Run', zh: '中央公园周六跑', location: 'Central Park, NYC' },
-  { date: 'APR 6',  title: 'Brooklyn Half Prep Run',    zh: '布鲁克林半马备赛跑', location: 'Prospect Park, Brooklyn' },
-  { date: 'APR 27', title: 'NYRR Five Borough Series',  zh: 'NYRR 五区系列赛', location: 'Various Boroughs' },
 ]
 
 /** MMR logo mark — gold 岚 on crimson circle */
@@ -102,12 +96,12 @@ export default function HomePage() {
                     onMouseLeave={e => (e.currentTarget.style.background = '#D4A843')}>
                 {T('hero.cta.join')} <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link href="/events"
+              <Link href="/login"
                     className="font-semibold px-6 py-3 rounded-full border-2 transition-all duration-200"
                     style={{ borderColor: 'rgba(255,255,255,0.5)', color: '#fff', background: 'transparent' }}
                     onMouseEnter={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#C8102E' }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#fff' }}>
-                {T('hero.cta.events')}
+                {lang === 'zh' ? '会员登录' : 'Member Login'}
               </Link>
             </div>
           </div>
@@ -131,46 +125,83 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Upcoming Events Preview ───────────────────────────────────── */}
+      {/* ── Official Website ──────────────────────────────────────────── */}
       <section className="py-20" style={{ background: '#FFF8F2' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-end justify-between mb-10">
-            <div>
-              <h2 className="section-title"
-                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
-                {T('events.title')}
-              </h2>
-              <p className="text-gray-500">
-                {lang === 'zh' ? '加入我们的下一次跑步' : 'Join us for our next run'}
-              </p>
-            </div>
-            <Link href="/events"
-                  className="font-medium text-sm hover:underline flex items-center gap-1"
-                  style={{ color: '#C8102E' }}>
-              {lang === 'zh' ? '查看全部' : 'View all'} <ArrowRight className="h-4 w-4" />
-            </Link>
+          <div className="mb-10">
+            <h2 className="section-title"
+                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
+              {lang === 'zh' ? '官方网站' : 'Our Official Website'}
+            </h2>
+            <p className="text-gray-500 mb-2">
+              {lang === 'zh'
+                ? '岚山跑团官方网站：'
+                : 'Visit our main website at '}
+              <a href="http://www.mmrunners.org" target="_blank" rel="noopener noreferrer"
+                 className="font-medium hover:underline inline-flex items-center gap-1"
+                 style={{ color: '#C8102E' }}>
+                www.mmrunners.org <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </p>
+            <p className="text-gray-400 text-sm">
+              {lang === 'zh'
+                ? '本站是会员互动平台，提供会员管理、成绩查询等动态功能，更多功能即将推出。'
+                : 'This site is an interactive member portal for dynamic content — membership management, NYRR results, photo services, and more features coming soon.'}
+            </p>
           </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            {FEATURED_EVENTS.map(event => (
-              <div key={event.date} className="card p-6 flex gap-5"
-                   style={{ borderColor: 'rgba(212,168,67,0.25)' }}>
-                {/* Date chip — crimson */}
-                <div className="flex-shrink-0 rounded-xl w-16 h-16 flex flex-col items-center justify-center text-white"
-                     style={{ background: '#C8102E' }}>
-                  <span className="text-xs font-medium opacity-75">{event.date.split(' ')[0]}</span>
-                  <span className="text-2xl font-bold leading-none">{event.date.split(' ')[1]}</span>
+
+          {/* Embedded official website */}
+          <div className="rounded-2xl overflow-hidden shadow-lg border"
+               style={{ borderColor: 'rgba(212,168,67,0.25)', background: '#fff' }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b"
+                 style={{ background: '#f9f5f0', borderColor: 'rgba(212,168,67,0.2)' }}>
+              <div className="flex gap-1.5">
+                <span className="w-3 h-3 rounded-full" style={{ background: '#C8102E', opacity: 0.5 }} />
+                <span className="w-3 h-3 rounded-full" style={{ background: '#D4A843', opacity: 0.5 }} />
+                <span className="w-3 h-3 rounded-full" style={{ background: '#888', opacity: 0.3 }} />
+              </div>
+              <span className="text-xs text-gray-400 ml-2">www.mmrunners.org</span>
+              <a href="http://www.mmrunners.org" target="_blank" rel="noopener noreferrer"
+                 className="ml-auto text-xs flex items-center gap-1 hover:underline"
+                 style={{ color: '#C8102E' }}>
+                {lang === 'zh' ? '新窗口打开' : 'Open in new tab'} <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+            <iframe
+              src="http://www.mmrunners.org"
+              title={lang === 'zh' ? '岚山跑团官方网站' : 'MMRunners Official Website'}
+              className="w-full"
+              style={{ height: '520px', border: 'none' }}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── Coming Soon ───────────────────────────────────────────────── */}
+      <section className="py-16" style={{ background: '#fff' }}>
+        <div className="max-w-4xl mx-auto px-4 text-center">
+          <h2 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(1.75rem,4vw,2.5rem)', fontWeight: 600, color: '#1a1a1a', marginBottom: '0.75rem' }}>
+            {lang === 'zh' ? '更多功能即将推出' : 'More Features Coming Soon'}
+          </h2>
+          <p className="text-gray-500 text-lg mb-10">
+            {lang === 'zh'
+              ? '我们正在开发更多会员专属功能，敬请期待。'
+              : 'We are actively building new member features. Stay tuned.'}
+          </p>
+          <div className="grid sm:grid-cols-3 gap-6">
+            {[
+              { en: 'Photo Service', zh: '照片服务', desc_en: 'Find your race photos by face & bib recognition', desc_zh: '通过面部和号码布识别查找您的赛跑照片' },
+              { en: 'Race Results', zh: '比赛成绩', desc_en: 'Track your NYRR results and team standings', desc_zh: '追踪您的 NYRR 成绩和队伍排名' },
+              { en: 'Member Events', zh: '会员活动', desc_en: 'Members-only events, training plans, and group runs', desc_zh: '会员专属活动、训练计划和集体跑步' },
+            ].map(f => (
+              <div key={f.en} className="rounded-xl p-6 text-left"
+                   style={{ background: '#FFF8F2', border: '1px solid rgba(212,168,67,0.2)' }}>
+                <div className="w-8 h-8 rounded-lg mb-3 flex items-center justify-center"
+                     style={{ background: 'rgba(200,16,46,0.08)' }}>
+                  <span style={{ color: '#C8102E', fontSize: '1rem' }}>✦</span>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900 leading-snug">
-                    {lang === 'zh' ? event.zh : event.title}
-                  </h3>
-                  <p className="text-gray-500 text-sm mt-1">{event.location}</p>
-                  <Link href="/events"
-                        className="text-sm font-medium mt-2 inline-block hover:underline"
-                        style={{ color: '#C8102E' }}>
-                    {T('events.details')} →
-                  </Link>
-                </div>
+                <h3 className="font-semibold text-gray-900 mb-1">{lang === 'zh' ? f.zh : f.en}</h3>
+                <p className="text-gray-500 text-sm">{lang === 'zh' ? f.desc_zh : f.desc_en}</p>
               </div>
             ))}
           </div>

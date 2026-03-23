@@ -181,9 +181,7 @@ export default function Footer() {
           </h3>
           <ul className="space-y-2">
             {[
-              { href: '/events', en: 'Events',       zh: '活动' },
               { href: '/join',   en: 'Join Us',       zh: '加入' },
-              { href: '/blog',   en: 'News',          zh: '新闻' },
               { href: '/portal', en: 'Member Portal', zh: '会员中心' },
             ].map(link => (
               <li key={link.href}>
@@ -232,9 +230,9 @@ export default function Footer() {
         </div>
       </div>
 
-      {/* Copyright bar — matches newbeerunning.org simple centered text */}
-      <div style={{ borderTop: '1px solid rgba(212,168,67,0.15)', padding: '1rem 0', textAlign: 'center', fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)' }}>
-        Copyright © {year} Misty Mountain Runners · 岚山跑团 · All rights reserved.
+      {/* Copyright bar */}
+      <div style={{ borderTop: '1px solid rgba(212,168,67,0.15)', padding: '1.25rem 1.5rem', textAlign: 'center', fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', lineHeight: 1.6, maxWidth: '860px', margin: '0 auto' }}>
+        © {year} Misty Mountain Runners. 岚山跑团 （Misty Mountain Runners, MMR) is a not-for-profit organization recognized as tax-exempt under Section 501(c)(3) of the Internal Revenue Code. Contributions to MMR are tax deductible to the extent allowed by law.
       </div>
     </footer>
   )
