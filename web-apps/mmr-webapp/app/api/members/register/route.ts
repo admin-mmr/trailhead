@@ -4,8 +4,8 @@ import { findMemberByEmail, createNewMember } from '@/lib/db/members'
 
 const schema = z.object({
   email:          z.string().email(),
-  englishName:    z.string().min(1),
-  chineseName:    z.string().optional(),
+  firstName:      z.string().min(1),
+  lastName:       z.string().optional(),
   phone:          z.string().optional(),
   wechatId:       z.string().optional(),
   membershipType: z.enum(['individual', 'family']),

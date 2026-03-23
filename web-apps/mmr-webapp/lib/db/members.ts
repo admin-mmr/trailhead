@@ -26,19 +26,19 @@ function rowToMember(row: any): Member {
   // Fall back to Created (also in v1) in case CreatedAt is somehow null.
   const createdDate: Date = row.CreatedAt ?? row.Created ?? new Date()
 
-  // DB stores first + last separately; Member.englishName is a single string.
-  const englishName = [row.FirstName, row.LastName].filter(Boolean).join(' ') || undefined
-
   return {
     id:             row.MemberID,
     memberId:       row.MemberID,
     email:          row.Email,
-    englishName,
-    chineseName:    undefined,        // no ChineseName column in members table
+    firstName:      row.FirstName     ?? undefined,
+    lastName:       row.LastName      ?? undefined,
     phone:          row.PhoneNumber   ?? undefined,
     wechatId:       row.WeChatID      ?? undefined,
+    district:       row.District      ?? undefined,
+    gender:         row.Gender        ?? undefined,
     nyrrRunnerName: row.NYRRRunnerName ?? undefined,
-    yearBorn:       row.YearBorn != null ? Number(row.YearBorn) : undefined,
+    yearBorn:       row.YearBorn  != null ? Number(row.YearBorn)  : undefined,
+    joinYear:       row.JoinYear  != null ? Number(row.JoinYear)  : undefined,
     membershipType: row.Type,
     status:         row.Status,
     expiresAt:      row.Expiration instanceof Date
@@ -79,35 +79,33 @@ export async function findOrCreateMember(params: {
   firstName?: string
   lastName?: string
   phone?: string
+  wechatId?: string
+  district?: string
+  gender?: string
   nyrrRunnerName?: string
   yearBorn?: number
   membershipType?: MembershipType
-  // Future profile fields (not yet stored):
-  address?: string
-  city?: string
-  state?: string
-  zip?: string
-  dateOfBirth?: string
-  emergencyName?: string
-  emergencyPhone?: string
-  shirtSize?: string
-  pronouns?: string
 }): Promise<Member> {
   const existing = await findMemberByEmail(params.email)
   if (existing) return existing
 
   const member = await createNewMember({
     email:          params.email,
-    englishName:    params.firstName || undefined,
-    phone:          params.phone || undefined,
+    firstName:      params.firstName  || undefined,
+    lastName:       params.lastName   || undefined,
+    phone:          params.phone      || undefined,
+    wechatId:       params.wechatId   || undefined,
     membershipType: params.membershipType || 'individual',
   })
 
-  if (params.nyrrRunnerName || params.yearBorn != null) {
-    await updateMemberProfile(member.memberId, {
-      nyrrRunnerName: params.nyrrRunnerName,
-      yearBorn:       params.yearBorn,
-    })
+  const profileUpdates: Parameters<typeof updateMemberProfile>[1] = {}
+  if (params.district)       profileUpdates.district       = params.district
+  if (params.gender)         profileUpdates.gender         = params.gender
+  if (params.nyrrRunnerName) profileUpdates.nyrrRunnerName = params.nyrrRunnerName
+  if (params.yearBorn != null) profileUpdates.yearBorn     = params.yearBorn
+
+  if (Object.keys(profileUpdates).length) {
+    await updateMemberProfile(member.memberId, profileUpdates)
   }
 
   return member
@@ -120,8 +118,8 @@ export async function findOrCreateMember(params: {
  */
 export async function createNewMember(params: {
   email: string
-  chineseName?: string   // no DB column for this — silently ignored
-  englishName?: string   // stored in FirstName (LastName left null)
+  firstName?: string     // → FirstName
+  lastName?: string      // → LastName
   phone?: string         // → PhoneNumber
   wechatId?: string      // → WeChatID
   membershipType: MembershipType
@@ -130,7 +128,8 @@ export async function createNewMember(params: {
   const conn = await db.getConnection()
 
   // DB Type column is enum('Individual','Family') — capitalise first letter
-  const dbType = params.membershipType === 'family' ? 'Family' : 'Individual'
+  const dbType   = params.membershipType === 'family' ? 'Family' : 'Individual'
+  const joinYear = new Date().getFullYear()
 
   try {
     await conn.beginTransaction()
@@ -139,19 +138,20 @@ export async function createNewMember(params: {
       `CALL generate_member_id(@next_id); SELECT @next_id AS next_id`
     ) as any
 
-    const year     = new Date().getFullYear()
-    const memberId = `MMR-${year}-${String(next_id).padStart(4, '0')}`
+    const memberId = `MMR-${joinYear}-${String(next_id).padStart(4, '0')}`
 
     await conn.execute(
       `INSERT INTO members
-         (MemberID, Email, FirstName, PhoneNumber, WeChatID, Type, Status)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+         (MemberID, Email, FirstName, LastName, PhoneNumber, WeChatID, JoinYear, Type, Status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [
         memberId,
         params.email,
-        params.englishName ?? null,
-        params.phone       ?? null,
-        params.wechatId    ?? null,
+        params.firstName  ?? null,
+        params.lastName   ?? null,
+        params.phone      ?? null,
+        params.wechatId   ?? null,
+        joinYear,
         dbType,
       ]
     )
@@ -191,17 +191,20 @@ export async function activateMember(
 export async function updateMemberProfile(
   memberId: string,
   updates: Partial<Pick<Member,
-    'chineseName' | 'englishName' | 'phone' | 'wechatId' | 'nyrrRunnerName' | 'yearBorn'
+    'firstName' | 'lastName' | 'phone' | 'wechatId' | 'district' |
+    'gender' | 'nyrrRunnerName' | 'yearBorn'
   >>
 ): Promise<void> {
   const db     = getDb()
   const fields: string[] = []
   const values: (string | number | null | undefined)[] = []
 
-  // chineseName: no DB column — silently skipped
-  if (updates.englishName    !== undefined) { fields.push('FirstName = ?');      values.push(updates.englishName) }
+  if (updates.firstName      !== undefined) { fields.push('FirstName = ?');      values.push(updates.firstName) }
+  if (updates.lastName       !== undefined) { fields.push('LastName = ?');       values.push(updates.lastName) }
   if (updates.phone          !== undefined) { fields.push('PhoneNumber = ?');    values.push(updates.phone) }
   if (updates.wechatId       !== undefined) { fields.push('WeChatID = ?');       values.push(updates.wechatId) }
+  if (updates.district       !== undefined) { fields.push('District = ?');       values.push(updates.district) }
+  if (updates.gender         !== undefined) { fields.push('Gender = ?');         values.push(updates.gender) }
   if (updates.nyrrRunnerName !== undefined) { fields.push('NYRRRunnerName = ?'); values.push(updates.nyrrRunnerName) }
   if (updates.yearBorn       !== undefined) { fields.push('YearBorn = ?');       values.push(updates.yearBorn ?? null) }
 

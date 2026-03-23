@@ -139,9 +139,9 @@ SELECT * FROM schema_migrations ORDER BY version;
 
 
 -- ============================================================
--- 8. MEMBERS — OAuth sub-columns & auth columns presence check
+-- 8. MEMBERS — key columns presence check
 -- ============================================================
-SELECT '=== 8. MEMBERS — auth columns ===' AS section;
+SELECT '=== 8. MEMBERS — key columns ===' AS section;
 
 SELECT
     COLUMN_NAME,
@@ -153,10 +153,13 @@ FROM information_schema.COLUMNS
 WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME   = 'members'
   AND COLUMN_NAME IN (
-      'google_sub', 'apple_sub', 'microsoft_sub',
-      'yahoo_sub',  'facebook_sub', 'password_hash',
-      'MemberID', 'Email', 'Status', 'FamilyID',
-      'EnglishName', 'ChineseName', 'CreatedAt'
+      'MemberID', 'Email', 'FirstName', 'LastName',
+      'PhoneNumber', 'WeChatID', 'District', 'Gender',
+      'YearBorn', 'JoinYear', 'NYRRRunnerName',
+      'Type', 'Status', 'FamilyID', 'Expiration',
+      'password_hash', 'google_sub', 'microsoft_sub',
+      'apple_sub', 'yahoo_sub', 'facebook_sub',
+      'CreatedAt', 'ProfileLastUpdated'
   )
 ORDER BY ORDINAL_POSITION;
 

@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       to:      email,
       subject: 'Reset your MMR password · 重置密码',
       html:    passwordResetEmailHtml({
-        firstName:  member.englishName ?? member.chineseName ?? email.split('@')[0],
+        firstName:  member.firstName ?? email.split('@')[0],
         resetUrl,
         expiryMins: EXPIRY_MINUTES,
       }),

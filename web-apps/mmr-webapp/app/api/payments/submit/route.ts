@@ -12,33 +12,28 @@ const SubmitSchema = z.object({
   amount: z.number().positive(),
   paymentMethod: z.enum(['zelle', 'venmo']),
 
-  // Member info
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  email: z.string().email(),
-  phone: z.string().min(7),
-  address: z.string().min(1),
-  city: z.string().min(1),
-  state: z.string().min(2),
-  zip: z.string().min(5),
-  dateOfBirth: z.string().min(1),
-  emergencyName: z.string().min(1),
-  emergencyPhone: z.string().min(7),
+  // Member info — no address / zip / emergency / shirt / pronouns
+  firstName:      z.string().min(1),
+  lastName:       z.string().min(1),
+  email:          z.string().email(),
+  phone:          z.string().min(7),
+  wechatId:       z.string().optional(),
+  district:       z.string().optional(),
+  gender:         z.string().optional(),
+  yearBorn:       z.number().int().optional(),
   nyrrRunnerName: z.string().optional(),
-  shirtSize: z.string().optional(),
-  pronouns: z.string().optional(),
 
   // Payment declaration
-  payerName: z.string().min(1),
+  payerName:   z.string().min(1),
   paymentDate: z.string().min(1),
-  memoField: z.string().optional(),
-  last4: z.string().max(4).optional(),
+  memoField:   z.string().optional(),
+  last4:       z.string().max(4).optional(),
 })
 
 // ── Plan → PaymentIntent label ───────────────────────────────────────────────
 const PLAN_INTENT: Record<string, string> = {
-  individual: 'Individual Membership',
-  family: 'Family Membership',
+  individual:     'Individual Membership',
+  family:         'Family Membership',
   family_upgrade: 'Family Upgrade',
 }
 
@@ -55,24 +50,19 @@ export async function POST(req: NextRequest) {
 
     // 1. Find or create member record (idempotent by email)
     const member = await findOrCreateMember({
-      email: d.email,
-      firstName: d.firstName,
-      lastName: d.lastName,
-      phone: d.phone,
-      address: d.address,
-      city: d.city,
-      state: d.state,
-      zip: d.zip,
-      dateOfBirth: d.dateOfBirth,
-      emergencyName: d.emergencyName,
-      emergencyPhone: d.emergencyPhone,
+      email:          d.email,
+      firstName:      d.firstName,
+      lastName:       d.lastName,
+      phone:          d.phone,
+      wechatId:       d.wechatId,
+      district:       d.district,
+      gender:         d.gender,
+      yearBorn:       d.yearBorn,
       nyrrRunnerName: d.nyrrRunnerName,
-      shirtSize: d.shirtSize,
-      pronouns: d.pronouns,
     })
 
     // 2. Generate unique event ID (e.g. EVT-20250101-ABC12)
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const today   = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const eventId = `EVT-${today}-${nanoid(5).toUpperCase()}`
 
     // 3. Insert webapp_events row with Status='Pending'
@@ -93,7 +83,7 @@ export async function POST(req: NextRequest) {
           d.payerName,
           d.paymentDate,
           d.memoField ?? null,
-          d.last4    ?? null,
+          d.last4     ?? null,
         ]
       )
     } finally {

@@ -144,10 +144,9 @@ export default function DashboardClient({ member, payments }: Props) {
             <p className="text-white/50 text-xs uppercase tracking-wider mb-1">
               {lang === 'zh' ? '会员证' : 'Membership Card'}
             </p>
-            <p className="text-2xl font-bold">{member.englishName ?? member.email}</p>
-            {member.chineseName && (
-              <p className="text-white/70 text-lg mt-0.5">{member.chineseName}</p>
-            )}
+            <p className="text-2xl font-bold">
+              {[member.firstName, member.lastName].filter(Boolean).join(' ') || member.email}
+            </p>
           </div>
           <span className={`text-xs font-medium px-3 py-1 rounded-full ${
             member.status === 'active' ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'

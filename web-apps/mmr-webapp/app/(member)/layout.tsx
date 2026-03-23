@@ -17,7 +17,7 @@ export default async function MemberLayout({ children }: { children: React.React
     redirect(`/membership/inactive?status=${session.status}&from=/portal`)
   }
 
-  const firstName = session.englishName?.split(' ')[0] ?? session.chineseName ?? undefined
+  const firstName = session.firstName ?? undefined
 
   return (
     <div className="min-h-screen bg-gray-50">

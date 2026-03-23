@@ -15,16 +15,11 @@ interface MemberInfo {
   lastName: string
   email: string
   phone: string
-  address: string
-  city: string
-  state: string
-  zip: string
-  dateOfBirth: string
-  emergencyName: string
-  emergencyPhone: string
-  nyrrId: string
-  shirtSize: string
-  pronouns: string
+  wechatId: string
+  district: string
+  gender: string
+  yearBorn: string
+  nyrrRunnerName: string
 }
 
 const PLANS: Record<Plan, { label: string; labelZh: string; amount: number; desc: string; descZh: string }> = {
@@ -69,9 +64,7 @@ export default function JoinPage() {
   const [payMethod, setPayMethod] = useState<'zelle' | 'venmo'>('zelle')
   const [info, setInfo] = useState<MemberInfo>({
     firstName: '', lastName: '', email: '', phone: '',
-    address: '', city: '', state: '', zip: '',
-    dateOfBirth: '', emergencyName: '', emergencyPhone: '',
-    nyrrId: '', shirtSize: '', pronouns: '',
+    wechatId: '', district: '', gender: '', yearBorn: '', nyrrRunnerName: '',
   })
   const [payForm, setPayForm] = useState({ payerName: '', paymentDate: '', memoField: '', last4: '' })
   const [eventId, setEventId] = useState<string | null>(null)
@@ -239,22 +232,17 @@ export default function JoinPage() {
                 {lang === 'zh' ? '填写个人信息' : 'Your Information'}
               </h2>
               <div className="grid grid-cols-2 gap-4">
-                {[
-                  { key: 'firstName', label: 'First Name', labelZh: '名', required: true },
-                  { key: 'lastName', label: 'Last Name', labelZh: '姓', required: true },
-                  { key: 'email', label: 'Email Address', labelZh: '电子邮件', required: true, type: 'email', colSpan: true },
-                  { key: 'phone', label: 'Phone', labelZh: '电话', required: true },
-                  { key: 'dateOfBirth', label: 'Date of Birth', labelZh: '出生日期', required: true, type: 'date' },
-                  { key: 'shirtSize', label: 'Shirt Size', labelZh: '衣服尺寸' },
-                  { key: 'pronouns', label: 'Pronouns', labelZh: '代词', colSpan: true },
-                  { key: 'address', label: 'Address', labelZh: '地址', required: true, colSpan: true },
-                  { key: 'city', label: 'City', labelZh: '城市', required: true },
-                  { key: 'state', label: 'State', labelZh: '州', required: true },
-                  { key: 'zip', label: 'ZIP Code', labelZh: '邮编', required: true },
-                  { key: 'emergencyName', label: 'Emergency Contact Name', labelZh: '紧急联系人', required: true, colSpan: true },
-                  { key: 'emergencyPhone', label: 'Emergency Contact Phone', labelZh: '紧急联系电话', required: true, colSpan: true },
-                  { key: 'nyrrId', label: 'NYRR ID (optional)', labelZh: 'NYRR编号（选填）', colSpan: true },
-                ].map(f => (
+                {/* Text fields */}
+                {([
+                  { key: 'firstName',     label: 'First Name',         labelZh: '名',          required: true },
+                  { key: 'lastName',      label: 'Last Name',          labelZh: '姓',          required: true },
+                  { key: 'email',         label: 'Email Address',      labelZh: '电子邮件',    required: true, type: 'email', colSpan: true },
+                  { key: 'phone',         label: 'Phone',              labelZh: '电话',        required: true, type: 'tel' },
+                  { key: 'wechatId',      label: 'WeChat ID',          labelZh: '微信号' },
+                  { key: 'district',      label: 'District / Borough', labelZh: '地区',        colSpan: true },
+                  { key: 'yearBorn',      label: 'Year of Birth',      labelZh: '出生年份',    type: 'number' },
+                  { key: 'nyrrRunnerName',label: 'NYRR Runner Name',   labelZh: 'NYRR 姓名' },
+                ] as { key: keyof MemberInfo; label: string; labelZh: string; required?: boolean; type?: string; colSpan?: boolean }[]).map(f => (
                   <div key={f.key} className={f.colSpan ? 'col-span-2' : ''}>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {lang === 'zh' ? f.labelZh : f.label}
@@ -263,13 +251,32 @@ export default function JoinPage() {
                     <input
                       type={f.type ?? 'text'}
                       required={f.required}
-                      value={(info as unknown as Record<string, string>)[f.key]}
+                      value={info[f.key]}
                       onChange={e => setInfo(prev => ({ ...prev, [f.key]: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
                     />
                   </div>
                 ))}
+
+                {/* Gender — select */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '性别' : 'Gender'}
+                  </label>
+                  <select
+                    value={info.gender}
+                    onChange={e => setInfo(prev => ({ ...prev, gender: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
+                  >
+                    <option value="">{lang === 'zh' ? '请选择' : 'Select…'}</option>
+                    <option value="Male">{lang === 'zh' ? '男' : 'Male'}</option>
+                    <option value="Female">{lang === 'zh' ? '女' : 'Female'}</option>
+                    <option value="Non-binary">{lang === 'zh' ? '非二元' : 'Non-binary'}</option>
+                    <option value="Prefer not to say">{lang === 'zh' ? '不透露' : 'Prefer not to say'}</option>
+                  </select>
+                </div>
               </div>
+
               <div className="flex gap-4 mt-8">
                 <button type="button" onClick={prevStep}
                   className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-colors">

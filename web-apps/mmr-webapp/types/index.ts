@@ -6,10 +6,12 @@ export interface Member {
   id: number
   memberId: string          // MMR-2024-0042
   email: string
-  chineseName?: string
-  englishName?: string
+  firstName?: string
+  lastName?: string
   phone?: string
   wechatId?: string
+  district?: string
+  gender?: string
   /** Runner name as it appears on NYRR. Used to look up bib numbers in NYRR results. */
   nyrrRunnerName?: string
   /**
@@ -18,10 +20,11 @@ export interface Member {
    * (or Age-1 for events earlier in the calendar year).
    */
   yearBorn?: number
+  joinYear?: number
   membershipType: MembershipType
   status: MemberStatus
   expiresAt?: string        // ISO date
-  familyId?: string   // VARCHAR(10) e.g. "F0001" — shared by all members in a family
+  familyId?: string         // VARCHAR(10) e.g. "F0001" — shared by all members in a family
   createdAt: string
   /**
    * bcrypt hash of the member's password.
@@ -34,8 +37,8 @@ export interface Member {
 export interface SessionUser {
   memberId: string
   email: string
-  englishName?: string
-  chineseName?: string
+  firstName?: string
+  lastName?: string
   status: MemberStatus
 }
 

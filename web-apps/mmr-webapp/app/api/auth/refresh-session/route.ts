@@ -29,11 +29,11 @@ export async function POST(_req: NextRequest): Promise<NextResponse> {
 
     // Issue a fresh JWT with the latest status
     const token = await createSession({
-      memberId:    member.memberId,
-      email:       member.email,
-      englishName: member.englishName,
-      chineseName: member.chineseName,
-      status:      member.status,
+      memberId:  member.memberId,
+      email:     member.email,
+      firstName: member.firstName,
+      lastName:  member.lastName,
+      status:    member.status,
     })
 
     const res = NextResponse.json({ status: member.status })

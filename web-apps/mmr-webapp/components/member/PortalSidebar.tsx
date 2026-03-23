@@ -28,14 +28,11 @@ export default function PortalSidebar({ session }: { session: SessionUser }) {
       {/* Member card */}
       <div className="bg-brand-navy rounded-2xl p-5 text-white mb-4">
         <div className="w-10 h-10 rounded-full bg-brand-orange flex items-center justify-center font-bold text-lg mb-3">
-          {(session.englishName ?? session.email)[0].toUpperCase()}
+          {([session.firstName, session.lastName].filter(Boolean).join(' ') || session.email)[0].toUpperCase()}
         </div>
         <p className="font-semibold text-sm leading-tight">
-          {session.englishName ?? session.email}
+          {[session.firstName, session.lastName].filter(Boolean).join(' ') || session.email}
         </p>
-        {session.chineseName && (
-          <p className="text-white/60 text-xs mt-0.5">{session.chineseName}</p>
-        )}
         <div className="mt-3 pt-3 border-t border-white/20">
           <p className="text-white/50 text-xs">{lang === 'zh' ? '会员编号' : 'Member ID'}</p>
           <p className="text-brand-orange font-mono text-sm font-bold">{session.memberId}</p>

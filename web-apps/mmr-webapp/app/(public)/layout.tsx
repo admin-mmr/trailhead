@@ -4,7 +4,7 @@ import { getSession } from '@/lib/auth/session'
 
 export default async function PublicLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
-  const firstName = session?.englishName?.split(' ')[0] ?? session?.chineseName ?? undefined
+  const firstName = session?.firstName ?? undefined
   return (
     <>
       <Navbar isLoggedIn={!!session} firstName={firstName} />

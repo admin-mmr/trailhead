@@ -15,11 +15,14 @@ export async function GET() {
 }
 
 const patchSchema = z.object({
-  englishName: z.string().optional(),
-  chineseName: z.string().optional(),
-  phone:       z.string().optional(),
-  wechatId:    z.string().optional(),
-  nyrrId:      z.string().optional(),
+  firstName:      z.string().optional(),
+  lastName:       z.string().optional(),
+  phone:          z.string().optional(),
+  wechatId:       z.string().optional(),
+  district:       z.string().optional(),
+  gender:         z.string().optional(),
+  yearBorn:       z.number().int().min(1900).max(new Date().getFullYear()).optional(),
+  nyrrRunnerName: z.string().optional(),
 })
 
 export async function PATCH(req: NextRequest) {

@@ -1,0 +1,131 @@
+name: 🗄️ DB Schema Drift Check
+
+on:
+  schedule:
+    # Every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    name: Compare live schema against snapshot
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify snapshot file exists
+        run: |
+          if [ ! -f "web-apps/mmr-webapp/db/schema_snapshot.sql" ]; then
+            echo "❌ db/schema_snapshot.sql not found."
+            echo "Run this locally to create it:"
+            echo "  mysql-mmr < db/schema_snapshot_query.sql > db/schema_snapshot.sql"
+            echo "Then commit the file."
+            exit 1
+          fi
+          echo "✓ Snapshot file found ($(wc -l < web-apps/mmr-webapp/db/schema_snapshot.sql) lines)"
+
+      - name: Install mysql-client
+        run: sudo apt-get install -y mysql-client
+
+      - name: Run schema snapshot query against live DB
+        env:
+          MYSQL_HOST:     ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER:     ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          mysql \
+            --host="$MYSQL_HOST" \
+            --user="$MYSQL_USER" \
+            --password="$MYSQL_PASSWORD" \
+            --ssl-mode=REQUIRED \
+            --batch \
+            --silent \
+            "$MYSQL_DATABASE" \
+            < web-apps/mmr-webapp/db/schema_snapshot_query.sql \
+            > /tmp/live_snapshot.sql
+
+          echo "✓ Live snapshot captured ($(wc -l < /tmp/live_snapshot.sql) lines)"
+
+      - name: Compare snapshots
+        id: diff
+        run: |
+          if diff -q web-apps/mmr-webapp/db/schema_snapshot.sql /tmp/live_snapshot.sql > /dev/null 2>&1; then
+            echo "✓ Schema matches snapshot — no drift detected"
+            echo "drifted=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Schema drift detected"
+            echo "drifted=true" >> $GITHUB_OUTPUT
+
+            # Save diff for email attachment
+            diff web-apps/mmr-webapp/db/schema_snapshot.sql /tmp/live_snapshot.sql > /tmp/schema_drift.diff || true
+
+            # Print summary to log
+            echo "--- Diff summary ---"
+            diff web-apps/mmr-webapp/db/schema_snapshot.sql /tmp/live_snapshot.sql | head -80 || true
+          fi
+
+      - name: Upload diff artifact
+        if: steps.diff.outputs.drifted == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-${{ github.run_id }}
+          path: /tmp/schema_drift.diff
+          retention-days: 30
+
+      - name: Send drift alert email
+        if: steps.diff.outputs.drifted == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port:    ${{ secrets.MAIL_PORT }}
+          username:       ${{ secrets.MAIL_USERNAME }}
+          password:       ${{ secrets.MAIL_PASSWORD }}
+          subject:        '⚠️ MMR DB schema drift detected'
+          to:             ${{ secrets.NOTIFICATION_EMAIL }}
+          from:           'GitHub Actions <noreply@github.com>'
+          body: |
+            The live mmrdb schema no longer matches the committed snapshot.
+
+            This means a column, table, view, index, or stored procedure was
+            added, changed, or removed on the live database without a
+            corresponding snapshot update in the repo.
+
+            ACTION REQUIRED
+            ───────────────
+            1. Review what changed (diff attached or see Actions artifacts)
+            2. If the change is intentional, update the snapshot:
+
+               mysql-mmr < db/schema_snapshot_query.sql > db/schema_snapshot.sql
+               git add db/schema_snapshot.sql
+               git commit -m "chore: update db schema snapshot"
+               git push
+
+            3. Re-run this workflow manually to confirm the drift is resolved.
+
+            Details
+            ───────
+            Run:    ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Branch: ${{ github.ref_name }}
+            Time:   ${{ github.event.repository.updated_at }}
+          attachments: /tmp/schema_drift.diff
+
+      - name: Send failure notification
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port:    ${{ secrets.MAIL_PORT }}
+          username:       ${{ secrets.MAIL_USERNAME }}
+          password:       ${{ secrets.MAIL_PASSWORD }}
+          subject:        '❌ DB Schema Drift Check failed to run'
+          to:             ${{ secrets.NOTIFICATION_EMAIL }}
+          from:           'GitHub Actions <noreply@github.com>'
+          body: |
+            The DB schema drift check workflow itself failed (not a drift alert —
+            the workflow could not complete, e.g. DB unreachable or missing snapshot file).
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

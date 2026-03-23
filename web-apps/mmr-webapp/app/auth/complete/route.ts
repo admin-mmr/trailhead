@@ -49,9 +49,16 @@ export const GET = auth(async function handler(req) {
   console.log('[auth/complete] DB lookup:', member ? `found memberId=${member.memberId} status=${member.status}` : 'not found — will create')
 
   if (!member) {
+    // Split the OAuth display name (e.g. "Jane Doe") into firstName / lastName
+    const displayName  = nextAuthSession.user.name ?? ''
+    const spaceIdx     = displayName.indexOf(' ')
+    const firstName    = spaceIdx > -1 ? displayName.slice(0, spaceIdx) : displayName || undefined
+    const lastName     = spaceIdx > -1 ? displayName.slice(spaceIdx + 1) : undefined
+
     member = await createNewMember({
       email,
-      englishName:    nextAuthSession.user.name ?? undefined,
+      firstName,
+      lastName,
       membershipType: 'individual',
     })
     console.log('[auth/complete] created new member, memberId:', member.memberId)
@@ -64,11 +71,11 @@ export const GET = auth(async function handler(req) {
 
   // ── Create our custom session cookie ──────────────────────────────────────
   const token = await createSession({
-    memberId:    member.memberId,
-    email:       member.email,
-    englishName: member.englishName,
-    chineseName: member.chineseName,
-    status:      member.status,
+    memberId:  member.memberId,
+    email:     member.email,
+    firstName: member.firstName,
+    lastName:  member.lastName,
+    status:    member.status,
   })
   console.log('[auth/complete] ✅ mmr_session JWT created, length:', token.length, 'status:', member.status)
 

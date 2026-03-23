@@ -64,7 +64,7 @@ const config: NextAuthConfig = {
         return {
           id:    member.memberId,
           email: member.email,
-          name:  member.englishName ?? member.chineseName ?? member.email,
+          name:  [member.firstName, member.lastName].filter(Boolean).join(' ') || member.email,
         }
       },
     }),
