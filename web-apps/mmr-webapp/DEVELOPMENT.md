@@ -94,6 +94,35 @@ But this disables the safety net — you'll rely on GitHub Actions to catch erro
 
 ---
 
+## Route Map
+
+All pages that currently exist and their access tier (defined in `lib/access.ts`):
+
+| Route | Access | Notes |
+|-------|--------|-------|
+| `/` | public | Home page |
+| `/join` | public | Join / renewal form |
+| `/faq` | public | FAQ |
+| `/login` | public | Login |
+| `/auth/forgot-password` | public | Password reset request |
+| `/auth/reset-password` | public | Password reset (token link) |
+| `/auth/setup-password` | public | First-time password setup |
+| `/payment-proof` | member | Standalone proof upload — accessible to pending/expired members outside the active-gated portal |
+| `/membership/inactive` | public | Shown to pending, inactive, or expired members |
+| `/portal` | active | Member dashboard |
+| `/portal/profile` | member | Profile — any logged-in member (including expired) |
+| `/portal/nyrr` | active | NYRR race results & charts |
+| `/portal/photos` | active | Photo search home |
+| `/portal/photos/bibs` | active | Search photos by bib number |
+| `/portal/photos/references` | active | Search photos by reference |
+| `/portal/payment-proof` | active | Upload payment proof (portal version, active members only) |
+| `/admin/sync` | active | Admin sync page |
+
+> **Adding a new page?** Create a `page.tsx` under `app/`, then add the route to `lib/access.ts`
+> with the appropriate tier. Unregistered routes default to `'public'`.
+
+---
+
 ## Database Environment Variables
 
 Create `.env.local` in this directory (git-ignored) with:

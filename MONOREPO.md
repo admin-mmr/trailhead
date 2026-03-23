@@ -118,7 +118,7 @@ Email alerts sent (payment received, renewal needed)
 ### 3. Photo Upload → Processing → Storage
 
 ```
-Member uploads photos at /portal/upload
+Member uploads photos at /portal/photos
     ↓
 Azure Storage → Google Drive
     ↓
@@ -129,7 +129,7 @@ photo-manager/src/process_photos.py
     ↓
 Results → back to Google Drive
     ↓
-Member views at /portal/photos
+Member views at /portal/photos/bibs or /portal/photos/references
 ```
 
 ### 4. Race Results Integration
@@ -141,7 +141,7 @@ GAS script (gas/nyrr) → fetches results
     ↓
 Google Sheets (NYRR Results)
     ↓
-Web app reads results → displays on /portal/races
+Web app reads results → displays on /portal/nyrr
 ```
 
 ---
