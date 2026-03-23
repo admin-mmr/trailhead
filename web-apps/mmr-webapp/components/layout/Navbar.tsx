@@ -73,38 +73,36 @@ export default function Navbar({ isLoggedIn = false, firstName }: { isLoggedIn?:
 
         {/* ── Desktop links ──────────────────────────────────────────────── */}
         <div className="hidden md:flex items-center gap-6">
-          {NAV_LINKS.map(({ href, keyEn }) => (
-            <Link
-              key={href}
-              href={href}
-              className={clsx(
-                'text-sm font-medium transition-colors',
-                pathname === href
-                  ? 'text-brand-gold'
-                  : 'text-white/80 hover:text-brand-gold-light'
-              )}
-            >
-              {T(keyEn)}
-            </Link>
-          ))}
-
-          {isLoggedIn ? (
-            <>
-              {firstName && (
-                <span className="text-sm font-medium text-brand-gold border border-brand-gold/40 rounded-full px-3 py-1">
-                  {firstName}
-                </span>
-              )}
+          {NAV_LINKS
+            .filter(({ href }) => !(isLoggedIn && href === '/join'))
+            .map(({ href, keyEn }) => (
               <Link
-                href="/portal"
+                key={href}
+                href={href}
                 className={clsx(
                   'text-sm font-medium transition-colors',
-                  pathname.startsWith('/portal')
+                  pathname === href
                     ? 'text-brand-gold'
                     : 'text-white/80 hover:text-brand-gold-light'
                 )}
               >
-                {T('nav.portal')}
+                {T(keyEn)}
+              </Link>
+            ))}
+
+          {isLoggedIn ? (
+            <>
+              {/* First name IS the portal entry point — clicking goes to dashboard */}
+              <Link
+                href="/portal"
+                className={clsx(
+                  'text-sm font-medium border border-brand-gold/40 rounded-full px-3 py-1 transition-colors',
+                  pathname.startsWith('/portal')
+                    ? 'text-brand-gold bg-brand-gold/10'
+                    : 'text-brand-gold hover:bg-brand-gold/10'
+                )}
+              >
+                {firstName ?? 'Portal'}
               </Link>
               <Link
                 href="/api/auth/logout"
@@ -148,26 +146,30 @@ export default function Navbar({ isLoggedIn = false, firstName }: { isLoggedIn?:
       {open && (
         <div className="md:hidden border-t border-brand-gold/20 px-4 py-4 flex flex-col gap-4 animate-fade-in"
           style={{ background: '#8C0E20' }}>
-          {NAV_LINKS.map(({ href, keyEn }) => (
-            <Link
-              key={href}
-              href={href}
-              onClick={() => setOpen(false)}
-              className={clsx(
-                'text-sm font-medium',
-                pathname === href ? 'text-brand-gold' : 'text-white/80'
-              )}
-            >
-              {T(keyEn)}
-            </Link>
-          ))}
+          {NAV_LINKS
+            .filter(({ href }) => !(isLoggedIn && href === '/join'))
+            .map(({ href, keyEn }) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setOpen(false)}
+                className={clsx(
+                  'text-sm font-medium',
+                  pathname === href ? 'text-brand-gold' : 'text-white/80'
+                )}
+              >
+                {T(keyEn)}
+              </Link>
+            ))}
           {isLoggedIn ? (
             <>
-              {firstName && (
-                <span className="text-sm font-medium text-brand-gold">{firstName}</span>
-              )}
-              <Link href="/portal" onClick={() => setOpen(false)} className="text-sm text-white/80">
-                {T('nav.portal')}
+              {/* First name button goes directly to portal dashboard */}
+              <Link
+                href="/portal"
+                onClick={() => setOpen(false)}
+                className="text-sm font-medium text-brand-gold"
+              >
+                {firstName ?? 'Portal'} →
               </Link>
               <Link href="/api/auth/logout" className="text-sm text-white/50">
                 {T('nav.logout')}

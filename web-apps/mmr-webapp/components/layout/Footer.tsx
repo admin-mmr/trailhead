@@ -120,6 +120,8 @@ function MistyMountainScene() {
   )
 }
 
+const FOUNDING_YEAR = 2024
+
 export default function Footer() {
   const { lang } = useLang()
   const year = new Date().getFullYear()
@@ -232,7 +234,7 @@ export default function Footer() {
 
       {/* Copyright bar */}
       <div style={{ borderTop: '1px solid rgba(212,168,67,0.15)', padding: '1.25rem 1.5rem', textAlign: 'center', fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', lineHeight: 1.6, maxWidth: '860px', margin: '0 auto' }}>
-        © {year} Misty Mountain Runners. 岚山跑团 （Misty Mountain Runners, MMR) is a not-for-profit organization recognized as tax-exempt under Section 501(c)(3) of the Internal Revenue Code. Contributions to MMR are tax deductible to the extent allowed by law.
+        © {FOUNDING_YEAR}–{year} Misty Mountain Runners. 岚山跑团 （Misty Mountain Runners, MMR) is a not-for-profit organization recognized as tax-exempt under Section 501(c)(3) of the Internal Revenue Code. Contributions to MMR are tax deductible to the extent allowed by law.
       </div>
     </footer>
   )
