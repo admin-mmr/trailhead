@@ -120,7 +120,7 @@ function MistyMountainScene() {
   )
 }
 
-const FOUNDING_YEAR = 2024
+const FOUNDING_YEAR = 2015
 
 export default function Footer() {
   const { lang } = useLang()
@@ -137,7 +137,7 @@ export default function Footer() {
       {/* Info columns */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10
                       grid grid-cols-1 md:grid-cols-4 gap-8 text-sm"
-           style={{ color: 'rgba(255,255,255,0.6)' }}>
+           style={{ color: 'rgba(255,255,255,0.78)' }}>
 
         {/* Brand */}
         <div className="md:col-span-2">
@@ -162,7 +162,7 @@ export default function Footer() {
             {[
               { href: 'https://www.instagram.com/mmrunners', label: 'Instagram' },
               { href: 'https://www.strava.com',              label: 'Strava' },
-              { href: 'mailto:info@mmrunners.org',           label: 'Email' },
+              { href: 'mailto:admin@mmrunners.org',          label: 'Email' },
             ].map(({ href, label }) => (
               <a key={label} href={href}
                  target={href.startsWith('http') ? '_blank' : undefined}
@@ -185,6 +185,7 @@ export default function Footer() {
             {[
               { href: '/join',   en: 'Join Us',       zh: '加入' },
               { href: '/portal', en: 'Member Portal', zh: '会员中心' },
+              { href: '/faq',    en: 'FAQ',           zh: '常见问题' },
             ].map(link => (
               <li key={link.href}>
                 <Link href={link.href}
@@ -233,7 +234,7 @@ export default function Footer() {
       </div>
 
       {/* Copyright bar */}
-      <div style={{ borderTop: '1px solid rgba(212,168,67,0.15)', padding: '1.25rem 1.5rem', textAlign: 'center', fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', lineHeight: 1.6, maxWidth: '860px', margin: '0 auto' }}>
+      <div style={{ borderTop: '1px solid rgba(212,168,67,0.15)', padding: '1.25rem 1.5rem', textAlign: 'center', fontSize: '0.72rem', color: 'rgba(255,255,255,0.55)', lineHeight: 1.6, maxWidth: '860px', margin: '0 auto' }}>
         © {FOUNDING_YEAR}–{year} Misty Mountain Runners. 岚山跑团 （Misty Mountain Runners, MMR) is a not-for-profit organization recognized as tax-exempt under Section 501(c)(3) of the Internal Revenue Code. Contributions to MMR are tax deductible to the extent allowed by law.
       </div>
     </footer>

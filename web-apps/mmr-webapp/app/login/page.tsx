@@ -220,12 +220,18 @@ function LoginContent() {
               {lang === 'zh' ? '登录' : 'Sign in'}
             </button>
 
-            <div className="text-center">
+            <div className="text-center space-y-1">
               <a
                 href="/auth/forgot-password"
-                className="text-xs text-brand-orange hover:underline"
+                className="block text-xs text-brand-orange hover:underline"
               >
                 {lang === 'zh' ? '忘记密码？' : 'Forgot password?'}
+              </a>
+              <a
+                href="/auth/setup-password"
+                className="block text-xs text-gray-400 hover:text-brand-navy transition-colors"
+              >
+                {lang === 'zh' ? '首次登录？点此设置密码 →' : 'First time here? Set up your portal password →'}
               </a>
             </div>
           </form>

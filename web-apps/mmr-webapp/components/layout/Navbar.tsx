@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X } from 'lucide-react'
+import { Menu, X, UserCircle } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import { clsx } from 'clsx'
 
@@ -92,16 +92,17 @@ export default function Navbar({ isLoggedIn = false, firstName }: { isLoggedIn?:
 
           {isLoggedIn ? (
             <>
-              {/* First name IS the portal entry point — clicking goes to dashboard */}
+              {/* Member icon + name → portal dashboard */}
               <Link
                 href="/portal"
                 className={clsx(
-                  'text-sm font-medium border border-brand-gold/40 rounded-full px-3 py-1 transition-colors',
+                  'flex items-center gap-1.5 text-sm font-medium border border-brand-gold/40 rounded-full px-3 py-1 transition-colors',
                   pathname.startsWith('/portal')
                     ? 'text-brand-gold bg-brand-gold/10'
                     : 'text-brand-gold hover:bg-brand-gold/10'
                 )}
               >
+                <UserCircle className="h-4 w-4" />
                 {firstName ?? 'Portal'}
               </Link>
               <Link
@@ -163,12 +164,13 @@ export default function Navbar({ isLoggedIn = false, firstName }: { isLoggedIn?:
             ))}
           {isLoggedIn ? (
             <>
-              {/* First name button goes directly to portal dashboard */}
+              {/* Member icon + name → portal dashboard */}
               <Link
                 href="/portal"
                 onClick={() => setOpen(false)}
-                className="text-sm font-medium text-brand-gold"
+                className="flex items-center gap-2 text-sm font-medium text-brand-gold"
               >
+                <UserCircle className="h-4 w-4" />
                 {firstName ?? 'Portal'} →
               </Link>
               <Link href="/api/auth/logout" className="text-sm text-white/50">

@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useLang } from '@/lib/i18n/context'
 import { t } from '@/lib/i18n/translations'
 import Image from 'next/image'
 import { CheckCircle, Upload, CreditCard, User, ClipboardList } from 'lucide-react'
+import type { Member } from '@/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Plan = 'individual' | 'family' | 'family_upgrade'
@@ -72,6 +73,34 @@ export default function JoinPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Existing member data (pre-filled when renewing)
+  const [existingMember, setExistingMember] = useState<Member | null>(null)
+
+  // On mount: silently check if the user is already logged in.
+  // If yes, pre-fill the info form with data from the members table.
+  useEffect(() => {
+    fetch('/api/members/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(({ ok, data } = {}) => {
+        if (ok && data) {
+          setExistingMember(data)
+          // Pre-fill the info form — member can review/edit before continuing
+          setInfo({
+            firstName:      data.firstName      ?? '',
+            lastName:       data.lastName       ?? '',
+            email:          data.email          ?? '',
+            phone:          data.phone          ?? '',
+            wechatId:       data.wechatId       ?? '',
+            district:       data.district       ?? '',
+            gender:         data.gender         ?? '',
+            yearBorn:       data.yearBorn != null ? String(data.yearBorn) : '',
+            nyrrRunnerName: data.nyrrRunnerName  ?? '',
+          })
+        }
+      })
+      .catch(() => { /* not logged in — no-op */ })
+  }, [])
 
   const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'treasurer@mmrunners.org'
   const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? '@MMRunners'
@@ -170,17 +199,40 @@ export default function JoinPage() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const isRenewing = !!existingMember
+
   return (
     <main className="min-h-screen bg-gray-50 py-12">
       <div className="max-w-2xl mx-auto px-4">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-[#0A2342]">
-            {lang === 'zh' ? '加入我们' : 'Join Misty Mountain Runners'}
+            {isRenewing
+              ? (lang === 'zh' ? '续费会员' : 'Renew Your Membership')
+              : (lang === 'zh' ? '加入我们' : 'Join Misty Mountain Runners')}
           </h1>
           <p className="text-gray-500 mt-2">
             {lang === 'zh' ? '成为我们社区的一员' : 'Become part of our running community'}
           </p>
         </div>
+
+        {/* Renewing-as banner */}
+        {isRenewing && existingMember && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-[#0A2342] flex items-center justify-center text-white font-bold flex-shrink-0">
+              {([existingMember.firstName, existingMember.lastName].filter(Boolean).join(' ') || existingMember.email)[0].toUpperCase()}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#0A2342]">
+                {lang === 'zh' ? '续费身份：' : 'Renewing as:'}{' '}
+                {[existingMember.firstName, existingMember.lastName].filter(Boolean).join(' ') || existingMember.email}
+              </p>
+              <p className="text-xs text-gray-500">
+                {lang === 'zh' ? '会员编号：' : 'Member ID: '}{existingMember.memberId}
+                {' · '}{existingMember.email}
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
           <ProgressBar />
@@ -228,9 +280,18 @@ export default function JoinPage() {
           {/* ── STEP 2: Member Info ────────────────────────────────── */}
           {step === 'info' && (
             <form onSubmit={(e) => { e.preventDefault(); nextStep() }}>
-              <h2 className="text-xl font-semibold text-[#0A2342] mb-6">
-                {lang === 'zh' ? '填写个人信息' : 'Your Information'}
+              <h2 className="text-xl font-semibold text-[#0A2342] mb-2">
+                {isRenewing
+                  ? (lang === 'zh' ? '确认个人信息' : 'Review Your Info')
+                  : (lang === 'zh' ? '填写个人信息' : 'Your Information')}
               </h2>
+              {isRenewing && (
+                <p className="text-sm text-gray-500 mb-6">
+                  {lang === 'zh'
+                    ? '我们已从您的会员档案中预填了以下信息，请确认或更新后继续。'
+                    : 'We pre-filled your info from your member record. Review and update if needed.'}
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 {/* Text fields */}
                 {([

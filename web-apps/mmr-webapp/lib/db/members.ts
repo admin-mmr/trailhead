@@ -1,5 +1,5 @@
 import { getDb } from './connection'
-import type { Member, MembershipType } from '@/types'
+import type { Member, MemberStatus, MembershipType } from '@/types'
 
 // Maps NextAuth provider IDs → snake_case column names in members table
 const OAUTH_SUB_COLUMNS: Record<string, string> = {
@@ -39,8 +39,10 @@ function rowToMember(row: any): Member {
     nyrrRunnerName: row.NYRRRunnerName ?? undefined,
     yearBorn:       row.YearBorn  != null ? Number(row.YearBorn)  : undefined,
     joinYear:       row.JoinYear  != null ? Number(row.JoinYear)  : undefined,
-    membershipType: row.Type,
-    status:         row.Status,
+    // Normalize to lowercase so code like `status === 'active'` works regardless
+    // of how the value is cased in the DB (Google Sheets sync stores 'Active').
+    membershipType: ((row.Type  ?? 'individual') as string).toLowerCase() as MembershipType,
+    status:         ((row.Status ?? 'inactive')  as string).toLowerCase() as MemberStatus,
     expiresAt:      row.Expiration instanceof Date
                       ? row.Expiration.toISOString()
                       : undefined,

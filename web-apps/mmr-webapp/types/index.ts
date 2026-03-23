@@ -1,5 +1,6 @@
 // ─── Member ──────────────────────────────────────────────────────────────────
-export type MemberStatus = 'active' | 'inactive' | 'pending'
+// 'expired' = was active but ExpiresAt has passed; detected at login/refresh time
+export type MemberStatus = 'active' | 'inactive' | 'pending' | 'expired'
 export type MembershipType = 'individual' | 'family'
 
 export interface Member {

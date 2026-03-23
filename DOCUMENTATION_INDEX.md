@@ -1,6 +1,6 @@
 # 📚 Documentation Index & Architecture Guide
 
-**Last Updated**: March 22, 2026
+**Last Updated**: March 23, 2026
 **Purpose**: Single source of truth for project documentation structure
 **Audience**: Developers, operations, new team members
 
@@ -121,25 +121,37 @@ Manual sync runner: `bash basecamp/run-sync.sh`
 ### Key Files
 | File | Purpose |
 |---|---|
-| `app/login/page.tsx` | Login UI — email+password form + Google and Microsoft social login buttons |
-| `app/auth/complete/route.ts` | NextAuth→mmr_session bridge (GET, called after any sign-in) |
+| `app/login/page.tsx` | Login UI — email+password form + Google and Microsoft social login buttons; links to forgot-password and setup-password |
+| `app/auth/complete/route.ts` | NextAuth→mmr_session bridge; detects expired-active memberships at login time |
 | `app/auth/forgot-password/page.tsx` | Forgot password page |
 | `app/auth/reset-password/page.tsx` | Reset password page (reads `?token=`) |
+| `app/auth/setup-password/page.tsx` | **NEW** First-time password setup for existing members (reuses forgot-password API, different UI copy) |
+| `app/(public)/faq/page.tsx` | **NEW** FAQ page — 9 bilingual accordion items covering login, setup, renewal, status, contacts |
+| `app/(public)/page.tsx` | Homepage — official website section uses a link button (no iframe) |
+| `app/(public)/join/page.tsx` | Join/renew page — pre-fills form from `/api/members/me` for logged-in members |
+| `app/(member)/layout.tsx` | Portal layout — expired members get slim layout + amber banner; non-active redirected to `/membership/inactive` |
+| `app/membership/inactive/page.tsx` | Inactive/pending/expired holding page — fetches and displays member info (name, email, MemberID) |
 | `app/api/auth/[...nextauth]/route.ts` | NextAuth v5 catch-all handler |
-| `app/api/auth/forgot-password/route.ts` | POST: generate token, send reset email |
+| `app/api/auth/forgot-password/route.ts` | POST: generate token, send reset email (also used by setup-password) |
 | `app/api/auth/reset-password/route.ts` | POST: validate token, save new bcrypt password |
+| `app/api/auth/logout/route.ts` | GET: clears `mmr_session` cookie, redirects to `/` using `req.url` origin |
+| `app/api/auth/refresh-session/route.ts` | POST: re-reads DB, re-issues JWT with fresh status (detects expiry) |
+| `app/api/members/me/route.ts` | GET: returns member profile; accessible to any logged-in member including expired/pending |
 | `app/api/payments/submit/route.ts` | POST: submit payment event → `webapp_events` |
 | `app/api/payments/pending/route.ts` | GET: pending events for logged-in member |
 | `app/api/payments/proof/route.ts` | POST: upload payment proof screenshot |
 | `auth.ts` | NextAuth v5 config (all providers + Credentials) |
 | `lib/auth/password.ts` | `hashPassword` / `verifyPassword` (bcryptjs, cost 12) |
-| `lib/auth/session.ts` | Custom JWT create/validate, cookie management (unchanged) |
+| `lib/auth/session.ts` | Custom JWT create/validate, cookie management |
 | `lib/db/connection.ts` | MySQL pool (reads `DATABASE_URL`) |
-| `lib/db/members.ts` | Member CRUD; `updateMemberOAuthSub()`, `setMemberPassword()` |
+| `lib/db/members.ts` | Member CRUD; `rowToMember` normalizes status/membershipType to lowercase |
 | `lib/email/client.ts` | Azure Communication Services `sendEmail()` |
-| `lib/email/templates.ts` | HTML templates (bilingual EN/ZH); `passwordResetEmailHtml()` |
-| `lib/access.ts` | Route access rules (public/member/active tiers) |
-| `middleware.ts` | JWT validation (edge runtime) — unchanged |
+| `lib/email/templates.ts` | HTML templates (bilingual EN/ZH); contact email `admin@mmrunners.org` |
+| `lib/access.ts` | Route tiers: `/portal/profile` → `'member'` (before `/portal` → `'active'`); `/auth/setup-password` → `'public'` |
+| `middleware.ts` | JWT validation (edge runtime); sets `x-pathname` header for server-component layouts |
+| `components/layout/Navbar.tsx` | Shows `UserCircle` icon + first name when logged in; login button when not |
+| `components/layout/Footer.tsx` | Founding year 2015; improved text contrast; contact `admin@mmrunners.org` |
+| `types/index.ts` | `MemberStatus`: `'active' \| 'inactive' \| 'pending' \| 'expired'` |
 | `types/next-auth.d.ts` | Augments Session + JWT with `provider`, `providerAccountId` |
 | `db/mmr_migration_v*.sql` | Schema migrations (v1–v9) |
 | `basecamp/run-sync.sh` | Manual sheet→MySQL sync runner |
@@ -153,6 +165,10 @@ Manual sync runner: `bash basecamp/run-sync.sh`
 | `familyId` typed as `number` but DB is `VARCHAR(10)` | `types/index.ts` | Fixed to `string` |
 | `password_reset_tokens` uses PascalCase columns — routes used lowercase | `api/auth/forgot-password` + `reset-password` routes | Fixed to PascalCase in DML, snake_case aliases in SELECT |
 | `fk_members_family` FK listed in v1 migration but never applied to live DB | v8 migration | Removed `DROP FOREIGN KEY` statement entirely |
+| Logout redirected to `localhost` in production | `api/auth/logout/route.ts` | Use `new URL('/', req.url)` to derive origin from request |
+| Active members showing "Pending" in portal | `lib/db/members.ts` | Google Sheets syncs `'Active'` (capital); normalized `.toLowerCase()` in `rowToMember` |
+| Expired members fully locked out | `lib/access.ts`, `app/(member)/layout.tsx`, `middleware.ts` | Added `'expired'` status; `/portal/profile` accessible to 'member' tier; expiry detected at JWT-issue time |
+| Homepage iframe blank (official website blocks embedding) | `app/(public)/page.tsx` | Removed iframe; replaced with link button |
 
 ### Session Log
 | Datetime (EDT) | Discovery |
@@ -185,37 +201,49 @@ Manual sync runner: `bash basecamp/run-sync.sh`
 | 2026-03-22 | `/auth/complete` redirect loop: NextAuth v5 `auth()` wrapper silently drops `Set-Cookie` on `NextResponse` redirect — root cause of OAuth + credentials login not reaching /portal |
 | 2026-03-22 | Attempted fix: `cookies()` from `next/headers` inside `auth()` wrapper — loop persists; added debug logging to `auth/complete`, `middleware.ts`, `login/page.tsx` to pinpoint exact failure point |
 | 2026-03-22 | DOCUMENTATION_INDEX.md updated: single-line commands, Table Renames section removed, Google Sheets Sync corrected, session log → datetime (EDT) |
+| 2026-03-22 | Portal bug fixes (Session 1): logout redirect fixed; `/membership/inactive` shows member info; `/join` pre-fills for logged-in members; navbar shows member icon; `'expired'` status added with grace access to `/portal/profile` |
+| 2026-03-23 | Portal bug fixes (Session 2): footer year→2015, contrast improved; FAQ page at `/faq` (9 items, bilingual); `/auth/setup-password` for first-time password creation; all contact emails audited→`admin@`/`web@mmrunners.org`; Google Sheets status case mismatch fixed in `rowToMember`; `MemberStatus` type extended with `'expired'`; `x-pathname` header forwarded by middleware for server-component path detection |
+| 2026-03-23 | Homepage official website section: iframe removed (blank due to X-Frame-Options); replaced with plain link button to `www.mmrunners.org` |
+| 2026-03-23 | TypeScript check (`npx tsc --noEmit`) passes clean (zero errors in app source; pre-existing test file errors are in `__tests__/` only and don't affect build) |
 
 ### ⏭️ Next Session — Pending Tasks
 Copy this block into the new session context:
 
 ```
-Auth is implemented but NOT yet fully tested end-to-end. Two things to verify before committing:
+Portal code is committed and type-checks cleanly. Next steps before going live:
 
-1. GOOGLE OAUTH TEST
+1. GOOGLE OAUTH TEST (local)
    - Run: cd web-apps/mmr-webapp && bash start-dev.sh
    - Go to http://localhost:3000/login
    - Click "Continue with Google"
-   - Expected: Google consent → /portal (or /join if first time)
-   - The /auth/complete route was just fixed (uses wrapped auth handler)
+   - Expected: Google consent → /portal
+   - If redirect loops, check /auth/complete (uses wrapped auth handler form)
 
-2. EMAIL/PASSWORD TEST
-   First, set a password on your account (run from web-apps/mmr-webapp/):
+2. EMAIL/PASSWORD TEST (local)
+   First, set a password on a test account (run from web-apps/mmr-webapp/):
      node -e "const b=require('bcryptjs'); b.hash('TestPassword123!', 12).then(h => console.log(h))"
      mysql-mmr -e "UPDATE members SET password_hash='\$2b\$12\$...' WHERE Email='cathylin@gmail.com';"
    Then sign in at /login with email + that password.
    Expected: redirects to /portal
 
-3. RUN MIGRATION V9 (if not already done)
+3. FIRST-TIME SETUP TEST
+   Go to /auth/setup-password, enter your email.
+   Expected: receive email with link to /auth/reset-password?token=...
+   Follow link, set a password, confirm it redirects to /login.
+
+4. EXPIRED MEMBER TEST
+   Update a test member's ExpiresAt to a past date in DB.
+   Log in — should see /portal/profile with amber expiry banner and "Renew now" link.
+   Attempting to go to /portal/photos should redirect to /membership/inactive.
+
+5. RUN MIGRATION V9 ON PRODUCTION (if not already done)
      mysql-mmr < web-apps/mmr-webapp/db/mmr_migration_v9_social_auth.sql
    Adds facebook_sub column to members, drops otp_codes table.
 
-4. BUILD CHECK before committing:
-     cd web-apps/mmr-webapp && npm run build
-   Must pass with zero errors.
-
-5. COMMIT + DEPLOY
-   Once both auth flows pass, commit and push to trigger Azure deploy.
+6. PUSH TO TRIGGER AZURE DEPLOY
+     git push origin main
+   GitHub Actions will build and deploy to Azure Static Web Apps.
+   Production URL: https://orange-tree-0d70d110f.4.azurestaticapps.net
 ```
 
 ---
@@ -600,6 +628,6 @@ trailhead/
 
 ---
 
-*Last Updated: March 22, 2026*
+*Last Updated: March 23, 2026*
 *Maintained by: Development team*
 *Purpose: Single source of truth for documentation organization*

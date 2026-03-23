@@ -25,8 +25,15 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   const tier = getRequiredTier(pathname)
 
-  // Public routes — no checks needed
-  if (tier === 'public') return NextResponse.next()
+  // Forward the pathname as a header so server-component layouts can read it
+  // via headers() from next/headers without needing to parse x-forwarded-url.
+  const requestHeaders = new Headers(req.headers)
+  requestHeaders.set('x-pathname', pathname)
+
+  // Public routes — no checks needed (but still forward the pathname header)
+  if (tier === 'public') {
+    return NextResponse.next({ request: { headers: requestHeaders } })
+  }
 
   const token = req.cookies.get('mmr_session')?.value
   console.log(`[middleware] ${pathname} | tier=${tier} | mmr_session cookie: ${token ? `present (${token.length} chars)` : 'MISSING'}`)
@@ -37,14 +44,15 @@ export async function middleware(req: NextRequest) {
     console.log(`[middleware] ${pathname} | JWT valid | status=${payload.status}`)
 
     if (tier === 'active' && payload.status !== 'active') {
-      // Authenticated but membership is inactive or pending
+      // Authenticated but membership is inactive, pending, or expired.
+      // Redirect to /membership/inactive so the member sees a helpful message.
       const dest = new URL('/membership/inactive', req.url)
       dest.searchParams.set('from', pathname)
       dest.searchParams.set('status', String(payload.status ?? 'inactive'))
       return NextResponse.redirect(dest)
     }
 
-    return NextResponse.next()
+    return NextResponse.next({ request: { headers: requestHeaders } })
   } catch (err) {
     // Token invalid or expired
     console.log(`[middleware] ${pathname} | JWT verification FAILED:`, (err as Error).message)

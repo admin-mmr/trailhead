@@ -27,16 +27,23 @@ export async function POST(_req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Member not found.' }, { status: 404 })
     }
 
+    // Detect expired active memberships (same logic as /auth/complete)
+    const isExpiredActive =
+      member.status === 'active' &&
+      !!member.expiresAt &&
+      new Date(member.expiresAt) < new Date()
+    const effectiveStatus = isExpiredActive ? ('expired' as const) : member.status
+
     // Issue a fresh JWT with the latest status
     const token = await createSession({
       memberId:  member.memberId,
       email:     member.email,
       firstName: member.firstName,
       lastName:  member.lastName,
-      status:    member.status,
+      status:    effectiveStatus,
     })
 
-    const res = NextResponse.json({ status: member.status })
+    const res = NextResponse.json({ status: effectiveStatus })
     res.cookies.set(setSessionCookie(token))
     return res
   } catch (err) {

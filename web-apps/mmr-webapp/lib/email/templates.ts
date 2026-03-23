@@ -8,9 +8,9 @@
  *  - Brand-consistent colours (#1F497D navy, #E86033 orange)
  */
 
-const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://mistymountainrunners.org'
+const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://mmrunners.org'
 const PORTAL   = `${APP_URL}/portal`
-const FEEDBACK = 'info@mistymountainrunners.org'
+const FEEDBACK = 'admin@mmrunners.org'
 
 // ── Shared layout wrappers ────────────────────────────────────────────────────
 

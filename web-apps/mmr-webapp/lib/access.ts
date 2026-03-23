@@ -29,6 +29,9 @@ export interface AccessRule {
 
 export const ACCESS_CONFIG: AccessRule[] = [
   // ── Active membership required ─────────────────────────────────────────────
+  // Profile page is accessible to any logged-in member (including expired) so
+  // they can see their account info and get a link to renew.
+  { prefix: '/portal/profile',     tier: 'member', note: 'Profile — any logged-in member (including expired)' },
   { prefix: '/portal',             tier: 'active', note: 'Member portal — active membership required' },
   { prefix: '/api/photos',         tier: 'active', note: 'Photo service — active members only' },
   { prefix: '/api/bibs',           tier: 'active', note: 'Bib management — active members only' },
@@ -49,9 +52,10 @@ export const ACCESS_CONFIG: AccessRule[] = [
   { prefix: '/login',              tier: 'public' },
   { prefix: '/membership',         tier: 'public', note: 'Membership status / inactive page — must be reachable without active status' },
   { prefix: '/api/auth',           tier: 'public' },
-  { prefix: '/auth/forgot-password', tier: 'public', note: 'Forgot-password page — unauthenticated users only' },
-  { prefix: '/auth/reset-password',  tier: 'public', note: 'Reset-password page — unauthenticated users only' },
-  { prefix: '/auth/complete',        tier: 'public', note: 'NextAuth→mmr_session bridge — called after OAuth/Credentials sign-in' },
+  { prefix: '/auth/forgot-password',  tier: 'public', note: 'Forgot-password page — unauthenticated users only' },
+  { prefix: '/auth/reset-password',   tier: 'public', note: 'Reset-password page — unauthenticated users only' },
+  { prefix: '/auth/setup-password',   tier: 'public', note: 'First-time password setup for existing members' },
+  { prefix: '/auth/complete',         tier: 'public', note: 'NextAuth→mmr_session bridge — called after OAuth/Credentials sign-in' },
 
   // Admin area (not yet built — placeholder)
   { prefix: '/admin',              tier: 'active', note: 'Admin — requires active membership; add role check in each route' },

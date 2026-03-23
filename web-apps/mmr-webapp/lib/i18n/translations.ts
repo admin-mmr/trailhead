@@ -20,7 +20,7 @@ export const translations = {
   'hero.cta.events':{ en: 'View Events',     zh: '查看活动' },
 
   // ─── Stats ─────────────────────────────────────────────────
-  'stats.members':  { en: '500+ Members',    zh: '500+ 会员' },
+  'stats.members':  { en: '400+ Members',    zh: '400+ 会员' },
   'stats.runs':     { en: '12 Runs/Month',   zh: '每月12次' },
   'stats.team':     { en: 'NYRR Team',       zh: 'NYRR 队伍' },
   'stats.nonprofit':{ en: '501(c)(3)',        zh: '非盈利' },

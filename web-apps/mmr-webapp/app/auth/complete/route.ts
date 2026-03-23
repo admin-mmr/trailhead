@@ -69,15 +69,25 @@ export const GET = auth(async function handler(req) {
     await updateMemberOAuthSub(member.memberId, provider, providerAccountId)
   }
 
+  // ── Determine effective status (check for expired active memberships) ────
+  // If the DB says 'active' but ExpiresAt has passed, use 'expired' in the JWT
+  // so the middleware can route the member to a limited-access view rather than
+  // redirecting them straight to /login as if they were never a member.
+  const isExpiredActive =
+    member.status === 'active' &&
+    !!member.expiresAt &&
+    new Date(member.expiresAt) < new Date()
+  const effectiveStatus = isExpiredActive ? ('expired' as const) : member.status
+
   // ── Create our custom session cookie ──────────────────────────────────────
   const token = await createSession({
     memberId:  member.memberId,
     email:     member.email,
     firstName: member.firstName,
     lastName:  member.lastName,
-    status:    member.status,
+    status:    effectiveStatus,
   })
-  console.log('[auth/complete] ✅ mmr_session JWT created, length:', token.length, 'status:', member.status)
+  console.log('[auth/complete] ✅ mmr_session JWT created, length:', token.length, 'status:', effectiveStatus, isExpiredActive ? '(expired active)' : '')
 
   // Use cookies() from next/headers to set the cookie at the framework level.
   // Setting it directly on a NextResponse object returned from inside the
