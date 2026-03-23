@@ -18,20 +18,16 @@
 | Gender | Text | Male/ Female | |
 | WeChatID | Text | john_doe123 | |
 | District | Text | Manhattan | |
-| WebApp | Text | Yes / No | |
-| Payment Check | Text | Yes / No | |
-| Info | Text | Any notes | |
 | JoinYear | Number | 2020 | 4-digit year |
 | PhoneNumber | Text | 555-1234 | |
 | Notes | Text | Any notes | |
 | NYRRRunnerName | Text | john doe | For race registration lookup |
 | YearBorn | Number | 1985 | 4-digit year (for NYRR disambiguation) |
 
-
 **Minimum example row:**
 ```
-Email               | First Name | Last Name | Status           | Type       | Gender | ...
-john@example.com    | John       | Doe       | active           | Individual | M      | ...
+MemberID | Email               | First Name | Last Name | Status           | Type       | Gender | ...
+A0001    | john@example.com    | John       | Doe       | active           | Individual | Male   | ...
 ```
 
 **Why syncs fail:**

@@ -56,9 +56,10 @@ jobs:
         run: |
           python basecamp/ops/sync_sheets_to_mysql.py \
             --sheet "Main" \
+            --table "members" \
             --spreadsheet-id "${{ secrets.GOOGLE_SHEETS_MEMBERSHIP_ID }}" \
             --sheet-range "Main!A:Z" \
-            --key-field "Email" \
+            --key-field "MemberID" \
             2>&1 | tee sync-members.log
 
       - name: Upload sync logs

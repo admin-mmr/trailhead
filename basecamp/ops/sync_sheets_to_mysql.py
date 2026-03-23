@@ -39,6 +39,57 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Per-table column whitelists
+#
+# Only these columns are ever read from Google Sheets and written to MySQL.
+# Columns that appear in the sheet but are NOT in the whitelist are silently
+# ignored, which protects system-only columns (password_hash, google_sub,
+# etc.) from being overwritten.
+#
+# For the members table the whitelist is exactly columns 1-26 of the schema,
+# ending with YearBorn.  Anything defined after YearBorn in the CREATE TABLE
+# is a system/auth column and must never be touched by a sheet sync.
+# ---------------------------------------------------------------------------
+TABLE_COLUMN_WHITELISTS: Dict[str, set] = {
+    'members': {
+        # col 1-26 of the members table (matches CREATE TABLE order)
+        'MemberID', 'Status', 'Created', 'Expiration',
+        'Email', 'FirstName', 'LastName', 'Type', 'FamilyID',
+        'Gender', 'WeChatID', 'District', 'WebApp', 'PaymentCheck',
+        'Info', 'LastUpdated', 'MembershipFeePaid', 'PaymentDate',
+        'PaymentTransaction', 'JoinYear', 'PhoneNumber',
+        'LastLoginDate', 'ProfileLastUpdated', 'Notes',
+        'NYRRRunnerName', 'YearBorn',          # col 26 — last Sheets column
+    },
+}
+
+
+def validate_numeric(value: str, col_type: str) -> Optional[str]:
+    """
+    Validate that a value is numeric for INT / SMALLINT / DECIMAL / FLOAT columns.
+
+    Returns the value unchanged if it is a valid number, or None if it cannot
+    be converted (e.g. 'Special', 'N/A', free-text notes in a numeric cell).
+    Strips currency symbols and commas before attempting conversion.
+    """
+    col_type_lower = col_type.lower()
+    numeric_types = ('int', 'smallint', 'tinyint', 'mediumint', 'bigint',
+                     'decimal', 'numeric', 'float', 'double')
+    if not any(t in col_type_lower for t in numeric_types):
+        return value  # not a numeric column — pass through unchanged
+
+    # Strip common formatting characters
+    cleaned = str(value).strip().lstrip('$').replace(',', '')
+    try:
+        if any(t in col_type_lower for t in ('int', 'smallint', 'tinyint', 'mediumint', 'bigint')):
+            int(float(cleaned))   # accept "2026.0" for SMALLINT
+        else:
+            float(cleaned)
+        return cleaned
+    except (ValueError, TypeError):
+        return None
+
 
 def validate_status(value: str) -> str:
     """
@@ -274,6 +325,25 @@ class SheetSyncer:
             logger.error(f'Failed to get schema for {self.table_name}: {e}')
             return {}
 
+    def filter_row_to_whitelist(self, row: Dict[str, str]) -> Dict[str, str]:
+        """
+        If this table has a column whitelist (TABLE_COLUMN_WHITELISTS), return
+        only the whitelisted keys from the row.  This prevents sheet columns
+        that have no business touching system/auth DB columns from ever being
+        included in INSERT/UPDATE statements.
+
+        Tables without an explicit whitelist pass through unchanged (all
+        columns that exist in the DB schema are eligible as before).
+        """
+        whitelist = TABLE_COLUMN_WHITELISTS.get(self.table_name)
+        if whitelist is None:
+            return row
+        filtered = {k: v for k, v in row.items() if k in whitelist}
+        ignored = set(row.keys()) - whitelist
+        if ignored:
+            logger.debug(f'Ignoring sheet columns not in {self.table_name} whitelist: {sorted(ignored)}')
+        return filtered
+
     def get_required_columns(self) -> set:
         """
         Get the set of column names that are NOT NULL and have no default value.
@@ -386,6 +456,11 @@ class SheetSyncer:
             if not key_value:
                 return False
 
+            # Restrict to whitelisted columns before any processing.
+            # For the members table this enforces the "columns 1-26 only" rule
+            # and guarantees system/auth columns are never touched.
+            row = self.filter_row_to_whitelist(row)
+
             cursor = self.connection.cursor(dictionary=True)
 
             # Check if row exists
@@ -393,13 +468,88 @@ class SheetSyncer:
             existing = cursor.fetchone()
 
             if change_type == 'added':
+                schema = self.get_table_schema()
+
                 if existing:
-                    # Row exists - skip (update handled separately if needed)
-                    cursor.close()
-                    return False
+                    # Row already exists — update it (UPSERT: handles redo/resync).
+                    # This ensures a full re-sync from Google Sheets overwrites stale MySQL data.
+                    update_fields = []
+                    update_params = []
+
+                    for col_name, col_value in row.items():
+                        if col_name in schema and col_name != key_field:
+                            col_value_clean = col_value.strip() if isinstance(col_value, str) else col_value
+                            if col_value_clean:
+                                col_type = schema[col_name]
+                                col_type_lower = col_type.lower()
+
+                                if 'date' in col_type_lower or 'timestamp' in col_type_lower:
+                                    date_only = col_type_lower.startswith('date') and 'datetime' not in col_type_lower
+                                    converted = convert_datetime_to_mysql(str(col_value_clean), date_only=date_only)
+                                    if converted:
+                                        col_value_clean = converted
+                                    else:
+                                        logger.debug(f'Skipping unparseable date in {col_name}: {col_value_clean}')
+                                        continue
+
+                                if 'enum' in col_type_lower:
+                                    if col_name == 'Status':
+                                        col_value_clean = validate_status(str(col_value_clean))
+                                    else:
+                                        validated = validate_enum_value(str(col_value_clean), col_type)
+                                        if validated is None:
+                                            logger.warning(
+                                                f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
+                                                f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                            )
+                                            continue
+                                        col_value_clean = validated
+
+                                # Handle numeric type validation (int, decimal, float, etc.)
+                                validated_num = validate_numeric(str(col_value_clean), col_type)
+                                if validated_num is None:
+                                    logger.warning(
+                                        f'Skipping non-numeric value for {col_name}={col_value_clean!r} '
+                                        f'(expected {col_type}) in {self.table_name} {key_field}={key_value!r}'
+                                    )
+                                    continue
+                                col_value_clean = validated_num
+
+                                update_fields.append(f'{col_name} = %s')
+                                update_params.append(col_value_clean)
+
+                    if update_fields:
+                        update_params.append(key_value)
+                        query = f"UPDATE {self.table_name} SET {', '.join(update_fields)} WHERE {key_field} = %s"
+                        cursor.execute(query, update_params)
+                        self.connection.commit()
+                        logger.info(f'Upserted (updated) existing row in {self.table_name} with {key_field}={key_value}')
+                        cursor.close()
+                        return True
+                    else:
+                        cursor.close()
+                        return False
+
                 else:
-                    # New row - insert with columns that exist in this table
-                    schema = self.get_table_schema()
+                    # New row — insert, but first guard against duplicate Email
+                    # (Email has a UNIQUE constraint; skip rather than crash on duplicates)
+                    if 'Email' in schema and 'Email' in row:
+                        email_val = row.get('Email', '').strip() if isinstance(row.get('Email'), str) else ''
+                        if email_val:
+                            cursor.execute(
+                                f"SELECT {key_field} FROM {self.table_name} WHERE Email = %s",
+                                (email_val,)
+                            )
+                            dupe = cursor.fetchone()
+                            if dupe:
+                                existing_key = dupe[key_field] if isinstance(dupe, dict) else dupe[0]
+                                logger.warning(
+                                    f'Skipping {key_field}={key_value!r} in {self.table_name}: '
+                                    f'Email={email_val!r} already belongs to {key_field}={existing_key!r}'
+                                )
+                                cursor.close()
+                                return False
+
                     required_cols = self.get_required_columns()
                     insert_cols = []
                     insert_vals = []
@@ -439,6 +589,17 @@ class SheetSyncer:
                                         continue  # skip this column; it's NULL-able so omit it
                                     col_value_clean = validated
 
+                            # Handle numeric type validation (int, decimal, float, etc.)
+                            validated_num = validate_numeric(str(col_value_clean), col_type)
+                            if validated_num is None:
+                                logger.warning(
+                                    f'Skipping non-numeric value for {col_name}={col_value_clean!r} '
+                                    f'(expected {col_type}) in {self.table_name} {key_field}={key_value!r}'
+                                )
+                                continue  # skip this column; leave it NULL
+
+                            col_value_clean = validated_num
+
                             insert_cols.append(col_name)
                             insert_vals.append('%s')
                             insert_params.append(col_value_clean)
@@ -469,8 +630,26 @@ class SheetSyncer:
                     cursor.close()
                     return False
 
-                # Update row
+                # Guard against changing Email to one already used by a different row
                 schema = self.get_table_schema()
+                if 'Email' in schema and 'Email' in row:
+                    email_val = row.get('Email', '').strip() if isinstance(row.get('Email'), str) else ''
+                    if email_val:
+                        cursor.execute(
+                            f"SELECT {key_field} FROM {self.table_name} WHERE Email = %s AND {key_field} != %s",
+                            (email_val, key_value)
+                        )
+                        dupe = cursor.fetchone()
+                        if dupe:
+                            existing_key = dupe[key_field] if isinstance(dupe, dict) else dupe[0]
+                            logger.warning(
+                                f'Skipping email update for {key_field}={key_value!r} in {self.table_name}: '
+                                f'Email={email_val!r} already belongs to {key_field}={existing_key!r}'
+                            )
+                            # Remove Email from the update so the rest of the row still syncs
+                            row = {k: v for k, v in row.items() if k != 'Email'}
+
+                # Update row
                 update_fields = []
                 update_params = []
 
@@ -504,6 +683,16 @@ class SheetSyncer:
                                         )
                                         continue  # skip this field update; leave DB value unchanged
                                     col_value_clean = validated
+
+                            # Handle numeric type validation (int, decimal, float, etc.)
+                            validated_num = validate_numeric(str(col_value_clean), col_type)
+                            if validated_num is None:
+                                logger.warning(
+                                    f'Skipping non-numeric value for {col_name}={col_value_clean!r} '
+                                    f'(expected {col_type}) in {self.table_name} {key_field}={key_value!r}'
+                                )
+                                continue  # skip this field update; leave DB value unchanged
+                            col_value_clean = validated_num
 
                             update_fields.append(f'{col_name} = %s')
                             update_params.append(col_value_clean)

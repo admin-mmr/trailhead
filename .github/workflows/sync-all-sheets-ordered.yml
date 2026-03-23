@@ -199,7 +199,7 @@ jobs:
             --sheet "Main" \
             --table "members" \
             --spreadsheet-id "$SPREADSHEET_ID" \
-            --key-field "Email"
+            --key-field "MemberID"
         continue-on-error: true
 
       - name: Report results
