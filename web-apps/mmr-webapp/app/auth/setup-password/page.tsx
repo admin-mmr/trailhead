@@ -67,7 +67,7 @@ export default function SetupPasswordPage() {
               </p>
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left text-sm text-amber-800 space-y-2">
                 <p>
-                  <strong>Don't see the email?</strong>
+                  <strong>Don&apos;t see the email?</strong>
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-xs text-amber-700">
                   <li>Check your <strong>spam / junk</strong> folder — our emails sometimes land there.</li>

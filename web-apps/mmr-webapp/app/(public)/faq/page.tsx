@@ -25,8 +25,8 @@ const FAQS: FAQItem[] = [
         <p>You have two options:</p>
         <ol className="list-decimal list-inside space-y-2 ml-2">
           <li>
-            <strong>Google or Microsoft login</strong> — Click "Continue with Google" or
-            "Continue with Microsoft" on the{' '}
+            <strong>Google or Microsoft login</strong> — Click &ldquo;Continue with Google&rdquo; or
+            &ldquo;Continue with Microsoft&rdquo; on the{' '}
             <a href="/login" className="text-[#1F497D] underline">login page</a>. Use the
             same email address you gave us when you joined.
           </li>
@@ -50,7 +50,7 @@ const FAQS: FAQItem[] = [
           <li>
             <strong>Google 或 Microsoft 登录</strong> — 在
             <a href="/login" className="text-[#1F497D] underline ml-1">登录页</a>
-            点击"使用 Google 登录"或"使用 Microsoft 登录"，使用您加入时填写的邮箱地址。
+            点击&ldquo;使用 Google 登录&rdquo;或&ldquo;使用 Microsoft 登录&rdquo;，使用您加入时填写的邮箱地址。
           </li>
           <li>
             <strong>邮箱 + 密码</strong> — 访问{' '}
@@ -69,7 +69,7 @@ const FAQS: FAQItem[] = [
     a: (
       <div className="space-y-2 text-sm text-gray-700">
         <p>
-          Because the portal is new, existing members don't have a password yet — but your
+          Because the portal is new, existing members don&apos;t have a password yet — but your
           member profile is already in our system.
         </p>
         <p>
@@ -79,11 +79,11 @@ const FAQS: FAQItem[] = [
           </a>
         </p>
         <p>
-          Enter the email address you used when you joined MMR. We'll send you a secure
+          Enter the email address you used when you joined MMR. We&apos;ll send you a secure
           one-time link to create your new password. The link expires in 60 minutes.
         </p>
         <p className="text-xs text-gray-500">
-          现有会员请前往"首次设置密码"页面，输入加入时的邮箱，我们将发送一次性设置链接。
+          现有会员请前往&ldquo;首次设置密码&rdquo;页面，输入加入时的邮箱，我们将发送一次性设置链接。
         </p>
       </div>
     ),
@@ -114,16 +114,16 @@ const FAQS: FAQItem[] = [
           <a href="/auth/forgot-password" className="text-[#1F497D] underline">
             Forgot Password
           </a>{' '}
-          page, enter your email, and we'll send you a reset link.
+          page, enter your email, and we&apos;ll send you a reset link.
         </p>
         <p>
-          <strong>Didn't receive the email?</strong> Check your spam / junk folder first.
+          <strong>Didn&apos;t receive the email?</strong> Check your spam / junk folder first.
           Some email providers (especially corporate or custom domains) may filter our
-          messages. If you still don't see it after a few minutes, contact{' '}
+          messages. If you still don&apos;t see it after a few minutes, contact{' '}
           <a href="mailto:web@mmrunners.org" className="text-[#1F497D] underline">
             web@mmrunners.org
           </a>{' '}
-          and we'll help you get in.
+          and we&apos;ll help you get in.
         </p>
         <p className="text-xs text-gray-500">
           如未收到重置邮件，请先检查垃圾邮件文件夹。仍未收到请联系 web@mmrunners.org。
@@ -157,16 +157,16 @@ const FAQS: FAQItem[] = [
         <p>
           <strong>Pending</strong> means we received your membership application and payment
           submission, and our team is reviewing it. Approval typically takes 1–2 business
-          days. You'll get a confirmation email once approved.
+          days. You&apos;ll get a confirmation email once approved.
         </p>
         <p>
-          <strong>Inactive</strong> means your membership has lapsed or hasn't been
+          <strong>Inactive</strong> means your membership has lapsed or hasn&apos;t been
           activated yet. You can{' '}
           <a href="/join" className="text-[#1F497D] underline">renew or join here →</a>
         </p>
         <p>
           If you believe your status is wrong (e.g. you paid but are still seeing Inactive),
-          use the <strong>"I already renewed — check my status"</strong> button on the
+          use the <strong>&ldquo;I already renewed — check my status&rdquo;</strong> button on the
           membership status page, or contact{' '}
           <a href="mailto:admin@mmrunners.org" className="text-[#1F497D] underline">
             admin@mmrunners.org
@@ -184,7 +184,7 @@ const FAQS: FAQItem[] = [
           <a href="/join" className="text-[#1F497D] underline ml-1">续费或加入 →</a>
         </p>
         <p>
-          如果您认为状态有误（如已付款但仍显示未激活），请点击会员状态页的"我已续费，查询状态"按钮，或联系{' '}
+          如果您认为状态有误（如已付款但仍显示未激活），请点击会员状态页的&ldquo;我已续费，查询状态&rdquo;按钮，或联系{' '}
           <a href="mailto:admin@mmrunners.org" className="text-[#1F497D] underline">
             admin@mmrunners.org
           </a>。
@@ -201,8 +201,8 @@ const FAQS: FAQItem[] = [
           Your browser may be holding on to an old session. Try these steps:
         </p>
         <ol className="list-decimal list-inside space-y-1 ml-2">
-          <li>On the membership status page, click <strong>"I already renewed — check my status"</strong>.</li>
-          <li>If that doesn't work, log out and log back in.</li>
+          <li>On the membership status page, click <strong>&ldquo;I already renewed — check my status&rdquo;</strong>.</li>
+          <li>If that doesn&apos;t work, log out and log back in.</li>
           <li>Clear your browser cache / cookies if the issue persists.</li>
         </ol>
         <p>
@@ -210,7 +210,7 @@ const FAQS: FAQItem[] = [
           <a href="mailto:web@mmrunners.org" className="text-[#1F497D] underline">
             web@mmrunners.org
           </a>{' '}
-          with your member email and we'll sort it out.
+          with your member email and we&apos;ll sort it out.
         </p>
       </div>
     ),
@@ -218,7 +218,7 @@ const FAQS: FAQItem[] = [
       <div className="space-y-2 text-sm text-gray-700">
         <p>您的浏览器可能缓存了旧的会话信息。请尝试：</p>
         <ol className="list-decimal list-inside space-y-1 ml-2">
-          <li>在会员状态页点击"我已续费，查询状态"。</li>
+          <li>在会员状态页点击&ldquo;我已续费，查询状态&rdquo;。</li>
           <li>退出后重新登录。</li>
           <li>清除浏览器缓存 / Cookie。</li>
         </ol>
@@ -241,12 +241,12 @@ const FAQS: FAQItem[] = [
           Go to the <a href="/join" className="text-[#1F497D] underline font-medium">Join / Renew page →</a>
         </p>
         <p>
-          If you're already logged in, your information will be pre-filled. Select your plan,
+          If you&apos;re already logged in, your information will be pre-filled. Select your plan,
           send payment via Zelle or Venmo, and submit the payment confirmation details. Our
           team reviews renewals within 1–2 business days.
         </p>
         <p className="text-xs text-gray-500">
-          前往"加入/续费"页面。已登录会员的信息会自动填充。选择套餐后通过 Zelle 或 Venmo 付款，提交付款信息，我们将在 1–2 个工作日内完成审核。
+          前往&ldquo;加入/续费&rdquo;页面。已登录会员的信息会自动填充。选择套餐后通过 Zelle 或 Venmo 付款，提交付款信息，我们将在 1–2 个工作日内完成审核。
         </p>
       </div>
     ),
