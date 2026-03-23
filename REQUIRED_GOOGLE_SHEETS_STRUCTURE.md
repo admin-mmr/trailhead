@@ -8,30 +8,25 @@
 
 | Column Name | Type | Example | Notes |
 |-------------|------|---------|-------|
-| Email | Text | john@example.com | **Primary key** — must be unique |
-| First Name | Text | John | Exact spacing "First Name" |
-| Last Name | Text | Doe | Exact spacing "Last Name" |
+| MemberID | Text | A0001 | **Primary key** — must be unique |
+| Email | Text | john@example.com | must be unique |
+| FirstName | Text | John | |
+| LastName | Text | Doe | |
 | Status | Text | active / not active / pending | Must be one of these values |
 | Type | Text | Individual / Family | |
-| Gender | Text | M / F | |
+| FamilyID | Text | B001 | |
+| Gender | Text | Male/ Female | |
 | WeChatID | Text | john_doe123 | |
 | District | Text | Manhattan | |
 | WebApp | Text | Yes / No | |
 | Payment Check | Text | Yes / No | |
 | Info | Text | Any notes | |
-| Membership Fee Paid | Text | Yes / No | Exact spacing |
-| Payment Date | Date | 2026-03-20 | Format: YYYY-MM-DD |
-| Payment Transaction | Text | TXN123 | |
 | JoinYear | Number | 2020 | 4-digit year |
 | PhoneNumber | Text | 555-1234 | |
 | Notes | Text | Any notes | |
 | NYRRRunnerName | Text | john doe | For race registration lookup |
 | YearBorn | Number | 1985 | 4-digit year (for NYRR disambiguation) |
 
-**Note:** The following columns are in the database but are AUTO-GENERATED and should NOT be in the Google Sheet:
-- `MemberID` — auto-generated on first sync
-- `FamilyID` — managed separately via families table
-- `Created`, `Expiration`, `LastUpdated`, `LastLoginDate` — auto-managed by system
 
 **Minimum example row:**
 ```
@@ -58,7 +53,7 @@ john@example.com    | John       | Doe       | active           | Individual | M
 | Column Name | Type | Example | Notes |
 |-------------|------|---------|-------|
 | PaymentID | Text | PAY-001 | **Primary key** — must be unique |
-| MemberID | Text | MMR-2020-0001 | Link to members table (optional — will be looked up) |
+| MemberID | Text | A0001 | Link to members table (optional — will be looked up) |
 | Amount | Number | 100.00 | Numeric value |
 | PaymentDate | Date | 2026-03-20 | Format: YYYY-MM-DD |
 | MembershipType | Text | Individual Membership / Family Membership | Exact values |

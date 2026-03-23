@@ -1,0 +1,146 @@
+name: 🔄 Daily Member Status Update
+
+# Runs daily AFTER the sheet sync to recalculate Status for every member.
+# Does NOT touch Expiration — that is handled by the payment reconciliation process.
+#
+# Status logic:
+#   active     → Expiration >= NOW()
+#   pending    → Expiration < NOW() (or NULL) AND has a pending Membership payment event
+#   not active → Expiration < NOW() (or NULL) AND no pending Membership event
+
+on:
+  schedule:
+    # Run at 01:00 UTC daily — after sync-all-sheets-ordered (00:00 UTC)
+    - cron: '0 1 * * *'
+  workflow_dispatch:    # Allow manual trigger from GitHub Actions UI
+    inputs:
+      dry_run:
+        description: 'Dry run (preview only, no DB writes)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      payment_events_table:
+        description: 'Payment events table name (webapp_events or payment_events)'
+        required: false
+        default: 'webapp_events'
+
+env:
+  DATABASE_URL: mysql://${{ secrets.MYSQL_USER }}:${{ secrets.MYSQL_PASSWORD }}@${{ secrets.MYSQL_HOST }}:3306/${{ secrets.MYSQL_DATABASE }}?ssl=true
+
+jobs:
+  update-status:
+    name: Update Member Status
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -q mysql-connector-python python-dotenv
+
+      - name: Run member status update
+        id: update
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+          PE_TABLE="${{ github.event.inputs.payment_events_table || 'webapp_events' }}"
+
+          ARGS="--payment-events-table $PE_TABLE"
+          if [ "$DRY_RUN" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+            echo "⚠️  DRY RUN mode — no changes will be written"
+          fi
+
+          python basecamp/ops/update_member_status.py $ARGS \
+            2>&1 | tee update-member-status.log
+
+      - name: Show status summary
+        if: always()
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          python << 'EOF'
+          import mysql.connector, os
+
+          try:
+              conn = mysql.connector.connect(
+                  host=os.environ["MYSQL_HOST"],
+                  user=os.environ["MYSQL_USER"],
+                  password=os.environ["MYSQL_PASSWORD"],
+                  database=os.environ["MYSQL_DATABASE"],
+                  ssl_disabled=False,
+              )
+              cur = conn.cursor()
+
+              # Status breakdown
+              cur.execute("""
+                  SELECT Status, COUNT(*) AS cnt
+                  FROM members
+                  GROUP BY Status
+                  ORDER BY cnt DESC
+              """)
+              print("=== Member Status Summary ===")
+              for status, cnt in cur.fetchall():
+                  print(f"  {str(status):<14} {cnt}")
+
+              # Expiration null count
+              cur.execute("SELECT COUNT(*) FROM members WHERE Expiration IS NULL")
+              null_count = cur.fetchone()[0]
+              print(f"\n  Expiration IS NULL: {null_count}")
+
+              # Upcoming expirations (next 30 days)
+              cur.execute("""
+                  SELECT COUNT(*) FROM members
+                  WHERE Expiration BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 30 DAY)
+              """)
+              expiring_soon = cur.fetchone()[0]
+              print(f"  Expiring in 30 days: {expiring_soon}")
+
+              cur.close()
+              conn.close()
+          except Exception as e:
+              print(f"Summary query failed: {e}")
+          EOF
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: member-status-update-logs-${{ github.run_number }}
+          path: update-member-status.log
+          retention-days: 30
+
+      - name: Send failure notification
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '❌ Member Status Update Failed'
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: 'GitHub Actions <noreply@github.com>'
+          body: |
+            Workflow: Daily Member Status Update
+            Status:   FAILED
+            Run:      ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            This job recalculates member Status based on Expiration and pending payment events.
+            Check the logs for details.
