@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Trophy, Calendar, ArrowRight, AlertCircle, Clock, Upload } from 'lucide-react'
+import { Trophy, ArrowRight, AlertCircle, Clock, Upload } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import type { Member } from '@/types'
 
@@ -195,20 +195,6 @@ export default function DashboardClient({ member, payments }: Props) {
             </p>
             <p className="text-gray-500 text-sm">
               {lang === 'zh' ? '查看成绩图表' : 'Charts & personal bests'}
-            </p>
-          </div>
-          <ArrowRight className="h-4 w-4 text-gray-400 ml-auto" />
-        </Link>
-        <Link href="/portal/events" className="card p-5 flex items-center gap-4 hover:border-brand-orange/30 border-2 border-transparent transition-colors">
-          <div className="w-12 h-12 bg-brand-navy/10 rounded-xl flex items-center justify-center">
-            <Calendar className="h-6 w-6 text-brand-navy" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">
-              {lang === 'zh' ? '近期活动' : 'Upcoming Events'}
-            </p>
-            <p className="text-gray-500 text-sm">
-              {lang === 'zh' ? '会员专属活动' : 'Member-only runs'}
             </p>
           </div>
           <ArrowRight className="h-4 w-4 text-gray-400 ml-auto" />

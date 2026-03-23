@@ -37,6 +37,7 @@ export const ACCESS_CONFIG: AccessRule[] = [
   { prefix: '/api/bibs',           tier: 'active', note: 'Bib management — active members only' },
 
   // ── Any logged-in member ───────────────────────────────────────────────────
+  { prefix: '/payment-proof',      tier: 'member', note: 'Standalone proof upload — pending/expired members need this outside the active-gated /portal' },
   { prefix: '/api/members/me',     tier: 'member', note: 'Own profile — any logged-in member' },
   { prefix: '/api/members/search', tier: 'member', note: 'Member search — any logged-in member' },
   { prefix: '/api/payments',       tier: 'member', note: 'Payments — pending members need this to submit proof' },
