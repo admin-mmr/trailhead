@@ -25,7 +25,7 @@ interface SendEmailParams {
 export async function sendEmail({ to, subject, html, text }: SendEmailParams): Promise<void> {
   const emailClient = getEmailClient()
   const message = {
-    senderAddress: process.env.EMAIL_FROM!,
+    senderAddress: process.env.EMAIL_SENDER_ADDRESS!,
     content: { subject, html, plainText: text ?? '' },
     recipients: { to: [{ address: to }] },
   }

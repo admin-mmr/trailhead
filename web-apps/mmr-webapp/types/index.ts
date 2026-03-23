@@ -47,7 +47,6 @@ export interface PaymentRecord {
   memberId: string
   amount: number
   currency: string
-  stripeSessionId: string
   membershipType: MembershipType
   status: PaymentStatus
   paidAt: string
