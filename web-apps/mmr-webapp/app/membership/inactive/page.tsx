@@ -12,8 +12,8 @@
 // ============================================================
 
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Suspense, useState }          from 'react'
-import Link                            from 'next/link'
+import { Suspense, useState, useEffect } from 'react'
+import Link                              from 'next/link'
 
 // ── Inner component (reads searchParams) ────────────────────
 function InactiveContent() {
@@ -23,8 +23,33 @@ function InactiveContent() {
   const from     = params.get('from')   ?? '/portal'
   const isPending = status === 'pending'
 
-  const [checking, setChecking] = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
+  const [checking,     setChecking]     = useState(false)
+  const [initialCheck, setInitialCheck] = useState(true)   // true while auto-checking on mount
+  const [error,        setError]        = useState<string | null>(null)
+
+  // On mount: silently refresh the session against the DB.
+  // If the member was activated after their JWT was minted (stale status),
+  // this redirects them straight through without ever showing the inactive UI.
+  useEffect(() => {
+    let cancelled = false
+    async function autoCheck() {
+      try {
+        const res = await fetch('/api/auth/refresh-session', { method: 'POST' })
+        if (!cancelled && res.ok) {
+          const data = await res.json()
+          if (data.status === 'active') {
+            router.replace(from)
+            return
+          }
+        }
+      } catch {
+        // Network error — fall through and show the page normally
+      }
+      if (!cancelled) setInitialCheck(false)
+    }
+    autoCheck()
+    return () => { cancelled = true }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fetch the member's current status from the DB and issue a fresh JWT.
   // Used after renewal so the middleware sees the updated status.
@@ -54,6 +79,9 @@ function InactiveContent() {
       setChecking(false)
     }
   }
+
+  // Still waiting on the silent mount-check — render nothing to avoid a flash
+  if (initialCheck) return null
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -94,9 +122,9 @@ function InactiveContent() {
                   您的申请正在审核中，我们将在 1–2 个工作日内激活您的会员资格并发送确认邮件。
                 </p>
 
-                {/* Upload proof CTA */}
+                {/* Upload proof CTA — must NOT be under /portal (active-gated) */}
                 <Link
-                  href="/portal/payment-proof"
+                  href="/payment-proof"
                   className="block w-full text-center bg-amber-500 hover:bg-amber-600 text-white
                              font-semibold py-3 px-6 rounded-full transition-colors mb-3"
                 >
