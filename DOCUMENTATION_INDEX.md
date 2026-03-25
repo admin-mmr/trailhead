@@ -1,6 +1,6 @@
 # 📚 Documentation Index & Architecture Guide
 
-**Last Updated**: March 23, 2026
+**Last Updated**: March 24, 2026
 **Purpose**: Single source of truth for project documentation structure
 **Audience**: Developers, operations, new team members
 
@@ -253,25 +253,20 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 ### 🚀 **Getting Started (First Time?)**
 1. [`README.md`](README.md) — Project overview and monorepo structure
 2. [`MONOREPO.md`](MONOREPO.md) — How all services integrate together
-3. [`START_HERE.md`](START_HERE.md) — Quick start for local development
-4. [`QUICK_SETUP_GUIDE.md`](QUICK_SETUP_GUIDE.md) — One-page setup checklist
+3. [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) — Local setup: env vars, MySQL alias, credential storage
 
 ### 🔄 **Data Sync & Automation**
-1. [`SYNC_PIPELINE_COMPLETION.md`](SYNC_PIPELINE_COMPLETION.md) ⭐ **LATEST** — Complete sync system status (March 22, 2026)
-2. [`SYNC_AUTOMATION_SUMMARY.md`](SYNC_AUTOMATION_SUMMARY.md) — GitHub Actions automation setup
-3. [`GITHUB_ACTIONS_SETUP.md`](GITHUB_ACTIONS_SETUP.md) — Detailed workflow configuration
-4. [`GITHUB_SECRETS_QUICK_SETUP.md`](GITHUB_SECRETS_QUICK_SETUP.md) — 5-minute secrets checklist
-5. [`basecamp/GITHUB_ACTIONS_SETUP.md`](basecamp/GITHUB_ACTIONS_SETUP.md) — Basecamp-specific workflows
-6. [`basecamp/LOCAL_SETUP.md`](basecamp/LOCAL_SETUP.md) — Local testing of sync scripts
+1. [`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md) — Workflows, secrets setup, schedules, and debugging
+2. [`docs/GOOGLE_SHEETS_REFERENCE.md`](docs/GOOGLE_SHEETS_REFERENCE.md) — Sheet names, column schemas, validation
+3. [`basecamp/LOCAL_SETUP.md`](basecamp/LOCAL_SETUP.md) — Local testing of sync scripts
 
 ### 🌐 **Deployment & Infrastructure**
-1. [`DEPLOYMENT.md`](DEPLOYMENT.md) — Production deployment checklist (Azure default URL)
-2. [`STAGING_SETUP_GUIDE.md`](STAGING_SETUP_GUIDE.md) ⭐ **NEW** — Azure staging slots setup (5 steps)
-3. [`AZURE_RESOURCES.md`](AZURE_RESOURCES.md) — Azure service names and credentials
-4. [`web-apps/mmr-webapp/AZURE_PROTOTYPE_DEPLOY.md`](web-apps/mmr-webapp/AZURE_PROTOTYPE_DEPLOY.md) — Web app deployment
-5. [`web-apps/README.md`](web-apps/README.md) — Web app architecture
+1. [`DEPLOYMENT.md`](DEPLOYMENT.md) — Production deployment checklist
+2. [`docs/AZURE.md`](docs/AZURE.md) — Azure resources, connection strings, staging environments
+3. [`web-apps/mmr-webapp/AZURE_PROTOTYPE_DEPLOY.md`](web-apps/mmr-webapp/AZURE_PROTOTYPE_DEPLOY.md) — Web app deployment
+4. [`web-apps/README.md`](web-apps/README.md) — Web app architecture
 
-### 📖 **Component Documentation**cd 
+### 📖 **Component Documentation**
 1. [`basecamp/README.md`](basecamp/README.md) — Shared library, schemas, utilities
 2. [`basecamp/SETUP.md`](basecamp/SETUP.md) — Basecamp local setup
 3. [`basecamp/TEST_INDIVIDUAL_COMPONENTS.md`](basecamp/TEST_INDIVIDUAL_COMPONENTS.md) — Component testing guide
@@ -280,30 +275,19 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 
 ### 📋 **Planning & Status**
 1. [`PROJECT_PLAN.md`](PROJECT_PLAN.md) — Features roadmap and timeline
-2. [`BUGS_AND_FEATURES.md`](BUGS_AND_FEATURES.md) ⭐ **NEW** — Quick bug/feature reference
-3. [`WORK_COMPLETED.md`](WORK_COMPLETED.md) — Historical work summaries (Phase 1)
-4. [`CHANGELOG.md`](CHANGELOG.md) — Release notes and version history
+2. [`BUGS_AND_FEATURES.md`](BUGS_AND_FEATURES.md) — Quick bug/feature reference
+3. [`CHANGELOG.md`](CHANGELOG.md) — Release notes and version history (v0.1.0 → v0.3.0)
 
 ### 🔧 **Technical Reference**
-1. [`GOOGLE_SHEETS_EXACT_STRUCTURE.md`](GOOGLE_SHEETS_EXACT_STRUCTURE.md) — Sheet column schemas
-2. [`REQUIRED_GOOGLE_SHEETS_STRUCTURE.md`](REQUIRED_GOOGLE_SHEETS_STRUCTURE.md) — Data requirements
-3. [`SCHEMA_UPDATES_SUMMARY.md`](SCHEMA_UPDATES_SUMMARY.md) — Database schema changes
-4. [`MYSQL_PASSWORD_ENCRYPTION_GUIDE.md`](MYSQL_PASSWORD_ENCRYPTION_GUIDE.md) — Credential security
-5. [`SETUP_MYSQL_ALIAS.md`](SETUP_MYSQL_ALIAS.md) — MySQL command shortcuts
+1. [`docs/GOOGLE_SHEETS_REFERENCE.md`](docs/GOOGLE_SHEETS_REFERENCE.md) — Authoritative sheet + column schemas
+2. [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) — MySQL alias, credential storage (Keychain)
 
 ### 🐛 **Troubleshooting**
-1. [`TROUBLESHOOTING_CHECKLIST.md`](TROUBLESHOOTING_CHECKLIST.md) — Common issues and fixes
-2. [`START_DEBUGGING_HERE.md`](START_DEBUGGING_HERE.md) — Debug workflow
-3. [`DEBUG_SYNC_SETUP.md`](DEBUG_SYNC_SETUP.md) — Sync debugging guide
-4. [`GITHUB_ACTIONS_DEBUGGING.md`](GITHUB_ACTIONS_DEBUGGING.md) — GitHub Actions issues
+1. [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — Live log locations, sync checklist, common errors
+2. [`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md) — GitHub Actions specific debugging
 
-### 📅 **Session Notes**
-1. [`NEXT_SESSION.md`](NEXT_SESSION.md) — Handoff for next session
-2. [`DATETIME_CONVERSION_FIX.md`](DATETIME_CONVERSION_FIX.md) — Date parsing fix details
-3. [`SNAPSHOT_FIX_SUMMARY.md`](SNAPSHOT_FIX_SUMMARY.md) — Snapshot storage fixes
-4. [`FIX_AZURE_AND_SMTP.md`](FIX_AZURE_AND_SMTP.md) — Azure & email config
-5. [`CONFLICT_HANDLING_IMPROVEMENT.md`](CONFLICT_HANDLING_IMPROVEMENT.md) — Data conflict resolution
-6. [`PHASE_2_TABLE_SYNC_ANALYSIS.md`](PHASE_2_TABLE_SYNC_ANALYSIS.md) — Multi-table sync analysis
+### 📅 **Session History**
+1. [`docs/SESSION_HISTORY.md`](docs/SESSION_HISTORY.md) — March 22, 2026 session summary
 
 ### 🎯 **Product Documentation**
 1. [`web-apps/docs/prd-archive/`](web-apps/docs/prd-archive/) — Product requirement docs (archived versions)
@@ -318,16 +302,16 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 ### For Operations/DevOps
 **"How do I...?"**
 - Deploy to production? → [`DEPLOYMENT.md`](DEPLOYMENT.md)
-- Set up GitHub Actions? → [`GITHUB_ACTIONS_SETUP.md`](GITHUB_ACTIONS_SETUP.md)
-- Configure Azure? → [`AZURE_RESOURCES.md`](AZURE_RESOURCES.md)
-- Sync data on schedule? → [`SYNC_AUTOMATION_SUMMARY.md`](SYNC_AUTOMATION_SUMMARY.md)
-- Debug a failed sync? → [`DEBUG_SYNC_SETUP.md`](DEBUG_SYNC_SETUP.md)
-- Manage MySQL credentials? → [`MYSQL_PASSWORD_ENCRYPTION_GUIDE.md`](MYSQL_PASSWORD_ENCRYPTION_GUIDE.md)
+- Set up GitHub Actions? → [`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md)
+- Configure Azure? → [`docs/AZURE.md`](docs/AZURE.md)
+- Sync data on schedule? → [`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md)
+- Debug a failed sync? → [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
+- Manage MySQL credentials? → [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md)
 
 ### For Developers
 **"How does...?"**
 - The whole system work? → [`MONOREPO.md`](MONOREPO.md)
-- Data flow from Sheets to MySQL? → [`SYNC_PIPELINE_COMPLETION.md`](SYNC_PIPELINE_COMPLETION.md)
+- Data flow from Sheets to MySQL? → [`docs/SESSION_HISTORY.md`](docs/SESSION_HISTORY.md) (March 22 session)
 - The web app work? → [`web-apps/README.md`](web-apps/README.md) + [`web-apps/mmr-webapp/DEVELOPMENT.md`](web-apps/mmr-webapp/DEVELOPMENT.md)
 - The photo pipeline work? → [`photo-manager/README.md`](photo-manager/README.md)
 - The shared library work? → [`basecamp/README.md`](basecamp/README.md)
@@ -336,64 +320,43 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 ### For Team/Project Managers
 **"What's the status?"**
 - Where are we in the roadmap? → [`PROJECT_PLAN.md`](PROJECT_PLAN.md)
-- What got done? → [`WORK_COMPLETED.md`](WORK_COMPLETED.md)
 - What are the latest changes? → [`CHANGELOG.md`](CHANGELOG.md)
-- What needs to happen next? → [`NEXT_SESSION.md`](NEXT_SESSION.md)
+- What was done in the last session? → [`docs/SESSION_HISTORY.md`](docs/SESSION_HISTORY.md)
 
 ### For New Team Members
 **"Where do I start?"**
 1. [`README.md`](README.md) — Understand the project
 2. [`MONOREPO.md`](MONOREPO.md) — Understand how it's organized
-3. [`START_HERE.md`](START_HERE.md) — Set up locally
+3. [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) — Set up locally
 4. Pick your component and read its README
-5. [`TROUBLESHOOTING_CHECKLIST.md`](TROUBLESHOOTING_CHECKLIST.md) — Common gotchas
+5. [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — Common gotchas
 
 ---
 
-## File Categories & Consolidation Plan
+## Active File Map
 
-### 🔴 **Outdated/Superseded** (Can Archive)
-These files contain information that's been updated in newer documents:
+### 🟢 Root-Level Files (Keep Updated)
 
-| File | Reason | Replaced By |
-|------|--------|------------|
-| `ENVIRONMENT_AND_TABLE_SETUP.md` | Initial setup notes | `QUICK_SETUP_GUIDE.md` + `SYNC_PIPELINE_COMPLETION.md` |
-| `FIX_AZURE_AND_SMTP.md` | Specific bug fix | Incorporated into main docs |
-| `CONFLICT_HANDLING_IMPROVEMENT.md` | Specific improvement | Covered in `SYNC_PIPELINE_COMPLETION.md` |
-| `DATETIME_CONVERSION_FIX.md` | Specific bug fix | Covered in `SYNC_PIPELINE_COMPLETION.md` |
-| `SNAPSHOT_FIX_SUMMARY.md` | Specific bug fix | Covered in `SYNC_PIPELINE_COMPLETION.md` |
-| `PHASE_2_TABLE_SYNC_ANALYSIS.md` | Old analysis | Superseded by actual implementation |
-| `GITHUB_ACTIONS_DEBUGGING.md` | Generic debugging | Covered in `GITHUB_ACTIONS_SETUP.md` |
-| `START_DEBUGGING_HERE.md` | Old debug guide | Covered in `TROUBLESHOOTING_CHECKLIST.md` |
+| File | Purpose | Update Frequency |
+|------|---------|-----------------|
+| `README.md` | Project entry point | As needed |
+| `MONOREPO.md` | Architecture overview | As needed |
+| `PROJECT_PLAN.md` | Roadmap | Quarterly |
+| `CHANGELOG.md` | Release notes | Per release |
+| `DEPLOYMENT.md` | Deployment checklist | As needed |
+| `DOCUMENTATION_INDEX.md` | This file + Claude context | Each session |
+| `BUGS_AND_FEATURES.md` | Active issue tracker | Ongoing |
 
-**Recommendation**: Archive these to `docs/archive/` directory for historical reference.
+### 🟢 docs/ Folder (Consolidated Reference)
 
-### 🟡 **Partially Redundant** (Can Consolidate)
-These files have overlapping content that could be deduplicated:
-
-| Files | Issue | Solution |
-|-------|-------|----------|
-| `GITHUB_ACTIONS_SETUP.md` + `basecamp/GITHUB_ACTIONS_SETUP.md` | Two versions of same content | Keep root version, link from basecamp |
-| `SYNC_AUTOMATION_SUMMARY.md` + `SYNC_PIPELINE_COMPLETION.md` | Both describe syncs (automation vs status) | Keep both; make distinction clear in each |
-| `QUICK_SETUP_GUIDE.md` + `START_HERE.md` | Two quick starts | Clarify: QUICK_SETUP for operations, START_HERE for devs |
-
-**Recommendation**: Add cross-references so readers know which document to choose.
-
-### 🟢 **Current & Useful** (Keep Updated)
-These files are actively maintained and referenced:
-
-| File | Status | Last Update |
-|------|--------|------------|
-| `README.md` | Core project overview | Keep current ✅ |
-| `MONOREPO.md` | Architecture reference | Keep current ✅ |
-| `SYNC_PIPELINE_COMPLETION.md` | Current sync status | March 22, 2026 ✅ |
-| `SYNC_AUTOMATION_SUMMARY.md` | GitHub Actions guide | Keep current ✅ |
-| `DEPLOYMENT.md` | Deployment checklist | Keep current ✅ |
-| `AZURE_RESOURCES.md` | Azure reference | Keep current ✅ |
-| `PROJECT_PLAN.md` | Roadmap | Update quarterly ✅ |
-| `CHANGELOG.md` | Version history | Update per release ✅ |
-| `basecamp/README.md` | Component overview | Keep current ✅ |
-| `TROUBLESHOOTING_CHECKLIST.md` | Common issues | Keep current ✅ |
+| File | Contents |
+|------|---------|
+| `docs/LOCAL_SETUP.md` | Env vars, MySQL alias, Keychain credential storage |
+| `docs/GOOGLE_SHEETS_REFERENCE.md` | Authoritative sheet names + column schemas |
+| `docs/GITHUB_ACTIONS.md` | Setup, secrets, schedules, debugging |
+| `docs/AZURE.md` | Resources, connection strings, staging environments |
+| `docs/TROUBLESHOOTING.md` | Live logs, error messages, sync checklist |
+| `docs/SESSION_HISTORY.md` | Historical session summaries |
 
 ---
 
@@ -405,11 +368,11 @@ These files are actively maintained and referenced:
    ↓
 2. MONOREPO.md (15 min)
    ↓
-3. START_HERE.md (10 min — setup)
+3. docs/LOCAL_SETUP.md (10 min — setup)
    ↓
 4. Component-specific README (basecamp, web-apps, photo-manager)
    ↓
-5. TROUBLESHOOTING_CHECKLIST.md (reference)
+5. docs/TROUBLESHOOTING.md (reference)
 ```
 **Total**: ~1 hour
 
@@ -419,29 +382,27 @@ These files are actively maintained and referenced:
    ↓
 2. DEPLOYMENT.md (15 min)
    ↓
-3. AZURE_RESOURCES.md (10 min)
+3. docs/AZURE.md (10 min)
    ↓
-4. SYNC_AUTOMATION_SUMMARY.md (10 min)
+4. docs/GITHUB_ACTIONS.md (20 min)
    ↓
-5. GITHUB_ACTIONS_SETUP.md (20 min)
-   ↓
-6. TROUBLESHOOTING_CHECKLIST.md (reference)
+5. docs/TROUBLESHOOTING.md (reference)
 ```
-**Total**: ~1 hour
+**Total**: ~50 min
 
 ### Path 3: Data Integration Engineer (Sync System)
 ```
 1. README.md (5 min)
    ↓
-2. SYNC_PIPELINE_COMPLETION.md (20 min)
+2. docs/SESSION_HISTORY.md (20 min — how the pipeline was built)
    ↓
-3. GOOGLE_SHEETS_EXACT_STRUCTURE.md (10 min)
+3. docs/GOOGLE_SHEETS_REFERENCE.md (10 min)
    ↓
 4. basecamp/LOCAL_SETUP.md (15 min)
    ↓
 5. basecamp/TEST_INDIVIDUAL_COMPONENTS.md (15 min)
    ↓
-6. DEBUG_SYNC_SETUP.md (reference)
+6. docs/TROUBLESHOOTING.md (reference)
 ```
 **Total**: ~1.5 hours
 
@@ -470,7 +431,7 @@ These files are actively maintained and referenced:
 ### Monthly (End of Sprint)
 - [ ] Update `PROJECT_PLAN.md` with completed/blocked items
 - [ ] Add entry to `CHANGELOG.md` if releases occurred
-- [ ] Review `TROUBLESHOOTING_CHECKLIST.md` for new issues
+- [ ] Review `docs/TROUBLESHOOTING.md` for new issues
 
 ### Quarterly
 - [ ] Full review of README files (all components)
@@ -487,75 +448,35 @@ These files are actively maintained and referenced:
 
 ---
 
-## File Organization Recommendations
+## Current File Structure (Post-Consolidation, March 2026)
 
-### Current Structure
 ```
 trailhead/
-├── *.md               # 25+ loose markdown files (root level)
-├── .github/workflows/ # GitHub Actions (referenced in docs)
+├── README.md
+├── MONOREPO.md
+├── PROJECT_PLAN.md
+├── CHANGELOG.md
+├── DEPLOYMENT.md
+├── DOCUMENTATION_INDEX.md     ← this file
+├── BUGS_AND_FEATURES.md
+│
+├── docs/                      ← consolidated reference
+│   ├── LOCAL_SETUP.md
+│   ├── GOOGLE_SHEETS_REFERENCE.md
+│   ├── GITHUB_ACTIONS.md
+│   ├── AZURE.md
+│   ├── TROUBLESHOOTING.md
+│   └── SESSION_HISTORY.md
+│
+├── .github/workflows/
 ├── basecamp/
 │   ├── README.md
 │   ├── SETUP.md
-│   └── GITHUB_ACTIONS_SETUP.md
+│   ├── LOCAL_SETUP.md
+│   └── TEST_INDIVIDUAL_COMPONENTS.md
 ├── web-apps/
-│   ├── README.md
-│   └── docs/
-│       └── prd-archive/
 └── photo-manager/
-    └── README.md
 ```
-
-### Recommended Refactoring
-```
-trailhead/
-├── README.md                    # Main entry point
-├── docs/
-│   ├── ARCHITECTURE.md          # MONOREPO.md renamed
-│   ├── GETTING_STARTED.md       # START_HERE.md renamed
-│   ├── DEPLOYMENT.md
-│   ├── TROUBLESHOOTING.md
-│   │
-│   ├── sync/
-│   │   ├── PIPELINE.md          # SYNC_PIPELINE_COMPLETION.md
-│   │   ├── AUTOMATION.md        # SYNC_AUTOMATION_SUMMARY.md
-│   │   ├── DEBUGGING.md         # DEBUG_SYNC_SETUP.md
-│   │   └── GOOGLE_SHEETS.md     # GOOGLE_SHEETS_EXACT_STRUCTURE.md
-│   │
-│   ├── infrastructure/
-│   │   ├── AZURE.md             # AZURE_RESOURCES.md
-│   │   ├── GITHUB_ACTIONS.md    # GITHUB_ACTIONS_SETUP.md
-│   │   ├── MYSQL.md             # MYSQL_PASSWORD_ENCRYPTION_GUIDE.md
-│   │   └── SECRETS.md           # GITHUB_SECRETS_QUICK_SETUP.md
-│   │
-│   ├── components/
-│   │   ├── BASECAMP.md          # basecamp/README.md
-│   │   ├── WEBAPP.md            # web-apps/mmr-webapp/README.md
-│   │   └── PHOTO_PIPELINE.md    # photo-manager/README.md
-│   │
-│   ├── project/
-│   │   ├── ROADMAP.md           # PROJECT_PLAN.md
-│   │   ├── CHANGELOG.md
-│   │   └── HISTORY.md           # WORK_COMPLETED.md
-│   │
-│   └── archive/
-│       ├── DATETIME_FIX_SESSION.md
-│       ├── SNAPSHOT_FIX_SESSION.md
-│       └── ... (old session notes)
-│
-├── .github/workflows/
-└── basecamp/
-    ├── README.md                # Keep: component-specific
-    ├── LOCAL_SETUP.md           # Keep: how to set up locally
-    └── TEST_COMPONENTS.md       # Keep: testing guide
-```
-
-**Benefits**:
-- ✅ Clearer hierarchy (docs/ folder)
-- ✅ Topic-based organization (sync/, infrastructure/, etc.)
-- ✅ Easier to navigate by role
-- ✅ Room to grow without cluttering root
-- ✅ Historical archive separate from current docs
 
 ---
 

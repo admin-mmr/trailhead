@@ -11,6 +11,41 @@ All notable changes to the MMR platform are documented here.
 
 ---
 
+## [v0.3.0] — 2026-03-22
+
+### Sync Pipeline: Production-Ready
+
+#### Fixed
+- 🐛 **Snapshot storage broken** — `_get_previous_snapshot()` was returning `None` on every run, treating every sync as "first run." Fixed by storing snapshot JSON directly in MySQL (`sync_snapshots.snapshot_data_url` column, changed from `VARCHAR(500)` → `LONGTEXT`). Change detection now works correctly.
+- 🐛 **Azure Blob container missing** — `ContainerNotFound` 404 error on snapshot uploads. Root cause: `mmr-snapshots` container did not exist. Created the container; uploads now succeed.
+- 🐛 **Hardcoded sync engine** — Sync script was written specifically for the `members` table; all other tables hung indefinitely. Rewrote as a generic `SheetSyncer` class that reads schema dynamically from `information_schema.COLUMNS` and works with any table.
+- 🐛 **NOT NULL field crashes** — `ERROR 1364: Field 'TimeStamp' doesn't have a default value` caused INSERT failures. Fixed with new `get_required_columns()` pre-insert validation; rows with missing required fields are now skipped with a warning instead of crashing.
+- 🐛 **ENUM truncation errors** — `ERROR 1265: Data truncated for column 'Source'` from invalid ENUM values. Fixed with new `validate_enum_value()` helper; `Source` column changed from `ENUM('Zelle','Venmo','Other')` → `VARCHAR(50)` for flexibility.
+- 🐛 **Date parsing failures** — Sync only handled 2–3 date formats; Google Sheets sends 15+. Added comprehensive `convert_datetime_to_mysql()` with 7 parsing strategies (ISO 8601 with/without Z, Google Sheets serial numbers, JavaScript Date.toString(), named months, US slash, reverse slash) plus `python-dateutil` fallback.
+- 🐛 **SMTP / Azure env vars not loading** — Special characters (`+`, `/`, `=`) in `.env.local` values were breaking shell exports. Fixed `load-env.sh` to use `set -a` / `set +a` for proper variable export.
+- 🐛 **Conflict handling skipping updates** — When a row existed, sync logged a warning and skipped it without checking for field changes. Added proper upsert logic: check for changes, update if any field differs.
+- 🐛 **Column name mapping with spaces** — `sync_sheets_to_mysql.py` used column names with spaces (e.g., `'First Name'`) that didn't match PascalCase Google Sheets headers. Fixed all mappings.
+- 🐛 **run-sync.sh key field errors** — Key field was `TransactionID` for `gmail_transactions` but schema uses `MessageId`. Corrected all 4 table key field mappings.
+- 🐛 **GitHub Actions simultaneous FK violations** — Running 4 syncs in parallel caused foreign key constraint failures. Created `sync-all-sheets-ordered.yml` with sequential `needs` chaining: `gmail_transactions → payments → payment_events → members`.
+
+#### Added
+- `ProfileLastUpdated DATETIME NULL` column in `members` table (migration v5)
+- `PaymentIntent VARCHAR(100) NULL` column in `payments` table (migration v5)
+- `python-dateutil>=2.8` dependency for robust date fallback parsing
+- Sequential GitHub Actions workflow `.github/workflows/sync-all-sheets-ordered.yml`
+
+#### Changed
+- `Source` column in `payments`: `ENUM('Zelle','Venmo','Other')` → `VARCHAR(50) NULL`
+- `sync_snapshots.snapshot_data_url`: `VARCHAR(500)` → `LONGTEXT`
+- Removed `NYRRMemberID` and `NYRRMemberName` from verification script expected headers (superseded by v0.2.0 schema)
+
+### Verification
+✅ All 4 syncs operational: `gmail_transactions` (323), `payments` (97), `payment_events` (104), `members` (617)
+✅ Change detection working (snapshots stored in DB)
+✅ Sequential GitHub Actions workflow created
+
+---
+
 ## [v0.2.0] — 2026-03-21
 
 ### Member Schema Refactor
