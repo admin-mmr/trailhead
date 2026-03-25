@@ -105,8 +105,8 @@ export default function Navbar({
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
 
-          {/* Logo — real 岚 flag image */}
-          <Link href="/" className="flex items-center gap-3 group">
+          {/* Logo — real 岚 flag image; logged-in users go to portal */}
+          <Link href={isLoggedIn && isActive ? '/portal' : '/'} className="flex items-center gap-3 group">
             <Image
               src="/images/mmr-logo.png"
               alt="MMR 岚 logo"
@@ -118,8 +118,8 @@ export default function Navbar({
             />
             <div className="flex-col leading-tight hidden sm:flex">
               <span
-                className="text-brand-gold font-display font-semibold tracking-wide"
-                style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.15rem', lineHeight: 1.1 }}
+                className={clsx('text-brand-gold tracking-wide', lang === 'zh' ? 'font-display font-semibold' : 'font-flag-script-bold')}
+                style={{ fontSize: lang === 'zh' ? '1.15rem' : '1.35rem', lineHeight: 1.1 }}
               >
                 {lang === 'zh' ? '岚山跑团' : 'Misty Mountain Runners'}
               </span>
@@ -141,22 +141,26 @@ export default function Navbar({
                 if (isLoggedIn && isActive && href === '/join') return false
                 return true
               })
-              .map(({ href, keyEn }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className={clsx(
-                    'text-sm font-medium transition-colors',
-                    pathname === href
-                      ? 'text-brand-gold'
-                      : 'text-white/80 hover:text-brand-gold-light',
-                    href === '/donate' && 'flex items-center gap-1'
-                  )}
-                >
-                  {href === '/donate' && <Heart className="h-3.5 w-3.5" />}
-                  {T(keyEn)}
-                </Link>
-              ))}
+              .map(({ href, keyEn }) => {
+                // Logged-in active members: "Home" goes to portal dashboard
+                const resolvedHref = (href === '/' && isLoggedIn && isActive) ? '/portal' : href
+                return (
+                  <Link
+                    key={href}
+                    href={resolvedHref}
+                    className={clsx(
+                      'text-sm font-medium transition-colors',
+                      (pathname === resolvedHref || pathname === href)
+                        ? 'text-brand-gold'
+                        : 'text-white/80 hover:text-brand-gold-light',
+                      href === '/donate' && 'flex items-center gap-1'
+                    )}
+                  >
+                    {href === '/donate' && <Heart className="h-3.5 w-3.5" />}
+                    {T(keyEn)}
+                  </Link>
+                )
+              })}
 
             {/* Admin link (desktop) */}
             {isAdmin && (
@@ -247,20 +251,23 @@ export default function Navbar({
               if (isLoggedIn && isActive && href === '/join') return false
               return true
             })
-            .map(({ href, keyEn }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setOpen(false)}
-                className={clsx(
-                  'text-sm font-medium flex items-center gap-2',
-                  pathname === href ? 'text-brand-gold' : 'text-white/80'
-                )}
-              >
-                {href === '/donate' && <Heart className="h-3.5 w-3.5" />}
-                {T(keyEn)}
-              </Link>
-            ))}
+            .map(({ href, keyEn }) => {
+              const resolvedHref = (href === '/' && isLoggedIn && isActive) ? '/portal' : href
+              return (
+                <Link
+                  key={href}
+                  href={resolvedHref}
+                  onClick={() => setOpen(false)}
+                  className={clsx(
+                    'text-sm font-medium flex items-center gap-2',
+                    (pathname === resolvedHref || pathname === href) ? 'text-brand-gold' : 'text-white/80'
+                  )}
+                >
+                  {href === '/donate' && <Heart className="h-3.5 w-3.5" />}
+                  {T(keyEn)}
+                </Link>
+              )
+            })}
 
           {isLoggedIn ? (
             <>

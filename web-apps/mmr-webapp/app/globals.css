@@ -8,7 +8,7 @@
    Noto Sans SC        — bilingual Chinese body copy
    Inter               — clean Latin UI copy
 ──────────────────────────────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Noto+Sans+SC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Pinyon+Script&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Noto+Sans+SC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
 
 @layer base {
   :root {
@@ -114,4 +114,62 @@
   0%   { background-position: 0% 50%; }
   50%  { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
+}
+
+/* ── Calligraphic script font (matches the MMR flag) ────────────────────── */
+.font-flag-script {
+  font-family: 'Pinyon Script', 'Cormorant Garamond', cursive;
+}
+
+/* ── Flag waving animation for hero background ───────────────────────────── */
+.flag-wave {
+  animation: flag-wave 8s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+@keyframes flag-wave {
+  0%   { transform: scale(1.05) translateX(0) translateY(0); }
+  25%  { transform: scale(1.07) translateX(-8px) translateY(2px); }
+  50%  { transform: scale(1.05) translateX(0) translateY(-3px); }
+  75%  { transform: scale(1.07) translateX(8px) translateY(2px); }
+  100% { transform: scale(1.05) translateX(0) translateY(0); }
+}
+
+/* Gold metallic text for headings */
+.text-gold-metallic {
+  background: linear-gradient(180deg, #F2D57E 0%, #D4A843 40%, #A07820 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 2px 4px rgba(160,120,32,0.3));
+}
+
+/* White-to-gold gradient for hero headline — bold and eye-catching */
+.text-hero-gradient {
+  background: linear-gradient(180deg, #FFFFFF 0%, #F5ECD7 35%, #F2D57E 60%, #D4A843 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 3px 8px rgba(0,0,0,0.4)) drop-shadow(0 1px 2px rgba(212,168,67,0.5));
+}
+
+/* Bold calligraphic script — Pinyon Script thickened with stroke + shadow */
+.font-flag-script-bold {
+  font-family: 'Pinyon Script', 'Cormorant Garamond', cursive;
+  -webkit-text-stroke: 1px currentColor;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 20px rgba(212,168,67,0.35),
+    0 2px 6px rgba(0,0,0,0.3);
+}
+
+/* Extra-bold calligraphic script for hero — heavy stroke + glow for max impact */
+.font-flag-script-hero {
+  font-family: 'Pinyon Script', 'Cormorant Garamond', cursive;
+  -webkit-text-stroke: 2.5px rgba(255,255,255,0.6);
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 30px rgba(212,168,67,0.5),
+    0 0 60px rgba(212,168,67,0.2),
+    0 4px 12px rgba(0,0,0,0.5);
 }

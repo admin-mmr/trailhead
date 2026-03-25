@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useLang } from '@/lib/i18n/context'
 import { ArrowRight, Users, Calendar, Trophy, Heart, ExternalLink } from 'lucide-react'
 
@@ -11,78 +12,65 @@ const STATS = [
   { icon: Heart,    keyEn: 'stats.nonprofit' as const },
 ]
 
-/** MMR logo mark — gold 岚 on crimson circle */
-function LogoMark({ size = 64 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
-      <circle cx="20" cy="20" r="20" fill="#C8102E" />
-      <circle cx="20" cy="20" r="18.5" fill="none" stroke="#D4A843" strokeWidth="1.2" />
-      <text x="20" y="28" textAnchor="middle" fontSize="22"
-        fontFamily="'Cormorant Garamond','Noto Sans SC',serif"
-        fontWeight="600" fill="#D4A843">岚</text>
-    </svg>
-  )
-}
-
 export default function HomePage() {
   const { T, lang } = useLang()
 
   return (
     <>
-      {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <section
-        className="relative min-h-[90vh] flex items-center overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #8C0E20 0%, #C8102E 50%, #A07820 100%)' }}
-      >
-        {/* Animated gold + deep-crimson orbs */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="orb orb-1 absolute w-[640px] h-[640px] top-[-120px] right-[-120px]"
-               style={{ background: '#D4A843' }} />
-          <div className="orb orb-2 absolute w-[520px] h-[520px] bottom-[-160px] left-[-160px]"
-               style={{ background: '#8C0E20' }} />
-        </div>
+      {/* ── Hero — full-bleed banner with the real MMR flag photo ──── */}
+      <section className="relative min-h-[90vh] flex items-center overflow-hidden">
+        {/* Real MMR banner as background — with gentle flag wave animation */}
+        <Image
+          src="/images/mmr-banner.jpg"
+          alt="Misty Mountain Runners 岚山跑团 banner with calligraphy 岚 and cursive English name"
+          fill
+          className="object-cover flag-wave"
+          priority
+          sizes="100vw"
+        />
+        {/* Dark overlay for text readability */}
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(140,14,32,0.65) 0%, rgba(200,16,46,0.45) 50%, rgba(160,120,32,0.4) 100%)' }} />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
           <div className="max-w-3xl">
 
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border text-sm font-medium"
+            <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border text-sm font-medium backdrop-blur-sm"
                  style={{ background: 'rgba(212,168,67,0.15)', color: '#F2D57E', borderColor: 'rgba(212,168,67,0.35)' }}>
-              {lang === 'zh' ? '纽约华人跑步社区' : 'New York Chinese-American Runners'}
+              {lang === 'zh' ? '纽约华人跑团' : 'New York Happy Runners'}
             </div>
 
-            {/* Logo + heading row */}
-            <div className="flex items-start gap-5 mb-6">
-              <div className="mt-1 hidden sm:block">
-                <LogoMark size={72} />
-              </div>
-              <h1
-                className="leading-none"
-                style={{
-                  fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontWeight: 600,
-                  fontSize: 'clamp(3rem, 7vw, 5.5rem)',
-                  color: '#fff',
+            {/* Heading */}
+            <h1 className="drop-shadow-lg mb-6">
+              {lang === 'zh' ? (
+                <span className="block text-hero-gradient" style={{
+                  fontFamily: "'Cormorant Garamond', 'Noto Sans SC', Georgia, serif",
+                  fontWeight: 700,
+                  fontSize: 'clamp(4.5rem, 12vw, 8rem)',
                   lineHeight: 1.05,
-                }}
-              >
-                {lang === 'zh' ? (
-                  <>
-                    <span style={{ color: '#fff' }}>岚山</span>
-                    <br />
-                    <span className="text-gold-shimmer">跑团</span>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ color: '#fff' }}>Misty Mountain</span>
-                    <br />
-                    <span className="text-gold-shimmer">Runners</span>
-                  </>
-                )}
-              </h1>
-            </div>
+                  letterSpacing: '0.05em',
+                }}>岚山跑团</span>
+              ) : (
+                <>
+                  {/* Full calligraphic title — extra-bold Pinyon Script, white-to-gold gradient */}
+                  <span className="block font-flag-script-hero text-hero-gradient" style={{
+                    fontSize: 'clamp(3.5rem, 8vw, 6.5rem)',
+                    lineHeight: 1.1,
+                  }}>
+                    Misty Mountain
+                  </span>
+                  <span className="block font-flag-script-hero text-gold-shimmer" style={{
+                    fontSize: 'clamp(3.5rem, 8vw, 6.5rem)',
+                    lineHeight: 1.1,
+                    marginTop: '-0.05em',
+                  }}>
+                    Runners
+                  </span>
+                </>
+              )}
+            </h1>
 
-            <p className="text-xl leading-relaxed mb-10 max-w-xl" style={{ color: 'rgba(255,255,255,0.75)' }}>
+            <p className="text-xl leading-relaxed mb-10 max-w-xl drop-shadow-md" style={{ color: 'rgba(255,255,255,0.9)' }}>
               {lang === 'zh'
                 ? '每周集体训练，NYRR 官方队伍，社区互助，欢迎所有水平的跑者。'
                 : 'Weekly group runs, NYRR official club team, and a welcoming community for runners of all paces.'}
@@ -97,10 +85,10 @@ export default function HomePage() {
                 {T('hero.cta.join')} <ArrowRight className="h-4 w-4" />
               </Link>
               <Link href="/login"
-                    className="font-semibold px-6 py-3 rounded-full border-2 transition-all duration-200"
-                    style={{ borderColor: 'rgba(255,255,255,0.5)', color: '#fff', background: 'transparent' }}
+                    className="font-semibold px-6 py-3 rounded-full border-2 transition-all duration-200 backdrop-blur-sm"
+                    style={{ borderColor: 'rgba(255,255,255,0.6)', color: '#fff', background: 'rgba(255,255,255,0.1)' }}
                     onMouseEnter={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#C8102E' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#fff' }}>
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff' }}>
                 {lang === 'zh' ? '会员登录' : 'Member Login'}
               </Link>
             </div>
