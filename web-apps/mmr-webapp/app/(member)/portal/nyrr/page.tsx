@@ -1,35 +1,28 @@
-import { requireSession } from '@/lib/auth/session'
-import { getDb } from '@/lib/db/connection'
-import NyrrClient from './NyrrClient'
+'use client'
 
-export const metadata = { title: 'NYRR Results' }
+import { AlertCircle } from 'lucide-react'
+import { useLang } from '@/lib/i18n/context'
 
-async function getNyrrResults(memberId: string) {
-  const db = getDb()
-  const [rows] = await db.execute<any[]>(
-    `SELECT * FROM nyrr_results
-     WHERE member_id = ?
-     ORDER BY event_date DESC
-     LIMIT 50`,
-    [memberId]
+export default function NyrrPage() {
+  const { lang } = useLang()
+
+  const title = lang === 'en' ? 'NYRR Results' : 'NYRR 成绩'
+  const message = lang === 'en' 
+    ? 'NYRR race results integration coming soon. Sync your running data from NYRR events.'
+    : 'NYRR 赛事成绩集成即将推出。同步您的 NYRR 比赛数据。'
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
+        <AlertCircle className="mx-auto mb-4 text-amber-500" size={48} />
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">{title}</h1>
+        <p className="text-slate-600 mb-6">{message}</p>
+        <div className="inline-block px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm text-amber-800 font-medium">
+            {lang === 'en' ? '🚧 Coming Soon' : '🚧 敬请期待'}
+          </p>
+        </div>
+      </div>
+    </div>
   )
-  return rows.map(r => ({
-    id:            r.id,
-    memberId:      r.member_id,
-    nyrrEventCode: r.nyrr_event_code,
-    eventName:     r.event_name,
-    eventDate:     r.event_date instanceof Date ? r.event_date.toISOString().slice(0, 10) : r.event_date,
-    finishTime:    r.finish_time ?? undefined,
-    pace:          r.pace ?? undefined,
-    overallPlace:  r.overall_place ?? undefined,
-    genderPlace:   r.gender_place ?? undefined,
-    ageGroupPlace: r.age_group_place ?? undefined,
-    distance:      r.distance ?? undefined,
-  }))
-}
-
-export default async function NyrrPage() {
-  const session = await requireSession()
-  const results = await getNyrrResults(session.memberId)
-  return <NyrrClient results={results} />
 }

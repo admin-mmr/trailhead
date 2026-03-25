@@ -10,12 +10,112 @@
 
 | Symptom | Where to look | Likely cause |
 |---------|---------------|--------------|
+| "Backend call failure" on login | `/api/health` endpoint first, then Azure Log Stream | Missing env var (`NEXTAUTH_URL`, `DATABASE_URL`), DB unreachable, or deploy failure |
 | Azure deploy fails | GitHub Actions → build-and-deploy job | TypeScript/lint error; run `npm run build` locally |
 | API route returns 500 | Azure Portal → Log Stream or App Insights | Missing env var, DB timeout, or code bug |
 | Sync job shows ✅ but DB is empty | Sync artifact `.log` file | Column name mismatch, empty sheet, or stale schema |
 | Email not sending | Azure Portal → Communication Services → Log Analytics | `AZURE_COMM_CONNECTION_STRING` missing or wrong |
 | Login redirect loop | App Insights or local dev terminal | `NEXTAUTH_SECRET` missing, or `/auth/complete` bridge failing |
 | Scheduled sync never runs | GitHub Actions → scheduled workflows tab | Cron syntax wrong, or workflow disabled |
+
+---
+
+## Web App & Login Debugging
+
+### Step 1 — Hit the health check endpoint
+
+Open this in your browser first:
+
+```
+https://orange-tree-0d70d110f.4.azurestaticapps.net/api/health
+```
+
+This endpoint checks every required env var and attempts a live DB connection. Read the response:
+
+- `"status": "degraded"` → the response body shows exactly which env var is missing or if DB is down — go to Step 2
+- **404** → API routes aren't deploying at all — go to Step 4 (check deploy)
+- `"status": "ok"` → backend is healthy; the bug is in the login flow — go to Step 3 (read logs)
+
+---
+
+### Step 2 — Check Azure environment variables
+
+```
+Azure Portal → Static Web Apps → mmr-webapp → Configuration → Application settings
+```
+
+Every one of these must be present and correct:
+
+| Variable | Required value |
+|---|---|
+| `DATABASE_URL` | `mysql://mmradmin:PASSWORD@mmr-mysql-v4.mysql.database.azure.com:3306/mmrdb?ssl=true` |
+| `NEXTAUTH_URL` | **Exact production URL** — `https://orange-tree-0d70d110f.4.azurestaticapps.net` |
+| `NEXTAUTH_SECRET` | Random 32-byte base64 string — generate with `openssl rand -base64 32` |
+| `JWT_SECRET` | Another random base64 string |
+| `GOOGLE_CLIENT_ID` | From Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | From Google Cloud Console |
+| `AZURE_COMM_CONNECTION_STRING` | From Azure Portal → Communication Services → Keys |
+
+> ⚠️ The most common cause of "backend call failure" is `NEXTAUTH_URL` set to `localhost:3000` or missing entirely. It must match the live URL exactly.
+
+After adding or changing any value: click **Save** and wait ~60 seconds for the app to restart before retrying.
+
+---
+
+### Step 3 — Read live application logs
+
+If the health check returns `"ok"` but login still fails, the error is happening inside the auth flow. Read live logs while you attempt to log in:
+
+```
+Azure Portal → Static Web Apps → mmr-webapp → Monitoring → Log stream
+```
+
+Look for lines containing: `ERROR`, `ECONNREFUSED`, `invalid_grant`, `CallbackRouteError`, `JWTSessionError`.
+
+Or query Application Insights history (last 30 min):
+```
+traces
+| where timestamp > ago(30m)
+| where severityLevel >= 2
+| order by timestamp desc
+| project timestamp, message
+```
+
+---
+
+### Step 4 — Check that the latest deploy succeeded
+
+If `/api/health` returns a 404, the API routes aren't live. A failed build can leave a stale version deployed.
+
+```
+https://github.com/admin-mmr/trailhead/actions
+```
+
+Find the most recent `azure-static-web-apps-*.yml` run. If it failed, expand the **Build and Deploy** step and read the error — usually a TypeScript or lint failure. Fix it, push to `main`, and wait for the new deploy.
+
+Also check deploy history directly:
+```
+Azure Portal → Static Web Apps → mmr-webapp → Deployment history
+```
+
+---
+
+### Step 5 — Check MySQL is reachable from Azure
+
+If the health check shows `"db": "ERROR: ..."`:
+
+**Firewall** (most common):
+```
+Azure Portal → mmr-mysql-v4 → Connection security → "Allow access to Azure services" = ON
+```
+
+**Server paused** (Azure free-tier auto-pauses after inactivity):
+```
+Azure Portal → mmr-mysql-v4 → Overview → click Start if status is Stopped
+```
+Wait 60 seconds after starting before retrying — cold starts are slow.
+
+**Wrong password in `DATABASE_URL`**: re-enter the secret in Azure Configuration and save.
 
 ---
 

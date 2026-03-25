@@ -11,6 +11,29 @@ All notable changes to the MMR platform are documented here.
 
 ---
 
+## [v0.4.0] — 2026-03-25
+
+### Portal UI Refinements & Admin Infrastructure
+
+#### Fixed
+- 🐛 **Portal dashboard crash on pending payments** — `evt.payment_method.charAt(0)` failed when `payment_method` is null. Fixed with null coalescing in `DashboardClient.tsx` line 85.
+
+#### Changed
+- 🗑️ **Removed placeholder portal pages** — Training and Discounts pages removed from navigation (not yet implemented). Removed from `PortalSidebar.tsx` NAV array and cleaned up unused translation keys.
+- 📋 **NYRR Results & Photos** — Marked as "coming soon" (pages exist but are not yet production-ready; removed from primary nav).
+
+#### Added
+- 👤 **Admin table infrastructure** — New `admins` table added to schema (`id INT PRIMARY KEY AUTO_INCREMENT`, `email VARCHAR(255) UNIQUE NOT NULL`, `added_by`, `added_at TIMESTAMP`). Admin portal to be built in v0.5.
+- 📚 **Database schema documentation** — New guide `docs/DATABASE_SCHEMA_CHECKS.md` with instructions for running schema inspections, daily checks, and data integrity validation using three tools: `schema_inspector.py`, `schema_snapshot_query.sql`, and `mmr_db_inspector.sql`.
+
+### Verification
+✅ Portal dashboard loads without crashes
+✅ Placeholder nav items removed
+✅ Schema snapshot updated with admins table
+✅ TypeScript and linting checks pass
+
+---
+
 ## [v0.3.0] — 2026-03-22
 
 ### Sync Pipeline: Production-Ready

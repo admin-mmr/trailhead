@@ -1,6 +1,6 @@
 # 📚 Documentation Index & Architecture Guide
 
-**Last Updated**: March 24, 2026
+**Last Updated**: March 25, 2026
 **Purpose**: Single source of truth for project documentation structure
 **Audience**: Developers, operations, new team members
 
@@ -281,6 +281,7 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 ### 🔧 **Technical Reference**
 1. [`docs/GOOGLE_SHEETS_REFERENCE.md`](docs/GOOGLE_SHEETS_REFERENCE.md) — Authoritative sheet + column schemas
 2. [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) — MySQL alias, credential storage (Keychain)
+3. [`docs/DATABASE_SCHEMA_CHECKS.md`](docs/DATABASE_SCHEMA_CHECKS.md) — Schema inspection tools, daily checks, data integrity validation
 
 ### 🐛 **Troubleshooting**
 1. [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — Live log locations, sync checklist, common errors
@@ -307,6 +308,7 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 - Sync data on schedule? → [`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md)
 - Debug a failed sync? → [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
 - Manage MySQL credentials? → [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md)
+- Check database schema and integrity? → [`docs/DATABASE_SCHEMA_CHECKS.md`](docs/DATABASE_SCHEMA_CHECKS.md)
 
 ### For Developers
 **"How does...?"**
@@ -356,6 +358,7 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 | `docs/GITHUB_ACTIONS.md` | Setup, secrets, schedules, debugging |
 | `docs/AZURE.md` | Resources, connection strings, staging environments |
 | `docs/TROUBLESHOOTING.md` | Live logs, error messages, sync checklist |
+| `docs/DATABASE_SCHEMA_CHECKS.md` | Schema inspection tools, daily checks, data integrity validation |
 | `docs/SESSION_HISTORY.md` | Historical session summaries |
 
 ---
@@ -386,9 +389,11 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
    ↓
 4. docs/GITHUB_ACTIONS.md (20 min)
    ↓
-5. docs/TROUBLESHOOTING.md (reference)
+5. docs/DATABASE_SCHEMA_CHECKS.md (15 min — daily/weekly checks)
+   ↓
+6. docs/TROUBLESHOOTING.md (reference)
 ```
-**Total**: ~50 min
+**Total**: ~1 hour
 
 ### Path 3: Data Integration Engineer (Sync System)
 ```

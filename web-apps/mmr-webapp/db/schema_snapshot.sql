@@ -2,6 +2,7 @@ section
 === 1. TABLES ===
 table	engine	collation	comment
 activity_log	InnoDB	utf8mb4_unicode_ci	
+admins	InnoDB	utf8mb4_unicode_ci	
 config	InnoDB	utf8mb4_unicode_ci	
 gmail_transactions	InnoDB	utf8mb4_unicode_ci	
 member_log	InnoDB	utf8mb4_unicode_ci	
@@ -26,6 +27,10 @@ activity_log	7	Action	varchar(100)	NO	NULL		MUL
 activity_log	8	State	varchar(50)	YES	NULL			
 activity_log	9	ErrorCode	varchar(50)	YES	NULL			
 activity_log	10	ErrorMessage	text	YES	NULL			
+admins	1	id	int	NO	NULL	auto_increment	PRI	
+admins	2	email	varchar(255)	NO	NULL		UNI	
+admins	3	added_by	varchar(255)	NO	system			
+admins	4	added_at	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 config	1	ConfigKey	varchar(100)	NO	NULL		PRI	
 config	2	ConfigValue	varchar(500)	NO	NULL			
 config	3	Description	varchar(500)	YES	NULL			
@@ -201,6 +206,8 @@ activity_log	idx_actlog_memberid	1	1	MemberID	BTREE	YES
 activity_log	idx_actlog_sessionid	1	1	SessionID	BTREE	YES
 activity_log	idx_actlog_timestamp	1	1	Timestamp	BTREE	
 activity_log	PRIMARY	0	1	LogID	BTREE	
+admins	email	0	1	email	BTREE	
+admins	PRIMARY	0	1	id	BTREE	
 config	PRIMARY	0	1	ConfigKey	BTREE	
 gmail_transactions	idx_gmail_isarchived	1	1	IsArchived	BTREE	
 gmail_transactions	idx_gmail_source	1	1	Source	BTREE	YES
@@ -212,7 +219,6 @@ member_log	idx_loggingtime	1	1	LoggingTime	BTREE
 member_log	idx_memberid	1	1	MemberID	BTREE	
 member_log	PRIMARY	0	1	LogID	BTREE	
 members	apple_sub	0	1	apple_sub	BTREE	YES
-members	Email	0	1	Email	BTREE	
 members	google_sub	0	1	google_sub	BTREE	YES
 members	idx_expiration	1	1	Expiration	BTREE	YES
 members	idx_family	1	1	FamilyID	BTREE	YES
@@ -220,6 +226,7 @@ members	idx_joinyear	1	1	JoinYear	BTREE	YES
 members	idx_status	1	1	Status	BTREE	
 members	microsoft_sub	0	1	microsoft_sub	BTREE	YES
 members	PRIMARY	0	1	MemberID	BTREE	
+members	uq_members_email	0	1	Email	BTREE	
 members	uq_members_facebook	0	1	facebook_sub	BTREE	YES
 members	yahoo_sub	0	1	yahoo_sub	BTREE	YES
 password_reset_tokens	idx_prt_email	1	1	Email	BTREE	

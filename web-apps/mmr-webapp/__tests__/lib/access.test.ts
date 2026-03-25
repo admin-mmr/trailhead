@@ -18,11 +18,13 @@ describe('getRequiredTier — public routes', () => {
     '/login',
     '/join',
     '/join/something',
+    '/donate',
     '/auth/complete',
     '/auth/forgot-password',
     '/auth/reset-password',
     '/api/auth/callback/google',
     '/api/auth/callback/microsoft-entra-id',
+    '/api/donations/submit',
     '/membership/inactive',
     '/blog/post-1',
     '/events',
@@ -37,6 +39,7 @@ describe('getRequiredTier — member routes (any login required)', () => {
     '/api/members/search',
     '/api/payments',
     '/api/payments/submit',
+    '/portal/profile',
   ])('"%s" requires member access', (path) => {
     expectTier(path, 'member')
   })
@@ -45,14 +48,19 @@ describe('getRequiredTier — member routes (any login required)', () => {
 describe('getRequiredTier — active-member-only routes', () => {
   it.each([
     '/portal',
-    '/portal/profile',
     '/portal/nyrr',
     '/portal/events',
     '/api/photos',
     '/api/bibs',
-    '/admin',
+    '/api/admin',
   ])('"%s" requires an active membership', (path) => {
     expectTier(path, 'active')
+  })
+})
+
+describe('getRequiredTier — admin routes', () => {
+  it('"/admin" requires admin access', () => {
+    expectTier('/admin', 'admin')
   })
 })
 

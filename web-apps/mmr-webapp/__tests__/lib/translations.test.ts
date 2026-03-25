@@ -28,7 +28,10 @@ describe('translations object', () => {
   })
 
   it('contains no OTP-related keys (those were removed with OTP auth)', () => {
-    const otpKeys = allKeys.filter(k => k.includes('otp') || k === 'auth.send' || k === 'auth.verify' || k === 'auth.resend')
+    const otpKeys = allKeys.filter(k => {
+      const s: string = k
+      return s.includes('otp') || s === 'auth.send' || s === 'auth.verify' || s === 'auth.resend'
+    })
     expect(otpKeys).toHaveLength(0)
   })
 })

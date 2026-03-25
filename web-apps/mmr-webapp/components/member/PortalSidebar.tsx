@@ -3,19 +3,17 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Trophy, Dumbbell, Tag, User, Image
+  LayoutDashboard, Trophy, User, Image
 } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import type { SessionUser } from '@/types'
 import { clsx } from 'clsx'
 
 const NAV = [
-  { href: '/portal',          icon: LayoutDashboard, en: 'Dashboard',    zh: '概览' },
-  { href: '/portal/nyrr',     icon: Trophy,          en: 'NYRR Results', zh: '比赛成绩' },
-  { href: '/portal/photos',   icon: Image,           en: 'Photos',       zh: '照片' },
-  { href: '/portal/training', icon: Dumbbell,        en: 'Training',     zh: '训练' },
-  { href: '/portal/discounts',icon: Tag,             en: 'Discounts',    zh: '折扣' },
-  { href: '/portal/profile',  icon: User,            en: 'Profile',      zh: '个人信息' },
+  { href: '/portal',          icon: LayoutDashboard, en: 'Dashboard',    zh: '概览', disabled: false },
+  { href: '/portal/nyrr',     icon: Trophy,          en: 'NYRR Results', zh: '比赛成绩', disabled: true },
+  { href: '/portal/photos',   icon: Image,           en: 'Photos',       zh: '照片', disabled: true },
+  { href: '/portal/profile',  icon: User,            en: 'Profile',      zh: '个人信息', disabled: false },
 ]
 
 export default function PortalSidebar({ session }: { session: SessionUser }) {
@@ -52,8 +50,25 @@ export default function PortalSidebar({ session }: { session: SessionUser }) {
 
       {/* Nav links */}
       <nav className="space-y-1">
-        {NAV.map(({ href, icon: Icon, en, zh }) => {
+        {NAV.map(({ href, icon: Icon, en, zh, disabled }) => {
           const active = pathname === href || (href !== '/portal' && pathname.startsWith(href))
+
+          if (disabled) {
+            return (
+              <div
+                key={href}
+                className={clsx(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                  'text-gray-400 cursor-not-allowed opacity-50'
+                )}
+                title={lang === 'zh' ? '敬请期待' : 'Coming soon'}
+              >
+                <Icon className="h-4 w-4 flex-shrink-0" />
+                {lang === 'zh' ? zh : en}
+              </div>
+            )
+          }
+
           return (
             <Link
               key={href}

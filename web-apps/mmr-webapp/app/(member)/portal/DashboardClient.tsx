@@ -82,7 +82,7 @@ export default function DashboardClient({ member, payments }: Props) {
                   {lang === 'zh' ? '金额：' : 'Amount: '}
                   <strong>${evt.amount}</strong>
                   {' · '}
-                  {evt.payment_method.charAt(0).toUpperCase() + evt.payment_method.slice(1)}
+                  {evt.payment_method ? evt.payment_method.charAt(0).toUpperCase() + evt.payment_method.slice(1) : '—'}
                   {' · Ref: '}
                   <span className="font-mono">{evt.event_id}</span>
                 </p>

@@ -9,6 +9,8 @@ export const translations = {
   'nav.portal':     { en: 'My Portal',  zh: '会员中心' },
   'nav.login':      { en: 'Login',      zh: '登录' },
   'nav.logout':     { en: 'Logout',     zh: '退出' },
+  'nav.donate':     { en: 'Donate',     zh: '捐赠' },
+  'nav.admin':      { en: 'Admin',      zh: '管理' },
 
   // ─── Hero ───────────────────────────────────────────────────
   'hero.title':     { en: 'Misty Mountain Runners', zh: '岚山跑团' },
@@ -52,8 +54,6 @@ export const translations = {
   'portal.dashboard':  { en: 'Dashboard',    zh: '概览' },
   'portal.nyrr':       { en: 'NYRR Results', zh: '比赛成绩' },
   'portal.events':     { en: 'Events',       zh: '活动' },
-  'portal.training':   { en: 'Training',     zh: '训练' },
-  'portal.discounts':  { en: 'Discounts',    zh: '折扣' },
   'portal.profile':    { en: 'Profile',      zh: '个人信息' },
 
   // ─── Blog ────────────────────────────────────────────────────

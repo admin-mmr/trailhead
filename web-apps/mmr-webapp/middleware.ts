@@ -1,18 +1,17 @@
 // ============================================================
 // middleware.ts — Edge-compatible access control
 //
-// Enforces the three access tiers defined in lib/access.ts:
+// Enforces the access tiers defined in lib/access.ts:
 //   public  → pass through
 //   member  → must have a valid session (any status)
 //   active  → must have a valid session AND status === 'active'
+//   admin   → must have a valid session, active status, AND be in the admins table
+//             (admin DB check happens at the route handler level since we can't
+//              query MySQL at the edge; middleware only checks active status)
 //
 // Inactive / pending members hitting an 'active' route are redirected
 // to /membership/inactive (not to /login) so they see a helpful message
 // with a renewal CTA rather than a confusing login screen.
-//
-// Status is read directly from the JWT payload (no DB round-trip).
-// After a member renews, call GET /api/auth/refresh-session to issue
-// a fresh token with the updated status before redirecting to the portal.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -26,7 +25,6 @@ export async function middleware(req: NextRequest) {
   const tier = getRequiredTier(pathname)
 
   // Forward the pathname as a header so server-component layouts can read it
-  // via headers() from next/headers without needing to parse x-forwarded-url.
   const requestHeaders = new Headers(req.headers)
   requestHeaders.set('x-pathname', pathname)
 
@@ -43,9 +41,8 @@ export async function middleware(req: NextRequest) {
     const { payload } = await jwtVerify(token, SECRET)
     console.log(`[middleware] ${pathname} | JWT valid | status=${payload.status}`)
 
-    if (tier === 'active' && payload.status !== 'active') {
-      // Authenticated but membership is inactive, pending, or expired.
-      // Redirect to /membership/inactive so the member sees a helpful message.
+    // 'admin' tier at the edge: require active status (actual admin check in route handlers)
+    if ((tier === 'active' || tier === 'admin') && payload.status !== 'active') {
       const dest = new URL('/membership/inactive', req.url)
       dest.searchParams.set('from', pathname)
       dest.searchParams.set('status', String(payload.status ?? 'inactive'))
@@ -54,7 +51,6 @@ export async function middleware(req: NextRequest) {
 
     return NextResponse.next({ request: { headers: requestHeaders } })
   } catch (err) {
-    // Token invalid or expired
     console.log(`[middleware] ${pathname} | JWT verification FAILED:`, (err as Error).message)
     return toLogin(req)
   }
@@ -67,9 +63,6 @@ function toLogin(req: NextRequest): NextResponse {
 }
 
 export const config = {
-  // Run on all paths except Next.js internals and static files.
-  // The matcher is intentionally broad — getRequiredTier() returns 'public'
-  // for anything not in ACCESS_CONFIG, so those paths flow straight through.
   matcher: [
     '/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|otf|eot|css|js)).*)',
   ],

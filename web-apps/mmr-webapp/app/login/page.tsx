@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, Suspense }    from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { signIn }                 from 'next-auth/react'
-import { Mountain, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, Loader2, LogOut } from 'lucide-react'
 import { useLang }                from '@/lib/i18n/context'
 
 // ── Provider icon SVGs (inline, no extra deps) ────────────────────────────────
@@ -18,7 +18,6 @@ function GoogleIcon() {
     </svg>
   )
 }
-
 
 function MicrosoftIcon() {
   return (
@@ -38,6 +37,37 @@ const PROVIDERS = [
   { id: 'microsoft-entra-id',  label: 'Microsoft', Icon: MicrosoftIcon, bg: 'bg-white border border-gray-200 hover:bg-gray-50', text: 'text-gray-700' },
 ] as const
 
+// ── Goodbye banner ──────────────────────────────────────────────────────────────
+
+function GoodbyeBanner({ lang }: { lang: string }) {
+  const [visible, setVisible] = useState(true)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(false), 8000)
+    return () => clearTimeout(timer)
+  }, [])
+
+  if (!visible) return null
+
+  return (
+    <div className="absolute top-0 left-0 right-0 z-10 animate-fade-in">
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-4 text-center shadow-lg">
+        <div className="flex items-center justify-center gap-2 mb-1">
+          <LogOut className="h-4 w-4" />
+          <span className="font-semibold">
+            {lang === 'zh' ? '感谢您的使用！' : 'Thank you and see you again!'}
+          </span>
+        </div>
+        <p className="text-white/80 text-sm">
+          {lang === 'zh'
+            ? '您已成功退出登录。期待下次再见！'
+            : 'You have been signed out successfully. We look forward to seeing you again!'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Login form ────────────────────────────────────────────────────────────────
 
 function LoginContent() {
@@ -46,6 +76,7 @@ function LoginContent() {
   const params    = useSearchParams()
   const returnTo  = params.get('from') ?? '/portal'
   const urlError  = params.get('error')
+  const isGoodbye = params.get('goodbye') === '1'
 
   const [email,       setEmail]       = useState('')
   const [password,    setPassword]    = useState('')
@@ -83,7 +114,6 @@ function LoginContent() {
         console.log('[login] credentials error:', result.error)
         setError(lang === 'zh' ? '邮箱或密码错误。' : 'Incorrect email or password.')
       } else {
-        // NextAuth session is set — go to bridge to create mmr_session
         const target = `/auth/complete?from=${encodeURIComponent(returnTo)}`
         console.log('[login] credentials OK — pushing to:', target)
         router.push(target)
@@ -100,12 +130,14 @@ function LoginContent() {
   async function handleOAuth(providerId: string) {
     setOauthLoading(providerId)
     await signIn(providerId, { callbackUrl: '/auth/complete' })
-    // signIn redirects — this line won't run unless there's an error
     setOauthLoading(null)
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-navy to-brand-navy-dark flex items-center justify-center p-4">
+    <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-brand-navy to-brand-navy-dark flex items-center justify-center p-4 relative">
+      {/* Goodbye banner */}
+      {isGoodbye && <GoodbyeBanner lang={lang} />}
+
       {/* Background orbs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="orb orb-1 absolute w-96 h-96 bg-brand-orange -top-20 -right-20" />
@@ -115,9 +147,6 @@ function LoginContent() {
       <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-orange rounded-2xl mb-4 shadow-lg">
-            <Mountain className="h-8 w-8 text-white" />
-          </div>
           <h1 className="text-white font-bold text-2xl">
             {lang === 'zh' ? '岚山跑团' : 'Misty Mountain Runners'}
           </h1>
