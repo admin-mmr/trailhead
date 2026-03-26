@@ -1,6 +1,6 @@
 # 📚 Documentation Index & Architecture Guide
 
-**Last Updated**: March 25, 2026
+**Last Updated**: March 26, 2026
 **Purpose**: Single source of truth for project documentation structure
 **Audience**: Developers, operations, new team members
 
@@ -205,6 +205,8 @@ Manual sync runner: `bash basecamp/run-sync.sh`
 | 2026-03-23 | Portal bug fixes (Session 2): footer year→2015, contrast improved; FAQ page at `/faq` (9 items, bilingual); `/auth/setup-password` for first-time password creation; all contact emails audited→`admin@`/`web@mmrunners.org`; Google Sheets status case mismatch fixed in `rowToMember`; `MemberStatus` type extended with `'expired'`; `x-pathname` header forwarded by middleware for server-component path detection |
 | 2026-03-23 | Homepage official website section: iframe removed (blank due to X-Frame-Options); replaced with plain link button to `www.mmrunners.org` |
 | 2026-03-23 | TypeScript check (`npx tsc --noEmit`) passes clean (zero errors in app source; pre-existing test file errors are in `__tests__/` only and don't affect build) |
+| 2026-03-26 | Phase 2 NYRR pipeline implemented: `sync_nyrr_events.py` (discover, promote, refresh, ingest, auto-match Tier 1+2, propagate), two GitHub Actions workflows (daily batch-10 @ 4 AM UTC, weekly no-limit @ 2 AM Sun), match propagation logic, birth year inference |
+| 2026-03-26 | Documentation: converted 3 .docx plan files to markdown (nyrr-backend-migration, photo-manager phase1+round2), created TESTING.md with full test suite inventory, identified duplicate LOCAL_SETUP.md files for consolidation |
 
 ### ⏭️ Next Session — Pending Tasks
 Copy this block into the new session context:
@@ -282,6 +284,11 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 1. [`docs/GOOGLE_SHEETS_REFERENCE.md`](docs/GOOGLE_SHEETS_REFERENCE.md) — Authoritative sheet + column schemas
 2. [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) — MySQL alias, credential storage (Keychain)
 3. [`docs/DATABASE_SCHEMA_CHECKS.md`](docs/DATABASE_SCHEMA_CHECKS.md) — Schema inspection tools, daily checks, data integrity validation
+4. [`docs/TESTING.md`](docs/TESTING.md) — Test suites, manual test cases, CI/CD testing (NEW)
+
+### 🧪 **Quality Assurance**
+1. [`docs/TESTING.md`](docs/TESTING.md) — Unit tests, integration tests, manual test cases, GitHub Actions CI
+2. [`basecamp/TEST_INDIVIDUAL_COMPONENTS.md`](basecamp/TEST_INDIVIDUAL_COMPONENTS.md) — Python component testing
 
 ### 🐛 **Troubleshooting**
 1. [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — Live log locations, sync checklist, common errors
@@ -359,7 +366,9 @@ Portal code is committed and type-checks cleanly. Next steps before going live:
 | `docs/AZURE.md` | Resources, connection strings, staging environments |
 | `docs/TROUBLESHOOTING.md` | Live logs, error messages, sync checklist |
 | `docs/DATABASE_SCHEMA_CHECKS.md` | Schema inspection tools, daily checks, data integrity validation |
+| `docs/TESTING.md` | Test suites, manual test cases, CI/CD testing (NEW) |
 | `docs/SESSION_HISTORY.md` | Historical session summaries |
+| `docs/nyrr-backend-migration-plan.md` | Full NYRR API spec and Phase 2 design (converted from .docx) |
 
 ---
 
