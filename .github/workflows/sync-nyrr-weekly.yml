@@ -1,0 +1,213 @@
+name: 🏃 Weekly NYRR Full Sync (Sunday)
+
+on:
+  schedule:
+    # Run every Sunday at 2:00 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync-nyrr-weekly:
+    runs-on: ubuntu-latest
+    name: Full NYRR Sync (no batch limit)
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r basecamp/requirements.txt
+
+      - name: Configure environment
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          # Create .env.local for the sync script
+          cat > basecamp/.env.local << EOF
+          MYSQL_HOST=$MYSQL_HOST
+          MYSQL_USER=$MYSQL_USER
+          MYSQL_PASSWORD=$MYSQL_PASSWORD
+          MYSQL_DATABASE=$MYSQL_DATABASE
+          EOF
+
+      - name: Run NYRR weekly full sync
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          python basecamp/ops/sync_nyrr_events.py \
+            --mode weekly \
+            --triggered-by "System" \
+            2>&1 | tee sync-nyrr-weekly.log
+
+      - name: Upload sync logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nyrr-weekly-sync-logs
+          path: sync-nyrr-weekly.log
+          retention-days: 30
+
+      - name: Send failure notification
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '❌ NYRR Weekly Sync Failed - GitHub Actions'
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: 'GitHub Actions <noreply@github.com>'
+          body: |
+            Workflow: Weekly NYRR Full Sync (Sunday)
+            Status: FAILED
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Time: ${{ github.event.head_commit.timestamp }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+
+            Check the logs for details.
+
+  verify:
+    runs-on: ubuntu-latest
+    name: Verify NYRR sync status
+    if: success()
+    needs: sync-nyrr-weekly
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mysql-connector-python
+
+      - name: Check MySQL NYRR row counts
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          python << 'EOF'
+          import mysql.connector
+          import os
+          from datetime import datetime
+
+          try:
+              conn = mysql.connector.connect(
+                  host=os.environ.get('MYSQL_HOST'),
+                  user=os.environ.get('MYSQL_USER'),
+                  password=os.environ.get('MYSQL_PASSWORD'),
+                  database=os.environ.get('MYSQL_DATABASE'),
+                  ssl_disabled=False
+              )
+              cursor = conn.cursor()
+
+              # Check nyrr_events
+              cursor.execute("SELECT COUNT(*) FROM nyrr_events")
+              events_count = cursor.fetchone()[0]
+              print(f"✓ NYRR Events in MySQL: {events_count}")
+
+              # Check nyrr_event_runners
+              cursor.execute("SELECT COUNT(*) FROM nyrr_event_runners")
+              runners_count = cursor.fetchone()[0]
+              print(f"✓ NYRR Event Runners in MySQL: {runners_count}")
+
+              # Check matched vs unmatched
+              cursor.execute("""
+                  SELECT
+                      COUNT(*) AS total,
+                      SUM(CASE WHEN mmr_member_id IS NOT NULL THEN 1 ELSE 0 END) AS matched,
+                      SUM(CASE WHEN mmr_member_id IS NULL AND team_code = 'MMR' THEN 1 ELSE 0 END) AS unmatched_mmr
+                  FROM nyrr_event_runners
+              """)
+              row = cursor.fetchone()
+              print(f"✓ Total runners: {row[0]} | Matched: {row[1]} | Unmatched MMR: {row[2]}")
+
+              # Check pending events remaining
+              cursor.execute("""
+                  SELECT COUNT(*) FROM nyrr_events WHERE processing_status = 'Pending'
+              """)
+              pending_count = cursor.fetchone()[0]
+              print(f"✓ Remaining pending events: {pending_count}")
+
+              # Processing log summary for this run
+              cursor.execute("""
+                  SELECT run_status, COUNT(*) AS cnt, SUM(rows_written) AS total_rows
+                  FROM nyrr_processing_log
+                  WHERE run_timestamp >= DATE_SUB(NOW(), INTERVAL 4 HOUR)
+                  GROUP BY run_status
+              """)
+              log_rows = cursor.fetchall()
+              for status, cnt, total_rows in log_rows:
+                  print(f"✓ Processing log (last 4h): {status} = {cnt} runs, {total_rows} rows")
+
+              # Events in error state
+              cursor.execute("""
+                  SELECT COUNT(*) FROM nyrr_events WHERE processing_status = 'Error'
+              """)
+              error_count = cursor.fetchone()[0]
+              if error_count > 0:
+                  print(f"⚠ Events in Error state: {error_count}")
+
+              # Match coverage
+              cursor.execute("""
+                  SELECT
+                      COUNT(DISTINCT nyrr_event_id) AS events_with_runners,
+                      ROUND(
+                          SUM(CASE WHEN mmr_member_id IS NOT NULL THEN 1 ELSE 0 END) * 100.0
+                          / NULLIF(SUM(CASE WHEN team_code = 'MMR' THEN 1 ELSE 0 END), 0),
+                          1
+                      ) AS match_pct
+                  FROM nyrr_event_runners
+              """)
+              coverage = cursor.fetchone()
+              print(f"✓ Events with runners: {coverage[0]} | MMR match rate: {coverage[1]}%")
+
+              cursor.close()
+              conn.close()
+
+          except Exception as e:
+              print(f"✗ Verification failed: {e}")
+              exit(1)
+          EOF
+
+      - name: Send success notification
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '✓ NYRR Weekly Sync Completed Successfully'
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: 'GitHub Actions <noreply@github.com>'
+          body: |
+            Workflow: Weekly NYRR Full Sync (Sunday)
+            Status: SUCCESS
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Time: ${{ github.event.head_commit.timestamp }}
