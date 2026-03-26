@@ -17,6 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Copy shared nyrr_api module into deploy package
+        run: cp basecamp/python/nyrr_api.py tools/nyrr-viewer/nyrr_api.py
+
       - name: Azure Login
         uses: azure/login@v1
         with:

@@ -51,8 +51,6 @@ from flask import Flask, send_file, request, session, redirect, url_for
 import mysql.connector
 from mysql.connector import Error as MySQLError
 
-# Add nyrr_api.py to path
-sys.path.insert(0, os.path.join(_HERE, '..', '..', 'basecamp', 'python'))
 from nyrr_api import NyrrApiClient, NyrrFinisher
 
 # ---------------------------------------------------------------------------
