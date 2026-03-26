@@ -26,4 +26,4 @@ jobs:
         uses: azure/webapps-deploy@v2
         with:
           app-name: mmr-nyrr-viewer
-          package: .
+          package: tools/nyrr-viewer
