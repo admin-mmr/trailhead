@@ -16,6 +16,7 @@ schema_migrations	InnoDB	utf8mb4_unicode_ci
 sync_changes	InnoDB	utf8mb4_unicode_ci	
 sync_metadata	InnoDB	utf8mb4_unicode_ci	
 sync_snapshots	InnoDB	utf8mb4_unicode_ci	
+viewer_admins	InnoDB	utf8mb4_unicode_ci	
 webapp_events	InnoDB	utf8mb4_unicode_ci	
 section
 === 2. COLUMNS ===
@@ -226,6 +227,10 @@ v_family_members	6	Email	varchar(255)	NO	NULL
 v_family_members	7	Status	enum('active','not active','pending')	NO	pending			
 v_family_members	8	Expiration	datetime	YES	NULL			
 v_family_members	9	Type	enum('Individual','Family')	NO	Individual			
+viewer_admins	1	id	int	NO	NULL	auto_increment	PRI	
+viewer_admins	2	email	varchar(255)	NO	NULL		UNI	
+viewer_admins	3	role	enum('admin','super_admin')	NO	admin			
+viewer_admins	4	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 webapp_events	1	EventID	varchar(50)	NO	NULL		PRI	
 webapp_events	2	EventType	varchar(50)	NO	NULL			
 webapp_events	3	Timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
@@ -318,6 +323,8 @@ sync_metadata	PRIMARY	0	1	sheet_name	BTREE
 sync_snapshots	idx_sheet	1	1	sheet_name	BTREE	YES
 sync_snapshots	idx_timestamp	1	1	snapshot_timestamp	BTREE	YES
 sync_snapshots	PRIMARY	0	1	snapshot_id	BTREE	
+viewer_admins	email	0	1	email	BTREE	
+viewer_admins	PRIMARY	0	1	id	BTREE	
 webapp_events	idx_pe_email	1	1	Email	BTREE	
 webapp_events	idx_pe_matchedmessageid	1	1	MatchedMessageId	BTREE	YES
 webapp_events	idx_pe_memberid	1	1	MemberID	BTREE	YES
