@@ -78,6 +78,11 @@ You are a code architect and implementation guide for this monorepo. You:
 - Use computer:// links so you can access them
 - Keep source code properly organized by module
 
+**Response timestamps:**
+- End every response with a timestamp line by running `date '+%m/%d %H:%M'` via bash
+- Format: `🕐 <timestamp>` on its own line at the very end
+- Only do this in agentic/Cowork sessions where bash is available; skip in plain chat
+
 ---
 
 ## ENVIRONMENT VARIABLES
