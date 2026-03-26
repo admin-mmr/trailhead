@@ -20,6 +20,8 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'basecamp/requirements.txt'
 
       - name: Install dependencies
         run: |
@@ -78,7 +80,7 @@ jobs:
             Status: FAILED
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            Time: ${{ github.event.head_commit.timestamp }}
+            Time: ${{ github.event.repository.updated_at }}
             Branch: ${{ github.ref }}
             Commit: ${{ github.sha }}
 
@@ -99,6 +101,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -193,4 +196,4 @@ jobs:
             Workflow: Recurring NYRR Event Sync (Daily)
             Status: SUCCESS
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Time: ${{ github.event.head_commit.timestamp }}
+            Time: ${{ github.event.repository.updated_at }}

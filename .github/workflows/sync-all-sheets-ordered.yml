@@ -2,9 +2,7 @@ name: Sync All Sheets (Ordered Sequential)
 
 on:
   schedule:
-    # Run daily at 00:00 UTC
-    - cron: '0 0 * * *'
-    # Also run every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+    # Run every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
     - cron: '0 0,6,12,18 * * *'
   workflow_dispatch:  # Allow manual trigger
 
@@ -15,8 +13,9 @@ env:
   GOOGLE_SHEETS_PAYMENTS_ID: ${{ secrets.GOOGLE_SHEETS_PAYMENTS_ID }}
   GOOGLE_SHEETS_WEBAPP_EVENTS_ID: ${{ secrets.GOOGLE_SHEETS_WEBAPP_EVENTS_ID }}
 
-  # Google Credentials
-  GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+  # Google Credentials (path only — each job writes the JSON to this path)
+  GOOGLE_APPLICATION_CREDENTIALS: /tmp/google-creds.json
+  GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
 
   # MySQL Database (build DATABASE_URL from individual secrets)
   MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
@@ -51,11 +50,15 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -q mysql-connector-python google-auth-httplib2 google-api-python-client google-auth-oauthlib azure-storage-blob python-dotenv
+
+      - name: Write Google credentials
+        run: echo "$GOOGLE_SERVICE_ACCOUNT" > /tmp/google-creds.json
 
       - name: Get timestamp
         id: timestamp
@@ -98,11 +101,15 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -q mysql-connector-python google-auth-httplib2 google-api-python-client google-auth-oauthlib azure-storage-blob python-dotenv
+
+      - name: Write Google credentials
+        run: echo "$GOOGLE_SERVICE_ACCOUNT" > /tmp/google-creds.json
 
       - name: Sync Payment-History sheet to payments table
         id: sync-payments
@@ -111,7 +118,7 @@ jobs:
           python3 ops/sync_sheets_to_mysql.py \
             --sheet "Payment-History" \
             --table "payments" \
-            --spreadsheet-id "$SPREADSHEET_ID" \
+            --spreadsheet-id "$GOOGLE_SHEETS_PAYMENTS_ID" \
             --key-field "PaymentID"
         continue-on-error: true
 
@@ -142,11 +149,15 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -q mysql-connector-python google-auth-httplib2 google-api-python-client google-auth-oauthlib azure-storage-blob python-dotenv
+
+      - name: Write Google credentials
+        run: echo "$GOOGLE_SERVICE_ACCOUNT" > /tmp/google-creds.json
 
       - name: Sync WebApp-Events sheet to webapp_events table
         id: sync-events
@@ -155,7 +166,7 @@ jobs:
           python3 ops/sync_sheets_to_mysql.py \
             --sheet "WebApp-Events" \
             --table "webapp_events" \
-            --spreadsheet-id "$SPREADSHEET_ID" \
+            --spreadsheet-id "$GOOGLE_SHEETS_WEBAPP_EVENTS_ID" \
             --key-field "EventID"
         continue-on-error: true
 
@@ -185,11 +196,15 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -q mysql-connector-python google-auth-httplib2 google-api-python-client google-auth-oauthlib azure-storage-blob python-dotenv
+
+      - name: Write Google credentials
+        run: echo "$GOOGLE_SERVICE_ACCOUNT" > /tmp/google-creds.json
 
       - name: Sync Main sheet to members table
         id: sync-members
@@ -245,13 +260,13 @@ jobs:
       - name: Send email notification
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ env.SMTP_USERNAME }}
-          password: ${{ env.SMTP_PASSWORD }}
+          server_address: ${{ env.MAIL_SERVER }}
+          server_port: ${{ env.MAIL_PORT }}
+          username: ${{ env.MAIL_USERNAME }}
+          password: ${{ env.MAIL_PASSWORD }}
           subject: "${{ steps.status.outputs.emoji }} Sync Report - ${{ steps.status.outputs.overall }}"
           to: ${{ env.NOTIFICATION_EMAIL }}
-          from: "MMR Sync Bot <${{ env.SMTP_USERNAME }}>"
+          from: "MMR Sync Bot <${{ env.MAIL_USERNAME }}>"
           body: |
             Sync Run Report
             ===============

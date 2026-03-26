@@ -1,10 +1,10 @@
 name: Nightly Google Sheets → MySQL Sync
 
 on:
-  schedule:
-    # Run at 2 AM UTC daily (9 PM EST / 6 PM PST)
-    - cron: '0 2 * * *'
-  workflow_dispatch:  # Allow manual trigger
+  # Schedule disabled — legacy workflow superseded by sync-all-sheets-ordered.yml
+  # schedule:
+  #   - cron: '0 2 * * *'
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   sync:
@@ -19,6 +19,8 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'basecamp/requirements.txt'
 
       - name: Install dependencies
         run: |

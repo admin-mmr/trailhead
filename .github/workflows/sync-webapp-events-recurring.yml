@@ -1,10 +1,10 @@
 name: 🌐 Recurring WebApp Events Sync (Every 6 Hours)
 
 on:
-  schedule:
-    # Run every 6 hours: 02:00, 08:00, 14:00, 20:00 UTC (offset to avoid peak load)
-    - cron: '0 2,8,14,20 * * *'
-  workflow_dispatch:  # Allow manual trigger
+  # Schedule disabled — superseded by sync-all-sheets-ordered.yml
+  # schedule:
+  #   - cron: '0 2,8,14,20 * * *'
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   sync-webapp-events:
@@ -20,6 +20,8 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'basecamp/requirements.txt'
 
       - name: Install dependencies
         run: |
@@ -85,7 +87,7 @@ jobs:
             Status: FAILED
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            Time: ${{ github.event.head_commit.timestamp }}
+            Time: ${{ github.event.repository.updated_at }}
             Branch: ${{ github.ref }}
             Commit: ${{ github.sha }}
 
@@ -107,4 +109,4 @@ jobs:
             Workflow: Recurring WebApp Events Sync
             Status: SUCCESS
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Time: ${{ github.event.head_commit.timestamp }}
+            Time: ${{ github.event.repository.updated_at }}

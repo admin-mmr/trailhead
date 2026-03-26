@@ -1,6 +1,7 @@
 name: 🔄 Daily Member Status Update
 
-# Runs daily AFTER the sheet sync to recalculate Status for every member.
+# Runs automatically after sync-all-sheets-ordered completes (workflow_run trigger),
+# ensuring fresh data is always in MySQL before status is recalculated.
 # Does NOT touch Expiration — that is handled by the payment reconciliation process.
 #
 # Status logic:
@@ -9,9 +10,9 @@ name: 🔄 Daily Member Status Update
 #   not active → Expiration < NOW() (or NULL) AND no pending Membership event
 
 on:
-  schedule:
-    # Run at 01:00 UTC daily — after sync-all-sheets-ordered (00:00 UTC)
-    - cron: '0 1 * * *'
+  workflow_run:
+    workflows: ["Sync All Sheets (Ordered Sequential)"]
+    types: [completed]
   workflow_dispatch:    # Allow manual trigger from GitHub Actions UI
     inputs:
       dry_run:
@@ -44,6 +45,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
