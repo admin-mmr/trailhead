@@ -40,8 +40,8 @@ try:
 except ImportError:
     _TQDM = False
 
-VERSION     = "1.2.0-phase2"
-ALL_MODULES = {"quality", "people", "bib", "posture"}
+VERSION     = "1.3.0-phase3"
+ALL_MODULES = {"quality", "people", "bib", "posture", "outfit"}
 
 # ── Lazy module loaders ───────────────────────────────────────────
 _cache = {}
@@ -54,6 +54,8 @@ def _mod(name):
             from modules import bib_ocr; _cache[name] = bib_ocr
         elif name == "posture":
             from modules import posture;  _cache[name] = posture
+        elif name == "outfit":
+            from modules import outfit;   _cache[name] = outfit
     return _cache.get(name)
 
 
@@ -80,6 +82,8 @@ def make_empty_record(image_info: dict) -> dict:
         # posture
         "bib_facing":       None,
         "bib_facing_conf":  None,
+        # outfit — Phase 3
+        "outfit_signatures": None,
         # face recognition — Phase 3 placeholder
         "face_count":   None,
         "face_matches": None,
@@ -138,6 +142,20 @@ def process_one(image_info: dict, skip: set) -> dict:
                 if p.get("facing") in ("camera", "left", "right")
             )
             record["people_facing_camera"] = facing_camera
+
+        # ── Outfit signature ─────────────────────────────────────
+        if "outfit" not in skip and people_boxes:
+            enriched_outfit = _mod("outfit").extract_outfit_signatures(
+                bgr, people_boxes
+            )
+            record["people_boxes"] = enriched_outfit
+            people_boxes = enriched_outfit
+            # Store compact signatures separately for cross-photo matching
+            record["outfit_signatures"] = [
+                p.get("outfit_signature")
+                for p in people_boxes
+                if p.get("outfit_signature") is not None
+            ] or None
 
         # ── Bib OCR ───────────────────────────────────────────────
         if "bib" not in skip:
@@ -318,6 +336,9 @@ def run(args):
         print(f"  Primary bib found: {with_bib} photos")
         related_total = sum(len(r.get("bib_related") or []) for r in all_records)
         print(f"  Related bibs     : {related_total} total")
+    if "outfit" not in skip:
+        with_outfit = sum(1 for r in all_records if r.get("outfit_signatures"))
+        print(f"  Outfit signatures: {with_outfit} photos")
     if "posture" not in skip and with_facing:
         print(f"  Bib facing tagged: {with_facing} photos")
     print(f"  Output           : {args.output}")

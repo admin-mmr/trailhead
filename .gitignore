@@ -57,3 +57,8 @@ profiles/
 ~$*.docx
 ~$*.xlsx
 ~$*.pptx
+
+# SQLite databases (runtime artifacts)
+*.db
+*.db-shm
+*.db-wal
