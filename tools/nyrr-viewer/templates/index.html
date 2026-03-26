@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYRR Data Viewer — MMR</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
+      --text: #e2e8f0; --text2: #94a3b8; --accent: #38bdf8;
+      --green: #4ade80; --yellow: #fbbf24; --red: #f87171;
+      --orange: #fb923c; --purple: #a78bfa; --border: #475569;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .app { max-width: 1400px; margin: 0 auto; padding: 16px; }
+    .header { display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header .subtitle { color: var(--text2); font-size: 13px; }
+    .header-right { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+    .user-info { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .user-email { color: var(--text2); }
+    .user-signout { color: var(--accent); cursor: pointer; }
+    .user-signout:hover { text-decoration: underline; }
+
+    .access-restricted { display: flex; align-items: center; justify-content: center; min-height: 60vh; padding: 20px; }
+    .access-restricted-box { background: var(--surface); border-radius: var(--radius); padding: 40px; text-align: center; max-width: 400px; }
+    .access-restricted-box .big { font-size: 48px; margin-bottom: 16px; }
+    .access-restricted-box h2 { font-size: 18px; margin-bottom: 8px; }
+    .access-restricted-box p { color: var(--text2); font-size: 13px; margin-bottom: 16px; }
+
+    .tabs { display: flex; gap: 4px; margin-bottom: 24px; }
+    .tab { padding: 8px 16px; border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 500; background: transparent; border: 1px solid transparent; color: var(--text2); transition: all 0.15s; }
+    .tab:hover { background: var(--surface); color: var(--text); }
+    .tab.active { background: var(--surface); color: var(--accent); border-color: var(--accent); }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border-radius: var(--radius); padding: 16px; }
+    .stat-card .label { color: var(--text2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card .value.green { color: var(--green); }
+    .stat-card .value.yellow { color: var(--yellow); }
+    .stat-card .value.red { color: var(--red); }
+    .stat-card .value.accent { color: var(--accent); }
+
+    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+    .toolbar input, .toolbar select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: var(--radius); font-size: 14px; outline: none; }
+    .toolbar input:focus, .toolbar select:focus { border-color: var(--accent); }
+    .toolbar input { min-width: 200px; }
+
+    .btn { padding: 8px 16px; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: var(--accent); color: #0f172a; }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text2); }
+    .btn-outline:hover { border-color: var(--text); color: var(--text); }
+    .btn-green { background: var(--green); color: #0f172a; }
+    .btn-orange { background: var(--orange); color: #0f172a; }
+
+    .dropdown-menu { position: absolute; top: 100%; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); min-width: 190px; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .dropdown-item { padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--text2); border-bottom: 1px solid var(--surface2); white-space: nowrap; }
+    .dropdown-item:last-child { border-bottom: none; }
+    .dropdown-item:hover { background: var(--surface2); color: var(--text); }
+    .dropdown-check { padding: 7px 12px; font-size: 12px; color: var(--text2); border-bottom: 2px solid var(--border); display: flex; align-items: center; gap: 7px; cursor: pointer; }
+    .dropdown-check:hover { color: var(--text); }
+
+    .column-selector { position: relative; display: inline-block; }
+    .column-selector-panel { position: absolute; top: 100%; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); min-width: 200px; padding: 8px; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-height: 300px; overflow-y: auto; }
+    .column-check { display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer; font-size: 13px; }
+    .column-check:hover { background: var(--surface2); border-radius: 4px; }
+    .column-check input { cursor: pointer; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 10px 12px; background: var(--surface); color: var(--text2); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; cursor: pointer; user-select: none; border-bottom: 2px solid var(--border); }
+    th:hover { color: var(--text); }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--surface2); }
+    tr:hover td { background: var(--surface); }
+
+    .filter-row th { background: var(--surface2); padding: 4px 12px; border-bottom: 1px solid var(--border); }
+    .filter-row input { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 100%; }
+    .filter-row input:focus { border-color: var(--accent); }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+    .badge-green { background: rgba(74, 222, 128, 0.15); color: var(--green); }
+    .badge-yellow { background: rgba(251, 191, 36, 0.15); color: var(--yellow); }
+    .badge-red { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+    .badge-blue { background: rgba(56, 189, 248, 0.15); color: var(--accent); }
+    .badge-purple { background: rgba(167, 139, 250, 0.15); color: var(--purple); }
+
+    .progress-bar { width: 80px; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 6px; }
+    .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+    .panel { background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+    .panel-header { padding: 16px; border-bottom: 1px solid var(--surface2); display: flex; justify-content: space-between; align-items: center; }
+    .panel-header h3 { font-size: 15px; font-weight: 600; }
+    .panel-header-actions { display: flex; gap: 8px; align-items: center; }
+    .table-wrap { overflow-x: auto; }
+
+    .back-btn { color: var(--text2); cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 12px; background: none; border: none; }
+    .back-btn:hover { color: var(--text); }
+
+    .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .detail-item { background: var(--surface); border-radius: var(--radius); padding: 12px; }
+    .detail-item .label { color: var(--text2); font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+    .detail-item .val { font-size: 16px; font-weight: 600; }
+
+    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 20px; font-size: 14px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.4); animation: slideIn 0.3s; }
+    @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    .pagination { display: flex; gap: 4px; align-items: center; margin-top: 12px; padding: 12px; justify-content: center; }
+    .page-info { color: var(--text2); font-size: 13px; margin: 0 12px; }
+
+    .loading { text-align: center; padding: 40px; color: var(--text2); }
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--surface2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty { text-align: center; padding: 60px 20px; color: var(--text2); }
+    .empty .big { font-size: 40px; margin-bottom: 8px; }
+
+    .admin-form { background: var(--surface2); padding: 12px; border-radius: var(--radius); margin-bottom: 16px; display: flex; gap: 8px; align-items: flex-end; }
+    .admin-form input, .admin-form select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: var(--radius); font-size: 13px; }
+    .admin-note { background: var(--surface2); padding: 12px; border-radius: var(--radius); margin-bottom: 16px; font-size: 13px; color: var(--text2); }
+    .admin-table { width: 100%; }
+    .admin-row-actions { display: flex; gap: 4px; align-items: center; }
+    .btn-delete { background: var(--red); color: white; padding: 4px 8px; font-size: 12px; cursor: pointer; border: none; border-radius: 4px; }
+    .btn-delete:hover { filter: brightness(1.1); }
+    .btn-delete:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .tooltip { position: relative; display: inline-block; }
+    .tooltip-text { visibility: hidden; width: 200px; background-color: var(--surface2); color: var(--text); text-align: center; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -100px; opacity: 0; transition: opacity 0.3s; font-size: 11px; }
+    .tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
+
+    /* ── Match modal ── */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .modal { background: var(--surface); border-radius: 12px; width: 100%; max-width: 720px; max-height: 85vh; display: flex; flex-direction: column; border: 1px solid var(--border); box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+    .modal-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-shrink: 0; }
+    .modal-header h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+    .modal-runner-info { color: var(--text2); font-size: 13px; }
+    .modal-body { padding: 16px 24px 24px; overflow-y: auto; flex: 1; }
+    .btn-close { background: none; border: none; color: var(--text2); font-size: 22px; line-height: 1; cursor: pointer; padding: 2px 6px; flex-shrink: 0; }
+    .btn-close:hover { color: var(--text); }
+    .modal-search { display: flex; gap: 8px; margin-bottom: 14px; }
+    .modal-search input { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: var(--radius); font-size: 14px; outline: none; }
+    .modal-search input:focus { border-color: var(--accent); }
+    .modal-warn { background: rgba(251,191,36,.1); border: 1px solid var(--yellow); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; color: var(--yellow); }
+    .modal-confirm { background: rgba(56,189,248,.08); border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-bottom: 14px; }
+    .modal-confirm h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+    .modal-confirm .detail { font-size: 13px; color: var(--text2); margin-bottom: 10px; }
+    .modal-confirm .gender-warn { color: var(--yellow); font-size: 12px; margin-bottom: 10px; }
+    /* Match / unmatch inline buttons */
+    .btn-match { padding: 3px 9px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--accent); color: var(--accent); background: transparent; white-space: nowrap; }
+    .btn-match:hover { background: rgba(56,189,248,.12); }
+    .btn-unmatch { padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); color: var(--text2); background: transparent; margin-left: 6px; white-space: nowrap; }
+    .btn-unmatch:hover { border-color: var(--red); color: var(--red); }
+    .match-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ── API helpers ──
+const api = async (path, opts = {}) => {
+  const resp = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  return resp.json();
+};
+
+// ── Status badge ──
+const StatusBadge = ({ status }) => {
+  const cls = { Completed: 'green', Pending: 'yellow', InProgress: 'blue', Error: 'red' }[status] || 'blue';
+  return <span className={`badge badge-${cls}`}>{status}</span>;
+};
+
+// ── Match % bar ──
+const MatchBar = ({ pct }) => {
+  const color = pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--yellow)' : 'var(--red)';
+  return (
+    <span>
+      <span className="progress-bar"><span className="progress-fill" style={{ width: `${pct}%`, background: color }} /></span>
+      <span style={{ fontSize: 12 }}>{pct}%</span>
+    </span>
+  );
+};
+
+// ── Toast ──
+const Toast = ({ message, onClose }) => {
+  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, []);
+  return message ? <div className="toast">{message}</div> : null;
+};
+
+// ═══════════════════════════════════════════════════
+// MatchModal — manual runner-to-member matching
+// ═══════════════════════════════════════════════════
+const MatchModal = ({ runner, onClose, onMatched }) => {
+  const [query, setQuery] = useState(runner.runner_name || '');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [confirming, setConfirming] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // Normalize gender for comparison: NYRR uses M/W/X; members use Male/Female/etc.
+  const genderMatch = (runnerGender, memberGender) => {
+    if (!runnerGender || !memberGender) return null; // unknown
+    const rg = runnerGender.toUpperCase()[0];
+    const mg = memberGender.toLowerCase()[0];
+    if (rg === 'M') return mg === 'm';
+    if (rg === 'W') return mg === 'f' || mg === 'w';
+    return null;
+  };
+
+  const getConfidence = (member) => {
+    const rName = (runner.runner_name || '').trim().toLowerCase();
+    const mName = `${member.first_name} ${member.last_name}`.trim().toLowerCase();
+    const nyrrName = (member.nyrr_runner_name || '').trim().toLowerCase();
+    const exactName = rName === mName || rName === nyrrName;
+    const gm = genderMatch(runner.gender, member.gender);
+    if (exactName && gm === true)  return { label: 'Strong match', cls: 'badge-green' };
+    if (exactName && gm === null)  return { label: 'Name match',   cls: 'badge-blue' };
+    if (exactName && gm === false) return { label: 'Name ⚠ gender', cls: 'badge-yellow' };
+    return { label: 'Partial', cls: '' };
+  };
+
+  const doSearch = async (q) => {
+    if (!q.trim()) { setResults([]); return; }
+    setSearching(true);
+    setError('');
+    const r = await api(`/api/members/search?q=${encodeURIComponent(q.trim())}`);
+    if (r.ok) setResults(r.data);
+    else setError(r.error || 'Search failed');
+    setSearching(false);
+  };
+
+  // Auto-search on open
+  useEffect(() => { doSearch(query); }, []);
+
+  const handleConfirm = async () => {
+    if (!confirming) return;
+    setSaving(true);
+    setError('');
+    const r = await api(`/api/runners/${runner.id}/match`, {
+      method: 'POST',
+      body: JSON.stringify({ member_id: confirming.member_id }),
+    });
+    setSaving(false);
+    if (r.ok) {
+      onMatched(runner.id, confirming, r.data);
+      onClose();
+    } else {
+      setError(r.error || 'Failed to save match');
+      setConfirming(null);
+    }
+  };
+
+  // Warn if multiple members share the exact same name as this runner
+  const runnerNameLc = (runner.runner_name || '').trim().toLowerCase();
+  const exactDupes = results.filter(m =>
+    `${m.first_name} ${m.last_name}`.trim().toLowerCase() === runnerNameLc ||
+    (m.nyrr_runner_name || '').trim().toLowerCase() === runnerNameLc
+  );
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal">
+        {/* Header */}
+        <div className="modal-header">
+          <div>
+            <h3>Match runner to member</h3>
+            <div className="modal-runner-info">
+              <strong style={{ color: 'var(--text)' }}>{runner.runner_name}</strong>
+              {runner.age ? <span> · Age {runner.age}</span> : null}
+              {runner.gender ? <span> · {runner.gender === 'W' ? 'Female' : runner.gender === 'M' ? 'Male' : runner.gender}</span> : null}
+              {runner.bib_number ? <span> · Bib {runner.bib_number}</span> : null}
+              {runner.finish_time ? <span> · {runner.finish_time}</span> : null}
+            </div>
+          </div>
+          <button className="btn-close" onClick={onClose} title="Close">×</button>
+        </div>
+
+        {/* Body */}
+        <div className="modal-body">
+          {/* Duplicate name warning */}
+          {exactDupes.length > 1 && (
+            <div className="modal-warn">
+              ⚠ {exactDupes.length} members share the name "{runner.runner_name}" — verify age / birth year before matching.
+            </div>
+          )}
+
+          {/* Confirmation step */}
+          {confirming && (
+            <div className="modal-confirm">
+              <h4>Confirm match?</h4>
+              <div className="detail">
+                Link <strong style={{ color: 'var(--text)' }}>{runner.runner_name}</strong>
+                {' → '}
+                <strong style={{ color: 'var(--text)' }}>{confirming.first_name} {confirming.last_name}</strong>
+                {' '}
+                <span style={{ color: 'var(--text2)', fontSize: 12 }}>({confirming.member_id} · {confirming.email})</span>
+              </div>
+              {genderMatch(runner.gender, confirming.gender) === false && (
+                <div className="gender-warn">⚠ Gender mismatch: runner is {runner.gender}, member is {confirming.gender}</div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary btn-sm" onClick={handleConfirm} disabled={saving}>
+                  {saving ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Saving…</> : 'Confirm'}
+                </button>
+                <button className="btn btn-outline btn-sm" onClick={() => setConfirming(null)} disabled={saving}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* Search box */}
+          <div className="modal-search">
+            <input
+              type="text"
+              placeholder="Search by name…"
+              value={query}
+              autoFocus
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && doSearch(query)}
+            />
+            <button className="btn btn-primary btn-sm" onClick={() => doSearch(query)} disabled={searching}>
+              {searching ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Search'}
+            </button>
+          </div>
+
+          {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+
+          {/* Results */}
+          {searching ? (
+            <div className="loading"><span className="spinner" /> Searching…</div>
+          ) : results.length === 0 && query.trim() ? (
+            <div style={{ color: 'var(--text2)', fontSize: 13 }}>No members found for "{query}"</div>
+          ) : results.length > 0 ? (
+            <div className="panel">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Member</th>
+                      <th>Gender</th>
+                      <th>Born</th>
+                      <th>NYRR Name</th>
+                      <th>Status</th>
+                      <th>Confidence</th>
+                      <th style={{ width: 70 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map(m => {
+                      const conf = getConfidence(m);
+                      return (
+                        <tr key={m.member_id}>
+                          <td>
+                            <div style={{ fontWeight: 500 }}>{m.first_name} {m.last_name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text2)' }}>{m.member_id} · {m.email}</div>
+                          </td>
+                          <td style={{ fontSize: 13 }}>{m.gender || '—'}</td>
+                          <td style={{ fontSize: 13 }}>{m.year_born || '—'}</td>
+                          <td style={{ fontSize: 12, color: 'var(--text2)' }}>{m.nyrr_runner_name || '—'}</td>
+                          <td>
+                            <span className={`badge ${m.status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{m.status}</span>
+                          </td>
+                          <td>
+                            {conf.cls
+                              ? <span className={`badge ${conf.cls}`}>{conf.label}</span>
+                              : <span style={{ color: 'var(--text2)', fontSize: 11 }}>{conf.label}</span>}
+                          </td>
+                          <td>
+                            <button
+                              className="btn btn-sm btn-primary"
+                              style={{ padding: '4px 12px', fontSize: 12 }}
+                              onClick={() => setConfirming(m)}
+                              disabled={!!confirming}
+                            >
+                              Select
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
+// AdminPanel component
+// ═══════════════════════════════════════════════════
+const AdminPanel = ({ userRole, userEmail }) => {
+  const [admins, setAdmins] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newRole, setNewRole] = useState('admin');
+  const [loadingDelete, setLoadingDelete] = useState(null);
+
+  const isSuperAdmin = userRole === 'super_admin';
+
+  useEffect(() => {
+    setLoading(true);
+    api('/api/admins').then(r => {
+      if (r.ok) setAdmins(r.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleAddAdmin = async () => {
+    if (!newEmail.trim()) {
+      setToast('Email is required');
+      return;
+    }
+    const r = await api('/api/admins', {
+      method: 'POST',
+      body: JSON.stringify({ email: newEmail, role: newRole }),
+    });
+    if (r.ok) {
+      setToast('Admin added successfully');
+      setNewEmail('');
+      setNewRole('admin');
+      // Reload admins
+      const resp = await api('/api/admins');
+      if (resp.ok) setAdmins(resp.data);
+    } else {
+      setToast(r.error || 'Failed to add admin');
+    }
+  };
+
+  const handleDeleteAdmin = async (email) => {
+    setLoadingDelete(email);
+    const r = await api(`/api/admins/${email}`, { method: 'DELETE' });
+    setLoadingDelete(null);
+    if (r.ok) {
+      setToast('Admin removed successfully');
+      const resp = await api('/api/admins');
+      if (resp.ok) setAdmins(resp.data);
+    } else {
+      setToast(r.error || 'Failed to remove admin');
+    }
+  };
+
+  const handleChangeRole = async (email, newRole) => {
+    const r = await api('/api/admins', {
+      method: 'POST',
+      body: JSON.stringify({ email, role: newRole }),
+    });
+    if (r.ok) {
+      setToast(`Role updated to ${newRole}`);
+      const resp = await api('/api/admins');
+      if (resp.ok) setAdmins(resp.data);
+    } else {
+      setToast(r.error || 'Failed to update role');
+    }
+  };
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: 16 }}>Admin Management</h2>
+
+      <div className="admin-note">
+        Super admins can manage this list. Admins have read-only access.
+      </div>
+
+      {isSuperAdmin && (
+        <div className="admin-form">
+          <input
+            type="email"
+            placeholder="Email address"
+            value={newEmail}
+            onChange={e => setNewEmail(e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <select value={newRole} onChange={e => setNewRole(e.target.value)}>
+            <option value="admin">Admin</option>
+            <option value="super_admin">Super Admin</option>
+          </select>
+          <button className="btn btn-primary" onClick={handleAddAdmin}>Add Admin</button>
+        </div>
+      )}
+
+      <div className="panel">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Created At</th>
+                {isSuperAdmin && <th style={{ width: 60 }}>Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={isSuperAdmin ? 4 : 3} className="loading"><span className="spinner" /> Loading...</td></tr>
+              ) : admins.length === 0 ? (
+                <tr><td colSpan={isSuperAdmin ? 4 : 3} className="empty"><div className="big">-</div>No admins found</td></tr>
+              ) : admins.map(admin => (
+                <tr key={admin.email}>
+                  <td>{admin.email}</td>
+                  <td>
+                    {isSuperAdmin && admin.email !== userEmail ? (
+                      <select
+                        value={admin.role}
+                        onChange={e => handleChangeRole(admin.email, e.target.value)}
+                        style={{
+                          background: 'var(--surface2)', border: '1px solid var(--border)',
+                          color: 'var(--text)', borderRadius: 6, padding: '3px 8px', fontSize: 12, cursor: 'pointer'
+                        }}
+                      >
+                        <option value="admin">admin</option>
+                        <option value="super_admin">super_admin</option>
+                      </select>
+                    ) : (
+                      <span className={`badge ${admin.role === 'super_admin' ? 'badge-purple' : 'badge-blue'}`}>{admin.role}</span>
+                    )}
+                  </td>
+                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{admin.created_at ? new Date(admin.created_at).toLocaleDateString() : '—'}</td>
+                  {isSuperAdmin && (
+                    <td>
+                      <button
+                        className="btn-delete"
+                        disabled={loadingDelete === admin.email || admin.email === userEmail}
+                        onClick={() => handleDeleteAdmin(admin.email)}
+                      >
+                        {loadingDelete === admin.email ? '...' : '×'}
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
+// Dashboard view
+// ═══════════════════════════════════════════════════
+const Dashboard = ({ onSelectEvent, onGoSettings }) => {
+  const [stats, setStats] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [years, setYears] = useState([]);
+  const [filter, setFilter] = useState({ status: '', year: '', q: '' });
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState('');
+  const [loadingIds, setLoadingIds] = useState({});
+  const [dbError, setDbError] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState(null);
+  const [forceFlags, setForceFlags] = useState({});
+
+  const loadStats = () => api('/api/stats').then(r => {
+    if (r.db_error) setDbError(true);
+    else { setDbError(false); if (r.ok) setStats(r.data); }
+  });
+  const loadYears = () => api('/api/stats/years').then(r => r.ok && setYears(r.data));
+
+  const loadEvents = useCallback(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.year) params.set('year', filter.year);
+    if (filter.q) params.set('q', filter.q);
+    api(`/api/events?${params}`).then(r => {
+      if (r.db_error) setDbError(true);
+      else if (r.ok) { setDbError(false); setEvents(r.data); }
+      setLoading(false);
+    });
+  }, [filter]);
+
+  useEffect(() => { loadStats(); loadYears(); }, []);
+  useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  if (dbError) {
+    return (
+      <div className="empty" style={{ paddingTop: 80 }}>
+        <div className="big" style={{ fontSize: 48 }}>⚡</div>
+        <h2 style={{ marginBottom: 8 }}>Not Connected to Database</h2>
+        <p style={{ color: 'var(--text2)', marginBottom: 20, maxWidth: 400, margin: '0 auto 20px' }}>
+          Connect to your Azure MySQL database to start browsing NYRR events and loading runner data.
+        </p>
+        <button className="btn btn-primary" style={{ fontSize: 15, padding: '10px 24px' }} onClick={onGoSettings}>
+          Open Settings
+        </button>
+      </div>
+    );
+  }
+
+  const triggerLoad = async (eventId, eventCode, scope = 'team', forceReload = false) => {
+    setLoadingIds(prev => ({ ...prev, [eventId]: true }));
+    const r = await api(`/api/load/${eventId}`, {
+      method: 'POST',
+      body: JSON.stringify({ scope, force_reload: forceReload }),
+    });
+    if (r.ok) {
+      setToast(`Loading started for ${eventCode}...`);
+      // Poll status
+      const poll = setInterval(async () => {
+        const s = await api(`/api/load/${eventCode}/status`);
+        if (s.status === 'done' || s.status === 'error') {
+          clearInterval(poll);
+          setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
+          setToast(s.message || `${eventCode}: ${s.status}`);
+          loadEvents();
+          loadStats();
+        }
+      }, 2000);
+    } else {
+      setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
+      setToast(r.error || 'Load failed');
+    }
+  };
+
+  const discoverEvents = async () => {
+    const year = filter.year || new Date().getFullYear();
+    setToast(`Discovering events for ${year}...`);
+    const r = await api('/api/discover', { method: 'POST', body: JSON.stringify({ year: parseInt(year) }) });
+    if (r.ok) {
+      setToast(`Found ${r.api_total} events, ${r.new_inserted} new inserted.`);
+      loadEvents();
+      loadStats();
+      loadYears();
+    } else {
+      setToast(r.error || 'Discovery failed');
+    }
+  };
+
+  return (
+    <div>
+      {stats && (
+        <div className="stats-grid">
+          <div className="stat-card"><div className="label">Total Events</div><div className="value accent">{stats.total_events}</div></div>
+          <div className="stat-card"><div className="label">Completed</div><div className="value green">{stats.completed}</div></div>
+          <div className="stat-card"><div className="label">Pending</div><div className="value yellow">{stats.pending}</div></div>
+          <div className="stat-card"><div className="label">Errors</div><div className="value red">{stats.errors}</div></div>
+          <div className="stat-card"><div className="label">MMR Runners</div><div className="value">{stats.total_mmr_runners}</div></div>
+          <div className="stat-card"><div className="label">Matched</div><div className="value green">{stats.total_matched}</div></div>
+          <div className="stat-card"><div className="label">Upcoming</div><div className="value accent">{stats.upcoming_events}</div></div>
+        </div>
+      )}
+
+      <div className="toolbar">
+        <input placeholder="Search events..." value={filter.q} onChange={e => setFilter(f => ({ ...f, q: e.target.value }))} />
+        <select value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}>
+          <option value="">All statuses</option>
+          <option value="Pending">Pending</option>
+          <option value="InProgress">In Progress</option>
+          <option value="Completed">Completed</option>
+          <option value="Error">Error</option>
+        </select>
+        <select value={filter.year} onChange={e => setFilter(f => ({ ...f, year: e.target.value }))}>
+          <option value="">All years</option>
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <button className="btn btn-primary" onClick={discoverEvents}>Discover New Events</button>
+      </div>
+
+      <div className="panel">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Date</th>
+                <th>Distance</th>
+                <th>Status</th>
+                <th>MMR Runners</th>
+                <th>All Runners</th>
+                <th>Matched</th>
+                <th>Match %</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={9} className="loading"><span className="spinner" /> Loading events...</td></tr>
+              ) : events.length === 0 ? (
+                <tr><td colSpan={9} className="empty"><div className="big">-</div>No events found</td></tr>
+              ) : events.map(ev => (
+                <tr key={ev.id}>
+                  <td>
+                    <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id); }} style={{ fontWeight: 600 }}>{ev.event_name}</a>
+                    <div style={{ color: 'var(--text2)', fontSize: 11 }}>{ev.event_code}</div>
+                  </td>
+                  <td>{ev.event_date ? new Date(ev.event_date).toLocaleDateString() : '—'}</td>
+                  <td>{ev.distance || '—'}</td>
+                  <td><StatusBadge status={ev.processing_status} /></td>
+                  <td>{ev.mmr_runner_count || 0}</td>
+                  <td style={{ color: ev.result_count > 0 ? 'var(--text)' : 'var(--text2)' }}>{ev.result_count || 0}</td>
+                  <td>{ev.mmr_matched_count || 0}</td>
+                  <td><MatchBar pct={ev.match_pct || 0} /></td>
+                  <td>
+                    {(() => {
+                      const done = ev.processing_status === 'Completed';
+                      const busy = !!loadingIds[ev.id];
+                      const forceKey = `force_${ev.id}`;
+                      const isForce = !!forceFlags[forceKey];
+                      return (
+                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                          <button
+                            className={`btn btn-sm ${done ? 'btn-outline' : 'btn-green'}`}
+                            disabled={busy}
+                            onClick={() => setOpenDropdown(openDropdown === ev.id ? null : ev.id)}
+                          >
+                            {busy
+                              ? <><span className="spinner" />{done ? ' Re-syncing…' : ' Loading…'}</>
+                              : <>{done ? '↻ Re-sync' : '▶ Load'} ▼</>}
+                          </button>
+                          {openDropdown === ev.id && (
+                            <div className="dropdown-menu">
+                              <label className="dropdown-check">
+                                <input type="checkbox" checked={isForce}
+                                  onChange={e => setForceFlags(f => ({ ...f, [forceKey]: e.target.checked }))} />
+                                Delete existing first
+                              </label>
+                              <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, 'team', isForce); setOpenDropdown(null); }}>
+                                MMR team only
+                              </div>
+                              <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, 'all', isForce); setOpenDropdown(null); }}>
+                                All runners
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
+// Event detail view
+// ═══════════════════════════════════════════════════
+const EventDetail = ({ eventId, onBack }) => {
+  const [event, setEvent] = useState(null);
+  const [runners, setRunners] = useState([]);
+  const [filter, setFilter] = useState({ q: '', team: '', matched: '', unmatched: '' });
+  const [colFilters, setColFilters] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [visibleCols, setVisibleCols] = useState(
+    JSON.parse(localStorage.getItem('mmr_runner_cols')) || {
+      place: true, bib: true, name: true, age: true, gender: true,
+      time: true, pace: true, team: true, mmrMatch: true, method: true, runnerId: true
+    }
+  );
+  const [showColSelector, setShowColSelector] = useState(false);
+  const [toast, setToast] = useState('');
+  const [matchModal, setMatchModal] = useState(null); // runner row being matched
+
+  useEffect(() => {
+    api(`/api/events/${eventId}`).then(r => r.ok && setEvent(r.data));
+    const saved = localStorage.getItem(`mmr_runner_colfilters_${eventId}`);
+    if (saved) setColFilters(JSON.parse(saved));
+  }, [eventId]);
+
+  useEffect(() => {
+    setLoading(true);
+    const p = new URLSearchParams();
+    if (filter.q) p.set('q', filter.q);
+    if (filter.team) p.set('team', filter.team);
+    if (filter.matched) p.set('matched', '1');
+    if (filter.unmatched) p.set('unmatched', '1');
+    api(`/api/events/${eventId}/runners?${p}`).then(r => {
+      if (r.ok) setRunners(r.data);
+      setLoading(false);
+    });
+  }, [eventId, filter]);
+
+  useEffect(() => {
+    localStorage.setItem('mmr_runner_cols', JSON.stringify(visibleCols));
+  }, [visibleCols]);
+
+  useEffect(() => {
+    localStorage.setItem(`mmr_runner_colfilters_${eventId}`, JSON.stringify(colFilters));
+  }, [colFilters, eventId]);
+
+  // ── Hooks must all come before any early return (Rules of Hooks) ──────────
+
+  const handleMatchDone = useCallback((runnerRowId, member, updatedRunner) => {
+    setRunners(prev => prev.map(r =>
+      r.id === runnerRowId ? { ...r, ...updatedRunner } : r
+    ));
+    api(`/api/events/${eventId}`).then(res => res.ok && setEvent(res.data));
+    setToast(`Matched to ${member.first_name} ${member.last_name} (${member.member_id})`);
+  }, [eventId]);
+
+  const handleUnmatch = useCallback(async (runner) => {
+    // Optimistic update — rolls back on API error
+    setRunners(prev => prev.map(r =>
+      r.id === runner.id
+        ? { ...r, mmr_member_id: null, match_method: 'unmatched', matched_by: null, matched_at: null }
+        : r
+    ));
+    const res = await api(`/api/runners/${runner.id}/match`, { method: 'DELETE' });
+    if (res.ok) {
+      api(`/api/events/${eventId}`).then(r => r.ok && setEvent(r.data));
+      setToast('Match removed');
+    } else {
+      setRunners(prev => prev.map(r => r.id === runner.id ? runner : r));
+      setToast(res.error || 'Failed to remove match');
+    }
+  }, [eventId]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  if (!event) return <div className="loading"><span className="spinner" /> Loading...</div>;
+
+  const mmr = event.mmr_runner_count || 0;
+  const matched = event.mmr_matched_count || 0;
+  const pct = mmr > 0 ? Math.round(matched / mmr * 100) : 0;
+
+  // Apply column filters
+  let filtered = runners;
+  if (Object.keys(colFilters).length > 0) {
+    filtered = runners.filter(r => {
+      if (colFilters.place && colFilters.place.trim()) {
+        const range = colFilters.place.trim();
+        const place = parseInt(r.overall_place);
+        if (range.includes('-')) {
+          const [from, to] = range.split('-').map(x => parseInt(x.trim()));
+          if (place < from || place > to) return false;
+        } else {
+          if (place !== parseInt(range)) return false;
+        }
+      }
+      if (colFilters.name && colFilters.name.trim()) {
+        if (!r.runner_name.toLowerCase().includes(colFilters.name.toLowerCase())) return false;
+      }
+      if (colFilters.age && colFilters.age.trim()) {
+        if (r.age !== parseInt(colFilters.age)) return false;
+      }
+      if (colFilters.gender && colFilters.gender.trim()) {
+        if (r.gender !== colFilters.gender.toUpperCase()) return false;
+      }
+      if (colFilters.team && colFilters.team.trim()) {
+        if (r.team_code !== colFilters.team.toUpperCase()) return false;
+      }
+      if (colFilters.mmrMatch && colFilters.mmrMatch.trim()) {
+        const val = colFilters.mmrMatch.toLowerCase();
+        const isMatched = !!r.mmr_member_id;
+        if ((val === 'matched' && !isMatched) || (val === 'unmatched' && isMatched)) return false;
+      }
+      return true;
+    });
+  }
+
+  const handleExportCSV = () => {
+    if (filtered.length === 0) {
+      setToast('No runners to export');
+      return;
+    }
+    const cols = ['place', 'bib', 'name', 'age', 'gender', 'time', 'pace', 'team', 'mmrMatch', 'method', 'runnerId']
+      .filter(c => visibleCols[c]);
+    const header = ['Place', 'Bib', 'Name', 'Age', 'Gender', 'Time', 'Pace', 'Team', 'MMR Match', 'Method', 'Runner ID']
+      .filter((_, i) => visibleCols[['place', 'bib', 'name', 'age', 'gender', 'time', 'pace', 'team', 'mmrMatch', 'method', 'runnerId'][i]])
+      .join(',');
+    const rows = filtered.map(r => {
+      const vals = [
+        r.overall_place || '', r.bib_number || '', r.runner_name || '',
+        r.age || '', r.gender || '', r.finish_time || '', r.pace || '',
+        r.team_code || '', r.mmr_member_id || '', r.match_method || '', r.nyrr_runner_id || ''
+      ];
+      return vals.filter((_, i) => visibleCols[['place', 'bib', 'name', 'age', 'gender', 'time', 'pace', 'team', 'mmrMatch', 'method', 'runnerId'][i]])
+        .map(v => `"${String(v).replace(/"/g, '""')}"`)
+        .join(',');
+    });
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${event.event_code}_runners.csv`;
+    link.click();
+    setToast('CSV exported');
+  };
+
+  const hasActiveColFilters = Object.values(colFilters).some(v => v && v.trim());
+
+  return (
+    <div>
+      <button className="back-btn" onClick={onBack}>← Back to events</button>
+      <h2 style={{ marginBottom: 4 }}>{event.event_name}</h2>
+      <div style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 16 }}>{event.event_code} · {event.location}</div>
+
+      <div className="detail-grid">
+        <div className="detail-item"><div className="label">Date</div><div className="val">{event.event_date ? new Date(event.event_date).toLocaleDateString() : '—'}</div></div>
+        <div className="detail-item"><div className="label">Distance</div><div className="val">{event.distance || '—'}</div></div>
+        <div className="detail-item"><div className="label">Status</div><div className="val"><StatusBadge status={event.processing_status} /></div></div>
+        <div className="detail-item"><div className="label">Total Runners</div><div className="val">{event.result_count || 0}</div></div>
+        <div className="detail-item"><div className="label">MMR Runners</div><div className="val">{mmr}</div></div>
+        <div className="detail-item"><div className="label">Matched</div><div className="val">{matched} / {mmr} ({pct}%)</div></div>
+        <div className="detail-item"><div className="label">Processed</div><div className="val" style={{ fontSize: 13 }}>{event.processed_at || '—'}</div></div>
+        <div className="detail-item"><div className="label">NYRR Results</div><div className="val" style={{ fontSize: 13 }}>{event.event_url ? <a href={event.event_url} target="_blank" rel="noreferrer">View on NYRR ↗</a> : '—'}</div></div>
+      </div>
+
+      {event.notes && (
+        <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 13, color: 'var(--text2)' }}>
+          <strong>Notes:</strong> {event.notes}
+        </div>
+      )}
+
+      <div className="toolbar">
+        <input placeholder="Search runners..." value={filter.q} onChange={e => setFilter(f => ({ ...f, q: e.target.value }))} />
+        <select value={filter.team} onChange={e => setFilter(f => ({ ...f, team: e.target.value }))}>
+          <option value="">All teams</option>
+          <option value="MMR">MMR only</option>
+        </select>
+        <label style={{ fontSize: 13, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" checked={!!filter.matched} onChange={e => setFilter(f => ({ ...f, matched: e.target.checked ? '1' : '', unmatched: '' }))} /> Matched
+        </label>
+        <label style={{ fontSize: 13, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" checked={!!filter.unmatched} onChange={e => setFilter(f => ({ ...f, unmatched: e.target.checked ? '1' : '', matched: '' }))} /> Unmatched MMR
+        </label>
+        <span style={{ color: 'var(--text2)', fontSize: 13, marginLeft: 'auto' }}>{filtered.length} runners</span>
+        <div className="column-selector">
+          <button className="btn btn-sm btn-outline" onClick={() => setShowColSelector(!showColSelector)}>Columns ▾</button>
+          {showColSelector && (
+            <div className="column-selector-panel">
+              {['place', 'bib', 'name', 'age', 'gender', 'time', 'pace', 'team', 'mmrMatch', 'method', 'runnerId'].map(col => (
+                <div key={col} className="column-check">
+                  <input
+                    type="checkbox"
+                    checked={visibleCols[col]}
+                    onChange={e => setVisibleCols(prev => ({ ...prev, [col]: e.target.checked }))}
+                  />
+                  <span>{col === 'mmrMatch' ? 'MMR Match' : col === 'runnerId' ? 'Runner ID' : col.charAt(0).toUpperCase() + col.slice(1)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>Export CSV</button>
+      </div>
+
+      <div className="panel">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {visibleCols.place && <th>Place</th>}
+                {visibleCols.bib && <th>Bib</th>}
+                {visibleCols.name && <th>Name</th>}
+                {visibleCols.age && <th>Age</th>}
+                {visibleCols.gender && <th>Gender</th>}
+                {visibleCols.time && <th>Time</th>}
+                {visibleCols.pace && <th>Pace</th>}
+                {visibleCols.team && <th>Team</th>}
+                {visibleCols.mmrMatch && <th>MMR Match</th>}
+                {visibleCols.method && <th>Method</th>}
+                {visibleCols.runnerId && <th>Runner ID</th>}
+              </tr>
+              <tr className="filter-row">
+                {visibleCols.place && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="e.g. 1-50"
+                      value={colFilters.place || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, place: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.bib && <th />}
+                {visibleCols.name && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="e.g. Lu"
+                      value={colFilters.name || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.age && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="Age"
+                      value={colFilters.age || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, age: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.gender && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="M/W/X"
+                      value={colFilters.gender || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, gender: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.time && <th />}
+                {visibleCols.pace && <th />}
+                {visibleCols.team && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="MMR"
+                      value={colFilters.team || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, team: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.mmrMatch && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="matched/unmatched"
+                      value={colFilters.mmrMatch || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, mmrMatch: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.method && <th />}
+                {visibleCols.runnerId && <th />}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length} className="loading"><span className="spinner" /> Loading runners...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length} className="empty"><div className="big">-</div>No runners found</td></tr>
+              ) : filtered.map(r => (
+                <tr key={r.id}>
+                  {visibleCols.place && <td>{r.overall_place || '—'}</td>}
+                  {visibleCols.bib && <td>{r.bib_number || '—'}</td>}
+                  {visibleCols.name && <td style={{ fontWeight: 500 }}>{r.runner_name}</td>}
+                  {visibleCols.age && <td>{r.age || '—'}</td>}
+                  {visibleCols.gender && <td>{r.gender || '—'}</td>}
+                  {visibleCols.time && <td style={{ fontFamily: 'monospace' }}>{r.finish_time || '—'}</td>}
+                  {visibleCols.pace && <td style={{ fontFamily: 'monospace' }}>{r.pace || '—'}</td>}
+                  {visibleCols.team && <td>{r.team_code === 'MMR' ? <span className="badge badge-purple">MMR</span> : (r.team_code || '—')}</td>}
+                  {visibleCols.mmrMatch && (
+                    <td>
+                      {r.mmr_member_id ? (
+                        <div className="match-cell">
+                          <span className="badge badge-green">{r.mmr_member_id}</span>
+                          <button className="btn-unmatch" onClick={() => handleUnmatch(r)} title="Remove this match">
+                            ↩ Unmatch
+                          </button>
+                        </div>
+                      ) : (
+                        <button className="btn-match" onClick={() => setMatchModal(r)}>
+                          + Match
+                        </button>
+                      )}
+                    </td>
+                  )}
+                  {visibleCols.method && <td><span style={{ fontSize: 11, color: 'var(--text2)' }}>{r.match_method || ''}</span></td>}
+                  {visibleCols.runnerId && (
+                    <td>
+                      {r.nyrr_runner_id ? (
+                        <a href={`https://results.nyrr.org/runner/${r.nyrr_runner_id}/races`} target="_blank" rel="noreferrer">
+                          {r.nyrr_runner_id} ↗
+                        </a>
+                      ) : (
+                        <span style={{ color: 'var(--text2)' }}>—</span>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {hasActiveColFilters && (
+        <div style={{ marginTop: 12, fontSize: 13 }}>
+          <a href="#" onClick={e => { e.preventDefault(); setColFilters({}); }} style={{ color: 'var(--accent)' }}>Clear filters</a>
+        </div>
+      )}
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+
+      {/* Match modal — rendered outside the table so it's not clipped */}
+      {matchModal && (
+        <MatchModal
+          runner={matchModal}
+          onClose={() => setMatchModal(null)}
+          onMatched={handleMatchDone}
+        />
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
+// Table browser view
+// ═══════════════════════════════════════════════════
+const TableBrowser = () => {
+  const [tables, setTables] = useState([]);
+  const [selectedTable, setSelectedTable] = useState('');
+  const [tableData, setTableData] = useState(null);
+  const [page, setPage] = useState(1);
+  const [sort, setSort] = useState({ col: '', order: 'asc' });
+  const [loading, setLoading] = useState(false);
+  const [colFilters, setColFilters] = useState({});
+  const [showColSelector, setShowColSelector] = useState(false);
+  const [visibleCols, setVisibleCols] = useState({});
+  const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    api('/api/tables').then(r => r.ok && setTables(r.data));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTable) return;
+    setLoading(true);
+    const p = new URLSearchParams({ page, per_page: 50 });
+    if (sort.col) { p.set('sort', sort.col); p.set('order', sort.order); }
+    api(`/api/tables/${selectedTable}?${p}`).then(r => {
+      if (r.ok) {
+        setTableData(r);
+        // Initialize visible columns
+        const saved = JSON.parse(localStorage.getItem(`mmr_table_cols_${selectedTable}`) || '{}');
+        const allCols = r.columns ? r.columns.reduce((acc, c) => ({ ...acc, [c.COLUMN_NAME]: true }), {}) : {};
+        setVisibleCols(saved.length > 0 ? (r.columns || []).reduce((acc, c) => ({ ...acc, [c.COLUMN_NAME]: saved.includes(c.COLUMN_NAME) }), {}) : allCols);
+      }
+      setLoading(false);
+    });
+    // Load column filters
+    const saved = localStorage.getItem(`mmr_table_colfilters_${selectedTable}`);
+    if (saved) setColFilters(JSON.parse(saved));
+  }, [selectedTable, page, sort]);
+
+  const toggleSort = (col) => {
+    setSort(prev => ({
+      col,
+      order: prev.col === col && prev.order === 'asc' ? 'desc' : 'asc',
+    }));
+    setPage(1);
+  };
+
+  useEffect(() => {
+    if (selectedTable) {
+      localStorage.setItem(`mmr_table_cols_${selectedTable}`, JSON.stringify(
+        Object.keys(visibleCols).filter(k => visibleCols[k])
+      ));
+    }
+  }, [visibleCols, selectedTable]);
+
+  useEffect(() => {
+    if (selectedTable) {
+      localStorage.setItem(`mmr_table_colfilters_${selectedTable}`, JSON.stringify(colFilters));
+    }
+  }, [colFilters, selectedTable]);
+
+  const filtered = (tableData?.data || []).filter(row => {
+    if (Object.keys(colFilters).length === 0) return true;
+    return Object.entries(colFilters).every(([col, val]) => {
+      if (!val || !val.trim()) return true;
+      const cellVal = String(row[col] || '').toLowerCase();
+      return cellVal.includes(val.toLowerCase());
+    });
+  });
+
+  const handleExportCSV = () => {
+    if (filtered.length === 0) {
+      setToast('No data to export');
+      return;
+    }
+    const visibleColNames = (tableData?.columns || [])
+      .map(c => c.COLUMN_NAME)
+      .filter(c => visibleCols[c]);
+    const header = visibleColNames.join(',');
+    const rows = filtered.map(row =>
+      visibleColNames.map(col => {
+        const val = row[col];
+        return `"${String(val === null ? '' : val).replace(/"/g, '""')}"`;
+      }).join(',')
+    );
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${selectedTable}_page${page}.csv`;
+    link.click();
+    setToast('CSV exported');
+  };
+
+  return (
+    <div>
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+        {tables.map(t => (
+          <div
+            key={t.TABLE_NAME}
+            className="stat-card"
+            style={{ cursor: 'pointer', border: selectedTable === t.TABLE_NAME ? '1px solid var(--accent)' : '1px solid transparent' }}
+            onClick={() => { setSelectedTable(t.TABLE_NAME); setPage(1); setSort({ col: '', order: 'asc' }); setColFilters({}); }}
+          >
+            <div className="label" style={{ wordBreak: 'break-all' }}>{t.TABLE_NAME}</div>
+            <div className="value" style={{ fontSize: 20 }}>{t.TABLE_ROWS ?? '?'}</div>
+            <div style={{ color: 'var(--text2)', fontSize: 11 }}>{t.DATA_LENGTH ? `${(t.DATA_LENGTH / 1024).toFixed(0)} KB` : ''}</div>
+          </div>
+        ))}
+      </div>
+
+      {selectedTable && tableData && (
+        <div className="panel">
+          <div className="panel-header">
+            <h3>{selectedTable}</h3>
+            <div className="panel-header-actions">
+              <div className="column-selector">
+                <button className="btn btn-sm btn-outline" onClick={() => setShowColSelector(!showColSelector)}>Columns ▾</button>
+                {showColSelector && (
+                  <div className="column-selector-panel">
+                    {(tableData.columns || []).map(c => (
+                      <div key={c.COLUMN_NAME} className="column-check">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[c.COLUMN_NAME] || false}
+                          onChange={e => setVisibleCols(prev => ({ ...prev, [c.COLUMN_NAME]: e.target.checked }))}
+                        />
+                        <span>{c.COLUMN_NAME}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>Export CSV</button>
+              <span style={{ color: 'var(--text2)', fontSize: 13 }}>{tableData.pagination?.total} rows total</span>
+            </div>
+          </div>
+          <div className="table-wrap">
+            {loading ? (
+              <div className="loading"><span className="spinner" /> Loading...</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    {(tableData.columns || [])
+                      .filter(c => visibleCols[c.COLUMN_NAME])
+                      .map(c => (
+                        <th key={c.COLUMN_NAME} onClick={() => toggleSort(c.COLUMN_NAME)}>
+                          {c.COLUMN_NAME}
+                          {c.COLUMN_KEY === 'PRI' && ' 🔑'}
+                          {sort.col === c.COLUMN_NAME && (sort.order === 'asc' ? ' ↑' : ' ↓')}
+                        </th>
+                      ))}
+                  </tr>
+                  <tr className="filter-row">
+                    {(tableData.columns || [])
+                      .filter(c => visibleCols[c.COLUMN_NAME])
+                      .map(c => (
+                        <th key={c.COLUMN_NAME}>
+                          <input
+                            type="text"
+                            placeholder={`Filter ${c.COLUMN_NAME}`}
+                            value={colFilters[c.COLUMN_NAME] || ''}
+                            onChange={e => setColFilters(prev => ({ ...prev, [c.COLUMN_NAME]: e.target.value }))}
+                          />
+                        </th>
+                      ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr><td colSpan={(tableData.columns || []).filter(c => visibleCols[c.COLUMN_NAME]).length} className="empty">No data</td></tr>
+                  ) : filtered.map((row, i) => (
+                    <tr key={i}>
+                      {(tableData.columns || [])
+                        .filter(c => visibleCols[c.COLUMN_NAME])
+                        .map(c => (
+                          <td key={c.COLUMN_NAME} style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {row[c.COLUMN_NAME] === null ? <span style={{ color: 'var(--text2)', fontStyle: 'italic' }}>NULL</span> : String(row[c.COLUMN_NAME])}
+                          </td>
+                        ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          {tableData.pagination && tableData.pagination.pages > 1 && (
+            <div className="pagination">
+              <button className="btn btn-sm btn-outline" disabled={page <= 1} onClick={() => setPage(1)}>«</button>
+              <button className="btn btn-sm btn-outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</button>
+              <span className="page-info">Page {page} of {tableData.pagination.pages}</span>
+              <button className="btn btn-sm btn-outline" disabled={page >= tableData.pagination.pages} onClick={() => setPage(p => p + 1)}>›</button>
+              <button className="btn btn-sm btn-outline" disabled={page >= tableData.pagination.pages} onClick={() => setPage(tableData.pagination.pages)}>»</button>
+            </div>
+          )}
+        </div>
+      )}
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
+// Processing log view
+// ═══════════════════════════════════════════════════
+const ProcessingLog = () => {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api('/api/log?limit=100').then(r => {
+      if (r.ok) setLogs(r.data);
+      setLoading(false);
+    });
+  }, []);
+
+  return (
+    <div className="panel">
+      <div className="panel-header"><h3>Processing Log</h3></div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Event</th>
+              <th>Status</th>
+              <th>Rows Written</th>
+              <th>Triggered By</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={6} className="loading"><span className="spinner" /> Loading...</td></tr>
+            ) : logs.map(l => (
+              <tr key={l.id}>
+                <td style={{ fontSize: 12, fontFamily: 'monospace' }}>{l.run_timestamp}</td>
+                <td>{l.event_name || l.event_code || '—'}<div style={{ color: 'var(--text2)', fontSize: 11 }}>{l.event_code}</div></td>
+                <td><StatusBadge status={l.run_status === 'Success' ? 'Completed' : l.run_status === 'Failed' ? 'Error' : l.run_status} /></td>
+                <td>{l.rows_written}</td>
+                <td>{l.triggered_by}</td>
+                <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--red)' }}>{l.error_details || ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
+// Settings view
+// ═══════════════════════════════════════════════════
+const Settings = ({ onClose }) => {
+  const [config, setConfig] = useState(null);
+  const [presets, setPresets] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState('');
+  const [customConfig, setCustomConfig] = useState({ host: '', user: '', password: '', database: '', ssl_disabled: false });
+
+  useEffect(() => {
+    Promise.all([
+      api('/api/connection/config').then(r => r.ok && setConfig(r.config)),
+      api('/api/connection/presets').then(r => r.ok && setPresets(r.presets)),
+    ]).then(() => setLoading(false));
+  }, []);
+
+  const applyPreset = async (preset) => {
+    const r = await api('/api/connection/set', { method: 'POST', body: JSON.stringify({ preset }) });
+    if (r.ok) {
+      setToast(r.message);
+      setTimeout(() => { window.location.reload(); }, 1000);
+    } else {
+      setToast(r.error || 'Failed to apply preset');
+    }
+  };
+
+  const applyCustom = async () => {
+    const r = await api('/api/connection/set', { method: 'POST', body: JSON.stringify(customConfig) });
+    if (r.ok) {
+      setToast(r.message);
+      setTimeout(() => { window.location.reload(); }, 1000);
+    } else {
+      setToast(r.error || 'Failed to connect');
+    }
+  };
+
+  return (
+    <div>
+      <button className="back-btn" onClick={onClose}>← Back</button>
+      <h2 style={{ marginBottom: 16 }}>Database Connection Settings</h2>
+
+      {loading ? (
+        <div className="loading"><span className="spinner" /> Loading...</div>
+      ) : (
+        <>
+          <div style={{ background: 'var(--surface)', padding: 16, borderRadius: 'var(--radius)', marginBottom: 20 }}>
+            <h3 style={{ fontSize: 14, marginBottom: 12 }}>Current Connection</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, fontSize: 13 }}>
+              <div><span style={{ color: 'var(--text2)' }}>Host:</span> {config?.host}</div>
+              <div><span style={{ color: 'var(--text2)' }}>Database:</span> {config?.database}</div>
+              <div><span style={{ color: 'var(--text2)' }}>User:</span> {config?.user}</div>
+              <div><span style={{ color: 'var(--text2)' }}>SSL:</span> {config?.ssl_disabled ? 'Disabled' : 'Enabled'}</div>
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: 14, marginBottom: 12 }}>Quick Connect — Presets</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginBottom: 24 }}>
+            {Object.entries(presets).map(([name, info]) => (
+              <div key={name} style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, textTransform: 'capitalize' }}>{name}</div>
+                <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8 }}>
+                  <div>{info.host}</div>
+                  <div>{info.user} @ {info.database}</div>
+                </div>
+                <button className="btn btn-sm btn-primary" onClick={() => applyPreset(name)}>Connect</button>
+              </div>
+            ))}
+          </div>
+
+          <h3 style={{ fontSize: 14, marginBottom: 12 }}>Custom Connection</h3>
+          <div style={{ background: 'var(--surface)', padding: 16, borderRadius: 'var(--radius)', marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <input placeholder="Host" value={customConfig.host} onChange={e => setCustomConfig(c => ({ ...c, host: e.target.value }))} />
+              <input placeholder="User" value={customConfig.user} onChange={e => setCustomConfig(c => ({ ...c, user: e.target.value }))} />
+              <input placeholder="Password" type="password" value={customConfig.password} onChange={e => setCustomConfig(c => ({ ...c, password: e.target.value }))} />
+              <input placeholder="Database" value={customConfig.database} onChange={e => setCustomConfig(c => ({ ...c, database: e.target.value }))} />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+              <input type="checkbox" checked={customConfig.ssl_disabled} onChange={e => setCustomConfig(c => ({ ...c, ssl_disabled: e.target.checked }))} />
+              Disable SSL (for local dev)
+            </label>
+            <button className="btn btn-primary" onClick={applyCustom}>Test & Connect</button>
+          </div>
+
+          {toast && <Toast message={toast} onClose={() => setToast('')} />}
+        </>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
+// App shell
+// ═══════════════════════════════════════════════════
+const App = () => {
+  const [view, setView] = useState('loading'); // loading | restricted | dashboard | detail | tables | log | settings | admins
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [userEmail, setUserEmail] = useState('');
+
+  useEffect(() => {
+    api('/api/me').then(r => {
+      if (r.ok && r.data) {
+        setUserRole(r.data.role);
+        setUserEmail(r.data.email);
+        if (r.data.role === 'none') {
+          setView('restricted');
+        } else {
+          setView('dashboard');
+        }
+      } else if (r.status === 401 || r.status === 403 || r.redirect) {
+        window.location = '/login';
+      } else {
+        setView('dashboard');
+      }
+    });
+  }, []);
+
+  const selectEvent = (id) => { setSelectedEventId(id); setView('detail'); };
+  const goBack = () => { setSelectedEventId(null); setView('dashboard'); };
+
+  const handleSignOut = () => {
+    window.location = '/logout';
+  };
+
+  if (view === 'loading') {
+    return (
+      <div className="app">
+        <div className="loading"><span className="spinner" /> Initializing...</div>
+      </div>
+    );
+  }
+
+  if (view === 'restricted') {
+    return (
+      <div className="app">
+        <div className="access-restricted">
+          <div className="access-restricted-box">
+            <div className="big">🔒</div>
+            <h2>Access Restricted</h2>
+            <p>You are signed in as <strong>{userEmail}</strong>.</p>
+            <p style={{ marginBottom: 24 }}>To request admin access, please contact <a href="mailto:admin@mmrunners.org">admin@mmrunners.org</a></p>
+            <button className="btn btn-primary" onClick={handleSignOut}>Sign out</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <div className="header">
+        <div>
+          <h1>NYRR Data Viewer</h1>
+          <div className="subtitle">Misty Mountain Runners — Event Management & Data Browser</div>
+        </div>
+        <div className="header-right">
+          {userEmail && (
+            <div className="user-info">
+              <span className="user-email">{userEmail}</span>
+              <span className="user-signout" onClick={handleSignOut}>Sign out</span>
+            </div>
+          )}
+          <button
+            className="btn btn-outline"
+            style={{ height: 'fit-content' }}
+            onClick={() => setView('settings')}
+          >
+            ⚙️ Settings
+          </button>
+        </div>
+      </div>
+
+      {view !== 'settings' && (
+        <div className="tabs">
+          <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => setView('dashboard')}>Events</button>
+          <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => setView('tables')}>Data Browser</button>
+          <button className={`tab ${view === 'log' ? 'active' : ''}`} onClick={() => setView('log')}>Sync Log</button>
+          {userRole === 'super_admin' && (
+            <button className={`tab ${view === 'admins' ? 'active' : ''}`} onClick={() => setView('admins')}>Admins</button>
+          )}
+        </div>
+      )}
+
+      {view === 'dashboard' && <Dashboard onSelectEvent={selectEvent} onGoSettings={() => setView('settings')} />}
+      {view === 'detail' && selectedEventId && <EventDetail eventId={selectedEventId} onBack={goBack} />}
+      {view === 'tables' && <TableBrowser />}
+      {view === 'log' && <ProcessingLog />}
+      {view === 'admins' && <AdminPanel userRole={userRole} userEmail={userEmail} />}
+      {view === 'settings' && <Settings onClose={() => setView('dashboard')} />}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
