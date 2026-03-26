@@ -95,7 +95,7 @@ export default function EventDetailPage() {
   const [selectedRunner, setSelectedRunner] = useState<RunnerData | null>(null)
   const [candidates, setCandidates] = useState<CandidateData[]>([])
   const [loadingCandidates, setLoadingCandidates] = useState(false)
-  const [matchingRunnnerId, setMatchingRunnerId] = useState<number | null>(null)
+  const [matchingRunnerId, setMatchingRunnerId] = useState<number | null>(null)
 
   const unmatched_count = useMemo(() => {
     if (!event) return 0
@@ -620,7 +620,7 @@ export default function EventDetailPage() {
                         <button
                           key={candidate.id}
                           onClick={() => handleQuickMatch(candidate.id)}
-                          disabled={matchingRunnnerId === selectedRunner.id}
+                          disabled={matchingRunnerId === selectedRunner.id}
                           className="w-full p-3 border border-gray-200 rounded-xl hover:border-[#0A2342] hover:bg-blue-50 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -634,7 +634,7 @@ export default function EventDetailPage() {
                                 {lang === 'zh' ? '性别:' : 'Gender:'} {candidate.gender}
                               </p>
                             </div>
-                            {matchingRunnnerId === selectedRunner.id && (
+                            {matchingRunnerId === selectedRunner.id && (
                               <Loader2 className="h-4 w-4 animate-spin text-gray-400 flex-shrink-0 mt-1" />
                             )}
                           </div>
@@ -653,10 +653,10 @@ export default function EventDetailPage() {
                 <div className="border-t border-gray-200 pt-4">
                   <button
                     onClick={handleNotMember}
-                    disabled={matchingRunnnerId === selectedRunner.id}
+                    disabled={matchingRunnerId === selectedRunner.id}
                     className="w-full px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    {matchingRunnnerId === selectedRunner.id && (
+                    {matchingRunnerId === selectedRunner.id && (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     )}
                     {lang === 'zh' ? '标记为非成员' : 'Mark as Not Member'}
