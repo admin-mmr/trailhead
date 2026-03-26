@@ -211,7 +211,7 @@ export default function EventDetailPage() {
 
   const handleQuickMatch = async (candidateId: number) => {
     if (!selectedRunner || !event) return
-    setMatchingRunnnerId(selectedRunner.id)
+    setMatchingRunnerId(selectedRunner.id)
     try {
       const res = await fetch('/api/nyrr/match', {
         method: 'POST',
@@ -239,13 +239,13 @@ export default function EventDetailPage() {
     } catch {
       setError('Failed to match runner')
     } finally {
-      setMatchingRunnnerId(null)
+      setMatchingRunnerId(null)
     }
   }
 
   const handleNotMember = async () => {
     if (!selectedRunner || !event) return
-    setMatchingRunnnerId(selectedRunner.id)
+    setMatchingRunnerId(selectedRunner.id)
     try {
       const res = await fetch('/api/nyrr/match', {
         method: 'POST',
@@ -272,7 +272,7 @@ export default function EventDetailPage() {
     } catch {
       setError('Failed to mark as not member')
     } finally {
-      setMatchingRunnnerId(null)
+      setMatchingRunnerId(null)
     }
   }
 

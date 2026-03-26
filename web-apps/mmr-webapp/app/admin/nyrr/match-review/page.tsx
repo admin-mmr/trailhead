@@ -125,7 +125,7 @@ export default function MatchReviewPage() {
 
         if (data.ok && Array.isArray(data.data)) {
           // Rank candidates: first-name matches first
-          const ranked = data.data.sort((a, b) => {
+          const ranked = data.data.sort((a: Candidate, b: Candidate) => {
             const aFirstNameMatch = a.FirstName.toLowerCase() === selectedRunner.first_name.toLowerCase() ? 0 : 1
             const bFirstNameMatch = b.FirstName.toLowerCase() === selectedRunner.first_name.toLowerCase() ? 0 : 1
             return aFirstNameMatch - bFirstNameMatch

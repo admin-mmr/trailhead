@@ -71,7 +71,7 @@ export async function GET(
       LEFT JOIN members m ON r.mmr_member_id = m.MemberID
       WHERE r.nyrr_event_id = ?
     `
-    const params: any[] = [eventId]
+    const queryParams: any[] = [eventId]
 
     // Apply filter
     if (filter === 'mmr') {
@@ -86,13 +86,13 @@ export async function GET(
 
     if (cursor) {
       query += ` AND r.id < ?`
-      params.push(parseInt(cursor))
+      queryParams.push(parseInt(cursor))
     }
 
     query += ` ORDER BY r.last_name ASC, r.first_name ASC LIMIT ?`
-    params.push(limit + 1)
+    queryParams.push(limit + 1)
 
-    const [rows] = (await db.execute(query, params)) as [any[], any]
+    const [rows] = (await db.execute(query, queryParams)) as [any[], any]
 
     const hasMore = rows.length > limit
     const runners = rows.slice(0, limit) || []
