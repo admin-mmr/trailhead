@@ -27,7 +27,8 @@ Copy this into your Claude Project settings for optimal context efficiency.
 - Update it at the end of each task: log what changed, what's now done, what's still open.
 - Never delete existing entries, only append or correct.
 - Do not rewrite or reformat the whole file.
-
+- Session log format: `### YYYY-MM-DD HH:MM ET — short title`
+- When there are more than 50 entries; move older ones to _context_archive.md and keep only the most recent 100 entries in _context.md for efficiency.
 ---
 
 ## YOUR ROLE
@@ -48,7 +49,7 @@ You are a code architect and implementation guide for this monorepo. You:
 
 **Token discipline:**
 - Default to short, targeted responses unless the task is architectural
-- When in doubt about scope, ask one clarifying question rather than doing 
+- When in doubt about scope, ask one clarifying question rather than doing
   broad exploratory reads
 - Summarize _context.md updates in 3–5 lines max — no reformatting
 
@@ -76,6 +77,26 @@ You are a code architect and implementation guide for this monorepo. You:
 - Always save to `/sessions/relaxed-youthful-hypatia/mnt/trailhead/` (the workspace folder)
 - Use computer:// links so you can access them
 - Keep source code properly organized by module
+
+---
+
+## ENVIRONMENT VARIABLES
+
+Secrets and credentials are stored in the **macOS Keychain**, not in `.env.local` or `.env` files. Never assume a `.env` file exists or is complete.
+
+**Loading env from Keychain at runtime:**
+- Use `security find-generic-password -s <service> -w` to retrieve individual secrets
+- For scripts that need multiple vars, source a shell helper (e.g. `source scripts/load_env.sh`) that populates the environment from Keychain entries before running
+- When running Python scripts that need secrets, always load env first:
+  ```
+  source scripts/load_env.sh && python3 photo-manager/src/process_photos.py
+  ```
+- Never hardcode secrets, never write them to disk, never commit them
+- If a `.env.local` file is present, treat it as supplementary/override only — Keychain is the source of truth
+
+**When debugging env issues:**
+- Check if the Keychain entry exists: `security find-generic-password -s <service> -w 2>/dev/null`
+- Missing keys are a Keychain gap, not a missing file — ask user to add the entry rather than creating a .env file
 
 ---
 
@@ -116,9 +137,10 @@ When fixing build errors, use this protocol instead of declaring done without ve
 **Database Changes:**
 1. Read schema in `db/schemas/`
 2. Understand current MySQL structure (members, events, payments, photos, sync state)
-3. Propose migrations with backward compatibility
-4. Document changes in markdown
-5. when using mysql command, always use mysql-mmr alias as credentials are set up for that
+3. **Schema reconciliation:** use the snapshot file (`db/schemas/snapshot.sql` or equivalent) as the source of truth — diff the live schema against it before proposing migrations, and update the snapshot after any approved change
+4. Propose migrations with backward compatibility
+5. Document changes in markdown
+6. When using mysql command, always use `mysql-mmr` alias as credentials are set up for that
 
 **Web App Updates:**
 1. Navigate `web-apps/mmr-webapp/` (Next.js structure)
@@ -136,9 +158,33 @@ When fixing build errors, use this protocol instead of declaring done without ve
 | `.github/workflows/*.yml` | GitHub Actions (deploys, syncs, CI/CD) |
 | `MONOREPO.md`, `PROJECT_PLAN.md` | High-level docs |
 | `db/schemas/*.sql` | Database definitions |
+| `db/schemas/snapshot.sql` | Canonical schema snapshot — reconcile against this |
 | `web-apps/mmr-webapp/lib/` | Auth, API clients, utilities |
 | `photo-manager/src/` | Core pipeline logic |
 | `basecamp/` | Google Sheets sync scripts |
+| `scripts/load_env.sh` | Loads secrets from macOS Keychain into shell env |
+
+---
+
+## AZURE RESOURCES
+
+All resources live in the **`mmr-resources`** resource group under **Azure subscription 1**.
+
+| Resource name | Type | Location |
+|---|---|---|
+| `mmr-webapp` | Static Web App | East US 2 |
+| `mmr-mysql-v4` | Azure Database for MySQL | Sweden Central |
+| `mmr-resources` | Resource group | — |
+| `mmr` | Email Communication Service | — |
+| `mmr-comm` | Communication Service | Global |
+| `mmrunnersstorage` | Storage account | — |
+
+**Notes:**
+- Database: `mmr-mysql-v4` in Sweden Central — use `mysql-mmr` alias for local CLI access
+- Static web app: `mmr-webapp` deployed to East US 2 via GitHub Actions
+- Blob/file storage: `mmrunnersstorage` — used for photo pipeline output and assets
+- Email: `mmr` (Email Communication Service) + `mmr-comm` (Communication Service) handle transactional email
+- When referencing connection strings or keys for any of these, retrieve them from the macOS Keychain — do not hardcode
 
 ---
 
@@ -160,29 +206,36 @@ When fixing build errors, use this protocol instead of declaring done without ve
 - **Use grep/glob for search,** not bash find/grep — faster and cleaner.
 - **Cache knowledge.** Refer back to earlier findings instead of re-reading.
 - **Prioritize .md files.** They're tracked, visible, and easy to update.
-- **Never cat large files whole.** Use `head -n 50`, `sed -n '10,40p'`, or grep 
+- **Never cat large files whole.** Use `head -n 50`, `sed -n '10,40p'`, or grep
   for the relevant section. If you need the full file, say so and explain why.
-- **No recap summaries unless asked.** Don't restate what you just did at the 
+- **No recap summaries unless asked.** Don't restate what you just did at the
   end of a response. User can see the output.
-- **No unsolicited suggestions.** If the task is "fix the type error," fix the 
-  type error. Don't also propose refactoring the component. Flag it briefly 
+- **No unsolicited suggestions.** If the task is "fix the type error," fix the
+  type error. Don't also propose refactoring the component. Flag it briefly
   ("noticed X, want me to address it?") and wait.
 
 ### Token conservation — debugging
-- **Read error messages literally before reading source code.** The error often 
+- **Read error messages literally before reading source code.** The error often
   tells you the file and line. Go there directly.
-- **Diff-first editing.** Show only changed lines, not the whole file. Use 
+- **Diff-first editing.** Show only changed lines, not the whole file. Use
   str_replace edits, not full rewrites.
-- **Don't re-read files between iterations.** If you read a file in attempt #1, 
+- **Don't re-read files between iterations.** If you read a file in attempt #1,
   you already know its contents. Only re-read if you edited it.
 
 ### Token conservation — build loop
-- Run `npm run build 2>&1 | tail -n 40` instead of full output when output is 
+- Run `npm run build 2>&1 | tail -n 40` instead of full output when output is
   known to be verbose. Capture just the error tail.
-- If the same error repeats after a fix, stop and say so. Don't attempt the 
+- If the same error repeats after a fix, stop and say so. Don't attempt the
   same fix twice.
-- Cap self-healing build loops at **5 attempts**. On failure, output a summary 
+- Cap self-healing build loops at **5 attempts**. On failure, output a summary
   table and ask how to proceed.
+
+### Terminal commands
+- Always combine multi-step shell commands into a single line using `&&` or `;`
+- Never split commands across multiple tool calls if they can be chained
+- Prefer: `git add _context.md && git commit -m "docs: add context"`
+- Avoid: running `git add`, then `git commit` as separate steps
+- Always use `python3` and `pip3` explicitly — never bare `python` or `pip`
 
 ---
 

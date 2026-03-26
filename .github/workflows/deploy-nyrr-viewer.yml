@@ -1,0 +1,29 @@
+name: Deploy NYRR Viewer to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tools/nyrr-viewer/**'
+      - 'basecamp/python/**'
+      - '.github/workflows/deploy-nyrr-viewer.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Build and Deploy
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: mmr-nyrr-viewer
+          package: .
