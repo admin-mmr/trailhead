@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — MMR Photo Review{% endblock %}
+
+{% block content %}
+<!-- Stats bar -->
+<div class="stats-bar">
+    <div class="stat-card">
+        <div class="stat-value">{{ total_all }}</div>
+        <div class="stat-label">Total Photos</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ reviewed_count }}</div>
+        <div class="stat-label">Reviewed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ total_all - reviewed_count }}</div>
+        <div class="stat-label">Unreviewed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ status_counts.get('confirmed', 0) }}</div>
+        <div class="stat-label">Confirmed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ status_counts.get('rejected', 0) }}</div>
+        <div class="stat-label">Rejected</div>
+    </div>
+    {% if difficulty_counts %}
+    <div class="stat-card">
+        <div class="stat-value">{{ difficulty_counts.get('hard', 0) + difficulty_counts.get('edge', 0) }}</div>
+        <div class="stat-label">Hard / Edge</div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Filter bar -->
+<form class="filter-bar" method="get" action="{{ url_for('dashboard') }}">
+    <label for="f-status">Status</label>
+    <select name="status" id="f-status">
+        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All</option>
+        <option value="unreviewed" {% if status_filter == 'unreviewed' %}selected{% endif %}>Unreviewed</option>
+        <option value="confirmed" {% if status_filter == 'confirmed' %}selected{% endif %}>Confirmed</option>
+        <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+        <option value="needs_recheck" {% if status_filter == 'needs_recheck' %}selected{% endif %}>Needs Recheck</option>
+    </select>
+
+    <label for="f-diff">Difficulty</label>
+    <select name="difficulty" id="f-diff">
+        <option value="all" {% if difficulty_filter == 'all' %}selected{% endif %}>All</option>
+        <option value="untagged" {% if difficulty_filter == 'untagged' %}selected{% endif %}>Untagged</option>
+        <option value="easy" {% if difficulty_filter == 'easy' %}selected{% endif %}>Easy</option>
+        <option value="medium" {% if difficulty_filter == 'medium' %}selected{% endif %}>Medium</option>
+        <option value="hard" {% if difficulty_filter == 'hard' %}selected{% endif %}>Hard</option>
+        <option value="edge" {% if difficulty_filter == 'edge' %}selected{% endif %}>Edge</option>
+    </select>
+
+    <label for="f-bib">Bib #</label>
+    <input type="text" name="bib" id="f-bib" value="{{ bib_filter }}" placeholder="e.g. 1234" style="width:100px">
+
+    <button type="submit" class="btn-filter">Filter</button>
+    {% if status_filter != 'all' or difficulty_filter != 'all' or bib_filter %}
+    <a href="{{ url_for('dashboard') }}" style="color:var(--text-muted);font-size:0.8rem;text-decoration:none">Clear</a>
+    {% endif %}
+</form>
+
+<!-- Results count -->
+<div style="margin-bottom:0.75rem;font-size:0.8rem;color:var(--text-muted)">
+    Showing {{ photos|length }} of {{ total }} photos (page {{ page }}/{{ total_pages }})
+</div>
+
+<!-- Photo grid -->
+{% if photos %}
+<div class="photo-grid">
+    {% for photo in photos %}
+    <a href="{{ url_for('review_photo', idx=photo.index) }}" class="photo-card" style="text-decoration:none;color:inherit">
+        <img src="{{ url_for('serve_photo', idx=photo.index) }}" alt="{{ photo.file_name }}" loading="lazy">
+        <div class="card-info">
+            <div class="file-name" title="{{ photo.file_name }}">{{ photo.file_name }}</div>
+        </div>
+        <div class="card-badges">
+            <span class="badge badge-{{ photo.review_status }}">{{ photo.review_status }}</span>
+            {% if photo.difficulty %}
+            <span class="badge badge-{{ photo.difficulty }}">{{ photo.difficulty }}</span>
+            {% endif %}
+            {% if photo.bib_primary %}
+            <span class="badge badge-bib">Bib {{ photo.bib_primary }}</span>
+            {% endif %}
+            {% if photo.people_count is not none %}
+            <span class="badge" style="background:var(--surface-2);color:var(--text-muted)">{{ photo.people_count }}p</span>
+            {% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="icon">&#128247;</div>
+    <p>No photos match the current filters.</p>
+</div>
+{% endif %}
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&status={{ status_filter }}&difficulty={{ difficulty_filter }}&bib={{ bib_filter }}">&larr; Prev</a>
+    {% endif %}
+
+    {% set start = [1, page - 3] | max %}
+    {% set end = [total_pages, page + 3] | min %}
+
+    {% if start > 1 %}
+    <a href="?page=1&status={{ status_filter }}&difficulty={{ difficulty_filter }}&bib={{ bib_filter }}">1</a>
+    {% if start > 2 %}<span class="info">&hellip;</span>{% endif %}
+    {% endif %}
+
+    {% for p in range(start, end + 1) %}
+        {% if p == page %}
+        <span class="current">{{ p }}</span>
+        {% else %}
+        <a href="?page={{ p }}&status={{ status_filter }}&difficulty={{ difficulty_filter }}&bib={{ bib_filter }}">{{ p }}</a>
+        {% endif %}
+    {% endfor %}
+
+    {% if end < total_pages %}
+    {% if end < total_pages - 1 %}<span class="info">&hellip;</span>{% endif %}
+    <a href="?page={{ total_pages }}&status={{ status_filter }}&difficulty={{ difficulty_filter }}&bib={{ bib_filter }}">{{ total_pages }}</a>
+    {% endif %}
+
+    {% if page < total_pages %}
+    <a href="?page={{ page + 1 }}&status={{ status_filter }}&difficulty={{ difficulty_filter }}&bib={{ bib_filter }}">Next &rarr;</a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MMR Photo Review{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="topnav">
+        <div class="nav-brand">MMR Photo Review</div>
+        <div class="nav-links">
+            <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+            <a href="{{ url_for('members') }}" class="{% if request.endpoint == 'members' %}active{% endif %}">Members &amp; Bibs</a>
+            <a href="{{ url_for('nyrr') }}" class="{% if request.endpoint == 'nyrr' %}active{% endif %}">NYRR Info</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="{{ url_for('static', filename='js/review.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

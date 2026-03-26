@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Review #{{ idx }} — MMR Photo Review{% endblock %}
+
+{% block content %}
+<!-- Navigation between photos -->
+<div class="review-nav">
+    <a href="{{ url_for('review_photo', idx=prev_idx) }}">&larr; Previous</a>
+    <span class="nav-label">Photo {{ idx + 1 }} of {{ total }}</span>
+    <a href="{{ url_for('review_photo', idx=next_idx) }}">Next &rarr;</a>
+</div>
+
+<div class="review-layout">
+    <!-- Left: Photo with overlay -->
+    <div>
+        <div class="review-image-wrap" id="image-wrap">
+            <img id="review-img"
+                 src="{{ url_for('serve_photo', idx=idx) }}"
+                 alt="{{ rec.file_name }}"
+                 onload="drawOverlays()">
+            <canvas id="overlay-canvas"></canvas>
+        </div>
+        <div class="overlay-controls">
+            <label><input type="checkbox" id="show-boxes" checked onchange="drawOverlays()"> People boxes</label>
+            <label><input type="checkbox" id="show-bibs" checked onchange="drawOverlays()"> Bib labels</label>
+            <label><input type="checkbox" id="show-outfit" onchange="drawOverlays()"> Outfit colors</label>
+        </div>
+        <div class="kbd-hint">
+            <span class="kbd">&larr;</span> prev
+            <span class="kbd">&rarr;</span> next
+            <span class="kbd">1</span> confirm
+            <span class="kbd">2</span> reject
+            <span class="kbd">3</span> recheck
+        </div>
+    </div>
+
+    <!-- Right: Details + annotation form -->
+    <div>
+        <!-- Pipeline data -->
+        <div class="sidebar-panel" style="margin-bottom:0.75rem">
+            <h3>Pipeline Data</h3>
+            <div class="detail-row">
+                <span class="label">File</span>
+                <span class="value" style="font-size:0.75rem;word-break:break-all">{{ rec.file_name }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Quality</span>
+                <span class="value">
+                    {% if rec.quality_score is not none %}
+                    {{ "%.3f"|format(rec.quality_score) }}
+                    {% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="detail-row">
+                <span class="label">People</span>
+                <span class="value">{{ rec.people_count if rec.people_count is not none else '—' }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Facing camera</span>
+                <span class="value">{{ rec.people_facing_camera if rec.people_facing_camera is not none else '—' }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Bib primary</span>
+                <span class="value">
+                    {% if rec.bib_primary %}
+                    {{ rec.bib_primary.number if rec.bib_primary is mapping else rec.bib_primary }}
+                    {% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Bib facing</span>
+                <span class="value">{{ rec.bib_facing or '—' }}</span>
+            </div>
+            {% if rec.bib_related %}
+            <div class="detail-row">
+                <span class="label">Related bibs</span>
+                <span class="value">{{ rec.bib_related | length }}</span>
+            </div>
+            {% endif %}
+            {% if rec.outfit_signatures %}
+            <div class="detail-row">
+                <span class="label">Outfit sigs</span>
+                <span class="value">{{ rec.outfit_signatures | length }}</span>
+            </div>
+            {% endif %}
+            {% if rec.match_tier is defined and rec.match_tier is not none %}
+            <div class="detail-row">
+                <span class="label">Match tier</span>
+                <span class="value"><span class="badge badge-tier">Tier {{ rec.match_tier }}</span></span>
+            </div>
+            {% endif %}
+            {% if rec.error %}
+            <div class="detail-row">
+                <span class="label">Error</span>
+                <span class="value" style="color:var(--red);font-size:0.75rem">{{ rec.error }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Annotation form -->
+        <div class="sidebar-panel" id="annotation-panel">
+            <h3>Annotation</h3>
+            <form id="annotation-form" onsubmit="return false">
+                <input type="hidden" name="file_path" value="{{ rec.file_path }}">
+                <input type="hidden" name="file_name" value="{{ rec.file_name }}">
+                <input type="hidden" name="quality_score" value="{{ rec.quality_score }}">
+                <input type="hidden" name="people_count" value="{{ rec.people_count }}">
+                {% set bib_num = rec.bib_primary.number if rec.bib_primary is mapping else rec.bib_primary %}
+                <input type="hidden" name="bib_primary" value="{{ bib_num or '' }}">
+
+                <!-- Quick status buttons -->
+                <div class="btn-row" style="margin-bottom:0.75rem">
+                    <button class="btn btn-confirm btn-sm" onclick="submitAnnotation('confirmed')">Confirm</button>
+                    <button class="btn btn-reject btn-sm" onclick="submitAnnotation('rejected')">Reject</button>
+                    <button class="btn btn-recheck btn-sm" onclick="submitAnnotation('needs_recheck')">Recheck</button>
+                </div>
+
+                <div class="form-group">
+                    <label for="f-difficulty">Difficulty</label>
+                    <select name="difficulty" id="f-difficulty">
+                        <option value="">— not set —</option>
+                        <option value="easy" {% if annotation and annotation['difficulty'] == 'easy' %}selected{% endif %}>Easy</option>
+                        <option value="medium" {% if annotation and annotation['difficulty'] == 'medium' %}selected{% endif %}>Medium</option>
+                        <option value="hard" {% if annotation and annotation['difficulty'] == 'hard' %}selected{% endif %}>Hard</option>
+                        <option value="edge" {% if annotation and annotation['difficulty'] == 'edge' %}selected{% endif %}>Edge</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Bib correct?</label>
+                    <select name="bib_correct">
+                        <option value="">—</option>
+                        <option value="1" {% if annotation and annotation['bib_correct'] == 1 %}selected{% endif %}>Yes</option>
+                        <option value="0" {% if annotation and annotation['bib_correct'] == 0 %}selected{% endif %}>No</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="f-bib-override">Bib override</label>
+                    <input type="text" name="bib_override" id="f-bib-override"
+                           placeholder="Correct bib #"
+                           value="{{ annotation['bib_override'] if annotation and annotation['bib_override'] else '' }}">
+                </div>
+
+                <div class="form-group">
+                    <label>Face match correct?</label>
+                    <select name="face_correct">
+                        <option value="">—</option>
+                        <option value="1" {% if annotation and annotation['face_correct'] == 1 %}selected{% endif %}>Yes</option>
+                        <option value="0" {% if annotation and annotation['face_correct'] == 0 %}selected{% endif %}>No</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="f-member-override">Member ID override</label>
+                    <input type="text" name="member_id_override" id="f-member-override"
+                           placeholder="e.g. A0042"
+                           value="{{ annotation['member_id_override'] if annotation and annotation['member_id_override'] else '' }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="f-notes">Notes</label>
+                    <textarea name="notes" id="f-notes" rows="3"
+                              placeholder="Any observations...">{{ annotation['notes'] if annotation and annotation['notes'] else '' }}</textarea>
+                </div>
+
+                {% if annotation %}
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.5rem">
+                    Last reviewed: {{ annotation['reviewed_at'] or 'n/a' }}
+                    by {{ annotation['reviewed_by'] or '—' }}
+                    &mdash; <span class="badge badge-{{ annotation['review_status'] }}">{{ annotation['review_status'] }}</span>
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Store pipeline data for JS overlay drawing -->
+<script>
+const RECORD = {{ rec | tojson }};
+const IDX = {{ idx }};
+const TOTAL = {{ total }};
+const PREV_IDX = {{ prev_idx }};
+const NEXT_IDX = {{ next_idx }};
+</script>
+{% endblock %}

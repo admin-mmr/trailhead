@@ -48,6 +48,11 @@ profiles/
 .DS_Store
 .AppleDouble
 
+# Office documents (commit markdown versions instead)
+*.docx
+*.xlsx
+*.pptx
+
 # Temp Office lock files
 ~$*.docx
 ~$*.xlsx

@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Members &amp; Bibs — MMR Photo Review{% endblock %}
+
+{% block content %}
+<div class="section-header">
+    <h2>Member &harr; Bib Mappings</h2>
+    <span class="count">{{ total }} member{{ 's' if total != 1 else '' }}</span>
+</div>
+
+<!-- Add new mapping form -->
+<div class="add-form">
+    <h3>Add / Update Mapping</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="m-member-id">Member ID</label>
+            <input type="text" id="m-member-id" placeholder="e.g. A0042" required>
+        </div>
+        <div class="form-group">
+            <label for="m-member-name">Name</label>
+            <input type="text" id="m-member-name" placeholder="Display name">
+        </div>
+        <div class="form-group">
+            <label for="m-bib">Bib Number</label>
+            <input type="text" id="m-bib" placeholder="e.g. 31205" required>
+        </div>
+        <div class="form-group">
+            <label for="m-date">Event Date</label>
+            <input type="date" id="m-date" required>
+        </div>
+        <div class="form-group">
+            <label for="m-event">Event Name</label>
+            <input type="text" id="m-event" placeholder="e.g. NYC Half Marathon">
+        </div>
+        <div class="form-group">
+            <label for="m-source">Source</label>
+            <select id="m-source">
+                <option value="manual">Manual</option>
+                <option value="pipeline">Pipeline</option>
+                <option value="nyrr">NYRR</option>
+            </select>
+        </div>
+        <div class="form-group narrow">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary" onclick="addMemberBib()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Member cards -->
+{% if members %}
+{% for member in members %}
+<div class="member-card">
+    <div class="member-card-header">
+        <div>
+            <span class="member-id">{{ member.member_id }}</span>
+            {% if member.member_name %}
+            <span class="member-name">&mdash; {{ member.member_name }}</span>
+            {% endif %}
+        </div>
+        <span class="count">{{ member.events|length }} event{{ 's' if member.events|length != 1 else '' }}</span>
+    </div>
+    <div class="member-card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Event Date</th>
+                    <th>Event Name</th>
+                    <th>Bib #</th>
+                    <th>Source</th>
+                    <th>Notes</th>
+                    <th style="width:60px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ev in member.events %}
+                <tr>
+                    <td>{{ ev.event_date }}</td>
+                    <td>{{ ev.event_name or '—' }}</td>
+                    <td><strong>{{ ev.bib_number }}</strong></td>
+                    <td><span class="badge badge-unreviewed">{{ ev.source }}</span></td>
+                    <td style="color:var(--text-muted);font-size:0.78rem">{{ ev.notes or '' }}</td>
+                    <td>
+                        <button class="btn btn-danger btn-sm" onclick="deleteMemberBib({{ ev.id }}, this)">Del</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty-state">
+    <div class="icon">&#128100;</div>
+    <p>No member-bib mappings yet. Add one above.</p>
+</div>
+{% endif %}
+
+<script>
+function addMemberBib() {
+    const data = {
+        member_id:   document.getElementById('m-member-id').value.trim(),
+        member_name: document.getElementById('m-member-name').value.trim() || null,
+        bib_number:  document.getElementById('m-bib').value.trim(),
+        event_date:  document.getElementById('m-date').value,
+        event_name:  document.getElementById('m-event').value.trim() || null,
+        source:      document.getElementById('m-source').value,
+    };
+    if (!data.member_id || !data.bib_number || !data.event_date) {
+        showFlash('Member ID, bib number, and event date are required', 'err');
+        return;
+    }
+    fetch('/api/member-bib', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+    })
+    .then(r => r.json())
+    .then(resp => {
+        if (resp.ok) {
+            showFlash('Mapping saved');
+            setTimeout(() => location.reload(), 600);
+        } else {
+            showFlash(resp.error || 'Save failed', 'err');
+        }
+    })
+    .catch(() => showFlash('Network error', 'err'));
+}
+
+function deleteMemberBib(rowId, btn) {
+    if (!confirm('Delete this mapping?')) return;
+    fetch('/api/member-bib/' + rowId, { method: 'DELETE' })
+    .then(r => r.json())
+    .then(resp => {
+        if (resp.ok) {
+            btn.closest('tr').remove();
+            showFlash('Deleted');
+        }
+    })
+    .catch(() => showFlash('Delete failed', 'err'));
+}
+</script>
+{% endblock %}

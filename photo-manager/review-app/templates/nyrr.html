@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}NYRR Runner Info — MMR Photo Review{% endblock %}
+
+{% block content %}
+<div class="section-header">
+    <h2>NYRR Runner Identification</h2>
+    <span class="count">{{ runners|length }} runner{{ 's' if runners|length != 1 else '' }}</span>
+</div>
+
+<!-- Add / update form -->
+<div class="add-form">
+    <h3>Add / Update Runner</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="n-member-id">Member ID</label>
+            <input type="text" id="n-member-id" placeholder="e.g. A0042" required>
+        </div>
+        <div class="form-group">
+            <label for="n-name">NYRR Runner Name</label>
+            <input type="text" id="n-name" placeholder="As on NYRR bibs" required>
+        </div>
+        <div class="form-group narrow">
+            <label for="n-yob1">Year Born (primary)</label>
+            <input type="number" id="n-yob1" min="1930" max="2015" placeholder="e.g. 1990">
+        </div>
+        <div class="form-group narrow">
+            <label for="n-yob2">Year Born (alt)</label>
+            <input type="number" id="n-yob2" min="1930" max="2015" placeholder="e.g. 1991">
+        </div>
+        <div class="form-group narrow">
+            <label for="n-verified">Verified</label>
+            <select id="n-verified">
+                <option value="0">No</option>
+                <option value="1">Yes</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="n-notes">Notes</label>
+            <input type="text" id="n-notes" placeholder="Optional notes">
+        </div>
+        <div class="form-group narrow">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary" onclick="addNyrr()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Runner table -->
+{% if runners %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Member ID</th>
+            <th>Member Name</th>
+            <th>NYRR Name</th>
+            <th>Year Born 1</th>
+            <th>Year Born 2</th>
+            <th>Verified</th>
+            <th>Notes</th>
+            <th>Last Verified</th>
+            <th style="width:90px"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in runners %}
+        <tr>
+            <td><strong>{{ r.member_id }}</strong></td>
+            <td>{{ r.member_name or '—' }}</td>
+            <td>{{ r.nyrr_runner_name }}</td>
+            <td>{{ r.year_born_1 or '—' }}</td>
+            <td>{{ r.year_born_2 or '—' }}</td>
+            <td>
+                {% if r.verified %}
+                <span class="badge badge-confirmed">Yes</span>
+                {% else %}
+                <span class="badge badge-unreviewed">No</span>
+                {% endif %}
+            </td>
+            <td style="color:var(--text-muted);font-size:0.78rem">{{ r.notes or '' }}</td>
+            <td style="font-size:0.72rem;color:var(--text-muted)">{{ r.last_verified or '—' }}</td>
+            <td>
+                <button class="btn btn-ghost btn-sm" onclick="editNyrr('{{ r.member_id }}', '{{ r.nyrr_runner_name }}', {{ r.year_born_1 or 'null' }}, {{ r.year_born_2 or 'null' }}, {{ r.verified }}, '{{ r.notes or '' }}')">Edit</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteNyrr('{{ r.member_id }}', this)">Del</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <div class="icon">&#127939;</div>
+    <p>No NYRR runner info yet. Add a runner above.</p>
+</div>
+{% endif %}
+
+<script>
+function addNyrr() {
+    const data = {
+        member_id:        document.getElementById('n-member-id').value.trim(),
+        nyrr_runner_name: document.getElementById('n-name').value.trim(),
+        year_born_1:      parseInt(document.getElementById('n-yob1').value) || null,
+        year_born_2:      parseInt(document.getElementById('n-yob2').value) || null,
+        verified:         parseInt(document.getElementById('n-verified').value),
+        notes:            document.getElementById('n-notes').value.trim() || null,
+    };
+    if (!data.member_id || !data.nyrr_runner_name) {
+        showFlash('Member ID and NYRR name are required', 'err');
+        return;
+    }
+    fetch('/api/nyrr', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+    })
+    .then(r => r.json())
+    .then(resp => {
+        if (resp.ok) {
+            showFlash('Runner info saved');
+            setTimeout(() => location.reload(), 600);
+        } else {
+            showFlash(resp.error || 'Save failed', 'err');
+        }
+    })
+    .catch(() => showFlash('Network error', 'err'));
+}
+
+function editNyrr(memberId, name, yob1, yob2, verified, notes) {
+    document.getElementById('n-member-id').value = memberId;
+    document.getElementById('n-name').value = name;
+    document.getElementById('n-yob1').value = yob1 || '';
+    document.getElementById('n-yob2').value = yob2 || '';
+    document.getElementById('n-verified').value = verified;
+    document.getElementById('n-notes').value = notes;
+    document.getElementById('n-member-id').focus();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+function deleteNyrr(memberId, btn) {
+    if (!confirm('Delete NYRR info for ' + memberId + '?')) return;
+    fetch('/api/nyrr/' + encodeURIComponent(memberId), { method: 'DELETE' })
+    .then(r => r.json())
+    .then(resp => {
+        if (resp.ok) {
+            btn.closest('tr').remove();
+            showFlash('Deleted');
+        }
+    })
+    .catch(() => showFlash('Delete failed', 'err'));
+}
+</script>
+{% endblock %}
