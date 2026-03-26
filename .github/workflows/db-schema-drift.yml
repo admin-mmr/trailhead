@@ -18,14 +18,14 @@ jobs:
 
       - name: Verify snapshot file exists
         run: |
-          if [ ! -f "web-apps/mmr-webapp/db/schema_snapshot.sql" ]; then
+          if [ ! -f "db/schema_snapshot.sql" ]; then
             echo "❌ db/schema_snapshot.sql not found."
             echo "Run this locally to create it:"
-            echo "  mysql-mmr < db/schema_snapshot_query.sql > db/schema_snapshot.sql"
+            echo "  mysql-mmr < db/queries/schema_snapshot_query.sql > db/schema_snapshot.sql"
             echo "Then commit the file."
             exit 1
           fi
-          echo "✓ Snapshot file found ($(wc -l < web-apps/mmr-webapp/db/schema_snapshot.sql) lines)"
+          echo "✓ Snapshot file found ($(wc -l < db/schema_snapshot.sql) lines)"
 
       - name: Install mysql-client
         run: sudo apt-get install -y mysql-client
@@ -45,7 +45,7 @@ jobs:
             --batch \
             --silent \
             "$MYSQL_DATABASE" \
-            < web-apps/mmr-webapp/db/schema_snapshot_query.sql \
+            < db/queries/schema_snapshot_query.sql \
             > /tmp/live_snapshot.sql
 
           echo "✓ Live snapshot captured ($(wc -l < /tmp/live_snapshot.sql) lines)"
@@ -53,7 +53,7 @@ jobs:
       - name: Compare snapshots
         id: diff
         run: |
-          if diff -q web-apps/mmr-webapp/db/schema_snapshot.sql /tmp/live_snapshot.sql > /dev/null 2>&1; then
+          if diff -q db/schema_snapshot.sql /tmp/live_snapshot.sql > /dev/null 2>&1; then
             echo "✓ Schema matches snapshot — no drift detected"
             echo "drifted=false" >> $GITHUB_OUTPUT
           else
@@ -61,11 +61,11 @@ jobs:
             echo "drifted=true" >> $GITHUB_OUTPUT
 
             # Save diff for email attachment
-            diff web-apps/mmr-webapp/db/schema_snapshot.sql /tmp/live_snapshot.sql > /tmp/schema_drift.diff || true
+            diff db/schema_snapshot.sql /tmp/live_snapshot.sql > /tmp/schema_drift.diff || true
 
             # Print summary to log
             echo "--- Diff summary ---"
-            diff web-apps/mmr-webapp/db/schema_snapshot.sql /tmp/live_snapshot.sql | head -80 || true
+            diff db/schema_snapshot.sql /tmp/live_snapshot.sql | head -80 || true
           fi
 
       - name: Upload diff artifact
@@ -99,7 +99,7 @@ jobs:
             1. Review what changed (diff attached or see Actions artifacts)
             2. If the change is intentional, update the snapshot:
 
-               mysql-mmr < db/schema_snapshot_query.sql > db/schema_snapshot.sql
+               mysql-mmr < db/queries/schema_snapshot_query.sql > db/schema_snapshot.sql
                git add db/schema_snapshot.sql
                git commit -m "chore: update db schema snapshot"
                git push

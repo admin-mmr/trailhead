@@ -7,6 +7,9 @@ config	InnoDB	utf8mb4_unicode_ci
 gmail_transactions	InnoDB	utf8mb4_unicode_ci	
 member_log	InnoDB	utf8mb4_unicode_ci	
 members	InnoDB	utf8mb4_unicode_ci	
+nyrr_event_runners	InnoDB	utf8mb4_unicode_ci	
+nyrr_events	InnoDB	utf8mb4_unicode_ci	
+nyrr_processing_log	InnoDB	utf8mb4_unicode_ci	
 password_reset_tokens	InnoDB	utf8mb4_unicode_ci	
 payments	InnoDB	utf8mb4_unicode_ci	
 schema_migrations	InnoDB	utf8mb4_unicode_ci	
@@ -104,14 +107,65 @@ members	23	ProfileLastUpdated	datetime	YES	NULL			When member profile was last u
 members	24	Notes	text	YES	NULL			
 members	25	NYRRRunnerName	varchar(100)	YES	NULL			
 members	26	YearBorn	smallint	YES	NULL			
-members	27	password_hash	varchar(255)	YES	NULL			
-members	28	google_sub	varchar(255)	YES	NULL		UNI	
-members	29	microsoft_sub	varchar(255)	YES	NULL		UNI	
-members	30	apple_sub	varchar(255)	YES	NULL		UNI	
-members	31	yahoo_sub	varchar(255)	YES	NULL		UNI	
-members	32	facebook_sub	varchar(255)	YES	NULL		UNI	Facebook user ID (sub) for Sign in with Facebook
-members	33	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-members	34	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+members	27	YearBornGuess	smallint	YES	NULL			System-inferred birth year from NYRR age data
+members	28	password_hash	varchar(255)	YES	NULL			
+members	29	google_sub	varchar(255)	YES	NULL		UNI	
+members	30	microsoft_sub	varchar(255)	YES	NULL		UNI	
+members	31	apple_sub	varchar(255)	YES	NULL		UNI	
+members	32	yahoo_sub	varchar(255)	YES	NULL		UNI	
+members	33	facebook_sub	varchar(255)	YES	NULL		UNI	Facebook user ID (sub) for Sign in with Facebook
+members	34	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+members	35	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+nyrr_event_runners	1	id	int	NO	NULL	auto_increment	PRI	
+nyrr_event_runners	2	nyrr_event_id	int	NO	NULL		MUL	
+nyrr_event_runners	3	nyrr_runner_id	varchar(20)	NO	NULL		MUL	
+nyrr_event_runners	4	runner_name	varchar(200)	NO	NULL		MUL	
+nyrr_event_runners	5	first_name	varchar(100)	YES	NULL			
+nyrr_event_runners	6	last_name	varchar(100)	YES	NULL		MUL	
+nyrr_event_runners	7	age	smallint	YES	NULL			
+nyrr_event_runners	8	gender	varchar(10)	YES	NULL			
+nyrr_event_runners	9	state_province	varchar(50)	YES	NULL			
+nyrr_event_runners	10	bib_number	varchar(20)	YES	NULL			
+nyrr_event_runners	11	finish_time	varchar(20)	YES	NULL			
+nyrr_event_runners	12	pace	varchar(20)	YES	NULL			
+nyrr_event_runners	13	overall_place	int	YES	NULL			
+nyrr_event_runners	14	gender_place	int	YES	NULL			
+nyrr_event_runners	15	team_code	varchar(20)	YES	NULL		MUL	
+nyrr_event_runners	16	is_registered_only	tinyint(1)	NO	0			
+nyrr_event_runners	17	mmr_member_id	varchar(10)	YES	NULL		MUL	
+nyrr_event_runners	18	match_method	enum('auto_name','auto_lastname','manual','not_member','unmatched')	YES	NULL		MUL	
+nyrr_event_runners	19	matched_by	varchar(100)	YES	NULL			
+nyrr_event_runners	20	matched_at	datetime	YES	NULL			
+nyrr_event_runners	21	scan_timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+nyrr_event_runners	22	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+nyrr_event_runners	23	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+nyrr_events	1	id	int	NO	NULL	auto_increment	PRI	
+nyrr_events	2	event_code	varchar(30)	NO	NULL		UNI	
+nyrr_events	3	event_name	varchar(255)	NO	NULL			
+nyrr_events	4	event_url	varchar(500)	YES	NULL			
+nyrr_events	5	location	varchar(255)	YES	NULL			
+nyrr_events	6	distance	varchar(50)	YES	NULL			
+nyrr_events	7	event_date	date	YES	NULL		MUL	
+nyrr_events	8	event_year	smallint	YES	NULL		MUL	
+nyrr_events	9	is_upcoming	tinyint(1)	NO	0		MUL	
+nyrr_events	10	is_virtual	tinyint(1)	NO	0			
+nyrr_events	11	processing_status	enum('Pending','InProgress','Completed','Error')	NO	Pending		MUL	
+nyrr_events	12	processed_at	datetime	YES	NULL			
+nyrr_events	13	processed_by	varchar(100)	YES	NULL			
+nyrr_events	14	result_count	int	NO	0			
+nyrr_events	15	mmr_runner_count	int	NO	0			
+nyrr_events	16	mmr_matched_count	int	NO	0			
+nyrr_events	17	notes	text	YES	NULL			
+nyrr_events	18	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+nyrr_events	19	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+nyrr_processing_log	1	id	int	NO	NULL	auto_increment	PRI	
+nyrr_processing_log	2	run_timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
+nyrr_processing_log	3	triggered_by	varchar(100)	YES	NULL			
+nyrr_processing_log	4	nyrr_event_id	int	YES	NULL		MUL	
+nyrr_processing_log	5	run_status	enum('Success','PartialSuccess','Failed')	NO	NULL		MUL	
+nyrr_processing_log	6	rows_written	int	NO	0			
+nyrr_processing_log	7	error_details	text	YES	NULL			
+nyrr_processing_log	8	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 password_reset_tokens	1	TokenID	varchar(50)	NO	NULL		PRI	
 password_reset_tokens	2	Email	varchar(255)	NO	NULL		MUL	
 password_reset_tokens	3	TokenHash	varchar(255)	NO	NULL			
@@ -229,6 +283,25 @@ members	PRIMARY	0	1	MemberID	BTREE
 members	uq_members_email	0	1	Email	BTREE	
 members	uq_members_facebook	0	1	facebook_sub	BTREE	YES
 members	yahoo_sub	0	1	yahoo_sub	BTREE	YES
+nyrr_event_runners	idx_match_method	1	1	match_method	BTREE	YES
+nyrr_event_runners	idx_mmr_member_id	1	1	mmr_member_id	BTREE	YES
+nyrr_event_runners	idx_nyrr_runner_id	1	1	nyrr_runner_id	BTREE	
+nyrr_event_runners	idx_runner_last_name	1	1	last_name	BTREE	YES
+nyrr_event_runners	idx_runner_name	1	1	runner_name	BTREE	
+nyrr_event_runners	idx_team_code	1	1	team_code	BTREE	YES
+nyrr_event_runners	PRIMARY	0	1	id	BTREE	
+nyrr_event_runners	uq_event_runner	0	1	nyrr_event_id	BTREE	
+nyrr_event_runners	uq_event_runner	0	2	nyrr_runner_id	BTREE	
+nyrr_events	idx_event_date	1	1	event_date	BTREE	YES
+nyrr_events	idx_event_year	1	1	event_year	BTREE	YES
+nyrr_events	idx_is_upcoming	1	1	is_upcoming	BTREE	
+nyrr_events	idx_processing_status	1	1	processing_status	BTREE	
+nyrr_events	PRIMARY	0	1	id	BTREE	
+nyrr_events	uq_event_code	0	1	event_code	BTREE	
+nyrr_processing_log	idx_log_event_id	1	1	nyrr_event_id	BTREE	YES
+nyrr_processing_log	idx_log_run_status	1	1	run_status	BTREE	
+nyrr_processing_log	idx_log_run_timestamp	1	1	run_timestamp	BTREE	
+nyrr_processing_log	PRIMARY	0	1	id	BTREE	
 password_reset_tokens	idx_prt_email	1	1	Email	BTREE	
 password_reset_tokens	idx_prt_expiresat	1	1	ExpiresAt	BTREE	
 password_reset_tokens	PRIMARY	0	1	TokenID	BTREE	
@@ -254,6 +327,8 @@ webapp_events	PRIMARY	0	1	EventID	BTREE
 section
 === 4. FOREIGN KEYS ===
 table	column_name	constraint_name	ref_table	ref_column	UPDATE_RULE	DELETE_RULE
+nyrr_event_runners	nyrr_event_id	fk_event_runners_event	nyrr_events	id	NO ACTION	CASCADE
+nyrr_processing_log	nyrr_event_id	fk_processing_log_event	nyrr_events	id	NO ACTION	SET NULL
 payments	EventID	fk_payments_event	webapp_events	EventID	NO ACTION	SET NULL
 payments	MemberID	fk_payments_member	members	MemberID	NO ACTION	SET NULL
 webapp_events	MatchedMessageId	fk_pe_gmail	gmail_transactions	MessageId	NO ACTION	SET NULL
