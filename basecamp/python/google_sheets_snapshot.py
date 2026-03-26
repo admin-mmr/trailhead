@@ -45,11 +45,28 @@ class GoogleSheetsSnapshot:
         self.credentials = service_account.Credentials.from_service_account_file(
             google_credentials_path, scopes=SCOPES
         )
-        self.drive_service = build('drive', 'v3', credentials=self.credentials)
-        self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
+
+        # cache_discovery=False avoids the file_cache warning and prevents
+        # hangs when the on-disk discovery cache is stale or locked.
+        self.sheets_service = build('sheets', 'v4', credentials=self.credentials, cache_discovery=False)
+
+        # Drive service is only needed for optional metadata (modified time).
+        # Build it lazily to avoid blocking startup if Drive API is slow.
+        self._drive_service = None
 
         # Azure Blob Storage — lazy init, only connects when actually uploading
         self._blob_client = None
+
+    @property
+    def drive_service(self):
+        """Lazy-initialize Drive service only when needed."""
+        if self._drive_service is None:
+            try:
+                self._drive_service = build('drive', 'v3', credentials=self.credentials, cache_discovery=False)
+            except Exception as e:
+                logger.warning(f'Could not build Drive service: {e}')
+                return None
+        return self._drive_service
 
     @property
     def blob_client(self) -> Optional['BlobServiceClient']:
@@ -72,6 +89,9 @@ class GoogleSheetsSnapshot:
             }
         """
         try:
+            if self.drive_service is None:
+                logger.info('Drive service unavailable — skipping metadata lookup')
+                return {'modified_time': None, 'version': None}
             # supportsAllDrives=True is required for files on Shared Drives
             file = self.drive_service.files().get(
                 fileId=spreadsheet_id,

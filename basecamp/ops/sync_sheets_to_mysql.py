@@ -64,6 +64,34 @@ TABLE_COLUMN_WHITELISTS: Dict[str, set] = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Per-table immutable columns
+#
+# These columns are written on INSERT but never changed on UPDATE.  This
+# protects primary keys and columns referenced by foreign keys from being
+# accidentally overwritten during an upsert/resync, which would cause
+# "Cannot delete or update a parent row: a foreign key constraint fails".
+# ---------------------------------------------------------------------------
+TABLE_IMMUTABLE_ON_UPDATE: Dict[str, set] = {
+    'webapp_events': {'EventID'},
+    'members':       {'MemberID'},
+    'payments':      {'PaymentID'},
+}
+
+# ---------------------------------------------------------------------------
+# Per-table nullable foreign key columns
+#
+# These columns reference rows in other tables.  When inserting/updating,
+# if the referenced value doesn't exist yet (FK violation), the column is
+# set to NULL instead of failing the entire row.  This allows syncing
+# tables in any order — the FK values will be filled in on the next sync
+# after the referenced table has been populated.
+# ---------------------------------------------------------------------------
+TABLE_NULLABLE_FK_COLUMNS: Dict[str, set] = {
+    'webapp_events': {'MatchedMessageId', 'MemberID'},
+    'payments':      {'EventID', 'MemberID'},
+}
+
 
 def validate_numeric(value: str, col_type: str) -> Optional[str]:
     """
@@ -304,13 +332,21 @@ class SheetSyncer:
         self.table_name = table_name
         self.connection = connection
 
+    def _consume_unread_results(self):
+        """Drain any unread result sets on the connection to prevent
+        'Unread result found' errors when opening a new cursor."""
+        try:
+            self.connection.consume_results()
+        except Exception:
+            pass
+
     def get_table_schema(self) -> Dict[str, str]:
         """
         Get column definitions from MySQL database.
         Returns dict of {column_name: data_type}
         """
         try:
-            cursor = self.connection.cursor(dictionary=True)
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
             cursor.execute(f"""
                 SELECT COLUMN_NAME, COLUMN_TYPE
                 FROM information_schema.COLUMNS
@@ -344,6 +380,11 @@ class SheetSyncer:
             logger.debug(f'Ignoring sheet columns not in {self.table_name} whitelist: {sorted(ignored)}')
         return filtered
 
+    def _is_immutable_on_update(self, col_name: str) -> bool:
+        """Return True if col_name must not be changed in UPDATE statements."""
+        immutable = TABLE_IMMUTABLE_ON_UPDATE.get(self.table_name, set())
+        return col_name in immutable
+
     def get_required_columns(self) -> set:
         """
         Get the set of column names that are NOT NULL and have no default value.
@@ -352,7 +393,7 @@ class SheetSyncer:
         Returns a set of column name strings.
         """
         try:
-            cursor = self.connection.cursor(dictionary=True)
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
             cursor.execute("""
                 SELECT COLUMN_NAME
                 FROM information_schema.COLUMNS
@@ -421,10 +462,11 @@ class SheetSyncer:
     ) -> None:
         """Record a sync change in sync_changes table"""
         try:
+            self._consume_unread_results()
             old_json = json.dumps(old_data) if old_data else None
             new_json = json.dumps(new_data) if new_data else None
 
-            cursor = self.connection.cursor()
+            cursor = self.connection.cursor(buffered=True)
             cursor.execute("""
                 INSERT INTO sync_changes
                 (sheet_name, snapshot_id, change_type, row_key, old_values, new_values)
@@ -442,42 +484,101 @@ class SheetSyncer:
             cursor.close()
 
         except MySQLError as e:
-            logger.error(f'Failed to record change: {e}')
-            self.connection.rollback()
-            raise
+            logger.error(f'Failed to record change for {key_value}: {e}')
+            try:
+                self.connection.rollback()
+            except Exception:
+                pass
+            # Don't re-raise — a failed audit log entry should not kill the sync
+            # The actual data sync already succeeded or failed independently
 
-    def sync_row(self, row: Dict[str, str], change_type: str, key_field: str, key_value: str) -> bool:
+    @staticmethod
+    def _values_equal(existing_val, new_val: str, col_type: str) -> bool:
+        """Compare a MySQL value and a sheet value, tolerating type differences.
+
+        - Case-insensitive string comparison.
+        - Numeric epsilon check for int/decimal/float (50.00 == 50).
+        - Date normalization (trailing fractional seconds, timezone).
+        """
+        if existing_val is None:
+            existing_str = ''
+        else:
+            existing_str = str(existing_val).strip()
+        new_str = str(new_val).strip()
+
+        # Both empty
+        if not existing_str and not new_str:
+            return True
+
+        # Case-insensitive string match
+        if existing_str.lower() == new_str.lower():
+            return True
+
+        # Numeric comparison — handles '50.00' vs '50', '30.0' vs '30'
+        col_type_lower = col_type.lower()
+        numeric_types = ('int', 'smallint', 'tinyint', 'mediumint', 'bigint',
+                         'decimal', 'numeric', 'float', 'double')
+        if any(t in col_type_lower for t in numeric_types):
+            try:
+                if abs(float(existing_str) - float(new_str)) < 0.001:
+                    return True
+            except (ValueError, TypeError):
+                pass
+
+        # Date comparison — strip trailing .000000 or timezone differences
+        if 'date' in col_type_lower or 'timestamp' in col_type_lower:
+            try:
+                # Normalize both to YYYY-MM-DD HH:MM:SS
+                from datetime import datetime as _dt
+                def _norm(s):
+                    s = s.split('.')[0].replace('T', ' ').replace('Z', '').strip()
+                    # Try parsing common formats
+                    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+                        try:
+                            return _dt.strptime(s, fmt).strftime('%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            continue
+                    return s
+                if _norm(existing_str) == _norm(new_str):
+                    return True
+            except Exception:
+                pass
+
+        return False
+
+    def sync_row(self, row: Dict[str, str], change_type: str, key_field: str, key_value: str) -> str:
         """
         Sync a single row (generic for any table).
 
-        Returns True if synced successfully, False if skipped/error
+        Returns: 'inserted', 'updated', 'deleted', 'unchanged', or 'error'
         """
         try:
             if not key_value:
-                return False
+                return 'error'
 
             # Restrict to whitelisted columns before any processing.
             # For the members table this enforces the "columns 1-26 only" rule
             # and guarantees system/auth columns are never touched.
             row = self.filter_row_to_whitelist(row)
 
-            cursor = self.connection.cursor(dictionary=True)
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
 
             # Check if row exists
             cursor.execute(f"SELECT * FROM {self.table_name} WHERE {key_field} = %s", (key_value,))
             existing = cursor.fetchone()
+            cursor.close()  # close before opening new cursors in get_table_schema etc.
 
             if change_type == 'added':
                 schema = self.get_table_schema()
 
                 if existing:
-                    # Row already exists — update it (UPSERT: handles redo/resync).
-                    # This ensures a full re-sync from Google Sheets overwrites stale MySQL data.
+                    # Row already exists — update only columns that actually changed.
                     update_fields = []
                     update_params = []
+                    changes_detail = []  # track what changed for logging
 
                     for col_name, col_value in row.items():
-                        if col_name in schema and col_name != key_field:
+                        if col_name in schema and col_name != key_field and not self._is_immutable_on_update(col_name):
                             col_value_clean = col_value.strip() if isinstance(col_value, str) else col_value
                             if col_value_clean:
                                 col_type = schema[col_name]
@@ -515,20 +616,56 @@ class SheetSyncer:
                                     continue
                                 col_value_clean = validated_num
 
+                                # Compare against existing value — skip if unchanged
+                                existing_val = existing.get(col_name)
+                                if self._values_equal(existing_val, col_value_clean, col_type):
+                                    continue  # no change, skip
+
+                                existing_disp = str(existing_val).strip() if existing_val is not None else ''
                                 update_fields.append(f'{col_name} = %s')
                                 update_params.append(col_value_clean)
+                                changes_detail.append(f'  {col_name}: {existing_disp!r} → {str(col_value_clean).strip()!r}')
 
                     if update_fields:
                         update_params.append(key_value)
                         query = f"UPDATE {self.table_name} SET {', '.join(update_fields)} WHERE {key_field} = %s"
-                        cursor.execute(query, update_params)
-                        self.connection.commit()
-                        logger.info(f'Upserted (updated) existing row in {self.table_name} with {key_field}={key_value}')
-                        cursor.close()
-                        return True
+                        wcursor = self.connection.cursor()
+                        try:
+                            wcursor.execute(query, update_params)
+                            self.connection.commit()
+                            wcursor.close()
+                            logger.info(f'Updated {len(changes_detail)} column(s) in {self.table_name} for {key_field}={key_value}:')
+                            for detail in changes_detail:
+                                logger.info(detail)
+                            return 'updated'
+                        except mysql.connector.errors.IntegrityError as fk_err:
+                            # FK violation — retry without the nullable FK columns
+                            self.connection.rollback()
+                            wcursor.close()
+                            nullable_fks = TABLE_NULLABLE_FK_COLUMNS.get(self.table_name, set())
+                            retry_fields = []
+                            retry_params = []
+                            for field_expr, param in zip(update_fields, update_params[:-1]):
+                                col = field_expr.split(' = ')[0]
+                                if col not in nullable_fks:
+                                    retry_fields.append(field_expr)
+                                    retry_params.append(param)
+                            if retry_fields:
+                                retry_params.append(key_value)
+                                retry_query = f"UPDATE {self.table_name} SET {', '.join(retry_fields)} WHERE {key_field} = %s"
+                                wcursor2 = self.connection.cursor()
+                                wcursor2.execute(retry_query, retry_params)
+                                self.connection.commit()
+                                wcursor2.close()
+                                logger.info(f'Updated existing row in {self.table_name} with {key_field}={key_value} (FK columns skipped)')
+                                return 'updated'
+                            logger.warning(
+                                f'Skipping FK-only update for {key_field}={key_value} in {self.table_name}: '
+                                f'all changed columns are FK references to missing parent rows'
+                            )
+                            return 'error'
                     else:
-                        cursor.close()
-                        return False
+                        return 'unchanged'
 
                 else:
                     # New row — insert, but first guard against duplicate Email
@@ -536,19 +673,20 @@ class SheetSyncer:
                     if 'Email' in schema and 'Email' in row:
                         email_val = row.get('Email', '').strip() if isinstance(row.get('Email'), str) else ''
                         if email_val:
-                            cursor.execute(
+                            dup_cursor = self.connection.cursor(dictionary=True, buffered=True)
+                            dup_cursor.execute(
                                 f"SELECT {key_field} FROM {self.table_name} WHERE Email = %s",
                                 (email_val,)
                             )
-                            dupe = cursor.fetchone()
+                            dupe = dup_cursor.fetchone()
+                            dup_cursor.close()
                             if dupe:
                                 existing_key = dupe[key_field] if isinstance(dupe, dict) else dupe[0]
                                 logger.warning(
                                     f'Skipping {key_field}={key_value!r} in {self.table_name}: '
                                     f'Email={email_val!r} already belongs to {key_field}={existing_key!r}'
                                 )
-                                cursor.close()
-                                return False
+                                return 'error'
 
                     required_cols = self.get_required_columns()
                     insert_cols = []
@@ -611,35 +749,64 @@ class SheetSyncer:
                             f'Skipping row {key_field}={key_value!r} in {self.table_name}: '
                             f'missing required column(s) with no default: {sorted(missing_required)}'
                         )
-                        cursor.close()
-                        return False
+                        return 'error'
 
                     if insert_cols:
                         query = f"INSERT INTO {self.table_name} ({', '.join(insert_cols)}) VALUES ({', '.join(insert_vals)})"
-                        cursor.execute(query, insert_params)
-                        self.connection.commit()
-                        logger.info(f'Added row to {self.table_name} with {key_field}={key_value}')
-                        cursor.close()
-                        return True
+                        wcursor = self.connection.cursor()
+                        try:
+                            wcursor.execute(query, insert_params)
+                            self.connection.commit()
+                            wcursor.close()
+                            logger.info(f'Inserted new row in {self.table_name} with {key_field}={key_value}')
+                            return 'inserted'
+                        except mysql.connector.errors.IntegrityError as fk_err:
+                            # FK violation — retry without the nullable FK columns
+                            self.connection.rollback()
+                            wcursor.close()
+                            nullable_fks = TABLE_NULLABLE_FK_COLUMNS.get(self.table_name, set())
+                            fk_cols_present = [c for c in insert_cols if c in nullable_fks]
+                            if not fk_cols_present:
+                                raise  # not a nullable-FK issue, re-raise
+                            logger.info(
+                                f'FK violation for {key_field}={key_value} — retrying INSERT without {fk_cols_present}'
+                            )
+                            retry_cols = []
+                            retry_vals = []
+                            retry_params = []
+                            for c, v, p in zip(insert_cols, insert_vals, insert_params):
+                                if c not in nullable_fks:
+                                    retry_cols.append(c)
+                                    retry_vals.append(v)
+                                    retry_params.append(p)
+                            if retry_cols:
+                                retry_query = f"INSERT INTO {self.table_name} ({', '.join(retry_cols)}) VALUES ({', '.join(retry_vals)})"
+                                wcursor2 = self.connection.cursor()
+                                wcursor2.execute(retry_query, retry_params)
+                                self.connection.commit()
+                                wcursor2.close()
+                                logger.info(f'Added row to {self.table_name} with {key_field}={key_value} (FK columns set to NULL)')
+                                return 'inserted'
+                            return 'error'
                     else:
-                        cursor.close()
-                        return False
+                        return 'error'
 
             elif change_type == 'modified':
                 if not existing:
-                    cursor.close()
-                    return False
+                    return 'error'
 
                 # Guard against changing Email to one already used by a different row
                 schema = self.get_table_schema()
                 if 'Email' in schema and 'Email' in row:
                     email_val = row.get('Email', '').strip() if isinstance(row.get('Email'), str) else ''
                     if email_val:
-                        cursor.execute(
+                        dup_cursor = self.connection.cursor(dictionary=True, buffered=True)
+                        dup_cursor.execute(
                             f"SELECT {key_field} FROM {self.table_name} WHERE Email = %s AND {key_field} != %s",
                             (email_val, key_value)
                         )
-                        dupe = cursor.fetchone()
+                        dupe = dup_cursor.fetchone()
+                        dup_cursor.close()
                         if dupe:
                             existing_key = dupe[key_field] if isinstance(dupe, dict) else dupe[0]
                             logger.warning(
@@ -649,12 +816,13 @@ class SheetSyncer:
                             # Remove Email from the update so the rest of the row still syncs
                             row = {k: v for k, v in row.items() if k != 'Email'}
 
-                # Update row
+                # Update row — only columns that actually changed
                 update_fields = []
                 update_params = []
+                changes_detail = []
 
                 for col_name, col_value in row.items():
-                    if col_name in schema and col_name != key_field:
+                    if col_name in schema and col_name != key_field and not self._is_immutable_on_update(col_name):
                         col_value_clean = col_value.strip() if isinstance(col_value, str) else col_value
                         if col_value_clean:
                             col_type = schema[col_name]       # preserve original casing for ENUM parsing
@@ -694,47 +862,62 @@ class SheetSyncer:
                                 continue  # skip this field update; leave DB value unchanged
                             col_value_clean = validated_num
 
+                            # Compare against existing value — skip if unchanged
+                            existing_val = existing.get(col_name)
+                            if self._values_equal(existing_val, col_value_clean, col_type):
+                                continue  # no change, skip
+
+                            existing_disp = str(existing_val).strip() if existing_val is not None else ''
                             update_fields.append(f'{col_name} = %s')
                             update_params.append(col_value_clean)
+                            changes_detail.append(f'  {col_name}: {existing_disp!r} \u2192 {str(col_value_clean).strip()!r}')
 
                 if update_fields:
                     update_params.append(key_value)
                     query = f"UPDATE {self.table_name} SET {', '.join(update_fields)} WHERE {key_field} = %s"
-                    cursor.execute(query, update_params)
+                    wcursor = self.connection.cursor()
+                    wcursor.execute(query, update_params)
                     self.connection.commit()
-                    logger.info(f'Updated row in {self.table_name} with {key_field}={key_value}')
-                    cursor.close()
-                    return True
+                    wcursor.close()
+                    logger.info(f'Updated {len(changes_detail)} column(s) in {self.table_name} for {key_field}={key_value}:')
+                    for detail in changes_detail:
+                        logger.info(detail)
+                    return 'updated'
                 else:
-                    cursor.close()
-                    return False
+                    return 'unchanged'
 
             elif change_type == 'deleted':
                 if not existing:
-                    cursor.close()
-                    return False
+                    return 'error'
 
                 # Soft delete if Status column exists, otherwise hard delete
                 schema = self.get_table_schema()
+                wcursor = self.connection.cursor()
                 if 'Status' in schema:
-                    cursor.execute(
+                    wcursor.execute(
                         f"UPDATE {self.table_name} SET Status = 'deleted' WHERE {key_field} = %s",
                         (key_value,)
                     )
                 else:
-                    cursor.execute(f"DELETE FROM {self.table_name} WHERE {key_field} = %s", (key_value,))
+                    wcursor.execute(f"DELETE FROM {self.table_name} WHERE {key_field} = %s", (key_value,))
 
                 self.connection.commit()
+                wcursor.close()
                 logger.info(f'Deleted row in {self.table_name} with {key_field}={key_value}')
-                cursor.close()
-                return True
+                return 'deleted'
 
-            cursor.close()
-            return False
+            return 'error'
 
         except Exception as e:
-            logger.error(f'Error syncing row: {e}', exc_info=True)
-            return False
+            logger.error(f'Error syncing row {key_field}={key_value!r}: {e}', exc_info=True)
+            # Drain any leftover results so the connection is usable for the next row
+            self._consume_unread_results()
+            try:
+                self.connection.rollback()
+            except Exception:
+                pass
+            self._last_sync_error = True
+            return 'error'
 
     def sync_changes(
         self,
@@ -780,6 +963,18 @@ class SheetSyncer:
                 logger.info('DRY RUN: Not syncing changes')
                 return
 
+            # Count rows in MySQL before sync
+            rows_before = 0
+            try:
+                cnt_cursor = self.connection.cursor(buffered=True)
+                cnt_cursor.execute(f"SELECT COUNT(*) FROM {self.table_name}")
+                rows_before = cnt_cursor.fetchone()[0]
+                cnt_cursor.close()
+            except Exception:
+                pass
+            logger.info(f'MySQL {self.table_name}: {rows_before} rows before sync')
+            logger.info(f'Google Sheets "{sheet_name}": {current_snapshot["row_count"]} rows in sheet')
+
             # Record snapshot in DB
             snapshot_id = self.record_snapshot_in_db(current_snapshot)
 
@@ -788,32 +983,64 @@ class SheetSyncer:
             rows_added = 0
             rows_modified = 0
             rows_deleted = 0
+            rows_unchanged = 0
+            rows_errors = 0
 
             for row in changes['added']:
                 key_value = row.get(key_field, '').strip()
-                if self.sync_row(row, 'added', key_field, key_value):
-                    rows_added += 1
-                self.record_change(sheet_name, snapshot_id, 'added', key_value, None, row)
-                rows_synced += 1
+                try:
+                    result = self.sync_row(row, 'added', key_field, key_value)
+                    if result == 'inserted':
+                        rows_added += 1
+                    elif result == 'updated':
+                        rows_modified += 1
+                    elif result == 'unchanged':
+                        rows_unchanged += 1
+                    elif result == 'error':
+                        rows_errors += 1
+                    self.record_change(sheet_name, snapshot_id, 'added', key_value, None, row)
+                    rows_synced += 1
+                except Exception as e:
+                    rows_errors += 1
+                    logger.error(f'Error processing added row {key_value}: {e}')
+                    self._consume_unread_results()
 
             for change in changes['modified']:
                 key_value = change['key']
-                if self.sync_row(change['new'], 'modified', key_field, key_value):
-                    rows_modified += 1
-                self.record_change(
-                    sheet_name, snapshot_id, 'modified',
-                    key_value,
-                    change['old'],
-                    change['new']
-                )
-                rows_synced += 1
+                try:
+                    result = self.sync_row(change['new'], 'modified', key_field, key_value)
+                    if result == 'updated':
+                        rows_modified += 1
+                    elif result == 'unchanged':
+                        rows_unchanged += 1
+                    elif result == 'error':
+                        rows_errors += 1
+                    self.record_change(
+                        sheet_name, snapshot_id, 'modified',
+                        key_value,
+                        change['old'],
+                        change['new']
+                    )
+                    rows_synced += 1
+                except Exception as e:
+                    rows_errors += 1
+                    logger.error(f'Error processing modified row {key_value}: {e}')
+                    self._consume_unread_results()
 
             for row in changes['deleted']:
                 key_value = row.get(key_field, '').strip()
-                if self.sync_row(row, 'deleted', key_field, key_value):
-                    rows_deleted += 1
-                self.record_change(sheet_name, snapshot_id, 'deleted', key_value, row, None)
-                rows_synced += 1
+                try:
+                    result = self.sync_row(row, 'deleted', key_field, key_value)
+                    if result == 'deleted':
+                        rows_deleted += 1
+                    elif result == 'error':
+                        rows_errors += 1
+                    self.record_change(sheet_name, snapshot_id, 'deleted', key_value, row, None)
+                    rows_synced += 1
+                except Exception as e:
+                    rows_errors += 1
+                    logger.error(f'Error processing deleted row {key_value}: {e}')
+                    self._consume_unread_results()
 
             # Mark snapshot as processed (optional)
             try:
@@ -853,7 +1080,37 @@ class SheetSyncer:
             except Exception:
                 pass
 
-            logger.info(f'Sync completed: {rows_synced} total, {rows_added} added, {rows_modified} modified, {rows_deleted} deleted')
+            # Count rows in MySQL after sync
+            rows_after = 0
+            try:
+                cnt_cursor = self.connection.cursor(buffered=True)
+                cnt_cursor.execute(f"SELECT COUNT(*) FROM {self.table_name}")
+                rows_after = cnt_cursor.fetchone()[0]
+                cnt_cursor.close()
+            except Exception:
+                pass
+
+            # Print summary
+            logger.info('')
+            logger.info('=' * 60)
+            logger.info(f'  SYNC SUMMARY — {self.table_name}')
+            logger.info('=' * 60)
+            logger.info(f'  MySQL rows before:  {rows_before}')
+            logger.info(f'  MySQL rows after:   {rows_after}  (net {rows_after - rows_before:+d})')
+            logger.info(f'  Sheet rows:         {current_snapshot["row_count"]}')
+            logger.info('-' * 60)
+            logger.info(f'  Added:              {rows_added}')
+            logger.info(f'  Modified:           {rows_modified}')
+            logger.info(f'  Deleted:            {rows_deleted}')
+            logger.info(f'  Errors:             {rows_errors}')
+            logger.info(f'  Unchanged:          {rows_unchanged}')
+            logger.info('-' * 60)
+            logger.info(f'  Total processed:    {rows_synced}')
+            logger.info('=' * 60)
+            if rows_errors > 0:
+                logger.warning(f'{rows_errors} row(s) failed to sync — see error log above for details')
+            if rows_unchanged == rows_synced and rows_synced > 0:
+                logger.info('Everything is in sync — no changes needed.')
 
         except Exception as e:
             logger.error(f'Sync failed: {e}', exc_info=True)
@@ -862,7 +1119,7 @@ class SheetSyncer:
     def _get_previous_snapshot(self, sheet_name: str) -> Optional[Dict[str, Any]]:
         """Get previous snapshot from database"""
         try:
-            cursor = self.connection.cursor(dictionary=True)
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
             cursor.execute("""
                 SELECT snapshot_data_url
                 FROM sync_snapshots
