@@ -201,6 +201,38 @@ All resources live in the **`mmr-resources`** resource group under **Azure subsc
 - **Avoid:** Force pushes, rewriting history, committing secrets or large binaries
 - **Ask first:** Any destructive git operation
 
+### Committing + Context Updates (Cowork Sessions)
+
+**Race condition to avoid:** When committing code changes and updating `_context.md` in the same session, git lock files can get stuck if two commits run close together, leaving `_context.md` staged but uncommitted.
+
+**Proper workflow:**
+
+1. **Code commit first** (all functional changes):
+   ```bash
+   git add <files> && git commit -m "fix: ..."
+   ```
+   - Use single chained command (`&&`)
+   - Wait for commit to complete before proceeding
+
+2. **Edit + commit `_context.md` immediately after**:
+   ```bash
+   # Edit the file using Edit tool
+   git add _context.md && git commit -m "docs: update context log..."
+   ```
+   - Single chained command
+   - Wait 2–3 seconds between code commit and context commit
+
+3. **If lock files appear:**
+   - **Do NOT** attempt multiple git commands rapidly
+   - **Do NOT** try to remove `.git/*.lock` files manually (permission denied in sandboxed VM)
+   - Let the user manually resolve in VS Code:
+     1. Reload the repo in VS Code
+     2. Unstage `_context.md` in Source Control panel
+     3. Re-stage and commit with proper message
+     4. Then push
+
+**Why:** Git creates temporary lock files during commit; the VM sandbox prevents force-removal. Spacing out commits and using single chained commands gives git time to clean up between operations.
+
 ---
 
 ## EFFICIENCY RULES
