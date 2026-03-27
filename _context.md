@@ -1,7 +1,7 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-26
-Last commit: 7603f74
+Last updated: 2026-03-27
+Last commit: 3acc92a
 
 ---
 
@@ -39,3 +39,12 @@ Last commit: 7603f74
 - Bug 2: No way to re-run auto-match on an already-loaded event. Added `POST /api/events/<id>/automatch` endpoint + "Auto-match" button in runner table toolbar.
 - Bug 3: `unmatched_only` filter hardcoded `AND er.team_code = 'MMR'`, hiding all non-MMR unmatched runners even after "All runners" load. Removed constraint; renamed checkbox label "Unmatched MMR" → "Unmatched". Team scoping now handled by the existing team dropdown.
 - Files changed: tools/nyrr-viewer/app.py, tools/nyrr-viewer/templates/index.html
+
+### 2026-03-27 00:34 ET — nyrr-viewer: performance & UX fixes
+- Bug 1: Auto-match endpoint called `get_db_connection()` but function is named `get_conn()` → NameError. Fixed.
+- Bug 2: Sync-all-runners for large events (NYC Half 2026, 30K finishers) got 500 errors. Root causes:
+  - DB connection held open during long NYRR API pagination (~593 pages × 51 items) → timeout
+  - 30K row-by-row INSERT statements in single transaction → slow, memory-heavy
+  - Solution: Close DB connection during API fetch, batch inserts (500 rows/batch) with commit after each batch
+- Bug 3: "Admins" tab only visible to super_admin; regular admins couldn't see the admin list. Changed tab visibility to show for both admin & super_admin roles. API already enforces permissions (only super_admin can add/delete).
+- Commit: 3acc92a
