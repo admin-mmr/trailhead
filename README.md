@@ -24,6 +24,13 @@ trailhead/
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — How to deploy to production
 - [`PROJECT_PLAN.md`](PROJECT_PLAN.md) — Upcoming features (OAuth, data sync, activity logging)
 
+**First-time setup:**
+
+```bash
+# Enable pre-commit hooks (one-time per clone)
+git config core.hooksPath .githooks
+```
+
 **Local development:**
 
 ```bash

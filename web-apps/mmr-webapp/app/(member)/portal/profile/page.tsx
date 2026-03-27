@@ -137,6 +137,13 @@ export default function ProfilePage() {
               onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
               placeholder={f.ph}
             />
+            {f.key === 'yearBorn' && (
+              <p className="text-xs text-gray-400 mt-1">
+                {lang === 'zh'
+                  ? '用于通过大致年龄匹配 NYRR 跑者信息。'
+                  : 'Used to match your NYRR runner profile by approximate age.'}
+              </p>
+            )}
             {f.key === 'nyrrRunnerName' && (
               <p className="text-xs text-gray-400 mt-1">
                 {lang === 'zh'

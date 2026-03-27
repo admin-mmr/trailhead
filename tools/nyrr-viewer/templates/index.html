@@ -646,6 +646,19 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
     }
   };
 
+  const discoverUpcoming = async () => {
+    setToast('Fetching upcoming events from NYRR...');
+    const r = await api('/api/discover-upcoming', { method: 'POST' });
+    if (r.ok) {
+      setToast(`Found ${r.api_total} upcoming events, ${r.new_inserted} new inserted.`);
+      loadEvents();
+      loadStats();
+      loadYears();
+    } else {
+      setToast(r.error || 'Failed to fetch upcoming events');
+    }
+  };
+
   return (
     <div>
       {stats && (
@@ -674,6 +687,7 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
           {years.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
         <button className="btn btn-primary" onClick={discoverEvents}>Discover New Events</button>
+        <button className="btn btn-outline" onClick={discoverUpcoming}>Discover Upcoming</button>
       </div>
 
       <div className="panel">
@@ -701,7 +715,14 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
                 <tr key={ev.id}>
                   <td>
                     <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id); }} style={{ fontWeight: 600 }}>{ev.event_name}</a>
-                    <div style={{ color: 'var(--text2)', fontSize: 11 }}>{ev.event_code}</div>
+                    <div style={{ color: 'var(--text2)', fontSize: 11 }}>
+                      {ev.event_code}
+                      {ev.event_url && (
+                        <a href={ev.event_url} target="_blank" rel="noopener noreferrer"
+                          style={{ marginLeft: 6, color: 'var(--accent)', textDecoration: 'none' }}
+                          title="View on NYRR">↗ NYRR</a>
+                      )}
+                    </div>
                   </td>
                   <td>{ev.event_date ? new Date(ev.event_date).toLocaleDateString() : '—'}</td>
                   <td>{ev.distance || '—'}</td>
@@ -1150,6 +1171,7 @@ const TableBrowser = () => {
   const [selectedTable, setSelectedTable] = useState('');
   const [tableData, setTableData] = useState(null);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
   const [sort, setSort] = useState({ col: '', order: 'asc' });
   const [loading, setLoading] = useState(false);
   const [colFilters, setColFilters] = useState({});       // local input state
@@ -1187,7 +1209,7 @@ const TableBrowser = () => {
   useEffect(() => {
     if (!selectedTable) return;
     setLoading(true);
-    const p = new URLSearchParams({ page, per_page: 50 });
+    const p = new URLSearchParams({ page, per_page: perPage });
     if (sort.col) { p.set('sort', sort.col); p.set('order', sort.order); }
     // Append server-side column filters
     Object.entries(activeFilters).forEach(([col, val]) => {
@@ -1197,7 +1219,7 @@ const TableBrowser = () => {
       if (r.ok) setTableData(r);
       setLoading(false);
     });
-  }, [selectedTable, page, sort, activeFilters]);
+  }, [selectedTable, page, perPage, sort, activeFilters]);
 
   // Load column visibility when table changes (from DB, then localStorage fallback, then defaults)
   useEffect(() => {
@@ -1351,11 +1373,11 @@ const TableBrowser = () => {
               )}
             </div>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" style={{ overflowX: 'auto', maxWidth: '100%' }}>
             {loading ? (
               <div className="loading"><span className="spinner" /> Loading...</div>
             ) : (
-              <table>
+              <table style={{ minWidth: 'max-content' }}>
                 <thead>
                   <tr>
                     {(tableData.columns || [])
@@ -1401,13 +1423,24 @@ const TableBrowser = () => {
               </table>
             )}
           </div>
-          {tableData.pagination && tableData.pagination.pages > 1 && (
-            <div className="pagination">
+          {tableData.pagination && (
+            <div className="pagination" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn btn-sm btn-outline" disabled={page <= 1} onClick={() => setPage(1)}>«</button>
               <button className="btn btn-sm btn-outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</button>
               <span className="page-info">Page {page} of {tableData.pagination.pages}</span>
               <button className="btn btn-sm btn-outline" disabled={page >= tableData.pagination.pages} onClick={() => setPage(p => p + 1)}>›</button>
               <button className="btn btn-sm btn-outline" disabled={page >= tableData.pagination.pages} onClick={() => setPage(tableData.pagination.pages)}>»</button>
+              <span style={{ marginLeft: 12, fontSize: 13, color: 'var(--text2)' }}>Show</span>
+              <select
+                value={perPage}
+                onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--bg)' }}
+              >
+                {[25, 50, 100, 200, 500].map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <span style={{ fontSize: 13, color: 'var(--text2)' }}>per page</span>
             </div>
           )}
         </div>

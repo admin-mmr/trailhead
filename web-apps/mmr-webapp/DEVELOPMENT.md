@@ -18,12 +18,17 @@ The project uses **3 layers of verification** to catch errors early:
 
 ### 1️⃣ Pre-commit Hook (Automatic)
 
-When you run `git commit`, a pre-commit hook automatically runs:
+The repo uses shared hooks from `.githooks/`. Enable them once per clone:
 ```bash
-npm run lint && npm run build
+git config core.hooksPath .githooks
 ```
 
-If either fails, your commit is blocked. **This is a feature** — it prevents broken code from being committed.
+When you run `git commit`, the pre-commit hook runs checks based on what's staged:
+
+- **nyrr-viewer `.py` files** → runs `test_imports.py` (circular import detection)
+- *(future hooks can be added to `.githooks/pre-commit` for other services)*
+
+If any check fails, your commit is blocked. **This is a feature** — it prevents broken code from being committed.
 
 **Fix linting errors:**
 ```bash

@@ -409,11 +409,25 @@ class NyrrApiClient:
             total = data.get(total_key, 0)
             all_items.extend(items)
 
-            if len(items) < self.page_size or len(all_items) >= total:
+            logger.debug(
+                "paginate %s  page=%d  got=%d  cumulative=%d  server_total=%d",
+                path, page_index, len(items), len(all_items), total,
+            )
+
+            # Stop when we received fewer items than requested (last page).
+            # Do NOT trust totalItems alone — NYRR sometimes caps it
+            # (e.g. reports 500 even when there are more).
+            if len(items) < self.page_size:
                 break
 
             page_index += 1
             time.sleep(self.sleep_seconds)
+
+        if total and len(all_items) != total:
+            logger.info(
+                "paginate %s: fetched %d items but server reported totalItems=%d",
+                path, len(all_items), total,
+            )
 
         return all_items
 

@@ -47,7 +47,7 @@ export default function DonatePage() {
       .catch(() => {})
   }, [])
 
-  const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'treasurer@mmrunners.org'
+  const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'runningmmr@gmail.com'
   const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? '@MMRunners'
   const stepIndex = STEP_ORDER.indexOf(step)
   const donateAmount = Number(amount || customAmount) || 0
@@ -288,10 +288,11 @@ export default function DonatePage() {
               <div className="bg-gray-50 rounded-xl p-6 mb-6 text-center">
                 <div className="w-40 h-40 bg-white border-2 border-dashed border-gray-300 rounded-xl mx-auto flex items-center justify-center overflow-hidden">
                   <Image
-                    src={`/images/qr-${payMethod}.png`}
+                    src={`/images/mmr-${payMethod}.jpg`}
                     alt={`${payMethod} QR code`}
                     width={144}
                     height={144}
+                    unoptimized
                     className="object-contain"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                   />

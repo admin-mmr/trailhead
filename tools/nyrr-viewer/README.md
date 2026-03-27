@@ -12,10 +12,13 @@ source basecamp/load-env.sh
 # 2. Install dependencies
 pip install -r tools/nyrr-viewer/requirements.txt
 
-# 3. Run
+# 3. Enable pre-commit hooks (one-time per clone)
+git config core.hooksPath .githooks
+
+# 4. Run
 python tools/nyrr-viewer/app.py
 
-# 4. Open http://localhost:5050
+# 5. Open http://localhost:5050
 ```
 
 ## Features
@@ -30,6 +33,40 @@ pagination and sortable columns.
 
 **Sync Log tab** — recent processing log entries showing every pipeline
 run, its status, and any errors.
+
+## Project structure
+
+```
+nyrr-viewer/
+├── app.py              ← Entry point — Flask app setup + blueprint registration
+├── db.py               ← Database connection, query/execute helpers, table init
+├── auth.py             ← OAuth (Google/Microsoft), password login, role decorators
+├── helpers.py          ← DateEncoder, json_response, error handlers
+├── api_admin.py        ← Admin CRUD routes
+├── api_events.py       ← Events list, discover, upcoming, stats
+├── api_runners.py      ← Match/unmatch, member search, runner history
+├── api_data.py         ← Table browser, user settings, processing log, DB config
+├── api_sync.py         ← Background NYRR data load worker
+├── test_imports.py     ← Circular import detection (runs in pre-commit hook)
+└── templates/
+    └── index.html      ← React/Babel single-page frontend
+```
+
+## Pre-commit hook
+
+When you commit changes to any `.py` file in this directory, a pre-commit hook
+automatically runs `test_imports.py` to catch circular or broken imports.
+
+```bash
+# Enable hooks (one-time per clone, from repo root)
+git config core.hooksPath .githooks
+
+# Run manually any time
+python3 test_imports.py
+
+# Or via pytest
+python3 -m pytest test_imports.py -v
+```
 
 ## Environment variables
 

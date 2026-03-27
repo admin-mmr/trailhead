@@ -71,6 +71,18 @@ trailhead/
 │   ├── requirements.txt
 │   └── partner/                       ← Partner nonprofit collab
 │
+├── tools/                            ← 🔧 Internal tools
+│   └── nyrr-viewer/                  ← NYRR event ops dashboard (Flask)
+│       ├── app.py                    ← Entry point (Flask app + blueprints)
+│       ├── db.py                     ← DB connection & query helpers
+│       ├── auth.py                   ← OAuth, login, role decorators
+│       ├── api_*.py                  ← Route modules (events, runners, sync…)
+│       ├── helpers.py                ← JSON encoder, error handlers
+│       └── test_imports.py           ← Circular import detection
+│
+├── .githooks/                        ← 🪝 Shared git hooks
+│   └── pre-commit                    ← Import check for nyrr-viewer
+│
 └── basecamp/                          ← 🏕️ Shared library
     ├── README.md
     ├── python/
@@ -222,6 +234,22 @@ GOOGLE_APPS_SCRIPT_PROJECT_ID=***
 ```
 
 **Critical:** Never commit `.env.local`. Use `.env.example` as a template.
+
+---
+
+## Git Hooks
+
+The repo includes shared pre-commit hooks in `.githooks/`. After cloning, enable them once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Currently active hooks:
+
+- **pre-commit** — When `tools/nyrr-viewer/*.py` files are staged, runs `test_imports.py` to catch circular or broken imports before they land. Only triggers when nyrr-viewer Python files are in the commit; other changes are unaffected.
+
+To bypass in an emergency: `git commit --no-verify`
 
 ---
 

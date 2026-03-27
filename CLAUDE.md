@@ -27,7 +27,7 @@ Copy this into your Claude Project settings for optimal context efficiency.
 - Update it at the end of each task: log what changed, what's now done, what's still open.
 - Never delete existing entries, only append or correct.
 - Do not rewrite or reformat the whole file.
-- Session log format: `### YYYY-MM-DD HH:MM ET — short title`
+- Session log format: `### YYYY-MM-DD HH:MM ET — short title` — **time is mandatory**, not optional (run `TZ=America/New_York date '+%Y-%m-%d %H:%M ET'` to get it)
 - When there are more than 50 entries; move older ones to _context_archive.md and keep only the most recent 100 entries in _context.md for efficiency.
 ---
 
@@ -78,10 +78,59 @@ You are a code architect and implementation guide for this monorepo. You:
 - Use computer:// links so you can access them
 - Keep source code properly organized by module
 
-**Response timestamps:**
-- End every response with a timestamp line by running `TZ=America/New_York date '+%m/%d %H:%M ET'` via bash
-- Format: `🕐 <timestamp>` on its own line at the very end
-- Only do this in agentic/Cowork sessions where bash is available; skip in plain chat
+**Response timestamps — MANDATORY:**
+- You MUST end EVERY response with a timestamp line. No exceptions. This is non-negotiable.
+- Run: `TZ=America/New_York date '+%m/%d %H:%M ET'` via bash
+- Format: `🕐 MM/DD HH:MM ET` on its own line as the absolute last thing in the response
+- If you forget, the next response MUST start with the missed timestamp before anything else
+- Only skip in plain chat where bash is unavailable
+
+---
+
+## CODE HEALTH — FILE SIZE & MODULARITY
+
+**Hard rule:** If any single code file exceeds **400 lines**, proactively flag it:
+> ⚠️ `path/to/file.py` is now N lines. Consider splitting into modules.
+
+**When to split — don't wait to be asked:**
+- Python: >400 lines → split into modules with Flask Blueprints (for routes) or plain imports
+- TypeScript/React: >300 lines → extract components, hooks, or utility files
+- HTML templates with embedded JS: >500 lines → extract JS into separate files
+- SQL files: >200 lines → split by domain (members, events, sync, etc.)
+
+**How to flag it:**
+- At the end of any task that grows a file past the threshold, add a line:
+  > 📏 `file.py` is now 450 lines — recommend splitting. Want me to do it now?
+- If the user says yes, create a todo list and execute the split immediately
+- After splitting, always run `test_imports.py` (for Python) or the relevant build check
+
+**Naming conventions for split modules:**
+- Route files: `api_<domain>.py` (e.g., `api_events.py`, `api_sync.py`)
+- Shared utilities: `helpers.py`, `db.py`, `utils.py`
+- Keep a thin orchestrator (`app.py`, `index.ts`) that wires everything together
+
+---
+
+## PRE-COMMIT HOOKS & INTEGRATION TESTING
+
+The repo uses shared hooks in `.githooks/` (enabled via `git config core.hooksPath .githooks`).
+
+**Current hooks:**
+- `pre-commit` — runs `test_imports.py` when `tools/nyrr-viewer/*.py` files are staged
+
+**Expanding the hook — when adding new services or tests:**
+- When you add a new testable subsystem (Python package, Next.js app, etc.), update `.githooks/pre-commit` to include a check for that subsystem
+- Pattern: detect staged files by path prefix → run the relevant test → block commit on failure
+- Tests to add to the hook as they become available:
+  - `npm run typecheck` when `web-apps/mmr-webapp/**/*.ts(x)` files change
+  - `python3 -m pytest` for any Python service with tests
+  - Schema validation when `db/schemas/*.sql` files change
+  - Lint checks (`npm run lint`, `ruff check`) for respective file types
+- Keep hooks fast (<10 seconds). If a check is slow, make it check only staged files, not the whole project
+- Always include a bypass reminder in error output: `git commit --no-verify`
+
+**When writing new code, proactively suggest hook additions:**
+> 🪝 This new module has tests. Want me to add it to the pre-commit hook?
 
 ---
 
@@ -160,6 +209,7 @@ When fixing build errors, use this protocol instead of declaring done without ve
 | Path | Purpose |
 |------|---------|
 | `.gitignore` | Excludes secrets, builds, node_modules, .db, .docx |
+| `.githooks/pre-commit` | Shared pre-commit hook (import checks, etc.) |
 | `.github/workflows/*.yml` | GitHub Actions (deploys, syncs, CI/CD) |
 | `MONOREPO.md`, `PROJECT_PLAN.md` | High-level docs |
 | `db/schemas/*.sql` | Database definitions |
@@ -168,6 +218,11 @@ When fixing build errors, use this protocol instead of declaring done without ve
 | `photo-manager/src/` | Core pipeline logic |
 | `basecamp/` | Google Sheets sync scripts |
 | `load-env.sh` | Loads secrets from macOS Keychain into shell env (repo root) |
+| `tools/nyrr-viewer/app.py` | Flask app entry point (thin orchestrator) |
+| `tools/nyrr-viewer/db.py` | DB connection, query helpers, table init |
+| `tools/nyrr-viewer/auth.py` | OAuth, login, role decorators |
+| `tools/nyrr-viewer/api_*.py` | Route modules (events, runners, sync, data, admin) |
+| `tools/nyrr-viewer/test_imports.py` | Circular import detection (runs in pre-commit hook) |
 
 ---
 
@@ -190,6 +245,33 @@ All resources live in the **`mmr-resources`** resource group under **Azure subsc
 - Blob/file storage: `mmrunnersstorage` — used for photo pipeline output and assets
 - Email: `mmr` (Email Communication Service) + `mmr-comm` (Communication Service) handle transactional email
 - When referencing connection strings or keys for any of these, retrieve them from the macOS Keychain — do not hardcode
+
+---
+
+## SHELL SHORTCUTS (from user's .zshrc)
+
+The user has these aliases and functions configured. **Use them** instead of typing full commands:
+
+| Shortcut | Type | Expands to / Does | Use when |
+|----------|------|-------------------|----------|
+| `mmr` | alias | `cd ~/github/mmr/trailhead` | Navigate to repo root |
+| `mmr-env` | function | cd to repo + activate `.venv` + source `load-env.sh` | Starting any work session that needs DB/API access |
+| `mysql-mmr` | alias | `mysql --login-path=mmr -D mmrdb` | Any direct MySQL queries |
+| `mmr-web` | alias | cd to webapp + `npm run dev` | Local Next.js dev server |
+| `mmr-check` | alias | cd to webapp + `npx tsc --noEmit` | Quick TypeScript type check |
+| `mmr-log` | alias | cd to repo + `git log --oneline -15` | View recent commits |
+| `nyrr` | alias | cd to nyrr-viewer + `python3 app.py` | Run nyrr-viewer locally |
+| `nyrr-test` | alias | cd to nyrr-viewer + `python3 test_imports.py` | Run import checks |
+| `nyrr-logs` | alias | `az webapp log tail --name mmr-nyrr-viewer ...` | Stream deployed nyrr-viewer logs |
+| `nyrr-restart` | alias | `az webapp restart --name mmr-nyrr-viewer ...` | Restart deployed nyrr-viewer |
+| `nyrr-status` | alias | `az webapp show ... --query state` | Check deployment state |
+
+**Rules:**
+- Always use `mysql-mmr` instead of raw `mysql` commands — credentials are pre-configured
+- Always use `mmr-env` at the start of Python work — it activates venv + loads secrets
+- When suggesting shell commands to the user, prefer shortcuts over full commands
+- When documenting procedures, mention the shortcut with the full command in parentheses
+- Note: old aliases `tail-nyrr` and `restart-nyrr` have been renamed to `nyrr-logs` and `nyrr-restart`
 
 ---
 
@@ -277,5 +359,5 @@ sleep 5 && git add _context.md && git commit -m "docs: update context log..."
 
 ---
 
-**Last updated:** March 26, 2026
-**Commit:** 7603f74 (repo cleanup — .gitignore, markdown conversion, review-app commit)
+**Last updated:** March 27, 2026
+**Changes:** Updated shell shortcuts to match current .zshrc (renamed tail-nyrr→nyrr-logs, restart-nyrr→nyrr-restart; added mmr-web, mmr-check, mmr-log, nyrr, nyrr-test; mmr-env is now a function); made _context.md timestamp mandatory with explicit date command

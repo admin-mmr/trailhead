@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-commit hook: run circular import detection when nyrr-viewer Python files change.
+# To skip (emergency only): git commit --no-verify
+#
+# Setup (one-time per clone):
+#   git config core.hooksPath .githooks
+
+set -e
+
+# Check if any staged files are in tools/nyrr-viewer/*.py
+STAGED_VIEWER=$(git diff --cached --name-only --diff-filter=ACMR | grep '^tools/nyrr-viewer/.*\.py$' || true)
+
+if [ -z "$STAGED_VIEWER" ]; then
+    exit 0  # no nyrr-viewer Python files staged — nothing to check
+fi
+
+echo "🔍 nyrr-viewer files changed — running import check..."
+
+# Run the import test from the nyrr-viewer directory
+cd "$(git rev-parse --show-toplevel)/tools/nyrr-viewer"
+
+if python3 test_imports.py; then
+    echo "✅ Import check passed."
+else
+    echo ""
+    echo "❌ Import check failed. Fix circular/broken imports before committing."
+    echo "   To bypass (emergency): git commit --no-verify"
+    exit 1
+fi

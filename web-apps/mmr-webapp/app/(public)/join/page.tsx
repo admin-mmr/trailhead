@@ -102,7 +102,7 @@ export default function JoinPage() {
       .catch(() => { /* not logged in — no-op */ })
   }, [])
 
-  const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'treasurer@mmrunners.org'
+  const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'runningmmr@gmail.com'
   const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? '@MMRunners'
   const currentPlan = PLANS[plan]
   const stepIndex = STEP_ORDER.indexOf(step)
@@ -135,6 +135,7 @@ export default function JoinPage() {
           amount: currentPlan.amount,
           paymentMethod: payMethod,
           ...info,
+          yearBorn: info.yearBorn ? Number(info.yearBorn) : undefined,
           ...payForm,
         }),
       })
@@ -316,6 +317,13 @@ export default function JoinPage() {
                       onChange={e => setInfo(prev => ({ ...prev, [f.key]: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
                     />
+                    {f.key === 'yearBorn' && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        {lang === 'zh'
+                          ? '用于通过大致年龄匹配 NYRR 跑者信息。'
+                          : 'Used to match your NYRR runner profile by approximate age.'}
+                      </p>
+                    )}
                   </div>
                 ))}
 
@@ -379,10 +387,11 @@ export default function JoinPage() {
               <div className="bg-gray-50 rounded-xl p-6 mb-6 text-center">
                 <div className="w-40 h-40 bg-white border-2 border-dashed border-gray-300 rounded-xl mx-auto flex items-center justify-center overflow-hidden">
                   <Image
-                    src={`/images/qr-${payMethod}.png`}
+                    src={`/images/mmr-${payMethod}.jpg`}
                     alt={`${payMethod} QR code`}
                     width={144}
                     height={144}
+                    unoptimized
                     className="object-contain"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                   />

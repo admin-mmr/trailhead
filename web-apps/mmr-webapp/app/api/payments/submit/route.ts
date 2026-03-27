@@ -20,7 +20,10 @@ const SubmitSchema = z.object({
   wechatId:       z.string().optional(),
   district:       z.string().optional(),
   gender:         z.string().optional(),
-  yearBorn:       z.number().int().optional(),
+  yearBorn:       z.preprocess(
+    (val) => (val === '' || val === undefined || val === null) ? undefined : Number(val),
+    z.number().int().optional(),
+  ),
   nyrrRunnerName: z.string().optional(),
 
   // Payment declaration

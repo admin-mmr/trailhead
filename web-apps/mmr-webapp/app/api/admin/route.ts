@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSession } from '@/lib/auth/session'
+import { requireActiveMember } from '@/lib/auth/session'
 import { isAdmin, listAdmins, addAdmin, removeAdmin, SUPER_ADMIN_EMAIL } from '@/lib/db/admins'
 import { sendEmail } from '@/lib/email/client'
 
@@ -9,15 +9,18 @@ import { sendEmail } from '@/lib/email/client'
  */
 export async function GET() {
   try {
-    const session = await requireSession()
+    const session = await requireActiveMember()
     if (!(await isAdmin(session.email))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     const admins = await listAdmins()
     return NextResponse.json({ ok: true, data: admins })
   } catch (err: any) {
-    if (err.message === 'Unauthorized') {
+    if (err.status === 401 || err.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (err.status === 403 || err.message === 'Active membership required') {
+      return NextResponse.json({ error: 'Active membership required' }, { status: 403 })
     }
     console.error('[api/admin] GET error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -32,7 +35,7 @@ export async function GET() {
  */
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireSession()
+    const session = await requireActiveMember()
     if (!(await isAdmin(session.email))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -73,8 +76,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, message: `${email} has been added as admin.` }, { status: 201 })
   } catch (err: any) {
-    if (err.message === 'Unauthorized') {
+    if (err.status === 401 || err.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (err.status === 403 || err.message === 'Active membership required') {
+      return NextResponse.json({ error: 'Active membership required' }, { status: 403 })
     }
     console.error('[api/admin] POST error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -89,7 +95,7 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    const session = await requireSession()
+    const session = await requireActiveMember()
     if (!(await isAdmin(session.email))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -131,8 +137,11 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ ok: true, message: `${email} has been removed from admins.` })
   } catch (err: any) {
-    if (err.message === 'Unauthorized') {
+    if (err.status === 401 || err.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (err.status === 403 || err.message === 'Active membership required') {
+      return NextResponse.json({ error: 'Active membership required' }, { status: 403 })
     }
     console.error('[api/admin] DELETE error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

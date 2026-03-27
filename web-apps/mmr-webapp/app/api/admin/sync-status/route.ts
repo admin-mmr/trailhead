@@ -12,15 +12,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession, requireActiveMember } from '@/lib/auth/session'
+import { requireActiveMember } from '@/lib/auth/session'
 import db from '@/lib/db/connection'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
-    // Auth: logged-in members only (admin UI not yet implemented)
-    const session = await getSession()
+    // Auth: active membership required (admin check at middleware level)
+    const session = await requireActiveMember()
     if (!session?.memberId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
