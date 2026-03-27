@@ -813,6 +813,23 @@ const EventDetail = ({ eventId, onBack }) => {
     setToast(`Matched to ${member.first_name} ${member.last_name} (${member.member_id})`);
   }, [eventId]);
 
+  const handleAutoMatch = useCallback(async () => {
+    setToast('Running auto-match…');
+    const res = await api(`/api/events/${eventId}/automatch`, { method: 'POST' });
+    if (res.ok) {
+      setToast(res.message || `Auto-matched ${res.matched} runner(s).`);
+      const p = new URLSearchParams();
+      if (filter.q) p.set('q', filter.q);
+      if (filter.team) p.set('team', filter.team);
+      if (filter.matched) p.set('matched', '1');
+      if (filter.unmatched) p.set('unmatched', '1');
+      api(`/api/events/${eventId}/runners?${p}`).then(r => r.ok && setRunners(r.data));
+      api(`/api/events/${eventId}`).then(r => r.ok && setEvent(r.data));
+    } else {
+      setToast(res.error || 'Auto-match failed');
+    }
+  }, [eventId, filter]);
+
   const handleUnmatch = useCallback(async (runner) => {
     // Optimistic update — rolls back on API error
     setRunners(prev => prev.map(r =>
@@ -937,8 +954,9 @@ const EventDetail = ({ eventId, onBack }) => {
           <input type="checkbox" checked={!!filter.matched} onChange={e => setFilter(f => ({ ...f, matched: e.target.checked ? '1' : '', unmatched: '' }))} /> Matched
         </label>
         <label style={{ fontSize: 13, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <input type="checkbox" checked={!!filter.unmatched} onChange={e => setFilter(f => ({ ...f, unmatched: e.target.checked ? '1' : '', matched: '' }))} /> Unmatched MMR
+          <input type="checkbox" checked={!!filter.unmatched} onChange={e => setFilter(f => ({ ...f, unmatched: e.target.checked ? '1' : '', matched: '' }))} /> Unmatched
         </label>
+        <button className="btn btn-sm btn-outline" onClick={handleAutoMatch} title="Re-run auto-match by NYRRRunnerName">Auto-match</button>
         <span style={{ color: 'var(--text2)', fontSize: 13, marginLeft: 'auto' }}>{filtered.length} runners</span>
         <div className="column-selector">
           <button className="btn btn-sm btn-outline" onClick={() => setShowColSelector(!showColSelector)}>Columns ▾</button>

@@ -329,9 +329,15 @@ def require_role(min_role: str):
             if DEV_BYPASS_AUTH:
                 return f(*args, **kwargs)
 
-            user_role = session.get('user', {}).get('role')
-            if not user_role:
+            user = session.get('user', {})
+            email = user.get('email')
+            if not email:
                 return json_response({'ok': False, 'error': 'Unauthorized'}, 403)
+
+            # Always re-query DB so stale session roles don't block legitimate admins
+            user_role = get_user_role(email) or 'none'
+            # Refresh session role in case it was out of date
+            session['user'] = {**user, 'role': user_role}
 
             # Role hierarchy: super_admin > admin > none
             role_order = {'super_admin': 2, 'admin': 1, 'none': 0}
@@ -994,8 +1000,7 @@ def api_event_runners(event_id):
     if matched_only:
         sql += " AND er.mmr_member_id IS NOT NULL"
     if unmatched_only:
-        sql += " AND er.mmr_member_id IS NULL AND er.team_code = %s"
-        params.append(TEAM_CODE)
+        sql += " AND er.mmr_member_id IS NULL"
     if search:
         sql += " AND (er.runner_name LIKE %s OR er.last_name LIKE %s)"
         params.extend([f'%{search}%', f'%{search}%'])
@@ -1003,6 +1008,59 @@ def api_event_runners(event_id):
     sql += " ORDER BY er.overall_place ASC, er.runner_name ASC"
     rows = query(sql, params)
     return json_response({'ok': True, 'data': rows, 'count': len(rows)})
+
+
+# ===================================================================
+# API: Re-run auto-match for a loaded event
+# ===================================================================
+
+@app.route('/api/events/<int:event_id>/automatch', methods=['POST'])
+@login_required
+@require_role('admin')
+def api_run_automatch(event_id):
+    """
+    Re-run Tier-1 auto-match (NYRRRunnerName) on an already-loaded event.
+    Safe to call on any event — only updates currently unmatched rows.
+    """
+    rows = query("SELECT id FROM nyrr_events WHERE id = %s", [event_id])
+    if not rows:
+        return json_response({'ok': False, 'error': 'Event not found'}, 404)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE nyrr_event_runners er
+            INNER JOIN members m
+                ON LOWER(TRIM(er.runner_name)) = LOWER(TRIM(m.NYRRRunnerName))
+            SET er.mmr_member_id = m.MemberID,
+                er.match_method = 'auto_name',
+                er.matched_by = 'Viewer',
+                er.matched_at = NOW()
+            WHERE er.mmr_member_id IS NULL
+              AND m.NYRRRunnerName IS NOT NULL
+              AND m.NYRRRunnerName != ''
+              AND er.nyrr_event_id = %s
+        """, (event_id,))
+        matched = cursor.rowcount
+
+        # Refresh matched count on the event
+        cursor.execute("""
+            UPDATE nyrr_events
+            SET mmr_matched_count = (
+                SELECT COUNT(*) FROM nyrr_event_runners
+                WHERE nyrr_event_id = %s AND mmr_member_id IS NOT NULL
+            )
+            WHERE id = %s
+        """, (event_id, event_id))
+
+        conn.commit()
+        cursor.close()
+        return json_response({'ok': True, 'matched': matched,
+                               'message': f'Auto-matched {matched} runner(s).'})
+    except Exception as e:
+        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
 
 
 # ===================================================================
