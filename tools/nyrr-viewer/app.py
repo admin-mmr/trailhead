@@ -1027,7 +1027,7 @@ def api_run_automatch(event_id):
         return json_response({'ok': False, 'error': 'Event not found'}, 404)
 
     try:
-        conn = get_db_connection()
+        conn = get_conn()
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -1264,38 +1264,44 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
     """
     Background worker: fetch runners from NYRR API (team or all) and upsert.
     If force_reload, delete existing runners first.
+
+    For large events (30K+ finishers), this:
+    - Closes the DB connection during the long API fetch phase to avoid timeouts
+    - Uses executemany with batching (500 rows) instead of row-by-row inserts
+    - Commits after each batch to avoid giant transactions
     """
+    BATCH_SIZE = 500
     conn = None
     try:
         client = NyrrApiClient()
-        conn = get_conn()
-        conn.autocommit = False
-        cursor = conn.cursor()
 
-        # Mark InProgress
+        # --- Phase 1: Mark InProgress (short-lived connection) ---
+        conn = get_conn()
+        cursor = conn.cursor()
         cursor.execute("""
             UPDATE nyrr_events
             SET processing_status = 'InProgress', processed_by = 'Viewer', processed_at = NOW()
             WHERE id = %s
         """, (event_id,))
-        conn.commit()
 
-        # Handle force_reload: delete existing runners
         deleted_count = 0
         if force_reload:
             cursor.execute("""
                 DELETE FROM nyrr_event_runners WHERE nyrr_event_id = %s
             """, (event_id,))
             deleted_count = cursor.rowcount
-            conn.commit()
-
             with _jobs_lock:
                 _jobs[event_code]['message'] = f'Re-syncing: deleted {deleted_count} existing rows, loading fresh...'
         else:
             with _jobs_lock:
                 _jobs[event_code]['message'] = f'Fetching runners from NYRR API (scope: {scope})...'
 
-        # Fetch runners
+        conn.commit()
+        cursor.close()
+        conn.close()
+        conn = None
+
+        # --- Phase 2: Fetch runners from NYRR API (no DB connection open) ---
         if scope == 'all':
             runners = client.get_event_finishers(event_code)
         else:
@@ -1304,34 +1310,13 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
         with _jobs_lock:
             _jobs[event_code]['message'] = f'Got {len(runners)} runners. Upserting...'
 
-        rows_written = 0
+        # Prepare row tuples, skipping blank runner_ids
+        row_tuples = []
         for runner in runners:
-            # Skip any entries where the NYRR API returned a blank runner_id (id=0);
-            # these can't be uniquely keyed and would collide on the duplicate-key constraint.
             if not runner.runner_id:
                 continue
             full_name = f"{runner.first_name} {runner.last_name}".strip()
-            cursor.execute("""
-                INSERT INTO nyrr_event_runners
-                    (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
-                     age, gender, state_province, bib_number, finish_time, pace,
-                     overall_place, gender_place, team_code, is_registered_only, scan_timestamp)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW())
-                ON DUPLICATE KEY UPDATE
-                    runner_name = VALUES(runner_name),
-                    first_name = VALUES(first_name),
-                    last_name = VALUES(last_name),
-                    age = VALUES(age),
-                    gender = VALUES(gender),
-                    state_province = VALUES(state_province),
-                    bib_number = VALUES(bib_number),
-                    finish_time = VALUES(finish_time),
-                    pace = VALUES(pace),
-                    overall_place = VALUES(overall_place),
-                    gender_place = VALUES(gender_place),
-                    team_code = VALUES(team_code),
-                    scan_timestamp = NOW()
-            """, (
+            row_tuples.append((
                 event_id,
                 str(runner.runner_id),
                 full_name,
@@ -1347,12 +1332,46 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
                 runner.gender_place,
                 runner.team_code or '',
             ))
-            rows_written += 1
 
-        with _jobs_lock:
-            _jobs[event_code]['rows_written'] = rows_written
+        # --- Phase 3: Batch upsert with fresh connection ---
+        conn = get_conn()
+        conn.autocommit = False
+        cursor = conn.cursor()
 
-        # Run Tier-1 auto-match (known NYRRRunnerName)
+        upsert_sql = """
+            INSERT INTO nyrr_event_runners
+                (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
+                 age, gender, state_province, bib_number, finish_time, pace,
+                 overall_place, gender_place, team_code, is_registered_only, scan_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW())
+            ON DUPLICATE KEY UPDATE
+                runner_name = VALUES(runner_name),
+                first_name = VALUES(first_name),
+                last_name = VALUES(last_name),
+                age = VALUES(age),
+                gender = VALUES(gender),
+                state_province = VALUES(state_province),
+                bib_number = VALUES(bib_number),
+                finish_time = VALUES(finish_time),
+                pace = VALUES(pace),
+                overall_place = VALUES(overall_place),
+                gender_place = VALUES(gender_place),
+                team_code = VALUES(team_code),
+                scan_timestamp = NOW()
+        """
+
+        rows_written = 0
+        for i in range(0, len(row_tuples), BATCH_SIZE):
+            batch = row_tuples[i : i + BATCH_SIZE]
+            cursor.executemany(upsert_sql, batch)
+            conn.commit()
+            rows_written += len(batch)
+
+            with _jobs_lock:
+                _jobs[event_code]['rows_written'] = rows_written
+                _jobs[event_code]['message'] = f'Upserted {rows_written}/{len(row_tuples)} runners...'
+
+        # --- Phase 4: Auto-match + finalize ---
         with _jobs_lock:
             _jobs[event_code]['message'] = 'Running auto-matcher (Tier 1)...'
 
@@ -1416,7 +1435,10 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
 
     except Exception as e:
         if conn:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             try:
                 cur2 = conn.cursor()
                 cur2.execute("""
@@ -1443,7 +1465,10 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
             }
     finally:
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # ===================================================================
