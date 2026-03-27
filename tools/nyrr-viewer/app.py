@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -234,6 +235,27 @@ def _init_viewer_admins_table():
 
 # Call on startup
 _init_viewer_admins_table()
+
+
+def _init_viewer_user_settings_table():
+    """Create viewer_user_settings table for per-user column visibility preferences."""
+    try:
+        execute("""
+            CREATE TABLE IF NOT EXISTS viewer_user_settings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                table_name VARCHAR(255) NOT NULL,
+                visible_columns JSON DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_user_table (email, table_name)
+            )
+        """)
+    except Exception as e:
+        print(f'Warning: Could not create viewer_user_settings table: {e}')
+
+
+_init_viewer_user_settings_table()
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +681,52 @@ def api_me():
 
 
 # ===================================================================
+# API: Version info
+# ===================================================================
+
+def _load_version_info() -> dict:
+    """
+    Load version info. Priority:
+    1. VERSION file (written by CI at deploy time)
+    2. Live git info (local dev)
+    3. Fallback unknown
+    """
+    version_file = os.path.join(os.path.dirname(__file__), 'VERSION')
+    if os.path.exists(version_file):
+        try:
+            with open(version_file) as f:
+                return json.loads(f.read().strip())
+        except Exception:
+            pass
+
+    # Fallback: try git directly (local dev)
+    try:
+        sha = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__),
+        ).decode().strip()
+        ts = subprocess.check_output(
+            ['git', 'log', '-1', '--format=%cI'],
+            stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__),
+        ).decode().strip()
+        return {'commit': sha, 'deployed_at': ts, 'source': 'git'}
+    except Exception:
+        pass
+
+    return {'commit': 'unknown', 'deployed_at': None}
+
+
+# Cache at startup so we don't re-read on every request
+_VERSION_INFO = _load_version_info()
+
+
+@app.route('/api/version')
+def api_version():
+    """Return app version (commit SHA + deploy timestamp). No auth required."""
+    return json_response({'ok': True, **_VERSION_INFO})
+
+
+# ===================================================================
 # API: Admin list management
 # ===================================================================
 
@@ -1030,6 +1098,7 @@ def api_run_automatch(event_id):
         conn = get_conn()
         cursor = conn.cursor()
 
+        # Tier 1: Match by NYRRRunnerName
         cursor.execute("""
             UPDATE nyrr_event_runners er
             INNER JOIN members m
@@ -1043,7 +1112,32 @@ def api_run_automatch(event_id):
               AND m.NYRRRunnerName != ''
               AND er.nyrr_event_id = %s
         """, (event_id,))
-        matched = cursor.rowcount
+        t1_matched = cursor.rowcount
+
+        # Tier 2: Match by first + last name when exactly one member matches
+        cursor.execute("""
+            UPDATE nyrr_event_runners er
+            INNER JOIN (
+                SELECT LOWER(TRIM(FirstName)) AS fn, LOWER(TRIM(LastName)) AS ln,
+                       MAX(MemberID) AS MemberID
+                FROM members
+                WHERE FirstName IS NOT NULL AND FirstName != ''
+                  AND LastName IS NOT NULL AND LastName != ''
+                GROUP BY LOWER(TRIM(FirstName)), LOWER(TRIM(LastName))
+                HAVING COUNT(*) = 1
+            ) uniq ON LOWER(TRIM(er.first_name)) = uniq.fn
+                  AND LOWER(TRIM(er.last_name)) = uniq.ln
+            SET er.mmr_member_id = uniq.MemberID,
+                er.match_method = 'auto_firstlast',
+                er.matched_by = 'Viewer',
+                er.matched_at = NOW()
+            WHERE er.mmr_member_id IS NULL
+              AND er.first_name IS NOT NULL AND er.first_name != ''
+              AND er.last_name IS NOT NULL AND er.last_name != ''
+              AND er.nyrr_event_id = %s
+        """, (event_id,))
+        t2_matched = cursor.rowcount
+        matched = t1_matched + t2_matched
 
         # Refresh matched count on the event
         cursor.execute("""
@@ -1057,8 +1151,13 @@ def api_run_automatch(event_id):
 
         conn.commit()
         cursor.close()
+
+        parts = []
+        if t1_matched: parts.append(f'{t1_matched} by NYRR name')
+        if t2_matched: parts.append(f'{t2_matched} by first/last name')
+        detail = f' ({", ".join(parts)})' if parts else ''
         return json_response({'ok': True, 'matched': matched,
-                               'message': f'Auto-matched {matched} runner(s).'})
+                               'message': f'Auto-matched {matched} runner(s){detail}.'})
     except Exception as e:
         return json_response({'ok': False, 'error': str(e)[:300]}, 500)
 
@@ -1164,6 +1263,20 @@ def api_table_data(table_name):
     """, [table_name])
     col_names = [c['COLUMN_NAME'] for c in cols]
 
+    # Build server-side column filters (WHERE clauses)
+    # Filters are passed as query params: filter[col_name]=value
+    where_clauses = []
+    where_params = []
+    for col in col_names:
+        fval = request.args.get(f'filter[{col}]', '').strip()
+        if fval:
+            where_clauses.append(f"CAST(`{col}` AS CHAR) LIKE %s")
+            where_params.append(f'%{fval}%')
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = " WHERE " + " AND ".join(where_clauses)
+
     # Validate sort column
     order_clause = ""
     if sort and sort in col_names:
@@ -1171,14 +1284,17 @@ def api_table_data(table_name):
     elif 'id' in col_names:
         order_clause = f" ORDER BY `id` DESC"
 
-    # Count
-    count_rows = query(f"SELECT COUNT(*) AS cnt FROM `{table_name}`")
+    # Count (with filters applied)
+    count_rows = query(
+        f"SELECT COUNT(*) AS cnt FROM `{table_name}`{where_sql}",
+        where_params,
+    )
     total = count_rows[0]['cnt'] if count_rows else 0
 
-    # Fetch page
+    # Fetch page (with filters applied)
     rows = query(
-        f"SELECT * FROM `{table_name}`{order_clause} LIMIT %s OFFSET %s",
-        [per_page, offset],
+        f"SELECT * FROM `{table_name}`{where_sql}{order_clause} LIMIT %s OFFSET %s",
+        where_params + [per_page, offset],
     )
 
     return json_response({
@@ -1190,9 +1306,63 @@ def api_table_data(table_name):
             'page': page,
             'per_page': per_page,
             'total': total,
-            'pages': (total + per_page - 1) // per_page,
+            'pages': max(1, (total + per_page - 1) // per_page),
         },
     })
+
+
+# ===================================================================
+# API: User settings (per-user column visibility)
+# ===================================================================
+
+@app.route('/api/user-settings/<table_name>', methods=['GET'])
+@login_required
+def api_get_user_settings(table_name):
+    """Get user's saved column visibility for a table."""
+    user = session.get('user', {})
+    email = user.get('email', '')
+    if not email:
+        return json_response({'ok': True, 'visible_columns': None})
+
+    try:
+        rows = query(
+            "SELECT visible_columns FROM viewer_user_settings WHERE email = %s AND table_name = %s",
+            [email, table_name],
+        )
+        if rows and rows[0]['visible_columns']:
+            cols = rows[0]['visible_columns']
+            # MySQL returns JSON as string or dict depending on connector
+            if isinstance(cols, str):
+                cols = json.loads(cols)
+            return json_response({'ok': True, 'visible_columns': cols})
+    except Exception as e:
+        print(f'Warning: Could not load user settings: {e}')
+
+    return json_response({'ok': True, 'visible_columns': None})
+
+
+@app.route('/api/user-settings/<table_name>', methods=['PUT'])
+@login_required
+def api_save_user_settings(table_name):
+    """Save user's column visibility for a table."""
+    user = session.get('user', {})
+    email = user.get('email', '')
+    if not email:
+        return json_response({'ok': False, 'error': 'Not authenticated'}, 401)
+
+    data = request.json or {}
+    visible_columns = data.get('visible_columns', [])
+
+    try:
+        execute(
+            """INSERT INTO viewer_user_settings (email, table_name, visible_columns)
+               VALUES (%s, %s, %s)
+               ON DUPLICATE KEY UPDATE visible_columns = VALUES(visible_columns), updated_at = NOW()""",
+            [email, table_name, json.dumps(visible_columns)],
+        )
+        return json_response({'ok': True})
+    except Exception as e:
+        return json_response({'ok': False, 'error': str(e)}, 500)
 
 
 # ===================================================================
@@ -1373,8 +1543,9 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
 
         # --- Phase 4: Auto-match + finalize ---
         with _jobs_lock:
-            _jobs[event_code]['message'] = 'Running auto-matcher (Tier 1)...'
+            _jobs[event_code]['message'] = 'Running auto-matcher (Tier 1: NYRR name)...'
 
+        # Tier 1: Match by NYRRRunnerName
         cursor.execute("""
             UPDATE nyrr_event_runners er
             INNER JOIN members m
@@ -1389,6 +1560,34 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
               AND er.nyrr_event_id = %s
         """, (event_id,))
         t1_matched = cursor.rowcount
+
+        with _jobs_lock:
+            _jobs[event_code]['message'] = f'Tier 1: {t1_matched} matched. Running Tier 2 (first/last name)...'
+
+        # Tier 2: Match by first + last name when exactly one member matches
+        cursor.execute("""
+            UPDATE nyrr_event_runners er
+            INNER JOIN (
+                SELECT LOWER(TRIM(FirstName)) AS fn, LOWER(TRIM(LastName)) AS ln,
+                       MAX(MemberID) AS MemberID
+                FROM members
+                WHERE FirstName IS NOT NULL AND FirstName != ''
+                  AND LastName IS NOT NULL AND LastName != ''
+                GROUP BY LOWER(TRIM(FirstName)), LOWER(TRIM(LastName))
+                HAVING COUNT(*) = 1
+            ) uniq ON LOWER(TRIM(er.first_name)) = uniq.fn
+                  AND LOWER(TRIM(er.last_name)) = uniq.ln
+            SET er.mmr_member_id = uniq.MemberID,
+                er.match_method = 'auto_firstlast',
+                er.matched_by = 'Viewer',
+                er.matched_at = NOW()
+            WHERE er.mmr_member_id IS NULL
+              AND er.first_name IS NOT NULL AND er.first_name != ''
+              AND er.last_name IS NOT NULL AND er.last_name != ''
+              AND er.nyrr_event_id = %s
+        """, (event_id,))
+        t2_matched = cursor.rowcount
+        t1_matched = t1_matched + t2_matched  # total for reporting
 
         # Update event status + counters
         cursor.execute("""

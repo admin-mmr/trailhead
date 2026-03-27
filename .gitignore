@@ -58,6 +58,9 @@ profiles/
 ~$*.xlsx
 ~$*.pptx
 
+# CI-generated version file (written at deploy time)
+tools/nyrr-viewer/VERSION
+
 # SQLite databases (runtime artifacts)
 *.db
 *.db-shm

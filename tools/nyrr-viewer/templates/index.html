@@ -1134,6 +1134,17 @@ const EventDetail = ({ eventId, onBack }) => {
 // ═══════════════════════════════════════════════════
 // Table browser view
 // ═══════════════════════════════════════════════════
+
+// Default hidden columns per table (unchecked by default for new users)
+const DEFAULT_HIDDEN_COLUMNS = {
+  members: [
+    'password_hash', 'google_sub', 'microsoft_sub', 'apple_sub',
+    'yahoo_sub', 'facebook_sub', 'CreatedAt', 'UpdatedAt',
+    'WebApp', 'PaymentCheck', 'Info', 'LastUpdated',
+    'MembershipFeePaid', 'PaymentDate', 'PaymentTransaction', 'Notes',
+  ],
+};
+
 const TableBrowser = () => {
   const [tables, setTables] = useState([]);
   const [selectedTable, setSelectedTable] = useState('');
@@ -1141,34 +1152,81 @@ const TableBrowser = () => {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState({ col: '', order: 'asc' });
   const [loading, setLoading] = useState(false);
-  const [colFilters, setColFilters] = useState({});
+  const [colFilters, setColFilters] = useState({});       // local input state
+  const [activeFilters, setActiveFilters] = useState({});  // sent to server
   const [showColSelector, setShowColSelector] = useState(false);
   const [visibleCols, setVisibleCols] = useState({});
   const [toast, setToast] = useState('');
+  const [savingCols, setSavingCols] = useState(false);
+  const filterTimerRef = React.useRef(null);
 
   useEffect(() => {
     api('/api/tables').then(r => r.ok && setTables(r.data));
   }, []);
 
+  // Debounce filter changes — send to server after 400ms of inactivity
+  useEffect(() => {
+    if (filterTimerRef.current) clearTimeout(filterTimerRef.current);
+    filterTimerRef.current = setTimeout(() => {
+      // Only trigger fetch if filters actually changed
+      const newActive = {};
+      Object.entries(colFilters).forEach(([k, v]) => { if (v && v.trim()) newActive[k] = v.trim(); });
+      const oldKeys = Object.keys(activeFilters).sort().join(',');
+      const newKeys = Object.keys(newActive).sort().join(',');
+      const oldVals = Object.values(activeFilters).sort().join(',');
+      const newVals = Object.values(newActive).sort().join(',');
+      if (oldKeys !== newKeys || oldVals !== newVals) {
+        setActiveFilters(newActive);
+        setPage(1);
+      }
+    }, 400);
+    return () => { if (filterTimerRef.current) clearTimeout(filterTimerRef.current); };
+  }, [colFilters]);
+
+  // Fetch data when table, page, sort, or active filters change
   useEffect(() => {
     if (!selectedTable) return;
     setLoading(true);
     const p = new URLSearchParams({ page, per_page: 50 });
     if (sort.col) { p.set('sort', sort.col); p.set('order', sort.order); }
+    // Append server-side column filters
+    Object.entries(activeFilters).forEach(([col, val]) => {
+      if (val) p.set(`filter[${col}]`, val);
+    });
     api(`/api/tables/${selectedTable}?${p}`).then(r => {
-      if (r.ok) {
-        setTableData(r);
-        // Initialize visible columns
-        const saved = JSON.parse(localStorage.getItem(`mmr_table_cols_${selectedTable}`) || '{}');
-        const allCols = r.columns ? r.columns.reduce((acc, c) => ({ ...acc, [c.COLUMN_NAME]: true }), {}) : {};
-        setVisibleCols(saved.length > 0 ? (r.columns || []).reduce((acc, c) => ({ ...acc, [c.COLUMN_NAME]: saved.includes(c.COLUMN_NAME) }), {}) : allCols);
-      }
+      if (r.ok) setTableData(r);
       setLoading(false);
     });
-    // Load column filters
-    const saved = localStorage.getItem(`mmr_table_colfilters_${selectedTable}`);
-    if (saved) setColFilters(JSON.parse(saved));
-  }, [selectedTable, page, sort]);
+  }, [selectedTable, page, sort, activeFilters]);
+
+  // Load column visibility when table changes (from DB, then localStorage fallback, then defaults)
+  useEffect(() => {
+    if (!selectedTable || !tableData) return;
+    const allColNames = (tableData.columns || []).map(c => c.COLUMN_NAME);
+
+    // Try loading from server (per-user settings)
+    api(`/api/user-settings/${selectedTable}`).then(r => {
+      if (r.ok && r.visible_columns && r.visible_columns.length > 0) {
+        // User has saved settings on the server
+        const savedSet = new Set(r.visible_columns);
+        setVisibleCols(allColNames.reduce((acc, col) => ({ ...acc, [col]: savedSet.has(col) }), {}));
+      } else {
+        // Fallback: check localStorage (migrate old settings)
+        const lsSaved = JSON.parse(localStorage.getItem(`mmr_table_cols_${selectedTable}`) || '[]');
+        if (lsSaved.length > 0) {
+          const savedSet = new Set(lsSaved);
+          setVisibleCols(allColNames.reduce((acc, col) => ({ ...acc, [col]: savedSet.has(col) }), {}));
+        } else {
+          // Apply defaults: hide columns in DEFAULT_HIDDEN_COLUMNS
+          const hidden = new Set((DEFAULT_HIDDEN_COLUMNS[selectedTable] || []).map(c => c.toLowerCase()));
+          setVisibleCols(allColNames.reduce((acc, col) => ({
+            ...acc,
+            [col]: !hidden.has(col.toLowerCase()),
+          }), {}));
+        }
+      }
+    });
+  }, [selectedTable, tableData?.table]);
 
   const toggleSort = (col) => {
     setSort(prev => ({
@@ -1178,31 +1236,41 @@ const TableBrowser = () => {
     setPage(1);
   };
 
-  useEffect(() => {
-    if (selectedTable) {
-      localStorage.setItem(`mmr_table_cols_${selectedTable}`, JSON.stringify(
-        Object.keys(visibleCols).filter(k => visibleCols[k])
-      ));
-    }
-  }, [visibleCols, selectedTable]);
+  // Save column visibility to server (and localStorage as backup)
+  const saveColumnVisibility = (newVisibleCols) => {
+    if (!selectedTable) return;
+    const visibleList = Object.keys(newVisibleCols).filter(k => newVisibleCols[k]);
+    // Save to localStorage as fallback
+    localStorage.setItem(`mmr_table_cols_${selectedTable}`, JSON.stringify(visibleList));
+    // Save to server (debounced via the toggle itself)
+    setSavingCols(true);
+    api(`/api/user-settings/${selectedTable}`, {
+      method: 'PUT',
+      body: JSON.stringify({ visible_columns: visibleList }),
+    }).finally(() => setSavingCols(false));
+  };
 
-  useEffect(() => {
-    if (selectedTable) {
-      localStorage.setItem(`mmr_table_colfilters_${selectedTable}`, JSON.stringify(colFilters));
-    }
-  }, [colFilters, selectedTable]);
+  const toggleColumn = (colName, checked) => {
+    const updated = { ...visibleCols, [colName]: checked };
+    setVisibleCols(updated);
+    saveColumnVisibility(updated);
+  };
 
-  const filtered = (tableData?.data || []).filter(row => {
-    if (Object.keys(colFilters).length === 0) return true;
-    return Object.entries(colFilters).every(([col, val]) => {
-      if (!val || !val.trim()) return true;
-      const cellVal = String(row[col] || '').toLowerCase();
-      return cellVal.includes(val.toLowerCase());
-    });
-  });
+  const selectAllCols = () => {
+    const all = (tableData?.columns || []).reduce((acc, c) => ({ ...acc, [c.COLUMN_NAME]: true }), {});
+    setVisibleCols(all);
+    saveColumnVisibility(all);
+  };
+
+  const selectNoneCols = () => {
+    const none = (tableData?.columns || []).reduce((acc, c) => ({ ...acc, [c.COLUMN_NAME]: false }), {});
+    setVisibleCols(none);
+    saveColumnVisibility(none);
+  };
 
   const handleExportCSV = () => {
-    if (filtered.length === 0) {
+    const data = tableData?.data || [];
+    if (data.length === 0) {
       setToast('No data to export');
       return;
     }
@@ -1210,7 +1278,7 @@ const TableBrowser = () => {
       .map(c => c.COLUMN_NAME)
       .filter(c => visibleCols[c]);
     const header = visibleColNames.join(',');
-    const rows = filtered.map(row =>
+    const rows = data.map(row =>
       visibleColNames.map(col => {
         const val = row[col];
         return `"${String(val === null ? '' : val).replace(/"/g, '""')}"`;
@@ -1225,6 +1293,8 @@ const TableBrowser = () => {
     setToast('CSV exported');
   };
 
+  const hasActiveFilters = Object.values(activeFilters).some(v => v);
+
   return (
     <div>
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
@@ -1233,7 +1303,7 @@ const TableBrowser = () => {
             key={t.TABLE_NAME}
             className="stat-card"
             style={{ cursor: 'pointer', border: selectedTable === t.TABLE_NAME ? '1px solid var(--accent)' : '1px solid transparent' }}
-            onClick={() => { setSelectedTable(t.TABLE_NAME); setPage(1); setSort({ col: '', order: 'asc' }); setColFilters({}); }}
+            onClick={() => { setSelectedTable(t.TABLE_NAME); setPage(1); setSort({ col: '', order: 'asc' }); setColFilters({}); setActiveFilters({}); }}
           >
             <div className="label" style={{ wordBreak: 'break-all' }}>{t.TABLE_NAME}</div>
             <div className="value" style={{ fontSize: 20 }}>{t.TABLE_ROWS ?? '?'}</div>
@@ -1248,15 +1318,21 @@ const TableBrowser = () => {
             <h3>{selectedTable}</h3>
             <div className="panel-header-actions">
               <div className="column-selector">
-                <button className="btn btn-sm btn-outline" onClick={() => setShowColSelector(!showColSelector)}>Columns ▾</button>
+                <button className="btn btn-sm btn-outline" onClick={() => setShowColSelector(!showColSelector)}>
+                  Columns ▾ {savingCols && '⏳'}
+                </button>
                 {showColSelector && (
                   <div className="column-selector-panel">
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
+                      <button className="btn btn-sm btn-outline" onClick={selectAllCols} style={{ fontSize: 11 }}>All</button>
+                      <button className="btn btn-sm btn-outline" onClick={selectNoneCols} style={{ fontSize: 11 }}>None</button>
+                    </div>
                     {(tableData.columns || []).map(c => (
                       <div key={c.COLUMN_NAME} className="column-check">
                         <input
                           type="checkbox"
                           checked={visibleCols[c.COLUMN_NAME] || false}
-                          onChange={e => setVisibleCols(prev => ({ ...prev, [c.COLUMN_NAME]: e.target.checked }))}
+                          onChange={e => toggleColumn(c.COLUMN_NAME, e.target.checked)}
                         />
                         <span>{c.COLUMN_NAME}</span>
                       </div>
@@ -1265,7 +1341,14 @@ const TableBrowser = () => {
                 )}
               </div>
               <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>Export CSV</button>
-              <span style={{ color: 'var(--text2)', fontSize: 13 }}>{tableData.pagination?.total} rows total</span>
+              <span style={{ color: 'var(--text2)', fontSize: 13 }}>
+                {tableData.pagination?.total} {hasActiveFilters ? 'matching' : 'rows total'}
+              </span>
+              {hasActiveFilters && (
+                <button className="btn btn-sm btn-outline" onClick={() => { setColFilters({}); setActiveFilters({}); }} style={{ color: 'var(--accent)' }}>
+                  Clear filters
+                </button>
+              )}
             </div>
           </div>
           <div className="table-wrap">
@@ -1301,9 +1384,9 @@ const TableBrowser = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
+                  {(tableData.data || []).length === 0 ? (
                     <tr><td colSpan={(tableData.columns || []).filter(c => visibleCols[c.COLUMN_NAME]).length} className="empty">No data</td></tr>
-                  ) : filtered.map((row, i) => (
+                  ) : (tableData.data || []).map((row, i) => (
                     <tr key={i}>
                       {(tableData.columns || [])
                         .filter(c => visibleCols[c.COLUMN_NAME])
@@ -1483,8 +1566,12 @@ const App = () => {
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userEmail, setUserEmail] = useState('');
+  const [versionInfo, setVersionInfo] = useState(null);
 
   useEffect(() => {
+    api('/api/version').then(r => {
+      if (r.ok) setVersionInfo(r);
+    });
     api('/api/me').then(r => {
       if (r.ok && r.data) {
         setUserRole(r.data.role);
@@ -1538,7 +1625,15 @@ const App = () => {
       <div className="header">
         <div>
           <h1>NYRR Data Viewer</h1>
-          <div className="subtitle">Misty Mountain Runners — Event Management & Data Browser</div>
+          <div className="subtitle">
+            Misty Mountain Runners — Event Management & Data Browser
+            {versionInfo && versionInfo.commit && (
+              <span style={{ marginLeft: 12, opacity: 0.5, fontSize: 11 }}
+                    title={versionInfo.deployed_at ? `Deployed: ${new Date(versionInfo.deployed_at).toLocaleString()}` : ''}>
+                v{versionInfo.commit}{versionInfo.deployed_at ? ` · ${new Date(versionInfo.deployed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+              </span>
+            )}
+          </div>
         </div>
         <div className="header-right">
           {userEmail && (
