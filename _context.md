@@ -48,3 +48,23 @@ Last commit: 3acc92a
   - Solution: Close DB connection during API fetch, batch inserts (500 rows/batch) with commit after each batch
 - Bug 3: "Admins" tab only visible to super_admin; regular admins couldn't see the admin list. Changed tab visibility to show for both admin & super_admin roles. API already enforces permissions (only super_admin can add/delete).
 - Commit: 3acc92a
+
+### 2026-03-27 — NYRR Viewer: server-side filters, default columns, per-user settings
+- **Fixed:** Data Browser column filters now run server-side (SQL WHERE LIKE) — filtering works across all pages, not just the displayed page
+- **Added:** Default hidden columns for `members` table (password_hash, *_sub, timestamps, payment fields, Notes, etc.)
+- **Added:** `viewer_user_settings` MySQL table + REST API (`GET/PUT /api/user-settings/<table>`) for per-user column visibility, persisted in DB
+- **Frontend:** Debounced filter input (400ms), "Clear filters" button, "All/None" column selector buttons, total count reflects filtered results
+- Files changed: `tools/nyrr-viewer/app.py`, `tools/nyrr-viewer/templates/index.html`
+
+### 2026-03-27 — NYRR Viewer: Tier-2 auto-match by first+last name
+- **Fixed:** Auto-match only used `NYRRRunnerName` field (Tier 1). Added Tier 2: matches by `first_name`+`last_name` against `members.FirstName`+`members.LastName` when exactly one member has that name combo (avoids ambiguous matches).
+- New match_method value: `auto_firstlast` (vs existing `auto_name` for Tier 1)
+- Applied to both: load flow (Phase 4) and re-run auto-match endpoint (`/api/events/<id>/automatch`)
+- File changed: `tools/nyrr-viewer/app.py`
+
+### 2026-03-27 — NYRR Viewer: auto version display
+- **Added:** Version display in header showing git commit SHA + deploy date (e.g. `v3acc92a · Mar 27`)
+- CI workflow writes `VERSION` JSON file at deploy time; `app.py` reads it (or falls back to live `git` for local dev)
+- `/api/version` endpoint (no auth required) returns commit + deployed_at
+- `VERSION` added to `.gitignore` (generated artifact)
+- Files changed: `app.py`, `index.html`, `deploy-nyrr-viewer.yml`, `.gitignore`
