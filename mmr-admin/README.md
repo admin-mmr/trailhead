@@ -1,22 +1,22 @@
-# NYRR Data Viewer
+# MMR Admin
 
-Interactive ops tool for reviewing NYRR events, browsing MySQL data,
-and triggering result loads from the NYRR API.
+Admin ops dashboard for MMR — NYRR event management, member admin,
+data sync, and MySQL data browsing. (Formerly nyrr-viewer.)
 
 ## Quick start
 
 ```bash
 # 1. Load DB credentials
-source basecamp/load-env.sh
+source load-env.sh
 
 # 2. Install dependencies
-pip install -r tools/nyrr-viewer/requirements.txt
+pip install -r mmr-admin/requirements.txt
 
 # 3. Enable pre-commit hooks (one-time per clone)
 git config core.hooksPath .githooks
 
 # 4. Run
-python tools/nyrr-viewer/app.py
+python mmr-admin/app.py
 
 # 5. Open http://localhost:5050
 ```
@@ -37,7 +37,7 @@ run, its status, and any errors.
 ## Project structure
 
 ```
-nyrr-viewer/
+mmr-admin/
 ├── app.py              ← Entry point — Flask app setup + blueprint registration
 ├── db.py               ← Database connection, query/execute helpers, table init
 ├── auth.py             ← OAuth (Google/Microsoft), password login, role decorators

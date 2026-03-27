@@ -14,7 +14,7 @@ Copy this into your Claude Project settings for optimal context efficiency.
 - `photo-manager/` — Python pipeline (process_photos.py, bib_analyzer.py, review-app Flask)
 - `basecamp/` — Google Sheets sync, member data, event reconciliation
 - `db/` — MySQL schemas, query library
-- `tools/nyrr-viewer/` — Python Flask app for NYRR race data visualization
+- `mmr-admin/` — Python Flask app for admin ops, NYRR data management, member admin
 
 **Tech Stack:**
 - Frontend: Next.js 14+, TypeScript, Tailwind CSS, NextAuth
@@ -116,7 +116,7 @@ You are a code architect and implementation guide for this monorepo. You:
 The repo uses shared hooks in `.githooks/` (enabled via `git config core.hooksPath .githooks`).
 
 **Current hooks:**
-- `pre-commit` — runs `test_imports.py` when `tools/nyrr-viewer/*.py` files are staged
+- `pre-commit` — runs `test_imports.py` when `mmr-admin/*.py` files are staged
 
 **Expanding the hook — when adding new services or tests:**
 - When you add a new testable subsystem (Python package, Next.js app, etc.), update `.githooks/pre-commit` to include a check for that subsystem
@@ -218,11 +218,11 @@ When fixing build errors, use this protocol instead of declaring done without ve
 | `photo-manager/src/` | Core pipeline logic |
 | `basecamp/` | Google Sheets sync scripts |
 | `load-env.sh` | Loads secrets from macOS Keychain into shell env (repo root) |
-| `tools/nyrr-viewer/app.py` | Flask app entry point (thin orchestrator) |
-| `tools/nyrr-viewer/db.py` | DB connection, query helpers, table init |
-| `tools/nyrr-viewer/auth.py` | OAuth, login, role decorators |
-| `tools/nyrr-viewer/api_*.py` | Route modules (events, runners, sync, data, admin) |
-| `tools/nyrr-viewer/test_imports.py` | Circular import detection (runs in pre-commit hook) |
+| `mmr-admin/app.py` | Flask app entry point (thin orchestrator) |
+| `mmr-admin/db.py` | DB connection, query helpers, table init |
+| `mmr-admin/auth.py` | OAuth, login, role decorators |
+| `mmr-admin/api_*.py` | Route modules (events, runners, sync, data, admin) |
+| `mmr-admin/test_imports.py` | Circular import detection (runs in pre-commit hook) |
 
 ---
 
@@ -260,10 +260,10 @@ The user has these aliases and functions configured. **Use them** instead of typ
 | `mmr-web` | alias | cd to webapp + `npm run dev` | Local Next.js dev server |
 | `mmr-check` | alias | cd to webapp + `npx tsc --noEmit` | Quick TypeScript type check |
 | `mmr-log` | alias | cd to repo + `git log --oneline -15` | View recent commits |
-| `nyrr` | alias | cd to nyrr-viewer + `python3 app.py` | Run nyrr-viewer locally |
-| `nyrr-test` | alias | cd to nyrr-viewer + `python3 test_imports.py` | Run import checks |
-| `nyrr-logs` | alias | `az webapp log tail --name mmr-nyrr-viewer ...` | Stream deployed nyrr-viewer logs |
-| `nyrr-restart` | alias | `az webapp restart --name mmr-nyrr-viewer ...` | Restart deployed nyrr-viewer |
+| `nyrr` | alias | cd to mmr-admin + `python3 app.py` | Run mmr-admin locally |
+| `nyrr-test` | alias | cd to mmr-admin + `python3 test_imports.py` | Run import checks |
+| `nyrr-logs` | alias | `az webapp log tail --name mmr-nyrr-viewer ...` | Stream deployed mmr-admin logs |
+| `nyrr-restart` | alias | `az webapp restart --name mmr-nyrr-viewer ...` | Restart deployed mmr-admin |
 | `nyrr-status` | alias | `az webapp show ... --query state` | Check deployment state |
 
 **Rules:**

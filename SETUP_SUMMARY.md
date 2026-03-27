@@ -38,7 +38,7 @@ db/
 ### 2. NYRR Data Viewer Web App ✅
 
 A standalone Flask + React app for interactive MySQL data browsing and
-NYRR API integration. Located at `tools/nyrr-viewer/`.
+NYRR API integration. Located at `mmr-admin/`.
 
 #### Features
 
@@ -72,10 +72,10 @@ NYRR API integration. Located at `tools/nyrr-viewer/`.
 source basecamp/load-env.sh
 
 # 2. Install dependencies
-pip install -r tools/nyrr-viewer/requirements.txt
+pip install -r mmr-admin/requirements.txt
 
 # 3. Run
-python tools/nyrr-viewer/app.py
+python mmr-admin/app.py
 
 # 4. Open http://localhost:5050
 ```
@@ -117,7 +117,7 @@ The app listens on port 5050 (override with `PORT` env var).
    ```bash
    # Production: use gunicorn
    pip install gunicorn
-   gunicorn -w 4 -b 0.0.0.0:8080 app:app --chdir tools/nyrr-viewer
+   gunicorn -w 4 -b 0.0.0.0:8080 app:app --chdir mmr-admin
    ```
 
 4. **Add auth** — The viewer currently has no login. Add simple auth if needed:
@@ -138,9 +138,9 @@ The app listens on port 5050 (override with `PORT` env var).
 | File | Lines | Purpose |
 |------|-------|---------|
 | `db/README.md` | 35 | Database organization guide |
-| `tools/nyrr-viewer/app.py` | 613 | Flask API backend |
-| `tools/nyrr-viewer/templates/index.html` | 600+ | React UI (single HTML file) |
-| `tools/nyrr-viewer/requirements.txt` | 3 | Python dependencies |
-| `tools/nyrr-viewer/README.md` | 40 | NYRR Viewer user guide |
+| `mmr-admin/app.py` | 613 | Flask API backend |
+| `mmr-admin/templates/index.html` | 600+ | React UI (single HTML file) |
+| `mmr-admin/requirements.txt` | 3 | Python dependencies |
+| `mmr-admin/README.md` | 40 | NYRR Viewer user guide |
 
 All files are in `/mnt/trailhead/` (your workspace folder).

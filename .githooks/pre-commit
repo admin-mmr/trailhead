@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-commit hook: run circular import detection when nyrr-viewer Python files change.
+# Pre-commit hook: run circular import detection when mmr-admin Python files change.
 # To skip (emergency only): git commit --no-verify
 #
 # Setup (one-time per clone):
@@ -7,17 +7,17 @@
 
 set -e
 
-# Check if any staged files are in tools/nyrr-viewer/*.py
-STAGED_VIEWER=$(git diff --cached --name-only --diff-filter=ACMR | grep '^tools/nyrr-viewer/.*\.py$' || true)
+# Check if any staged files are in mmr-admin/*.py
+STAGED_ADMIN=$(git diff --cached --name-only --diff-filter=ACMR | grep '^mmr-admin/.*\.py$' || true)
 
-if [ -z "$STAGED_VIEWER" ]; then
-    exit 0  # no nyrr-viewer Python files staged — nothing to check
+if [ -z "$STAGED_ADMIN" ]; then
+    exit 0  # no mmr-admin Python files staged — nothing to check
 fi
 
-echo "🔍 nyrr-viewer files changed — running import check..."
+echo "🔍 mmr-admin files changed — running import check..."
 
-# Run the import test from the nyrr-viewer directory
-cd "$(git rev-parse --show-toplevel)/tools/nyrr-viewer"
+# Run the import test from the mmr-admin directory
+cd "$(git rev-parse --show-toplevel)/mmr-admin"
 
 if python3 test_imports.py; then
     echo "✅ Import check passed."

@@ -1,5 +1,5 @@
 """
-Circular-import detection for nyrr-viewer.
+Circular-import detection for mmr-admin.
 
 Run:  python3 -m pytest test_imports.py -v
   or: python3 test_imports.py

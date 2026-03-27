@@ -1,7 +1,7 @@
 """
-Shared helpers for nyrr-viewer: JSON encoding, response builder, error handlers.
+Shared helpers for mmr-admin: JSON encoding, response builder, error handlers.
 
-This is a leaf module — it does NOT import from any other nyrr-viewer module.
+This is a leaf module — it does NOT import from any other mmr-admin module.
 """
 
 from __future__ import annotations

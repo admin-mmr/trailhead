@@ -1,7 +1,7 @@
 """
-Database connection helpers and table initialization for nyrr-viewer.
+Database connection helpers and table initialization for mmr-admin.
 
-This is a leaf module — it does NOT import from any other nyrr-viewer module.
+This is a leaf module — it does NOT import from any other mmr-admin module.
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 """
-NYRR data load (sync) worker for nyrr-viewer.
+NYRR data load (sync) worker for mmr-admin.
 
 Blueprint: sync_bp
 Routes: /api/load/<event_id> (POST), /api/load/<event_code>/status

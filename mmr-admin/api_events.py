@@ -1,5 +1,5 @@
 """
-NYRR Events routes for nyrr-viewer.
+NYRR Events routes for mmr-admin.
 
 Blueprint: events_bp
 Routes: /api/events, /api/events/<id>, /api/events/<id>/runners,

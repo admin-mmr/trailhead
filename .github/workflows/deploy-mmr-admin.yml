@@ -1,13 +1,13 @@
-name: Deploy NYRR Viewer to Azure App Service
+name: Deploy MMR Admin to Azure App Service
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'tools/nyrr-viewer/**'
+      - 'mmr-admin/**'
       - 'basecamp/python/**'
-      - '.github/workflows/deploy-nyrr-viewer.yml'
+      - '.github/workflows/deploy-mmr-admin.yml'
 
 jobs:
   deploy:
@@ -18,11 +18,11 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Copy shared nyrr_api module into deploy package
-        run: cp basecamp/python/nyrr_api.py tools/nyrr-viewer/nyrr_api.py
+        run: cp basecamp/python/nyrr_api.py mmr-admin/nyrr_api.py
 
       - name: Write VERSION file with git SHA and deploy timestamp
         run: |
-          echo "{\"commit\": \"$(git rev-parse --short HEAD)\", \"deployed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > tools/nyrr-viewer/VERSION
+          echo "{\"commit\": \"$(git rev-parse --short HEAD)\", \"deployed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > mmr-admin/VERSION
 
       - name: Azure Login
         uses: azure/login@v1
@@ -33,4 +33,4 @@ jobs:
         uses: azure/webapps-deploy@v2
         with:
           app-name: mmr-nyrr-viewer
-          package: tools/nyrr-viewer
+          package: mmr-admin

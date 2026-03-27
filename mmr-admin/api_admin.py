@@ -1,5 +1,5 @@
 """
-Admin CRUD routes for nyrr-viewer.
+Admin CRUD routes for mmr-admin.
 
 Blueprint: admin_bp
 Routes: /api/admins (GET, POST, DELETE)

@@ -1,5 +1,5 @@
 """
-Runner match/unmatch & member search routes for nyrr-viewer.
+Runner match/unmatch & member search routes for mmr-admin.
 
 Blueprint: runners_bp
 Routes: /api/members/search, /api/runners/<id>/match, /api/runner/<id>/history

@@ -49,6 +49,24 @@ Last commit: 3acc92a
 - Bug 3: "Admins" tab only visible to super_admin; regular admins couldn't see the admin list. Changed tab visibility to show for both admin & super_admin roles. API already enforces permissions (only super_admin can add/delete).
 - Commit: 3acc92a
 
+### 2026-03-27 16:37 ET — refactor: moved nyrr-viewer to mmr-admin, restructured as admin ops hub
+- **Architectural decision:** Consolidate admin functions (NYRR data mgmt, member admin, reporting) into nyrr-viewer. Rename to `mmr-admin` to reflect broader scope. Move from `tools/nyrr-viewer/` to `mmr-admin/` at repo root (first-class service).
+- **Changes:**
+  - Moved `tools/nyrr-viewer/` → `mmr-admin/` (directory rename)
+  - Removed empty `tools/` directory
+  - Updated `.githooks/pre-commit` — paths now reference `mmr-admin/` instead of `tools/nyrr-viewer/`
+  - Updated `.github/workflows/` — created `deploy-mmr-admin.yml`, deleted `deploy-nyrr-viewer.yml`
+  - Updated `.gitignore`, `CLAUDE.md`, `MONOREPO.md`, `SETUP_SUMMARY.md`, `DEVELOPMENT.md` — all references updated
+  - Updated all Python docstrings and README
+  - Azure resource remains named `mmr-nyrr-viewer` (can be renamed later; custom domain hides internal name)
+- **Next: Payment approval system**
+  - Need to implement payment approval/rejection in mmr-admin
+  - Will add `api_payments.py` module with endpoints for approving/rejecting payment proofs
+  - Approval updates `members.Status` → `active`, `members.Expiration` → 1yr, etc.
+  - Will add Payments UI tab in admin dashboard
+- **Files changed:** 13 modified, 1 new workflow, 1 deleted workflow, directory structure refactored
+- **Status:** Milestone complete, ready for testing. Next thread: implement payment approval system.
+
 ### 2026-03-27 01:00 ET — NYRR Viewer: server-side filters, default columns, per-user settings
 - **Fixed:** Data Browser column filters now run server-side (SQL WHERE LIKE) — filtering works across all pages, not just the displayed page
 - **Added:** Default hidden columns for `members` table (password_hash, *_sub, timestamps, payment fields, Notes, etc.)

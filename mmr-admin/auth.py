@@ -1,5 +1,5 @@
 """
-Authentication & authorization for nyrr-viewer.
+Authentication & authorization for mmr-admin.
 
 Blueprint: auth_bp
 Routes: /login, /logout, /auth/start/*, /auth/callback/*, /auth/password, /api/me

@@ -59,7 +59,7 @@ profiles/
 ~$*.pptx
 
 # CI-generated version file (written at deploy time)
-tools/nyrr-viewer/VERSION
+mmr-admin/VERSION
 
 # SQLite databases (runtime artifacts)
 *.db
