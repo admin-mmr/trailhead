@@ -91,10 +91,10 @@ Secrets and credentials are stored in the **macOS Keychain**, not in `.env.local
 
 **Loading env from Keychain at runtime:**
 - Use `security find-generic-password -s <service> -w` to retrieve individual secrets
-- For scripts that need multiple vars, source a shell helper (e.g. `source scripts/load_env.sh`) that populates the environment from Keychain entries before running
+- For scripts that need multiple vars, source a shell helper (e.g. `source load-env.sh`) that populates the environment from Keychain entries before running
 - When running Python scripts that need secrets, always load env first:
   ```
-  source scripts/load_env.sh && python3 photo-manager/src/process_photos.py
+  source load-env.sh && python3 photo-manager/src/process_photos.py
   ```
 - Never hardcode secrets, never write them to disk, never commit them
 - If a `.env.local` file is present, treat it as supplementary/override only — Keychain is the source of truth
@@ -167,7 +167,7 @@ When fixing build errors, use this protocol instead of declaring done without ve
 | `web-apps/mmr-webapp/lib/` | Auth, API clients, utilities |
 | `photo-manager/src/` | Core pipeline logic |
 | `basecamp/` | Google Sheets sync scripts |
-| `scripts/load_env.sh` | Loads secrets from macOS Keychain into shell env |
+| `load-env.sh` | Loads secrets from macOS Keychain into shell env (repo root) |
 
 ---
 
