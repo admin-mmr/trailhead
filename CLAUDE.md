@@ -205,33 +205,34 @@ All resources live in the **`mmr-resources`** resource group under **Azure subsc
 
 **Race condition to avoid:** When committing code changes and updating `_context.md` in the same session, git lock files can get stuck if two commits run close together, leaving `_context.md` staged but uncommitted.
 
-**Proper workflow:**
+**Proper workflow — commit everything in ONE commit:**
 
-1. **Code commit first** (all functional changes):
+Instead of splitting code and `_context.md` into separate commits (which causes lock file races), **include `_context.md` in the same commit as the code changes:**
+
+```bash
+# Edit _context.md using Edit tool BEFORE committing
+git add <code-files> _context.md && git commit -m "feat: description of changes"
+```
+
+This eliminates the race condition entirely. Only use a separate `_context.md` commit if the code commit was already made without it.
+
+**If a separate context commit IS needed:**
+
+```bash
+# Wait 5 seconds for lock files to clear, then commit
+sleep 5 && git add _context.md && git commit -m "docs: update context log..."
+```
+
+**If lock files appear (`.git/HEAD.lock` or `.git/index.lock`):**
+
+1. First, request file deletion permission via `allow_cowork_file_delete` tool
+2. Then remove the lock files:
    ```bash
-   git add <files> && git commit -m "fix: ..."
+   rm .git/HEAD.lock .git/index.lock 2>/dev/null
    ```
-   - Use single chained command (`&&`)
-   - Wait for commit to complete before proceeding
+3. Retry the commit
 
-2. **Edit + commit `_context.md` immediately after**:
-   ```bash
-   # Edit the file using Edit tool
-   git add _context.md && git commit -m "docs: update context log..."
-   ```
-   - Single chained command
-   - Wait 2–3 seconds between code commit and context commit
-
-3. **If lock files appear:**
-   - **Do NOT** attempt multiple git commands rapidly
-   - **Do NOT** try to remove `.git/*.lock` files manually (permission denied in sandboxed VM)
-   - Let the user manually resolve in VS Code:
-     1. Reload the repo in VS Code
-     2. Unstage `_context.md` in Source Control panel
-     3. Re-stage and commit with proper message
-     4. Then push
-
-**Why:** Git creates temporary lock files during commit; the VM sandbox prevents force-removal. Spacing out commits and using single chained commands gives git time to clean up between operations.
+**Why:** Git creates temporary lock files during commit. In the Cowork sandbox, these sometimes persist after a commit completes. The `allow_cowork_file_delete` tool grants permission to remove them.
 
 ---
 
