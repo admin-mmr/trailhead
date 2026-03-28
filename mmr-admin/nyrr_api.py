@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://rmsprodapi.nyrr.org/api/v2"
 
-DEFAULT_PAGE_SIZE = 500         # NYRR ignores pageSize and returns up to 500 items/page
+DEFAULT_PAGE_SIZE = 51          # NYRR API rejects pageSize > 51; returns ~51 items/page
 DEFAULT_SLEEP_SECONDS = 2.0     # polite delay between paginated requests
 REQUEST_TIMEOUT = 30            # seconds
 

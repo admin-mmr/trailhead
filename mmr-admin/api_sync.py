@@ -252,7 +252,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
         total_backfilled = 0
         for idx, team in enumerate(teams):
-            team_code = team['teamCode']
+            team_code = team.team_code
             team_start = time.time()
 
             logger.debug(f"  └─ Team {idx+1}/{len(teams)}: fetching runners for team_code={team_code}...")

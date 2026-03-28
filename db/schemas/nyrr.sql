@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS nyrr_event_runners (
     pace                VARCHAR(20)     NULL,
     overall_place       INT             NULL,
     gender_place        INT             NULL,
+    age_grade_time      VARCHAR(20)     NULL,               -- age-graded finish time from NYRR API
+    age_grade_place     INT             NULL,               -- age-graded place ranking
+    age_grade_percent   DECIMAL(5,2)    NULL,               -- age-graded percentage (0-100)
     team_code           VARCHAR(20)     NULL,               -- NULL for non-MMR in finishers-only load
     sync_source         ENUM('finishers', 'mmr_team', 'both') NULL,
     is_registered_only  TINYINT(1)      NOT NULL DEFAULT 0,
