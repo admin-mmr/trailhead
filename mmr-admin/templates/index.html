@@ -663,11 +663,11 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
     if (r.ok) { loadEvents(); loadStats(); }
   };
 
-  const triggerLoad = async (eventId, eventCode, scope = 'team', forceReload = false) => {
+  const triggerLoad = async (eventId, eventCode, forceReload = false) => {
     setLoadingIds(prev => ({ ...prev, [eventId]: true }));
     const r = await api(`/api/load/${eventId}`, {
       method: 'POST',
-      body: JSON.stringify({ scope, force_reload: forceReload }),
+      body: JSON.stringify({ force_reload: forceReload }),
     });
     if (r.ok) {
       setToast(`Loading started for ${eventCode}...`);
@@ -809,13 +809,10 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
                               <label className="dropdown-check">
                                 <input type="checkbox" checked={isForce}
                                   onChange={e => setForceFlags(f => ({ ...f, [forceKey]: e.target.checked }))} />
-                                Delete existing first
+                                Delete existing first (reload from scratch)
                               </label>
-                              <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, 'team', isForce); setOpenDropdown(null); }}>
-                                MMR team only
-                              </div>
-                              <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, 'all', isForce); setOpenDropdown(null); }}>
-                                All runners
+                              <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, isForce); setOpenDropdown(null); }}>
+                                ✅ Sync all runners + teams
                               </div>
                               <div className="dropdown-item" style={{ color: 'var(--danger, #e55)' }} onClick={() => { setOpenDropdown(null); clearRunners(ev.id, ev.event_code); }}>
                                 🗑 Clear all runners

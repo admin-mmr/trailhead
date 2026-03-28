@@ -1,5 +1,9 @@
 """
 NYRR data load (sync) worker for mmr-admin.
+Optimal three-step workflow:
+  1. runners/finishers-filter → Load all runners (all race data)
+  2. teams/search            → Enumerate all teams in event
+  3. teams/teamRunners (×584)→ Backfill team_code by bib
 
 Blueprint: sync_bp
 Routes: /api/load/<event_id> (POST), /api/load/<event_code>/status
@@ -20,8 +24,6 @@ from nyrr_api import NyrrApiClient
 
 sync_bp = Blueprint('sync', __name__)
 
-TEAM_CODE = 'MMR'
-
 # In-flight jobs (event_code -> status dict)
 _jobs: Dict[str, Dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
@@ -31,9 +33,12 @@ _jobs_lock = threading.Lock()
 @login_required
 def api_load_event(event_id):
     """
-    Trigger loading runner results from the NYRR API for a specific event.
-    Accepts scope ('team' or 'all') and force_reload flags.
-    Runs in a background thread so the UI isn't blocked.
+    Trigger three-step sync:
+      Step 1: Load all finishers (runners/finishers-filter)
+      Step 2: Enumerate teams (teams/search)
+      Step 3: Backfill team_code (teams/teamRunners × each team)
+
+    Runs in background thread.
     """
     rows = query("SELECT * FROM nyrr_events WHERE id = %s", [event_id])
     if not rows:
@@ -41,336 +46,234 @@ def api_load_event(event_id):
 
     event = rows[0]
     event_code = event['event_code']
+    force_reload = request.json.get('force_reload', False)
 
-    data = request.json or {}
-    scope = data.get('scope', 'team')
-    force_reload = data.get('force_reload', False)
-
-    if scope not in ('team', 'all'):
-        return json_response({'ok': False, 'error': 'Invalid scope'}, 400)
-
+    # Initialize job status
     with _jobs_lock:
-        if event_code in _jobs and _jobs[event_code].get('status') == 'running':
-            return json_response({
-                'ok': False,
-                'error': f'Already loading {event_code}',
-            }, 409)
         _jobs[event_code] = {
             'status': 'running',
-            'started_at': datetime.utcnow().isoformat(),
+            'message': 'Starting three-step sync...',
+            'step': 'init',
             'rows_written': 0,
-            'scope': scope,
-            'message': 'Starting...',
+            'teams_processed': 0,
+            'started_at': datetime.utcnow().isoformat(),
         }
 
+    # Start background worker
     thread = threading.Thread(
-        target=_load_event_background,
-        args=(event_id, event_code, scope, force_reload),
-        daemon=True,
+        target=_sync_worker,
+        args=(event_id, event_code, force_reload),
+        daemon=True
     )
     thread.start()
 
-    return json_response({
-        'ok': True,
-        'message': f'Loading started for {event_code} (scope: {scope})',
-        'event_code': event_code,
-    })
+    return json_response({'ok': True, 'event_code': event_code, 'status': 'started'})
 
 
 @sync_bp.route('/api/load/<event_code>/status')
 @login_required
-def api_load_status(event_code):
-    """Check status of a background load job."""
+def api_sync_status(event_code):
+    """Get current sync job status."""
     with _jobs_lock:
-        job = _jobs.get(event_code)
-    if not job:
-        return json_response({'ok': True, 'status': 'idle'})
-    return json_response({'ok': True, **job})
+        job = _jobs.get(event_code, {
+            'status': 'not_found',
+            'message': 'No sync job for this event'
+        })
+    return json_response(job)
 
 
-def _load_event_background(event_id: int, event_code: str, scope: str = 'team', force_reload: bool = False):
+def _sync_worker(event_id: int, event_code: str, force_reload: bool):
     """
-    Background worker: fetch runners from NYRR API (team or all) and upsert.
-    If force_reload, delete existing runners first.
+    Background worker: three-step sync.
 
-    For large events (30K+ finishers), this:
-    - Closes the DB connection during the long API fetch phase to avoid timeouts
-    - Uses executemany with batching (500 rows) instead of row-by-row inserts
-    - Commits after each batch to avoid giant transactions
+    Step 1: runners/finishers-filter (paginated, all runners)
+    Step 2: teams/search (enumerate teams)
+    Step 3: teams/teamRunners (backfill team_code by bib for each team)
     """
-    BATCH_SIZE = 500
+    client = NyrrApiClient()
     conn = None
+
     try:
-        client = NyrrApiClient()
+        # --- Step 1: Load all finishers ---
+        with _jobs_lock:
+            _jobs[event_code]['step'] = 'step1_finishers'
+            _jobs[event_code]['message'] = 'Step 1: Fetching all finishers from NYRR API...'
 
-        # --- Phase 1: Mark InProgress (short-lived connection) ---
-        conn = get_conn()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE nyrr_events
-            SET processing_status = 'InProgress', processed_by = 'Viewer', processed_at = NOW()
-            WHERE id = %s
-        """, (event_id,))
-
-        deleted_count = 0
-        if force_reload:
-            cursor.execute("""
-                DELETE FROM nyrr_event_runners WHERE nyrr_event_id = %s
-            """, (event_id,))
-            deleted_count = cursor.rowcount
-            with _jobs_lock:
-                _jobs[event_code]['message'] = f'Re-syncing: deleted {deleted_count} existing rows, loading fresh...'
-        else:
-            with _jobs_lock:
-                _jobs[event_code]['message'] = f'Fetching runners from NYRR API (scope: {scope})...'
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-        conn = None
-
-        # --- Phase 2: Fetch runners from NYRR API (no DB connection open) ---
         def _fetch_progress(fetched, total):
             with _jobs_lock:
                 if total:
-                    _jobs[event_code]['message'] = f'Fetching from NYRR API: {fetched}/{total} runners...'
+                    _jobs[event_code]['message'] = f'Step 1: Fetched {fetched}/{total} finishers...'
                 else:
-                    _jobs[event_code]['message'] = f'Fetching from NYRR API: {fetched} runners so far...'
+                    _jobs[event_code]['message'] = f'Step 1: Fetched {fetched} finishers...'
 
-        if scope == 'all':
-            runners = client.get_event_finishers(event_code, progress_cb=_fetch_progress)
-        else:
-            runners = client.get_team_runners(event_code, TEAM_CODE)
+        runners = client.get_event_finishers(event_code, progress_cb=_fetch_progress)
 
         with _jobs_lock:
-            _jobs[event_code]['message'] = f'Got {len(runners)} runners. Upserting...'
+            _jobs[event_code]['message'] = f'Step 1 complete: Got {len(runners)} runners. Upserting...'
 
-        # Dedup key is bib_number (unique per event). Skip runners with no bib.
-        #
-        # Two API sources, each provides different fields:
-        #   scope='all'  → runners/finishers-filter: has canonical nyrr_runner_id, no teamCode
-        #   scope='mmr'  → teams/teamRunners:        has teamCode='MMR', runner_id may differ
-        #
-        # Upsert strategy:
-        #   - 'finishers': always set nyrr_runner_id; leave team_code alone on conflict
-        #   - 'mmr_team':  always set team_code='MMR'; leave nyrr_runner_id alone on conflict
-        #   - sync_source advances: NULL→source, or existing→'both'
-        is_finishers = (scope == 'all')
-        this_source = 'finishers' if is_finishers else 'mmr_team'
-
-        row_tuples = []
-        for runner in runners:
-            if not runner.bib:
-                continue
-            full_name = f"{runner.first_name} {runner.last_name}".strip()
-            team = 'MMR' if not is_finishers else (runner.team_code or '')
-            row_tuples.append((
-                event_id,
-                str(runner.runner_id) if runner.runner_id else None,
-                full_name,
-                runner.first_name,
-                runner.last_name,
-                runner.age,
-                runner.gender,
-                getattr(runner, 'city', '') or '',
-                runner.state_province,
-                runner.bib,
-                runner.overall_time,
-                runner.pace,
-                runner.overall_place,
-                runner.gender_place,
-                team,
-                this_source,
-            ))
-
-        # --- Phase 3: Batch upsert with fresh connection ---
+        # --- Phase 1b: Upsert runners ---
         conn = get_conn()
         conn.autocommit = False
         cursor = conn.cursor()
 
-        if is_finishers:
-            # finishers-filter: write canonical runner_id + race data; don't clobber team_code
-            upsert_sql = """
-                INSERT INTO nyrr_event_runners
-                    (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
-                     age, gender, city, state_province, bib_number, finish_time, pace,
-                     overall_place, gender_place, team_code, sync_source,
-                     is_registered_only, scan_timestamp)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW())
-                ON DUPLICATE KEY UPDATE
-                    nyrr_runner_id  = VALUES(nyrr_runner_id),
-                    runner_name     = VALUES(runner_name),
-                    first_name      = VALUES(first_name),
-                    last_name       = VALUES(last_name),
-                    age             = VALUES(age),
-                    gender          = VALUES(gender),
-                    city            = VALUES(city),
-                    state_province  = VALUES(state_province),
-                    finish_time     = VALUES(finish_time),
-                    pace            = VALUES(pace),
-                    overall_place   = VALUES(overall_place),
-                    gender_place    = VALUES(gender_place),
-                    sync_source     = IF(sync_source = 'mmr_team', 'both', VALUES(sync_source)),
-                    scan_timestamp  = NOW()
-            """
-        else:
-            # teams/teamRunners: write team_code='MMR'; don't clobber canonical runner_id
-            upsert_sql = """
-                INSERT INTO nyrr_event_runners
-                    (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
-                     age, gender, city, state_province, bib_number, finish_time, pace,
-                     overall_place, gender_place, team_code, sync_source,
-                     is_registered_only, scan_timestamp)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW())
-                ON DUPLICATE KEY UPDATE
-                    runner_name     = VALUES(runner_name),
-                    first_name      = VALUES(first_name),
-                    last_name       = VALUES(last_name),
-                    age             = VALUES(age),
-                    gender          = VALUES(gender),
-                    city            = VALUES(city),
-                    state_province  = VALUES(state_province),
-                    finish_time     = VALUES(finish_time),
-                    pace            = VALUES(pace),
-                    overall_place   = VALUES(overall_place),
-                    gender_place    = VALUES(gender_place),
-                    team_code       = 'MMR',
-                    sync_source     = IF(sync_source = 'finishers', 'both', VALUES(sync_source)),
-                    scan_timestamp  = NOW()
-            """
+        # Delete if force_reload requested
+        if force_reload:
+            cursor.execute("DELETE FROM nyrr_event_runners WHERE nyrr_event_id = %s", (event_id,))
+            conn.commit()
 
+        upsert_sql = """
+            INSERT INTO nyrr_event_runners
+              (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
+               age, gender, city, state_province, bib_number,
+               finish_time, pace, overall_place, gender_place,
+               age_grade_time, age_grade_place, age_grade_percent,
+               scan_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE
+              runner_name = VALUES(runner_name),
+              first_name = VALUES(first_name),
+              last_name = VALUES(last_name),
+              age = VALUES(age),
+              gender = VALUES(gender),
+              city = VALUES(city),
+              state_province = VALUES(state_province),
+              finish_time = VALUES(finish_time),
+              pace = VALUES(pace),
+              overall_place = VALUES(overall_place),
+              gender_place = VALUES(gender_place),
+              age_grade_time = VALUES(age_grade_time),
+              age_grade_place = VALUES(age_grade_place),
+              age_grade_percent = VALUES(age_grade_percent),
+              scan_timestamp = NOW()
+        """
+
+        BATCH_SIZE = 500
         rows_written = 0
-        for i in range(0, len(row_tuples), BATCH_SIZE):
-            batch = row_tuples[i : i + BATCH_SIZE]
-            cursor.executemany(upsert_sql, batch)
+        for i in range(0, len(runners), BATCH_SIZE):
+            batch = runners[i : i + BATCH_SIZE]
+            row_tuples = []
+            for runner in batch:
+                full_name = f"{runner.first_name} {runner.last_name}".strip()
+                row_tuples.append((
+                    event_id,
+                    str(runner.runner_id),
+                    full_name,
+                    runner.first_name,
+                    runner.last_name,
+                    runner.age,
+                    runner.gender,
+                    getattr(runner, 'city', '') or '',
+                    runner.state_province,
+                    runner.bib,
+                    runner.overall_time,
+                    runner.pace,
+                    runner.overall_place,
+                    runner.gender_place,
+                    getattr(runner, 'age_grade_time', '') or '',
+                    getattr(runner, 'age_grade_place', None),
+                    getattr(runner, 'age_grade_percent', None),
+                ))
+
+            cursor.executemany(upsert_sql, row_tuples)
             conn.commit()
             rows_written += len(batch)
 
             with _jobs_lock:
                 _jobs[event_code]['rows_written'] = rows_written
-                _jobs[event_code]['message'] = f'Upserted {rows_written}/{len(row_tuples)} runners...'
+                _jobs[event_code]['message'] = f'Step 1: Upserted {rows_written}/{len(runners)} finishers...'
 
-        # --- Phase 4: Auto-match + finalize ---
+        cursor.close()
+        conn.close()
+        conn = None
+
+        # --- Step 2: Enumerate all teams ---
         with _jobs_lock:
-            _jobs[event_code]['message'] = 'Running auto-matcher (Tier 1: NYRR name)...'
+            _jobs[event_code]['step'] = 'step2_teams'
+            _jobs[event_code]['message'] = 'Step 2: Fetching team list...'
 
-        # Tier 1: Match by NYRRRunnerName
-        cursor.execute("""
-            UPDATE nyrr_event_runners er
-            INNER JOIN members m
-                ON LOWER(TRIM(er.runner_name)) = LOWER(TRIM(m.NYRRRunnerName))
-            SET er.mmr_member_id = m.MemberID,
-                er.match_method = 'auto_name',
-                er.matched_by = 'Viewer',
-                er.matched_at = NOW()
-            WHERE er.mmr_member_id IS NULL
-              AND m.NYRRRunnerName IS NOT NULL
-              AND m.NYRRRunnerName != ''
-              AND er.nyrr_event_id = %s
-        """, (event_id,))
-        t1_matched = cursor.rowcount
+        teams = client.search_teams(event_code)
 
         with _jobs_lock:
-            _jobs[event_code]['message'] = f'Tier 1: {t1_matched} matched. Running Tier 2 (first/last name)...'
+            _jobs[event_code]['message'] = f'Step 2 complete: Found {len(teams)} teams. Backfilling team_code...'
 
-        # Tier 2: Match by first + last name when exactly one member matches
-        cursor.execute("""
-            UPDATE nyrr_event_runners er
-            INNER JOIN (
-                SELECT LOWER(TRIM(FirstName)) AS fn, LOWER(TRIM(LastName)) AS ln,
-                       MAX(MemberID) AS MemberID
-                FROM members
-                WHERE FirstName IS NOT NULL AND FirstName != ''
-                  AND LastName IS NOT NULL AND LastName != ''
-                GROUP BY LOWER(TRIM(FirstName)), LOWER(TRIM(LastName))
-                HAVING COUNT(*) = 1
-            ) uniq ON LOWER(TRIM(er.first_name)) = uniq.fn
-                  AND LOWER(TRIM(er.last_name)) = uniq.ln
-            SET er.mmr_member_id = uniq.MemberID,
-                er.match_method = 'auto_firstlast',
-                er.matched_by = 'Viewer',
-                er.matched_at = NOW()
-            WHERE er.mmr_member_id IS NULL
-              AND er.first_name IS NOT NULL AND er.first_name != ''
-              AND er.last_name IS NOT NULL AND er.last_name != ''
-              AND er.nyrr_event_id = %s
-        """, (event_id,))
-        t2_matched = cursor.rowcount
-        total_matched = t1_matched + t2_matched
+        # --- Step 3: Backfill team_code for each team ---
+        with _jobs_lock:
+            _jobs[event_code]['step'] = 'step3_backfill'
 
-        # Update event status + counters
-        cursor.execute("""
+        conn = get_conn()
+        cursor = conn.cursor()
+
+        for idx, team in enumerate(teams):
+            team_code = team['teamCode']
+            team_runners = client.get_team_runners(event_code, team_code)
+
+            for runner in team_runners:
+                cursor.execute(
+                    """
+                    UPDATE nyrr_event_runners
+                    SET team_code = %s
+                    WHERE nyrr_event_id = %s AND bib_number = %s
+                    """,
+                    (team_code, event_id, runner.bib)
+                )
+
+            conn.commit()
+
+            with _jobs_lock:
+                _jobs[event_code]['teams_processed'] = idx + 1
+                _jobs[event_code]['message'] = f'Step 3: Backfilled {idx + 1}/{len(teams)} teams...'
+
+        # --- Finalize ---
+        cursor.execute(
+            """
             UPDATE nyrr_events
-            SET processing_status = 'Completed',
-                result_count = (
-                    SELECT COUNT(*) FROM nyrr_event_runners WHERE nyrr_event_id = %s
-                ),
-                mmr_runner_count = (
-                    SELECT COUNT(*) FROM nyrr_event_runners
-                    WHERE nyrr_event_id = %s AND team_code = %s
-                ),
-                mmr_matched_count = (
-                    SELECT COUNT(*) FROM nyrr_event_runners
-                    WHERE nyrr_event_id = %s AND mmr_member_id IS NOT NULL
-                ),
-                processed_at = NOW()
+            SET processing_status = 'Completed', processed_at = NOW(), processed_by = 'Viewer',
+                result_count = (SELECT COUNT(*) FROM nyrr_event_runners WHERE nyrr_event_id = %s)
             WHERE id = %s
-        """, (event_id, event_id, TEAM_CODE, event_id, event_id))
-
-        # Log
-        cursor.execute("""
-            INSERT INTO nyrr_processing_log
-                (nyrr_event_id, triggered_by, run_status, rows_written)
-            VALUES (%s, 'Viewer', 'Success', %s)
-        """, (event_id, rows_written))
-
+            """,
+            (event_id, event_id)
+        )
         conn.commit()
         cursor.close()
-
-        msg = f'Done! {rows_written} runners loaded, {total_matched} auto-matched.'
-        if force_reload:
-            msg = f'Re-synced: deleted {deleted_count} rows, loaded {rows_written} runners, {total_matched} auto-matched.'
+        conn.close()
+        conn = None
 
         with _jobs_lock:
-            _jobs[event_code] = {
-                'status': 'done',
-                'rows_written': rows_written,
-                'scope': scope,
-                'auto_matched': total_matched,
-                'message': msg,
-                'finished_at': datetime.utcnow().isoformat(),
-            }
+            _jobs[event_code]['status'] = 'done'
+            _jobs[event_code]['message'] = f'✅ Sync complete: {rows_written} runners, {len(teams)} teams backfilled'
+            _jobs[event_code]['finished_at'] = datetime.utcnow().isoformat()
 
     except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            try:
-                cur2 = conn.cursor()
-                cur2.execute("""
-                    UPDATE nyrr_events
-                    SET processing_status = 'Error', notes = %s
-                    WHERE id = %s
-                """, (str(e)[:500], event_id))
-                cur2.execute("""
-                    INSERT INTO nyrr_processing_log
-                        (nyrr_event_id, triggered_by, run_status, rows_written, error_details)
-                    VALUES (%s, 'Viewer', 'Failed', 0, %s)
-                """, (event_id, str(e)[:2000]))
-                conn.commit()
-                cur2.close()
-            except Exception:
-                pass
+        import traceback
+        logger.error(f"Sync failed for {event_code}: {e}\n{traceback.format_exc()}")
 
         with _jobs_lock:
-            _jobs[event_code] = {
-                'status': 'error',
-                'scope': scope,
-                'message': str(e),
-                'finished_at': datetime.utcnow().isoformat(),
-            }
+            _jobs[event_code]['status'] = 'error'
+            _jobs[event_code]['message'] = str(e)[:500]
+            _jobs[event_code]['finished_at'] = datetime.utcnow().isoformat()
+
+        # Update event status to error
+        try:
+            conn2 = get_conn()
+            cur2 = conn2.cursor()
+            cur2.execute(
+                "UPDATE nyrr_events SET processing_status = 'Error', notes = %s WHERE id = %s",
+                (str(e)[:500], event_id)
+            )
+            cur2.execute(
+                """
+                INSERT INTO nyrr_processing_log
+                  (nyrr_event_id, triggered_by, run_status, rows_written, error_details)
+                VALUES (%s, 'Viewer', 'Failed', 0, %s)
+                """,
+                (event_id, str(e)[:2000])
+            )
+            conn2.commit()
+            cur2.close()
+            conn2.close()
+        except Exception:
+            pass
+
     finally:
         if conn:
             try:
@@ -382,17 +285,14 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
 @sync_bp.route('/api/events/<int:event_id>/runners', methods=['DELETE'])
 @login_required
 def api_delete_event_runners(event_id):
-    """
-    Delete all runners for a given event so it can be reloaded from scratch.
-    Also resets the event processing_status to 'Pending'.
-    """
+    """Delete all runners for an event so it can be reloaded from scratch."""
     rows = query("SELECT event_code FROM nyrr_events WHERE id = %s", [event_id])
     if not rows:
         return json_response({'ok': False, 'error': 'Event not found'}, 404)
 
     event_code = rows[0]['event_code']
 
-    # Abort if a sync job is currently running for this event
+    # Check if sync is running
     with _jobs_lock:
         job = _jobs.get(event_code, {})
         if job.get('status') == 'running':

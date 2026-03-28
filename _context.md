@@ -286,3 +286,15 @@ git add -A && git commit -m "feat: NYRR schema rebuild - fix runner ID dedup"
 ```
 
 Ready to deploy! 🚀
+
+### 2026-03-28 17:57 ET — NYRR Viewer: Final Simplified Design (Three-Step Sync)
+
+**Key Discovery**: runnerId NOT stable across events; use three-step API workflow instead.
+
+- **Changed**: `db/migrations/0011_rebuild_nyrr_event_runners.sql` — simplified schema (removed `sync_source` ENUM, added `age_grade_*` columns from API). `mmr-admin/api_sync.py` — complete rewrite for three-step workflow: (1) finishers-filter paginate all runners, (2) teams/search enumerate all teams, (3) teams/teamRunners backfill team_code by bib. Single upsert path, clean backfill logic. `templates/index.html` — UI simplified: removed "MMR only"/"All" toggle, now just "Sync all runners + teams" button.
+
+- **Why Three-Step**: Step 1 loads race data (2 min), Step 2 is fast metadata, Step 3 (584 API calls for H2026, not 30K) backfills team_code by bib in ~20 min. Total 22 min vs 4 min (old), but much simpler & no complex upsert logic.
+
+- **Status**: Ready to test. Run migration 0011, deploy new api_sync.py + UI changes. Test H2026 (30K runners, 584 teams).
+
+- **Next**: Delete api_sync_old.py, run migration, test sync.
