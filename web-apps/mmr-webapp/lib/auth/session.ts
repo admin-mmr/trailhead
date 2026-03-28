@@ -67,5 +67,13 @@ export function setSessionCookie(token: string) {
 }
 
 export function clearSessionCookie() {
-  return { name: COOKIE, value: '', maxAge: 0, path: '/' }
+  return {
+    name: COOKIE,
+    value: '',
+    maxAge: 0,
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+  }
 }

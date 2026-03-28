@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { Menu, X, Shield, Heart } from 'lucide-react'
+import { Menu, X, Heart } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import { clsx } from 'clsx'
 import type { SessionUser } from '@/types'
@@ -51,10 +51,8 @@ function StatusBadge({ status, lang }: { status: string; lang: string }) {
 
 export default function Navbar({
   session,
-  isAdmin = false,
 }: {
   session?: SessionUser | null
-  isAdmin?: boolean
 }) {
   const { lang, setLang, T } = useLang()
   const pathname = usePathname()
@@ -162,22 +160,6 @@ export default function Navbar({
                 )
               })}
 
-            {/* Admin link (desktop) */}
-            {isAdmin && (
-              <Link
-                href="/admin"
-                className={clsx(
-                  'flex items-center gap-1 text-sm font-medium transition-colors',
-                  pathname.startsWith('/admin')
-                    ? 'text-brand-gold'
-                    : 'text-white/80 hover:text-brand-gold-light'
-                )}
-              >
-                <Shield className="h-3.5 w-3.5" />
-                Admin
-              </Link>
-            )}
-
             {/* Logout (desktop) */}
             {isLoggedIn && (
               <Link
@@ -270,20 +252,9 @@ export default function Navbar({
             })}
 
           {isLoggedIn ? (
-            <>
-              {isAdmin && (
-                <Link
-                  href="/admin"
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-2 text-sm font-medium text-brand-gold"
-                >
-                  <Shield className="h-3.5 w-3.5" /> Admin
-                </Link>
-              )}
-              <Link href="/api/auth/logout" className="text-sm text-white/50">
-                {T('nav.logout')}
-              </Link>
-            </>
+            <Link href="/api/auth/logout" className="text-sm text-white/50">
+              {T('nav.logout')}
+            </Link>
           ) : (
             <Link
               href="/login"

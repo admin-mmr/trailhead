@@ -8,21 +8,36 @@
 // membership, so the middleware picks up the new 'active' status
 // without requiring the member to log out and back in.
 //
+// If the custom mmr_session JWT has expired but the user still
+// has a valid NextAuth session (separate cookie), we fall back
+// to the NextAuth session to identify the member — avoiding a
+// chicken-and-egg lockout on the inactive page.
+//
 // Returns: { status: MemberStatus }
 // ============================================================
 
 import { NextRequest, NextResponse }           from 'next/server'
 import { getSession, createSession, setSessionCookie } from '@/lib/auth/session'
 import { findMemberByEmail }                   from '@/lib/db/members'
+import { auth }                                from '@/auth'
 
 export async function POST(_req: NextRequest): Promise<NextResponse> {
-  const session = await getSession()
+  // Try the custom mmr_session JWT first (fast path)
+  let session = await getSession()
+
+  // Fallback: if mmr_session expired but NextAuth session is still alive,
+  // use the NextAuth email to identify the member and re-issue a fresh JWT.
   if (!session) {
-    return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
+    const nextAuthSession = await auth()
+    if (!nextAuthSession?.user?.email) {
+      return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
+    }
+    // Synthesise a minimal session from NextAuth so the lookup below works
+    session = { email: nextAuthSession.user.email } as any
   }
 
   try {
-    const member = await findMemberByEmail(session.email)
+    const member = await findMemberByEmail(session!.email)
     if (!member) {
       return NextResponse.json({ error: 'Member not found.' }, { status: 404 })
     }
