@@ -53,6 +53,11 @@ function InactiveContent() {
       // Silently refresh session to catch admin activations
       try {
         const res = await fetch('/api/auth/refresh-session', { method: 'POST' })
+        if (!cancelled && res.status === 401) {
+          // No session at all — send to login rather than showing a confusing error
+          router.replace(`/login?from=${encodeURIComponent(from)}`)
+          return
+        }
         if (!cancelled && res.ok) {
           const data = await res.json()
           if (data.status === 'active') {
@@ -75,6 +80,10 @@ function InactiveContent() {
     setError(null)
     try {
       const res = await fetch('/api/auth/refresh-session', { method: 'POST' })
+      if (res.status === 401) {
+        router.replace(`/login?from=${encodeURIComponent(from)}`)
+        return
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         setError(data.error ?? 'Could not refresh your session. Please try again.')

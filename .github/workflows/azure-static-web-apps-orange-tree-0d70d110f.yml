@@ -25,6 +25,7 @@ jobs:
         env:
           NEXTAUTH_URL: https://orange-tree-0d70d110f.4.azurestaticapps.net
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
           MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}

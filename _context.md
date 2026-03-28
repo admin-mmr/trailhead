@@ -166,3 +166,8 @@ Last commit: 3acc92a
 - **mmr-admin/templates/index.html** — "Auto-Guess Payment Matching" section in Admin panel with Run / Dry Run buttons.
 - **Config needed:** Set GitHub repo variables: `MEMBERSHIP_COLLECTION_START`, `MEMBERSHIP_COLLECTION_END`, `MEMBERSHIP_YEAR_END`, `INDIVIDUAL_PRICE`, `FAMILY_PRICE` in Settings → Variables → Actions.
 - **Still open:** Set repo variables for collection window; add `GITHUB_TOKEN` to Azure env
+
+### 2026-03-28 09:52 ET — Fix /membership/inactive 401 from refresh-session
+- **Root cause 1**: `JWT_SECRET` missing from GitHub Actions workflow `env:` block → API routes couldn't verify mmr_session in production. Added `JWT_SECRET: ${{ secrets.JWT_SECRET }}` to workflow. **Action required: add `JWT_SECRET` as a GitHub Actions secret** (value in `.env.local` / Keychain).
+- **Root cause 2**: Page showed "Not authenticated." error on 401 instead of redirecting to `/login`. Fixed both auto-check and manual button paths to redirect → `/login?from=...` on 401.
+- **Files changed**: `.github/workflows/azure-static-web-apps-*.yml`, `app/membership/inactive/page.tsx`
