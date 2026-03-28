@@ -167,6 +167,12 @@ Last commit: 3acc92a
 - **Config needed:** Set GitHub repo variables: `MEMBERSHIP_COLLECTION_START`, `MEMBERSHIP_COLLECTION_END`, `MEMBERSHIP_YEAR_END`, `INDIVIDUAL_PRICE`, `FAMILY_PRICE` in Settings → Variables → Actions.
 - **Still open:** Set repo variables for collection window; add `GITHUB_TOKEN` to Azure env
 
+### 2026-03-28 10:28 ET — auto-guess: DATABASE_URL fallback + staleness checks
+- `get_db_connection()` falls back to parsing `DATABASE_URL` when `MYSQL_*` vars absent (local dev via Keychain)
+- Added fail-fast validation: missing dates, inverted window, stale (>60d past end), far-future typo (>366d ahead)
+- GitHub Actions vars now set: `MEMBERSHIP_COLLECTION_START=2026-03-01`, `MEMBERSHIP_COLLECTION_END=2026-04-30`, `MEMBERSHIP_YEAR_END=2027-03-31`
+- **File changed**: `basecamp/ops/auto_guess_payments.py`
+
 ### 2026-03-28 09:52 ET — Fix /membership/inactive 401 from refresh-session
 - **Root cause 1**: `JWT_SECRET` missing from GitHub Actions workflow `env:` block → API routes couldn't verify mmr_session in production. Added `JWT_SECRET: ${{ secrets.JWT_SECRET }}` to workflow. **Action required: add `JWT_SECRET` as a GitHub Actions secret** (value in `.env.local` / Keychain).
 - **Root cause 2**: Page showed "Not authenticated." error on 401 instead of redirecting to `/login`. Fixed both auto-check and manual button paths to redirect → `/login?from=...` on 401.
