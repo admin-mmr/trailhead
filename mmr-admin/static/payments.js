@@ -8,8 +8,7 @@
  * Loaded as a <script> in index.html, uses the global `api()` helper.
  */
 
-/* global React, api */
-const { useState, useEffect, useCallback } = React;
+/* global React, api, useState, useEffect, useCallback, useRef */
 
 // ---------------------------------------------------------------------------
 // Helpers

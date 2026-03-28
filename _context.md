@@ -140,3 +140,9 @@ Last commit: 3acc92a
 - **Key change:** Every `UPDATE members` in mmr-admin now auto-syncs to Google Sheets via fire-and-forget webhook POST. No manual sync needed.
 - **appsscript.json:** Changed `executeAs` from `USER_ACCESSING` to `USER_DEPLOYING` (required for server-to-server POST).
 - **Needs redeploy:** `npm run build && npm run push` in web-apps/gas/membership, then Manage deployments → New version.
+
+### 2026-03-28 00:21 ET — Fix mmr-admin 503 + payments.js crash
+- **Root cause (503):** Azure startup command still had `cd tools/nyrr-viewer &&` from before the refactor to `mmr-admin/`. Fix: update startup command via `az webapp config set` (manual step).
+- **Root cause (JS crash):** `payments.js` re-declared `const { useState, ... } = React` which was already declared in `index.html`. Babel compiles both in global scope → duplicate `const` error. Fix: removed duplicate destructuring, use globals from index.html.
+- **Updated:** `DEPLOY_AZURE.md` — removed all stale `cd tools/nyrr-viewer` references.
+- **Files changed:** `mmr-admin/static/payments.js`, `mmr-admin/DEPLOY_AZURE.md`

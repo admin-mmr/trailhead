@@ -163,18 +163,17 @@ az webapp config appsettings set \
 
 ## Configure Startup Command
 
-The Flask app is located in `tools/nyrr-viewer/`, not at the repository root. Azure App Service must `cd` into that directory before starting the app.
+The deploy workflow packages `mmr-admin/` as the deployment root, so Gunicorn starts directly — no `cd` needed.
 
 ```bash
 az webapp config set \
   --resource-group mmr-resources \
   --name mmr-nyrr-viewer \
-  --startup-file "cd tools/nyrr-viewer && gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 120 app:app"
+  --startup-file "gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 120 app:app"
 ```
 
 **Explanation:**
 
-- `cd tools/nyrr-viewer` — Navigate to the app directory
 - `gunicorn --bind 0.0.0.0:8000` — Bind the WSGI server to all interfaces on port 8000
 - `--workers 2` — Use 2 worker processes (adjust based on plan size)
 - `--timeout 120` — Allow 120 seconds for long-running requests (NYRR API calls)
@@ -454,7 +453,7 @@ az webapp log tail --resource-group mmr-rg --name mmr-nyrr-viewer
 ```
 
 Common issues:
-- **Import error on `nyrr_api.py`** — Ensure the full repo is deployed, not just `tools/nyrr-viewer/`
+- **Import error on `nyrr_api.py`** — The deploy workflow copies it from `basecamp/python/` into the package; verify the copy step ran
 - **Database connection error** — Check firewall rules and `DATABASE_URL` format
 - **Missing dependencies** — Verify all packages are in `requirements.txt`, including `gunicorn`
 
@@ -486,7 +485,7 @@ If requests to `/api/load/<event_id>` time out:
    az webapp config set \
      --resource-group mmr-rg \
      --name mmr-nyrr-viewer \
-     --startup-file "cd tools/nyrr-viewer && gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 300 app:app"
+     --startup-file "gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 300 app:app"
    ```
 
 2. Consider upgrading the App Service Plan to `B2` or higher for more CPU/memory
