@@ -7,6 +7,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="/static/payments.js"></script>
   <style>
     :root {
       --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
@@ -176,6 +177,7 @@ const api = async (path, opts = {}) => {
   });
   return resp.json();
 };
+window.api = api;  // expose for external scripts (payments.js)
 
 // ── Status badge ──
 const StatusBadge = ({ status }) => {
@@ -1688,6 +1690,9 @@ const App = () => {
       {view !== 'settings' && (
         <div className="tabs">
           <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => setView('dashboard')}>Events</button>
+          {(userRole === 'super_admin' || userRole === 'admin') && (
+            <button className={`tab ${view === 'payments' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
+          )}
           <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => setView('tables')}>Data Browser</button>
           <button className={`tab ${view === 'log' ? 'active' : ''}`} onClick={() => setView('log')}>Sync Log</button>
           {(userRole === 'super_admin' || userRole === 'admin') && (
@@ -1698,6 +1703,7 @@ const App = () => {
 
       {view === 'dashboard' && <Dashboard onSelectEvent={selectEvent} onGoSettings={() => setView('settings')} />}
       {view === 'detail' && selectedEventId && <EventDetail eventId={selectedEventId} onBack={goBack} />}
+      {view === 'payments' && window.PaymentsPanel && React.createElement(window.PaymentsPanel)}
       {view === 'tables' && <TableBrowser />}
       {view === 'log' && <ProcessingLog />}
       {view === 'admins' && <AdminPanel userRole={userRole} userEmail={userEmail} />}

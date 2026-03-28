@@ -117,3 +117,26 @@ Last commit: 3acc92a
 - **Shell shortcuts section (new):** Documents user's .zshrc aliases (`mmr`, `mmr-env`, `mysql-mmr`, `tail-nyrr`, `restart-nyrr`) and suggests 7 new ones (`nyrr`, `nyrr-test`, `mmr-web`, `mmr-check`, `mmr-log`, `nyrr-logs`, `nyrr-status`).
 - **Key files table:** Added nyrr-viewer modules and `.githooks/pre-commit`
 - File changed: `CLAUDE.md`
+
+### 2026-03-27 22:14 ET — Payment reconciliation module for mmr-admin
+- **New files:**
+  - `mmr-admin/payment_actions.py` — Business logic: expiration calc, member+family update, payment record creation, auto-match heuristic, sheets sync stub, category dispatch (membership, family upgrade, event reg, donation)
+  - `mmr-admin/api_payments.py` — Flask blueprint with 9 endpoints: dashboard stats, pending events, unmatched gmail, manual match, auto-match, approve, reject, admin-create, payment history, member summary
+  - `mmr-admin/static/payments.js` — React frontend for Payments tab (stats cards, two-panel reconcile view, member popup, admin-create modal, payment history)
+  - `mmr-admin/PAYMENTS_DESIGN.md` — Architecture doc for the 2-step async payment workflow
+  - `db/schemas/migration_v5_payment_statuses.sql` — ALTER webapp_events Status enum to add matched/expired/error; new config entries
+- **Modified files:**
+  - `mmr-admin/app.py` — Registered payments_bp blueprint
+  - `mmr-admin/templates/index.html` — Added Payments tab, script include, exposed api() globally
+- **Design:** 2-step async workflow (submit → match → approve → fulfill). PaymentIntent dispatches to category handlers. Extensible for event registration and donations.
+- **Schema:** webapp_events.Status expanded to: pending, matched, approved, rejected, expired, error
+- **Not yet done:** Run migration on Azure DB, Sheets webhook endpoint, email notifications from Python
+
+### 2026-03-27 23:08 ET — Sheets sync on every member update + module split
+- **sheets_sync.py** (new, 162 lines) — Extracted all sync functions: `sync_member_to_sheets()`, `sync_event_to_sheets()`, `sync_payment_to_sheets()`, `_post_to_sheets()`. Leaf module (imports only from db).
+- **payment_handlers.py** (new, 405 lines) — Extracted category handlers, expiration calc, member/family update, payment record creation. `update_member_expiration()` now auto-calls `sync_member_to_sheets()` after every MySQL write.
+- **payment_actions.py** (refactored, 472 lines) — Now thin orchestrator: auto-match, manual-match, approve, reject, admin-create. Re-exports from payment_handlers and sheets_sync for api_payments.py.
+- **webhook.ts** (rewritten, 278 lines) — Now handles 3 actions: `member_updated` (arbitrary field sync via FIELD_TO_COL mapping), `event_status_updated`, `payment_created`. Keeps legacy `payment_approved` for backward compat.
+- **Key change:** Every `UPDATE members` in mmr-admin now auto-syncs to Google Sheets via fire-and-forget webhook POST. No manual sync needed.
+- **appsscript.json:** Changed `executeAs` from `USER_ACCESSING` to `USER_DEPLOYING` (required for server-to-server POST).
+- **Needs redeploy:** `npm run build && npm run push` in web-apps/gas/membership, then Manage deployments → New version.

@@ -96,6 +96,9 @@ app.register_blueprint(data_bp)
 from api_sync import sync_bp
 app.register_blueprint(sync_bp)
 
+from api_payments import payments_bp
+app.register_blueprint(payments_bp)
+
 
 # ---------------------------------------------------------------------------
 # Main
