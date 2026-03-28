@@ -748,26 +748,32 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
 
       <div className="panel">
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Event</th>
-                <th>Date</th>
-                <th>Distance</th>
-                <th>Status</th>
-                <th>MMR Runners</th>
-                <th>All Runners</th>
-                <th>Matched</th>
-                <th>Match %</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={9} className="loading"><span className="spinner" /> Loading events...</td></tr>
-              ) : events.length === 0 ? (
-                <tr><td colSpan={9} className="empty"><div className="big">-</div>No events found</td></tr>
-              ) : events.map(ev => (
+          {(() => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const upcoming = events.filter(ev => ev.event_date && new Date(ev.event_date) >= today);
+            const past = events.filter(ev => !ev.event_date || new Date(ev.event_date) < today);
+
+            const renderTable = (tableEvents, title, isPast) => (
+              <>
+                {tableEvents.length > 0 && <h3 style={{ marginTop: 20, marginBottom: 8, fontSize: 16, fontWeight: 600 }}>{title} ({tableEvents.length})</h3>}
+                {tableEvents.length > 0 && (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Event</th>
+                        <th>Date</th>
+                        <th>Distance</th>
+                        <th>Status</th>
+                        <th>MMR Runners</th>
+                        <th>All Runners</th>
+                        <th>Matched</th>
+                        <th>Match %</th>
+                        {isPast && <th>Action</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableEvents.map(ev => (
                 <tr key={ev.id}>
                   <td>
                     <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id); }} style={{ fontWeight: 600 }}>{ev.event_name}</a>
@@ -787,46 +793,69 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
                   <td style={{ color: ev.result_count > 0 ? 'var(--text)' : 'var(--text2)' }}>{ev.result_count || 0}</td>
                   <td>{ev.mmr_matched_count || 0}</td>
                   <td><MatchBar pct={ev.match_pct || 0} /></td>
-                  <td>
-                    {(() => {
-                      const done = ev.processing_status === 'Completed';
-                      const busy = !!loadingIds[ev.id];
-                      const forceKey = `force_${ev.id}`;
-                      const isForce = !!forceFlags[forceKey];
-                      return (
-                        <div style={{ position: 'relative', display: 'inline-block' }}>
-                          <button
-                            className={`btn btn-sm ${done ? 'btn-outline' : 'btn-green'}`}
-                            disabled={busy}
-                            onClick={() => setOpenDropdown(openDropdown === ev.id ? null : ev.id)}
-                          >
-                            {busy
-                              ? <><span className="spinner" />{done ? ' Re-syncing…' : ' Loading…'}</>
-                              : <>{done ? '↻ Re-sync' : '▶ Load'} ▼</>}
-                          </button>
-                          {openDropdown === ev.id && (
-                            <div className="dropdown-menu">
-                              <label className="dropdown-check">
-                                <input type="checkbox" checked={isForce}
-                                  onChange={e => setForceFlags(f => ({ ...f, [forceKey]: e.target.checked }))} />
-                                Delete existing first (reload from scratch)
-                              </label>
-                              <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, isForce); setOpenDropdown(null); }}>
-                                ✅ Sync all runners + teams
+                  {isPast && (
+                    <td>
+                      {(() => {
+                        const done = ev.processing_status === 'Completed';
+                        const busy = !!loadingIds[ev.id];
+                        const forceKey = `force_${ev.id}`;
+                        const isForce = !!forceFlags[forceKey];
+                        return (
+                          <div style={{ position: 'relative', display: 'inline-block' }}>
+                            <button
+                              className={`btn btn-sm ${done ? 'btn-outline' : 'btn-green'}`}
+                              disabled={busy}
+                              onClick={() => setOpenDropdown(openDropdown === ev.id ? null : ev.id)}
+                            >
+                              {busy
+                                ? <><span className="spinner" />{done ? ' Re-syncing…' : ' Loading…'}</>
+                                : <>{done ? '↻ Re-sync' : '▶ Load'} ▼</>}
+                            </button>
+                            {openDropdown === ev.id && (
+                              <div className="dropdown-menu">
+                                <label className="dropdown-check">
+                                  <input type="checkbox" checked={isForce}
+                                    onChange={e => setForceFlags(f => ({ ...f, [forceKey]: e.target.checked }))} />
+                                  Delete existing first (reload from scratch)
+                                </label>
+                                <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, isForce); setOpenDropdown(null); }}>
+                                  ✅ Sync all runners + teams
+                                </div>
+                                <div className="dropdown-item" style={{ color: 'var(--danger, #e55)' }} onClick={() => { setOpenDropdown(null); clearRunners(ev.id, ev.event_code); }}>
+                                  🗑 Clear all runners
+                                </div>
                               </div>
-                              <div className="dropdown-item" style={{ color: 'var(--danger, #e55)' }} onClick={() => { setOpenDropdown(null); clearRunners(ev.id, ev.event_code); }}>
-                                🗑 Clear all runners
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </td>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                  )}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            );
+
+            return (
+              <>
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: 40 }}>
+                    <span className="spinner" /> Loading events...
+                  </div>
+                ) : events.length === 0 ? (
+                  <div className="empty" style={{ padding: 40 }}><div className="big">-</div>No events found</div>
+                ) : (
+                  <>
+                    {renderTable(upcoming, '📅 Upcoming Events', false)}
+                    {renderTable(past, '📦 Past Events', true)}
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
       {toast && <Toast message={toast} onClose={() => setToast('')} />}

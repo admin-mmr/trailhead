@@ -366,6 +366,9 @@ class NyrrApiClient:
         self.sleep_seconds = sleep_seconds
         self.timeout = timeout
         self.session = requests.Session()
+        # Bypass system proxies for NYRR API (rmsprodapi.nyrr.org)
+        # This is necessary because system proxy config blocks external API calls
+        self.session.trust_env = False
         self.session.headers.update({
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -381,6 +384,8 @@ class NyrrApiClient:
         logger.debug("POST %s  body=%s", url, body)
 
         resp = self.session.post(url, json=body, timeout=self.timeout)
+        if resp.status_code >= 400:
+            logger.error("API error %d: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return resp.json()
 

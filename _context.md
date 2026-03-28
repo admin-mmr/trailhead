@@ -21,6 +21,21 @@ Last commit: pending (NYRR widget API fix)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
 
+### 2026-03-28 18:35 ET — CLI mode for api_sync.py + comprehensive debug logging
+- Changed: `mmr-admin/api_sync.py` — added `import time`, set logger.DEBUG, inserted debug logs throughout (Step 1–3, upsert, backfill, errors); added `__main__` block to support standalone CLI with `--event`, `--force`, `--debug` args; outputs final summary with exit code 0/1. Created `CLI_USAGE.md` and `DEBUG_ENHANCEMENTS.md` guides.
+- Status: Complete. CLI fully functional; database connection test succeeded. Now supports `python3 api_sync.py --event H2026 --debug` with real-time logging, suitable for cron/monitoring.
+- Next: Test end-to-end once Azure MySQL is accessible; consider adding `--dry-run` or progress webhook callback.
+
+### 2026-03-28 14:31 ET — Events UI: Split upcoming vs past events
+- Changed: `mmr-admin/templates/index.html` — updated `renderTable()` to accept `isPast` flag. Conditional render "Action" column header + Load/Re-sync button only for past events.
+- Status: Complete. Upcoming events show clean info columns (no action buttons). Past events retain runner matching & loading.
+- Next: Test UI to confirm layout.
+
+### 2026-03-28 22:16 ET — UI improvements & NYRR API proxy debug
+- Changed: `templates/index.html` — split Events table into two sections (Upcoming/Past) by date. `nyrr_api.py` — fixed NameError in error handler (added logging import); added logger.error() for 400+ responses; disabled session.trust_env to bypass system proxy for NYRR API calls.
+- Status: Events separation complete. NYRR API 400 error root cause identified: system proxy (allowlist blocks rmsprodapi.nyrr.org). Code fix applied; network policy blocks local testing. Sync works in Azure (different network policy).
+- Next: Test with different network or deploy to Azure to verify fix.
+
 ### 2026-03-28 17:57 ET — NYRR Viewer: Final Simplified Design (Three-Step Sync)
 - Changed: `db/migrations/0011_rebuild_nyrr_event_runners.sql` — simplified schema (removed `sync_source` ENUM, added `age_grade_*`). `mmr-admin/api_sync.py` — complete rewrite for three-step workflow: (1) finishers-filter paginate all runners, (2) teams/search enumerate all teams, (3) teams/teamRunners backfill team_code by bib. Single upsert path. `templates/index.html` — removed MMR/All toggle, now just "Sync all runners + teams" button.
 - Status: Ready to test. Run migration 0011, deploy api_sync.py + UI. Test H2026 (30K runners, 584 teams).
