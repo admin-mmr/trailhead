@@ -21,6 +21,21 @@ Last commit: pending (NYRR widget API fix)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
 
+### 2026-03-28 23:45 ET — Fix NyrrTeam dataclass bug
+- Changed: `mmr-admin/nyrr_api.py` — added missing `@dataclass` decorator to `NyrrTeam` class (line 247). This was causing "object is not subscriptable" error on event detail page.
+- Status: Fixed. Error was preventing event details from rendering.
+- Next: Test event detail page to confirm fix works.
+
+### 2026-03-28 19:30 ET — mmr-admin UI: progress modal for 30K runner load
+- Changed: `mmr-admin/templates/index.html` — added ProgressModal React component with 3-step progress tracking (Fetch finishers → Enumerate teams → Backfill team codes). Added CSS for modal, progress bar, step icons (○ pending, ↻ active, ✓ completed). Enhanced Dashboard state with `progressModal`. Modified `triggerLoad()` to open modal on load start, poll status every 1s (was 2s), display real-time counts (rows_written, teams_processed), auto-close on done/error.
+- Status: Complete. Modal shows when data loads, displays step-by-step progress with percentage bar, closes automatically.
+- Next: Test locally by triggering a load in mmr-admin UI.
+
+### 2026-03-28 19:19 ET — NYRR admin runners table: added progress modal during load
+- Changed: Created `components/ProgressModal.tsx` — modal showing step-by-step progress (pending/active/completed states) with progress bar. Updated `app/admin/nyrr/events/[id]/page.tsx` — added progress state tracking for event + runners loads, integrated ProgressModal. Steps show real-time count during fetch.
+- Status: Reverted (moved to mmr-admin instead, which is the correct location).
+- Next: Use mmr-admin Flask UI progress modal instead.
+
 ### 2026-03-28 18:35 ET — CLI mode for api_sync.py + comprehensive debug logging
 - Changed: `mmr-admin/api_sync.py` — added `import time`, set logger.DEBUG, inserted debug logs throughout (Step 1–3, upsert, backfill, errors); added `__main__` block to support standalone CLI with `--event`, `--force`, `--debug` args; outputs final summary with exit code 0/1. Created `CLI_USAGE.md` and `DEBUG_ENHANCEMENTS.md` guides.
 - Status: Complete. CLI fully functional; database connection test succeeded. Now supports `python3 api_sync.py --event H2026 --debug` with real-time logging, suitable for cron/monitoring.
