@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 # ============================================================
-# start-dev.sh — Start Next.js dev server
-#                DATABASE_URL is read from macOS Keychain —
-#                the password never lives in a file.
+# start-dev.sh — Start Next.js dev server with secrets from Keychain
+#
+# Reads from macOS Keychain (source of truth) and merges with .env.local.
+# Keychain values take precedence over anything in .env.local so the
+# placeholder DATABASE_URL="" and GOOGLE_APPLICATION_CREDENTIALS="" in
+# .env.local are always overridden at runtime.
 #
 # HOW TO USE:
 #   chmod +x web-apps/mmr-webapp/start-dev.sh   # first time only
 #   ./web-apps/mmr-webapp/start-dev.sh           # from repo root
 #   cd web-apps/mmr-webapp && ./start-dev.sh     # or from here
 #
-# KEYCHAIN ENTRIES USED (both already exist — no setup needed):
-#   1. "MMR_DATABASE_URL"                           — full mysql:// URL (primary)
-#   2. "Mysql@mmr-mysql-v4....:3306" / "mmradmin"  — password only (mysql-mmr alias, fallback)
+# If you have an `mmr-web` shell alias, point it at this script:
+#   alias mmr-web='cd ~/github/mmr/trailhead/web-apps/mmr-webapp && ./start-dev.sh'
 #
-# The script tries #1 first. If the value starts with mysql:// it parses out
-# user + password, re-encodes the password safely, and exports DATABASE_URL.
-# If only #2 is found it builds the URL from the password + hard-coded host/db.
+# KEYCHAIN ENTRIES USED:
+#   "MMR_DATABASE_URL"          — full mysql:// URL (primary)
+#   "Mysql@<host>:3306"         — password only (mysql-mmr alias fallback)
+#   "MMR_GOOGLE_CREDS_PATH"     — path to service account JSON (optional)
 # ============================================================
 
 set -euo pipefail
@@ -95,8 +98,20 @@ else
   echo "✓  DATABASE_URL built from Keychain entry '$FOUND_SERVICE' (password not shown)"
 fi
 
-# ── 3. Start dev server ──────────────────────────────────────
+# ── 3. Google credentials path (optional) ───────────────────
+GCREDS=$(security find-generic-password -s "MMR_GOOGLE_CREDS_PATH" -w 2>/dev/null || true)
+if [[ -n "$GCREDS" ]]; then
+  export GOOGLE_APPLICATION_CREDENTIALS="$GCREDS"
+  echo "✓  GOOGLE_APPLICATION_CREDENTIALS set from Keychain"
+else
+  echo "⚠️  MMR_GOOGLE_CREDS_PATH not in Keychain — Google APIs may not work locally"
+fi
+
+# ── 4. Start dev server ──────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-exec npm run dev
+echo ""
+echo "🚀  Starting Next.js dev server…"
+echo ""
+exec npx next dev

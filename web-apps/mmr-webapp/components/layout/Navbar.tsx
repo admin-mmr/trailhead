@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { Menu, X, Heart } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import { clsx } from 'clsx'
@@ -56,9 +56,11 @@ export default function Navbar({
 }) {
   const { lang, setLang, T } = useLang()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [open, setOpen] = useState(false)
 
-  const isLoggedIn = !!session
+  const isGoodbye = searchParams.get('goodbye') === '1'
+  const isLoggedIn = !!session && !isGoodbye
   const isActive = session?.status === 'active'
   const isExpiredOrPending = session?.status === 'expired' || session?.status === 'pending'
 
@@ -202,7 +204,7 @@ export default function Navbar({
                   ? 'bg-brand-gold/10'
                   : 'hover:bg-brand-gold/10'
               )}
-              title={lang === 'zh' ? '编辑个人信息' : 'Edit Profile'}
+              aria-label={lang === 'zh' ? '编辑个人信息' : 'Edit Profile'}
             >
               <ProfileAvatar session={session} size={28} />
               <span className="text-sm font-medium text-brand-gold hidden sm:inline">

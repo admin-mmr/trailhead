@@ -9,13 +9,18 @@ const EnrollSchema = z.object({
   firstName:      z.string().min(1),
   lastName:       z.string().min(1),
   email:          z.string().email(),
-  phone:          z.string().min(7),
+  phone:          z.preprocess(
+    (v) => (v === '' || v === null || v === undefined) ? undefined : v,
+    z.string().min(7, 'Phone number must be at least 7 digits').optional(),
+  ),
   wechatId:       z.string().optional(),
   district:       z.string().optional(),
-  gender:         z.string().optional(),
+  gender:         z.enum(['Male', 'Female', 'Non-binary', 'Prefer not to say'], {
+    errorMap: () => ({ message: 'Please select a gender' }),
+  }),
   yearBorn:       z.preprocess(
     (val) => (val === '' || val === undefined || val === null) ? undefined : Number(val),
-    z.number().int().optional(),
+    z.number().int().min(1900, 'Enter a valid birth year').max(new Date().getFullYear(), 'Birth year cannot be in the future').optional(),
   ),
   nyrrRunnerName: z.string().optional(),
 })

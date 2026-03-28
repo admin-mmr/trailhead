@@ -23,6 +23,39 @@ interface MemberInfo {
   nyrrRunnerName: string
 }
 
+// ── Inline field validation ─────────────────────────────────────────────────
+type FieldErrors = Partial<Record<keyof MemberInfo, string>>
+
+function validateInfoField(key: keyof MemberInfo, value: string): string {
+  switch (key) {
+    case 'firstName':
+    case 'lastName':
+      if (!value.trim()) return key === 'firstName' ? 'First name is required' : 'Last name is required'
+      if (value.trim().length < 2) return 'Must be at least 2 characters'
+      return ''
+    case 'email':
+      if (!value.trim()) return 'Email address is required'
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Enter a valid email address (e.g. jane@example.com)'
+      return ''
+    case 'phone':
+      if (!value) return '' // optional
+      if (!/^\+?[\d\s\-().]{7,}$/.test(value)) return 'Enter a valid phone number (at least 7 digits, e.g. 212-555-0100)'
+      return ''
+    case 'gender':
+      if (!value) return 'Please select a gender — this helps us match your NYRR runner profile'
+      return ''
+    case 'yearBorn': {
+      if (!value) return ''
+      const n = Number(value)
+      if (!Number.isInteger(n) || String(n) !== value.trim()) return 'Enter a 4-digit year (e.g. 1990)'
+      if (n < 1900 || n > new Date().getFullYear()) return `Year must be between 1900 and ${new Date().getFullYear()}`
+      return ''
+    }
+    default:
+      return ''
+  }
+}
+
 const PLANS: Record<Plan, { label: string; labelZh: string; amount: number; desc: string; descZh: string }> = {
   individual: {
     label: 'Individual Membership',
@@ -71,9 +104,21 @@ export default function JoinPage() {
   const [eventId, setEventId] = useState<string | null>(null)
   const [memberId, setMemberId] = useState<string | null>(null)
   const [proofFile, setProofFile] = useState<File | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  function handleInfoChange(key: keyof MemberInfo, value: string) {
+    setInfo(prev => ({ ...prev, [key]: value }))
+    // Clear error on change so user gets immediate feedback
+    if (fieldErrors[key]) setFieldErrors(prev => ({ ...prev, [key]: '' }))
+  }
+
+  function handleInfoBlur(key: keyof MemberInfo, value: string) {
+    const err = validateInfoField(key, value)
+    if (err) setFieldErrors(prev => ({ ...prev, [key]: err }))
+  }
 
   // Existing member data (pre-filled when renewing)
   const [existingMember, setExistingMember] = useState<Member | null>(null)
@@ -126,6 +171,18 @@ export default function JoinPage() {
   // ── Step 2: Enroll member → /api/members/enroll (assigns MemberID, saves to DB + Sheets)
   async function handleInfoSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // Run all field validations before submitting
+    const required: (keyof MemberInfo)[] = ['firstName', 'lastName', 'email', 'gender']
+    const all: (keyof MemberInfo)[] = [...required, 'phone', 'yearBorn']
+    const errors: FieldErrors = {}
+    for (const key of all) {
+      const err = validateInfoField(key, info[key])
+      if (err) errors[key] = err
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      return
+    }
     setSubmitting(true)
     setError('')
     try {
@@ -334,48 +391,62 @@ export default function JoinPage() {
                 </p>
               )}
               <div className="grid grid-cols-2 gap-4">
-                {/* Text fields */}
+                {/* First / Last name */}
                 {([
-                  { key: 'firstName',     label: 'First Name',         labelZh: '名',          required: true },
-                  { key: 'lastName',      label: 'Last Name',          labelZh: '姓',          required: true },
-                  { key: 'email',         label: 'Email Address',      labelZh: '电子邮件',    required: true, type: 'email', colSpan: true },
-                  { key: 'phone',         label: 'Phone',              labelZh: '电话',        required: true, type: 'tel' },
-                  { key: 'wechatId',      label: 'WeChat ID',          labelZh: '微信号' },
-                  { key: 'district',      label: 'District / Borough', labelZh: '地区',        colSpan: true },
-                  { key: 'yearBorn',      label: 'Year of Birth',      labelZh: '出生年份',    type: 'number' },
-                  { key: 'nyrrRunnerName',label: 'NYRR Runner Name',   labelZh: 'NYRR 姓名' },
-                ] as { key: keyof MemberInfo; label: string; labelZh: string; required?: boolean; type?: string; colSpan?: boolean }[]).map(f => (
-                  <div key={f.key} className={f.colSpan ? 'col-span-2' : ''}>
+                  { key: 'firstName', label: 'First Name', labelZh: '名',       required: true },
+                  { key: 'lastName',  label: 'Last Name',  labelZh: '姓',       required: true },
+                ] as { key: keyof MemberInfo; label: string; labelZh: string; required?: boolean }[]).map(f => (
+                  <div key={f.key}>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {lang === 'zh' ? f.labelZh : f.label}
-                      {f.required && <span className="text-red-500 ml-1">*</span>}
+                      <span className="text-red-500 ml-1">*</span>
                     </label>
                     <input
-                      type={f.type ?? 'text'}
-                      required={f.required}
+                      type="text"
                       value={info[f.key]}
-                      onChange={e => setInfo(prev => ({ ...prev, [f.key]: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
+                      onChange={e => handleInfoChange(f.key, e.target.value)}
+                      onBlur={e => handleInfoBlur(f.key, e.target.value)}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]
+                        ${fieldErrors[f.key] ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                     />
-                    {f.key === 'yearBorn' && (
-                      <p className="text-xs text-gray-400 mt-1">
-                        {lang === 'zh'
-                          ? '用于通过大致年龄匹配 NYRR 跑者信息。'
-                          : 'Used to match your NYRR runner profile by approximate age.'}
-                      </p>
+                    {fieldErrors[f.key] && (
+                      <p className="text-xs text-red-600 mt-1">{fieldErrors[f.key]}</p>
                     )}
                   </div>
                 ))}
 
-                {/* Gender — select */}
+                {/* Email */}
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '电子邮件' : 'Email Address'}
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={info.email}
+                    onChange={e => handleInfoChange('email', e.target.value)}
+                    onBlur={e => handleInfoBlur('email', e.target.value)}
+                    placeholder="jane@example.com"
+                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]
+                      ${fieldErrors.email ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                  />
+                  {fieldErrors.email && (
+                    <p className="text-xs text-red-600 mt-1">{fieldErrors.email}</p>
+                  )}
+                </div>
+
+                {/* Gender — required, moved up for NYRR matching */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {lang === 'zh' ? '性别' : 'Gender'}
+                    <span className="text-red-500 ml-1">*</span>
                   </label>
                   <select
                     value={info.gender}
-                    onChange={e => setInfo(prev => ({ ...prev, gender: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
+                    onChange={e => handleInfoChange('gender', e.target.value)}
+                    onBlur={e => handleInfoBlur('gender', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]
+                      ${fieldErrors.gender ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
                   >
                     <option value="">{lang === 'zh' ? '请选择' : 'Select…'}</option>
                     <option value="Male">{lang === 'zh' ? '男' : 'Male'}</option>
@@ -383,6 +454,105 @@ export default function JoinPage() {
                     <option value="Non-binary">{lang === 'zh' ? '非二元' : 'Non-binary'}</option>
                     <option value="Prefer not to say">{lang === 'zh' ? '不透露' : 'Prefer not to say'}</option>
                   </select>
+                  {fieldErrors.gender
+                    ? <p className="text-xs text-red-600 mt-1">{fieldErrors.gender}</p>
+                    : <p className="text-xs text-gray-400 mt-1">
+                        {lang === 'zh' ? '用于匹配 NYRR 跑者档案。' : 'Helps us match your NYRR runner profile.'}
+                      </p>
+                  }
+                </div>
+
+                {/* Year of Birth */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '出生年份' : 'Year of Birth'}
+                  </label>
+                  <input
+                    type="number"
+                    value={info.yearBorn}
+                    onChange={e => handleInfoChange('yearBorn', e.target.value)}
+                    onBlur={e => handleInfoBlur('yearBorn', e.target.value)}
+                    placeholder={lang === 'zh' ? '例如 1990' : 'e.g. 1990'}
+                    min={1900}
+                    max={new Date().getFullYear()}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]
+                      ${fieldErrors.yearBorn ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                  />
+                  {fieldErrors.yearBorn
+                    ? <p className="text-xs text-red-600 mt-1">{fieldErrors.yearBorn}</p>
+                    : <p className="text-xs text-gray-400 mt-1">
+                        {lang === 'zh' ? '用于通过大致年龄匹配 NYRR 跑者信息。' : 'Used to match your NYRR runner profile by approximate age.'}
+                      </p>
+                  }
+                </div>
+
+                {/* Phone — optional */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '电话' : 'Phone'}
+                    <span className="text-gray-400 ml-1 font-normal text-xs">{lang === 'zh' ? '（选填）' : '(optional)'}</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={info.phone}
+                    onChange={e => handleInfoChange('phone', e.target.value)}
+                    onBlur={e => handleInfoBlur('phone', e.target.value)}
+                    placeholder={lang === 'zh' ? '例如 212-555-0100' : 'e.g. 212-555-0100'}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]
+                      ${fieldErrors.phone ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                  />
+                  {fieldErrors.phone && (
+                    <p className="text-xs text-red-600 mt-1">{fieldErrors.phone}</p>
+                  )}
+                </div>
+
+                {/* WeChat ID */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '微信号' : 'WeChat ID'}
+                    <span className="text-gray-400 ml-1 font-normal text-xs">{lang === 'zh' ? '（选填）' : '(optional)'}</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={info.wechatId}
+                    onChange={e => handleInfoChange('wechatId', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
+                  />
+                </div>
+
+                {/* District */}
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? '地区' : 'District / Borough'}
+                    <span className="text-gray-400 ml-1 font-normal text-xs">{lang === 'zh' ? '（选填）' : '(optional)'}</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={info.district}
+                    onChange={e => handleInfoChange('district', e.target.value)}
+                    placeholder={lang === 'zh' ? '例如 Manhattan, Queens…' : 'e.g. Manhattan, Queens, Brooklyn…'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
+                  />
+                </div>
+
+                {/* NYRR Runner Name */}
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {lang === 'zh' ? 'NYRR 姓名' : 'NYRR Runner Name'}
+                    <span className="text-gray-400 ml-1 font-normal text-xs">{lang === 'zh' ? '（选填）' : '(optional)'}</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={info.nyrrRunnerName}
+                    onChange={e => handleInfoChange('nyrrRunnerName', e.target.value)}
+                    placeholder={lang === 'zh' ? '与 NYRR 账户上完全一致的姓名' : 'Exactly as it appears on your NYRR account'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {lang === 'zh'
+                      ? '如果与上方姓名不同，请填写您在 NYRR 注册的姓名。'
+                      : 'Only needed if different from your name above. Used for race result matching.'}
+                  </p>
                 </div>
               </div>
 
