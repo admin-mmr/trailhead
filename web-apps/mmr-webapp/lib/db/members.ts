@@ -89,7 +89,24 @@ export async function findOrCreateMember(params: {
   membershipType?: MembershipType
 }): Promise<Member> {
   const existing = await findMemberByEmail(params.email)
-  if (existing) return existing
+  if (existing) {
+    // Update existing member's profile with any new info provided
+    const profileUpdates: Parameters<typeof updateMemberProfile>[1] = {}
+    if (params.firstName      && params.firstName      !== existing.firstName)      profileUpdates.firstName      = params.firstName
+    if (params.lastName       && params.lastName       !== existing.lastName)       profileUpdates.lastName       = params.lastName
+    if (params.phone          && params.phone          !== existing.phone)          profileUpdates.phone          = params.phone
+    if (params.wechatId       && params.wechatId       !== existing.wechatId)       profileUpdates.wechatId       = params.wechatId
+    if (params.district       && params.district       !== existing.district)       profileUpdates.district       = params.district
+    if (params.gender         && params.gender         !== existing.gender)         profileUpdates.gender         = params.gender
+    if (params.nyrrRunnerName && params.nyrrRunnerName !== existing.nyrrRunnerName) profileUpdates.nyrrRunnerName = params.nyrrRunnerName
+    if (params.yearBorn != null && params.yearBorn     !== existing.yearBorn)       profileUpdates.yearBorn       = params.yearBorn
+
+    if (Object.keys(profileUpdates).length) {
+      await updateMemberProfile(existing.memberId, profileUpdates)
+      return (await findMemberByEmail(params.email))!
+    }
+    return existing
+  }
 
   const member = await createNewMember({
     email:          params.email,

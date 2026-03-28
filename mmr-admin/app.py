@@ -23,19 +23,22 @@ import os
 # ---------------------------------------------------------------------------
 # Auto-load web-apps/mmr-webapp/.env.local so OAuth + DB creds are shared.
 # Shell-level env vars always take precedence (override=False).
+# Skip on Azure (WEBSITE_SITE_NAME is set) — env comes from App Settings.
 # ---------------------------------------------------------------------------
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_WEBAPP_ENV = os.path.join(_HERE, '..', '..', 'web-apps', 'mmr-webapp', '.env.local')
+_ON_AZURE = bool(os.environ.get('WEBSITE_SITE_NAME'))
 
-try:
-    from dotenv import load_dotenv
-    if os.path.exists(_WEBAPP_ENV):
-        load_dotenv(_WEBAPP_ENV, override=False)
-        print(f'  ✓ Loaded shared env from mmr-webapp/.env.local', flush=True)
-    else:
-        print(f'  ⚠  mmr-webapp/.env.local not found — OAuth vars must be set manually', flush=True)
-except ImportError:
-    print('  ⚠  python-dotenv not installed — run: pip install python-dotenv', flush=True)
+if not _ON_AZURE:
+    _WEBAPP_ENV = os.path.join(_HERE, '..', '..', 'web-apps', 'mmr-webapp', '.env.local')
+    try:
+        from dotenv import load_dotenv
+        if os.path.exists(_WEBAPP_ENV):
+            load_dotenv(_WEBAPP_ENV, override=False)
+            print('  ✓ Loaded shared env from mmr-webapp/.env.local', flush=True)
+        else:
+            print('  ⚠  mmr-webapp/.env.local not found — OAuth vars must be set manually', flush=True)
+    except ImportError:
+        print('  ⚠  python-dotenv not installed — run: pip install python-dotenv', flush=True)
 
 from flask import Flask, send_file
 

@@ -177,3 +177,8 @@ Last commit: 3acc92a
 - **Root cause 1**: `JWT_SECRET` missing from GitHub Actions workflow `env:` block → API routes couldn't verify mmr_session in production. Added `JWT_SECRET: ${{ secrets.JWT_SECRET }}` to workflow. **Action required: add `JWT_SECRET` as a GitHub Actions secret** (value in `.env.local` / Keychain).
 - **Root cause 2**: Page showed "Not authenticated." error on 401 instead of redirecting to `/login`. Fixed both auto-check and manual button paths to redirect → `/login?from=...` on 401.
 - **Files changed**: `.github/workflows/azure-static-web-apps-*.yml`, `app/membership/inactive/page.tsx`
+
+### 2026-03-28 11:09 ET — Join flow refactor + hero text + Sheets sync
+- Changed hero badge: EN "Family · Support · Pursuit · Community", ZH "有家·有爱·一起奔跑". New `/api/members/enroll` saves member after Step 2, assigns MemberID, syncs Sheets. `findOrCreateMember` now updates existing member info. Content-type guard on API calls prevents HTML-parse crash. Added `lib/sheets/sync.ts` + `googleapis` dep.
+- **Files**: `page.tsx` (hero), `join/page.tsx`, `payments/submit/route.ts`, `members/enroll/route.ts` (new), `lib/db/members.ts`, `lib/sheets/sync.ts` (new)
+- **Next**: Set `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_KEY`, `SPREADSHEET_ID` env vars. Verify "WebApp Events" sheet tab exists. Run full build locally.

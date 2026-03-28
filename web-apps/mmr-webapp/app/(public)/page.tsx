@@ -37,7 +37,7 @@ export default function HomePage() {
             {/* Badge */}
             <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border text-sm font-medium backdrop-blur-sm"
                  style={{ background: 'rgba(212,168,67,0.15)', color: '#F2D57E', borderColor: 'rgba(212,168,67,0.35)' }}>
-              {lang === 'zh' ? '纽约华人跑团' : 'New York Happy Runners'}
+              {lang === 'zh' ? '有家·有爱·一起奔跑' : 'Family · Support · Pursuit · Community'}
             </div>
 
             {/* Heading */}

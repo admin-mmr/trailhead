@@ -69,6 +69,7 @@ export default function JoinPage() {
   })
   const [payForm, setPayForm] = useState({ payerName: '', paymentDate: '', memoField: '', last4: '' })
   const [eventId, setEventId] = useState<string | null>(null)
+  const [memberId, setMemberId] = useState<string | null>(null)
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -85,6 +86,7 @@ export default function JoinPage() {
       .then(({ ok, data } = {}) => {
         if (ok && data) {
           setExistingMember(data)
+          if (data.memberId) setMemberId(data.memberId)
           // Pre-fill the info form — member can review/edit before continuing
           setInfo({
             firstName:      data.firstName      ?? '',
@@ -121,7 +123,37 @@ export default function JoinPage() {
     }
   }
 
-  // ── Step 2: Submit member info + payment declaration → /api/payments/submit
+  // ── Step 2: Enroll member → /api/members/enroll (assigns MemberID, saves to DB + Sheets)
+  async function handleInfoSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError('')
+    try {
+      const res = await fetch('/api/members/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan,
+          ...info,
+          yearBorn: info.yearBorn ? Number(info.yearBorn) : undefined,
+        }),
+      })
+      const ct = res.headers.get('content-type') ?? ''
+      if (!ct.includes('application/json')) {
+        throw new Error('Server returned an unexpected response. Please try again later.')
+      }
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Enrollment failed')
+      setMemberId(data.memberId)
+      nextStep()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ── Step 3: Submit payment declaration → /api/payments/submit
   async function handlePaymentSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
@@ -139,6 +171,10 @@ export default function JoinPage() {
           ...payForm,
         }),
       })
+      const contentType = res.headers.get('content-type') ?? ''
+      if (!contentType.includes('application/json')) {
+        throw new Error('Server returned an unexpected response. Please try again later.')
+      }
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Submission failed')
       setEventId(data.eventId)
@@ -161,6 +197,10 @@ export default function JoinPage() {
       fd.append('proof', proofFile)
       fd.append('eventId', eventId)
       const res = await fetch('/api/payments/proof', { method: 'POST', body: fd })
+      const ct = res.headers.get('content-type') ?? ''
+      if (!ct.includes('application/json')) {
+        throw new Error('Server returned an unexpected response. Please try again later.')
+      }
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Upload failed')
       nextStep()
@@ -280,7 +320,7 @@ export default function JoinPage() {
 
           {/* ── STEP 2: Member Info ────────────────────────────────── */}
           {step === 'info' && (
-            <form onSubmit={(e) => { e.preventDefault(); nextStep() }}>
+            <form onSubmit={handleInfoSubmit}>
               <h2 className="text-xl font-semibold text-[#0A2342] mb-2">
                 {isRenewing
                   ? (lang === 'zh' ? '确认个人信息' : 'Review Your Info')
@@ -351,9 +391,9 @@ export default function JoinPage() {
                   className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
                   {lang === 'zh' ? '返回' : '← Back'}
                 </button>
-                <button type="submit"
-                  className="flex-1 bg-[#0A2342] text-white py-3 rounded-xl font-semibold hover:bg-[#0d2d55] transition-colors">
-                  {lang === 'zh' ? '继续' : 'Continue →'}
+                <button type="submit" disabled={submitting}
+                  className="flex-1 bg-[#0A2342] text-white py-3 rounded-xl font-semibold hover:bg-[#0d2d55] transition-colors disabled:opacity-50">
+                  {submitting ? (lang === 'zh' ? '提交中…' : 'Saving…') : (lang === 'zh' ? '继续' : 'Continue →')}
                 </button>
               </div>
             </form>
@@ -365,6 +405,22 @@ export default function JoinPage() {
               <h2 className="text-xl font-semibold text-[#0A2342] mb-2">
                 {lang === 'zh' ? '付款方式' : 'Complete Your Payment'}
               </h2>
+
+              {/* Member ID banner — shown after enrollment */}
+              {memberId && (
+                <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+                  <p className="text-sm font-semibold text-green-800">
+                    {lang === 'zh' ? '您的会员编号：' : 'Your Member ID: '}
+                    <span className="font-mono text-base">{memberId}</span>
+                  </p>
+                  <p className="text-xs text-green-700 mt-1">
+                    {lang === 'zh'
+                      ? '请在付款备注中包含此编号，以便我们自动处理您的会费。'
+                      : 'Please include this ID in your payment memo so we can auto-process your membership.'}
+                  </p>
+                </div>
+              )}
+
               <p className="text-sm text-gray-500 mb-6">
                 {lang === 'zh'
                   ? `请支付 $${currentPlan.amount}，选择 Zelle 或 Venmo。`
@@ -406,8 +462,8 @@ export default function JoinPage() {
                   <p className="text-2xl font-bold text-[#F47B20]">${currentPlan.amount}</p>
                   <p className="text-xs text-gray-500 mt-2">
                     {lang === 'zh'
-                      ? `备注请填写: ${info.firstName} ${info.lastName} ${lang === 'zh' ? currentPlan.labelZh : currentPlan.label}`
-                      : `Memo: ${info.firstName} ${info.lastName} – ${currentPlan.label}`}
+                      ? `备注请填写: ${memberId ?? ''} ${info.firstName} ${info.lastName} ${currentPlan.labelZh}`
+                      : `Memo: ${memberId ?? ''} ${info.firstName} ${info.lastName} – ${currentPlan.label}`}
                   </p>
                 </div>
               </div>
@@ -440,7 +496,7 @@ export default function JoinPage() {
                   </label>
                   <input value={payForm.memoField}
                     onChange={e => setPayForm(p => ({ ...p, memoField: e.target.value }))}
-                    placeholder={lang === 'zh' ? '您在付款时输入的备注' : 'e.g. John Smith Individual Membership'}
+                    placeholder={memberId ? `e.g. ${memberId} John Smith Individual` : (lang === 'zh' ? '您在付款时输入的备注' : 'e.g. A0042 John Smith Individual Membership')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0A2342]" />
                 </div>
                 {payMethod === 'zelle' && (
@@ -538,14 +594,24 @@ export default function JoinPage() {
                   ? '我们正在审核您的付款。通常在 1–2 个工作日内完成。审核通过后，您将收到确认邮件。'
                   : 'We\'re reviewing your payment. This typically takes 1–2 business days. You\'ll receive a confirmation email once approved.'}
               </p>
-              {eventId && (
-                <div className="inline-block bg-gray-50 border border-gray-200 rounded-xl px-6 py-3 mb-6">
-                  <p className="text-xs text-gray-500 uppercase tracking-wider">
-                    {lang === 'zh' ? '参考号' : 'Reference Number'}
-                  </p>
-                  <p className="text-lg font-mono font-bold text-[#0A2342] mt-1">{eventId}</p>
-                </div>
-              )}
+              <div className="flex flex-wrap justify-center gap-4 mb-6">
+                {memberId && (
+                  <div className="inline-block bg-green-50 border border-green-200 rounded-xl px-6 py-3">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider">
+                      {lang === 'zh' ? '会员编号' : 'Member ID'}
+                    </p>
+                    <p className="text-lg font-mono font-bold text-green-700 mt-1">{memberId}</p>
+                  </div>
+                )}
+                {eventId && (
+                  <div className="inline-block bg-gray-50 border border-gray-200 rounded-xl px-6 py-3">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider">
+                      {lang === 'zh' ? '参考号' : 'Reference Number'}
+                    </p>
+                    <p className="text-lg font-mono font-bold text-[#0A2342] mt-1">{eventId}</p>
+                  </div>
+                )}
+              </div>
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 text-left">
                 <strong>{lang === 'zh' ? '温馨提示：' : 'Reminder: '}</strong>
                 {lang === 'zh'

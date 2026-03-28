@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { pool } from '@/lib/db/connection'
 import { findOrCreateMember } from '@/lib/db/members'
 import { sendApplicationReceivedEmail } from '@/lib/email/client'
+import { syncMemberToSheets, syncEventToSheets } from '@/lib/sheets/sync'
 import { nanoid } from 'nanoid'
 
 // ── Validation schema ───────────────────────────────────────────────────────
@@ -108,9 +109,33 @@ export async function POST(req: NextRequest) {
       console.error('[payments/submit] Email send failed:', emailErr)
     }
 
+    // 5. Sync to Google Sheets (non-fatal)
+    try {
+      await syncMemberToSheets(member)
+      await syncEventToSheets({
+        eventId,
+        memberId:       member.memberId,
+        email:          d.email,
+        paymentIntent:  PLAN_INTENT[d.plan],
+        amount:         d.amount,
+        paymentMethod:  d.paymentMethod,
+        payerName:      d.payerName,
+        paymentDate:    d.paymentDate,
+        memoField:      d.memoField,
+        last4:          d.last4,
+        status:         'pending',
+      })
+    } catch (sheetErr) {
+      console.error('[payments/submit] Sheets sync failed:', sheetErr)
+    }
+
     return NextResponse.json({ eventId, memberId: member.memberId }, { status: 201 })
-  } catch (err) {
+  } catch (err: any) {
     console.error('[payments/submit] Error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    // Detect common DB errors for better user feedback
+    const msg = err?.code === 'ER_DUP_ENTRY'
+      ? 'A pending application already exists for this email. Please contact us if you need help.'
+      : 'Internal server error. Please try again later.'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
