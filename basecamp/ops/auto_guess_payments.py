@@ -60,12 +60,34 @@ def get_env(key: str, default: str = '') -> str:
 
 
 def get_db_connection():
-    """Connect to MySQL using standard env vars."""
+    """Connect to MySQL.
+
+    Prefers individual MYSQL_* env vars (used in GitHub Actions).
+    Falls back to parsing DATABASE_URL (used locally via Keychain).
+    DATABASE_URL format: mysql://user:password@host/database
+    """
+    if os.environ.get('MYSQL_HOST'):
+        host = os.environ['MYSQL_HOST']
+        user = os.environ['MYSQL_USER']
+        password = os.environ['MYSQL_PASSWORD']
+        database = os.environ['MYSQL_DATABASE']
+    elif os.environ.get('DATABASE_URL'):
+        from urllib.parse import urlparse
+        u = urlparse(os.environ['DATABASE_URL'])
+        host = u.hostname
+        user = u.username
+        password = u.password
+        database = u.path.lstrip('/')
+    else:
+        raise RuntimeError(
+            'No database credentials found. '
+            'Set MYSQL_HOST/USER/PASSWORD/DATABASE or DATABASE_URL.'
+        )
     return mysql.connector.connect(
-        host=os.environ['MYSQL_HOST'],
-        user=os.environ['MYSQL_USER'],
-        password=os.environ['MYSQL_PASSWORD'],
-        database=os.environ['MYSQL_DATABASE'],
+        host=host,
+        user=user,
+        password=password,
+        database=database,
         ssl_disabled=False,
         autocommit=False,
     )
@@ -153,6 +175,33 @@ def run_auto_guess(
         window_end = date.fromisoformat(end_str)
     except ValueError as e:
         print(f'ERROR: Invalid date format: {e}')
+        return {'matched': 0, 'skipped': 0, 'errors': 1, 'details': []}
+
+    today = date.today()
+
+    # Sanity check: dates must be in order
+    if window_start > window_end:
+        print(f'ERROR: Collection window is inverted: start {window_start} is after end {window_end}.')
+        print('  Check MEMBERSHIP_COLLECTION_START and MEMBERSHIP_COLLECTION_END.')
+        return {'matched': 0, 'skipped': 0, 'errors': 1, 'details': []}
+
+    # Staleness check: if the window closed more than 60 days ago the vars are
+    # almost certainly left over from a prior membership year.
+    STALE_DAYS = 60
+    days_since_end = (today - window_end).days
+    if days_since_end > STALE_DAYS:
+        print(f'ERROR: Collection window ended {days_since_end} days ago ({window_end}).')
+        print(f'  Variables appear stale (threshold: {STALE_DAYS} days past window end).')
+        print('  Update MEMBERSHIP_COLLECTION_START / MEMBERSHIP_COLLECTION_END in')
+        print('  GitHub → Settings → Secrets and variables → Actions → Variables.')
+        return {'matched': 0, 'skipped': 0, 'errors': 1, 'details': []}
+
+    # Future check: window more than 1 year out is almost certainly a typo.
+    FUTURE_DAYS = 366
+    days_until_start = (window_start - today).days
+    if days_until_start > FUTURE_DAYS:
+        print(f'ERROR: Collection window starts {days_until_start} days from now ({window_start}).')
+        print('  This looks like a typo — check the year in MEMBERSHIP_COLLECTION_START.')
         return {'matched': 0, 'skipped': 0, 'errors': 1, 'details': []}
 
     membership_year_end = None
