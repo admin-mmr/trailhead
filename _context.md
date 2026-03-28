@@ -200,6 +200,11 @@ Last commit: pending (git lock conflict — clean up locally)
 - **Status**: Done. Update `mmr-web` alias to call `./start-dev.sh` (or just use `npm run dev`).
 - **Next**: No action needed unless Keychain entries are missing.
 
+### 2026-03-28 16:38 ET — fix sync_sheets_to_mysql clobbering webapp_events Status
+- **Changed**: `basecamp/ops/sync_sheets_to_mysql.py` — removed `validate_status()` special-case for Status ENUM at all 3 call sites; now uses `validate_enum_value()` everywhere (reads allowed values from live schema). Root cause: `validate_status()` mapped unknown values like `'approved'` → `'pending'`, corrupting 108 rows on every sync.
+- **Status**: Fixed and verified. Post-fix sync restored 108 rows to `approved`. 1 genuinely pending row untouched.
+- **Next**: Monitor next sync for ENUM validation warnings in logs.
+
 ### 2026-03-28 13:20 ET — mmr-admin: fix NYRR API + env path + Keychain fallback
 - **Changed**: `api_events.py` — NYRR discover-upcoming URL updated from `rmsprodapi.nyrr.org` to `widget.hakuapp.com` (Haku SaaS); API key moved to env var `NYRR_HAKU_API_KEY`. `app.py` — fixed `.env.local` relative path (`../..` → `..`; was resolving outside trailhead to stale copy). Added Keychain fallback for `DATABASE_URL` when `.env.local` value is blank.
 - **Status**: Ready to commit. User must set `NYRR_HAKU_API_KEY` in `.env.local` and Azure App Settings.

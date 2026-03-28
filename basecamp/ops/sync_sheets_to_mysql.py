@@ -121,10 +121,14 @@ def validate_numeric(value: str, col_type: str) -> Optional[str]:
 
 def validate_status(value: str) -> str:
     """
-    Validate and normalize Status field.
+    Validate and normalize Status field for the MEMBERS table only.
 
-    MySQL Status column is ENUM('active','not active','pending')
+    MySQL members.Status is ENUM('active','not active','pending').
     Maps common variations to valid values.
+
+    NOTE: Do NOT call this for webapp_events or other tables — their Status
+    columns have different ENUM definitions. Use validate_enum_value() instead,
+    which reads the allowed values directly from the live schema.
     """
     if not value:
         return 'pending'
@@ -594,17 +598,14 @@ class SheetSyncer:
                                         continue
 
                                 if 'enum' in col_type_lower:
-                                    if col_name == 'Status':
-                                        col_value_clean = validate_status(str(col_value_clean))
-                                    else:
-                                        validated = validate_enum_value(str(col_value_clean), col_type)
-                                        if validated is None:
-                                            logger.warning(
-                                                f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
-                                                f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
-                                            )
-                                            continue
-                                        col_value_clean = validated
+                                    validated = validate_enum_value(str(col_value_clean), col_type)
+                                    if validated is None:
+                                        logger.warning(
+                                            f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
+                                            f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                        )
+                                        continue
+                                    col_value_clean = validated
 
                                 # Handle numeric type validation (int, decimal, float, etc.)
                                 validated_num = validate_numeric(str(col_value_clean), col_type)
@@ -715,17 +716,14 @@ class SheetSyncer:
 
                             # Handle ENUM validation generically (Status, Source, etc.)
                             if 'enum' in col_type_lower:
-                                if col_name == 'Status':
-                                    col_value_clean = validate_status(str(col_value_clean))
-                                else:
-                                    validated = validate_enum_value(str(col_value_clean), col_type)
-                                    if validated is None:
-                                        logger.warning(
-                                            f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
-                                            f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
-                                        )
-                                        continue  # skip this column; it's NULL-able so omit it
-                                    col_value_clean = validated
+                                validated = validate_enum_value(str(col_value_clean), col_type)
+                                if validated is None:
+                                    logger.warning(
+                                        f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
+                                        f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                    )
+                                    continue  # skip this column; it's NULL-able so omit it
+                                col_value_clean = validated
 
                             # Handle numeric type validation (int, decimal, float, etc.)
                             validated_num = validate_numeric(str(col_value_clean), col_type)
@@ -840,17 +838,14 @@ class SheetSyncer:
 
                             # Handle ENUM validation generically (Status, Source, etc.)
                             if 'enum' in col_type_lower:
-                                if col_name == 'Status':
-                                    col_value_clean = validate_status(str(col_value_clean))
-                                else:
-                                    validated = validate_enum_value(str(col_value_clean), col_type)
-                                    if validated is None:
-                                        logger.warning(
-                                            f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
-                                            f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
-                                        )
-                                        continue  # skip this field update; leave DB value unchanged
-                                    col_value_clean = validated
+                                validated = validate_enum_value(str(col_value_clean), col_type)
+                                if validated is None:
+                                    logger.warning(
+                                        f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
+                                        f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                    )
+                                    continue  # skip this field update; leave DB value unchanged
+                                col_value_clean = validated
 
                             # Handle numeric type validation (int, decimal, float, etc.)
                             validated_num = validate_numeric(str(col_value_clean), col_type)
