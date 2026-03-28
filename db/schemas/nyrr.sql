@@ -7,7 +7,7 @@
 -- NYRR events / races
 CREATE TABLE IF NOT EXISTS nyrr_events (
     id                  INT             AUTO_INCREMENT PRIMARY KEY,
-    event_code          VARCHAR(30)     NOT NULL,
+    event_code          VARCHAR(255)    NOT NULL,
     event_name          VARCHAR(255)    NOT NULL,
     event_url           VARCHAR(500)    NULL,
     location            VARCHAR(255)    NULL,

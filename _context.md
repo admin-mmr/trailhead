@@ -1,7 +1,7 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-28
-Last commit: pending (git lock conflict — clean up locally)
+Last updated: 2026-03-28 16:30 ET
+Last commit: pending (NYRR widget API fix)
 
 ---
 
@@ -66,6 +66,20 @@ Last commit: pending (git lock conflict — clean up locally)
   - Will add Payments UI tab in admin dashboard
 - **Files changed:** 13 modified, 1 new workflow, 1 deleted workflow, directory structure refactored
 - **Status:** Milestone complete, ready for testing. Next thread: implement payment approval system.
+
+### 2026-03-28 16:30 ET — NYRR widget API fix: Haku endpoint auth & HTML parsing
+- **Problem:** `/api/discover-upcoming` endpoint returned 403 Forbidden from Haku widget API. Curl commands also failed; same key worked in browser on nyrr.org.
+- **Root causes:** (1) Missing `x-api-key` header (AWS API Gateway requires header, not query param); (2) Missing CORS headers (`Origin: https://www.nyrr.org`, `Referer: https://www.nyrr.org/`); (3) Haku API returns **HTML widget, not JSON** — previous code tried `resp.json()` which failed
+- **Fixes:**
+  1. Added `x-api-key` header to request
+  2. Added `Origin` and `Referer` headers pointing to nyrr.org
+  3. Changed `widget_scope` from comma-separated list to single value `Endurance` (multi-scope returns 500)
+  4. Replaced JSON parser with regex-based HTML parser — extracts `<div class="upcoming-event" data-*>` blocks and pulls event name, date, location, URL; derives event_code from URL slug
+  5. Added error logging for DB insert failures
+- **Schema change:** `nyrr_events.event_code` expanded from `VARCHAR(30)` to `VARCHAR(255)` to accommodate long URL slugs (e.g., `run-as-one-4m-presented-by-jpmorgan-chase`)
+- **Migration:** `ALTER TABLE nyrr_events MODIFY event_code VARCHAR(255);`
+- **Files changed:** `mmr-admin/api_events.py`, `db/schemas/nyrr.sql`
+- **Status:** Parser tested on sample HTML (19 events extracted correctly). Ready for live testing after DB migration.
 
 ### 2026-03-27 01:00 ET — NYRR Viewer: server-side filters, default columns, per-user settings
 - **Fixed:** Data Browser column filters now run server-side (SQL WHERE LIKE) — filtering works across all pages, not just the displayed page

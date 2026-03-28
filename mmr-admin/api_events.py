@@ -302,32 +302,54 @@ NYRR_UPCOMING_API_KEY = os.environ.get("NYRR_HAKU_API_KEY", "")
 @events_bp.route('/api/discover-upcoming', methods=['POST'])
 @login_required
 def api_discover_upcoming():
-    """Fetch upcoming/announced events from the NYRR public widget API."""
-    import traceback
+    """Fetch upcoming/announced events from the NYRR public widget API.
+
+    The Haku widget API returns HTML (not JSON).  We parse the structured
+    ``<div class="upcoming-event" data-*>`` blocks to extract event info.
+    """
+    import re, traceback
     try:
         import requests as req_lib
-        resp = req_lib.get(NYRR_UPCOMING_API, params={
-            'api_key': NYRR_UPCOMING_API_KEY,
-            'widget_scope': 'Endurance,Ticketed,Volunteer,Trainings,Auction',
+        url = (f"{NYRR_UPCOMING_API}?api_key={NYRR_UPCOMING_API_KEY}"
+               f"&widget_scope=Endurance&widget_title=Upcoming%20Races")
+        resp = req_lib.get(url, headers={
+            'x-api-key': NYRR_UPCOMING_API_KEY,
+            'Origin': 'https://www.nyrr.org',
+            'Referer': 'https://www.nyrr.org/',
         }, timeout=30)
         resp.raise_for_status()
-        data = resp.json()
+        html = resp.text
     except Exception as e:
         tb = traceback.format_exc()
         print(f'[discover-upcoming] NYRR API error: {e}\n{tb}', flush=True)
         return json_response({'ok': False, 'error': f'NYRR widget API error: {e}'}, 502)
 
-    # The widget API returns a list of event groups; flatten to individual events
+    # ---- parse HTML widget into event dicts ----
     all_events = []
-    if isinstance(data, list):
-        all_events = data
-    elif isinstance(data, dict):
-        all_events = data.get('items', data.get('events', []))
-        if not all_events:
-            for grp in data.get('groups', data.get('event_groups', [])):
-                if isinstance(grp, dict):
-                    all_events.extend(grp.get('events', []))
+    # Split on each upcoming-event block
+    blocks = re.split(r'<div\s+class="upcoming-event"', html)
+    for block in blocks[1:]:  # skip preamble before first event
+        ev = {}
+        # data attributes on the opening div
+        m = re.search(r'data-start-date="([^"]*)"', block)
+        ev['start_date'] = m.group(1).replace('/', '-') if m else None
+        m = re.search(r'data-location="([^"]*)"', block)
+        ev['location'] = m.group(1).title() if m else ''
+        m = re.search(r'data-sub-types="([^"]*)"', block)
+        ev['distance'] = m.group(1) if m else ''
+        m = re.search(r'data-status="([^"]*)"', block)
+        ev['status'] = m.group(1) if m else ''
+        # event name
+        m = re.search(r'class="upcoming-race-title"[^>]*>([^<]+)<', block)
+        ev['name'] = m.group(1).strip() if m else ''
+        # event URL → also used to derive event_code
+        m = re.search(r'href="(https://events\.nyrr\.org/[^"]+)"', block)
+        ev['url'] = m.group(1) if m else ''
+        ev['code'] = ev['url'].rstrip('/').split('/')[-1] if ev['url'] else ''
+        if ev['code']:
+            all_events.append(ev)
 
+    # ---- insert new events into DB ----
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT event_code FROM nyrr_events")
@@ -335,31 +357,30 @@ def api_discover_upcoming():
 
     new_count = 0
     for ev in all_events:
-        code = ev.get('eventCode') or ev.get('event_code') or ''
-        if not code or code in existing:
+        code = ev['code']
+        if code in existing:
             continue
 
-        name = ev.get('eventName') or ev.get('name') or ev.get('event_name', '')
-        event_date_str = (ev.get('startDateTime') or ev.get('start_date_time') or '').split('T')[0] or None
-        location = ev.get('venue') or ev.get('location', '')
-        distance = ev.get('distanceUnitCode') or ev.get('distance', '')
-        url = ev.get('url') or f"https://www.nyrr.org/races/{code}"
-
+        event_date_str = ev['start_date']
         try:
             event_date_obj = date.fromisoformat(event_date_str) if event_date_str else None
         except ValueError:
             event_date_obj = None
         event_year = event_date_obj.year if event_date_obj else date.today().year
 
-        cursor.execute("""
-            INSERT INTO nyrr_events
-                (event_code, event_name, event_url, location, distance,
-                 event_date, event_year, is_upcoming, is_virtual, processing_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 0, 'Pending')
-            ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP
-        """, (code, name, url, location, distance, event_date_str, event_year))
-        existing.add(code)
-        new_count += 1
+        try:
+            cursor.execute("""
+                INSERT INTO nyrr_events
+                    (event_code, event_name, event_url, location, distance,
+                     event_date, event_year, is_upcoming, is_virtual, processing_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 0, 'Pending')
+                ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP
+            """, (code, ev['name'], ev['url'], ev['location'], ev['distance'],
+                  event_date_str, event_year))
+            existing.add(code)
+            new_count += 1
+        except Exception as db_err:
+            print(f'[discover-upcoming] DB insert error for code={code!r} (len={len(code)}): {db_err}', flush=True)
 
     conn.commit()
     cursor.close()

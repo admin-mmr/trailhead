@@ -142,7 +142,7 @@ nyrr_event_runners	21	scan_timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENER
 nyrr_event_runners	22	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 nyrr_event_runners	23	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
 nyrr_events	1	id	int	NO	NULL	auto_increment	PRI	
-nyrr_events	2	event_code	varchar(30)	NO	NULL		UNI	
+nyrr_events	2	event_code	varchar(255)	YES	NULL		UNI	
 nyrr_events	3	event_name	varchar(255)	NO	NULL			
 nyrr_events	4	event_url	varchar(500)	YES	NULL			
 nyrr_events	5	location	varchar(255)	YES	NULL			
@@ -310,7 +310,7 @@ nyrr_events	idx_event_year	1	1	event_year	BTREE	YES
 nyrr_events	idx_is_upcoming	1	1	is_upcoming	BTREE	
 nyrr_events	idx_processing_status	1	1	processing_status	BTREE	
 nyrr_events	PRIMARY	0	1	id	BTREE	
-nyrr_events	uq_event_code	0	1	event_code	BTREE	
+nyrr_events	uq_event_code	0	1	event_code	BTREE	YES
 nyrr_processing_log	idx_log_event_id	1	1	nyrr_event_id	BTREE	YES
 nyrr_processing_log	idx_log_run_status	1	1	run_status	BTREE	
 nyrr_processing_log	idx_log_run_timestamp	1	1	run_timestamp	BTREE	
