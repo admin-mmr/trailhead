@@ -104,6 +104,9 @@
     .panel-header h3 { font-size: 15px; font-weight: 600; }
     .panel-header-actions { display: flex; gap: 8px; align-items: center; }
     .table-wrap { overflow-x: auto; }
+    .table-wrap-scrollable { overflow: auto; max-height: 70vh; }
+    .table-wrap-scrollable thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); }
+    .table-wrap-scrollable thead tr.filter-row th { position: sticky; top: 33px; z-index: 2; background: var(--surface); }
 
     .back-btn { color: var(--text2); cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 12px; background: none; border: none; }
     .back-btn:hover { color: var(--text); }
@@ -414,8 +417,27 @@ const AdminPanel = ({ userRole, userEmail }) => {
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('admin');
   const [loadingDelete, setLoadingDelete] = useState(null);
+  const [refreshingSheets, setRefreshingSheets] = useState(false);
+  const [runningAutoGuess, setRunningAutoGuess] = useState(false);
 
   const isSuperAdmin = userRole === 'super_admin';
+
+  const handleRefreshSheets = async () => {
+    setRefreshingSheets(true);
+    const r = await api('/api/admin/refresh-sheets', { method: 'POST' });
+    setRefreshingSheets(false);
+    setToast(r.ok ? (r.message || 'Sync triggered') : (r.error || 'Failed to trigger sync'));
+  };
+
+  const handleAutoGuess = async (dryRun = false) => {
+    setRunningAutoGuess(true);
+    const r = await api('/api/admin/auto-guess', {
+      method: 'POST',
+      body: JSON.stringify({ dry_run: dryRun }),
+    });
+    setRunningAutoGuess(false);
+    setToast(r.ok ? (r.message || 'Auto-Guess triggered') : (r.error || 'Failed to trigger'));
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -476,6 +498,31 @@ const AdminPanel = ({ userRole, userEmail }) => {
   return (
     <div>
       <h2 style={{ marginBottom: 16 }}>Admin Management</h2>
+
+      <div className="panel" style={{ marginBottom: 24, padding: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Data Refresh</h3>
+        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+          Trigger a full sync from Google Sheets to MySQL: gmail_transactions → payments → webapp_events → members (~5 min).
+        </p>
+        <button className="btn btn-primary" onClick={handleRefreshSheets} disabled={refreshingSheets}>
+          {refreshingSheets ? 'Triggering…' : 'Refresh from Sheets'}
+        </button>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 24, padding: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Auto-Guess Payment Matching</h3>
+        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+          Scan unprocessed Gmail payments ($30/$50) and auto-match to members by MemberID in memo. Also runs automatically after every Sheets sync.
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary" onClick={() => handleAutoGuess(false)} disabled={runningAutoGuess}>
+            {runningAutoGuess ? 'Triggering…' : 'Run Auto-Guess'}
+          </button>
+          <button className="btn btn-outline" onClick={() => handleAutoGuess(true)} disabled={runningAutoGuess}>
+            Dry Run
+          </button>
+        </div>
+      </div>
 
       <div className="admin-note">
         Super admins can manage this list. Admins have read-only access.
@@ -798,6 +845,8 @@ const EventDetail = ({ eventId, onBack }) => {
   const [showColSelector, setShowColSelector] = useState(false);
   const [toast, setToast] = useState('');
   const [matchModal, setMatchModal] = useState(null); // runner row being matched
+  const [runnerPage, setRunnerPage] = useState(1);
+  const [runnerPerPage, setRunnerPerPage] = useState(100);
 
   useEffect(() => {
     api(`/api/events/${eventId}`).then(r => r.ok && setEvent(r.data));
@@ -815,6 +864,7 @@ const EventDetail = ({ eventId, onBack }) => {
     api(`/api/events/${eventId}/runners?${p}`).then(r => {
       if (r.ok) setRunners(r.data);
       setLoading(false);
+      setRunnerPage(1);
     });
   }, [eventId, filter]);
 
@@ -944,6 +994,11 @@ const EventDetail = ({ eventId, onBack }) => {
 
   const hasActiveColFilters = Object.values(colFilters).some(v => v && v.trim());
 
+  // Client-side pagination
+  const totalRunnerPages = Math.max(1, Math.ceil(filtered.length / runnerPerPage));
+  const safePage = Math.min(runnerPage, totalRunnerPages);
+  const pagedRunners = filtered.slice((safePage - 1) * runnerPerPage, safePage * runnerPerPage);
+
   return (
     <div>
       <button className="back-btn" onClick={onBack}>← Back to events</button>
@@ -962,8 +1017,13 @@ const EventDetail = ({ eventId, onBack }) => {
       </div>
 
       {event.notes && (
-        <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 13, color: 'var(--text2)' }}>
-          <strong>Notes:</strong> {event.notes}
+        <div style={{
+          background: event.processing_status === 'Error' ? 'rgba(239,68,68,0.12)' : 'var(--surface)',
+          border: event.processing_status === 'Error' ? '1px solid rgba(239,68,68,0.3)' : 'none',
+          padding: 12, borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 13,
+          color: event.processing_status === 'Error' ? 'var(--red, #ef4444)' : 'var(--text2)'
+        }}>
+          <strong>{event.processing_status === 'Error' ? '⚠ Error:' : 'Notes:'}</strong> {event.notes}
         </div>
       )}
 
@@ -1091,7 +1151,7 @@ const EventDetail = ({ eventId, onBack }) => {
                 <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length} className="loading"><span className="spinner" /> Loading runners...</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length} className="empty"><div className="big">-</div>No runners found</td></tr>
-              ) : filtered.map(r => (
+              ) : pagedRunners.map(r => (
                 <tr key={r.id}>
                   {visibleCols.place && <td>{r.overall_place || '—'}</td>}
                   {visibleCols.bib && <td>{r.bib_number || '—'}</td>}
@@ -1135,6 +1195,26 @@ const EventDetail = ({ eventId, onBack }) => {
           </table>
         </div>
       </div>
+      {filtered.length > runnerPerPage && (
+        <div className="pagination">
+          <button className="btn btn-sm btn-outline" disabled={safePage <= 1} onClick={() => setRunnerPage(1)}>«</button>
+          <button className="btn btn-sm btn-outline" disabled={safePage <= 1} onClick={() => setRunnerPage(p => p - 1)}>‹</button>
+          <span className="page-info">Page {safePage} of {totalRunnerPages}</span>
+          <button className="btn btn-sm btn-outline" disabled={safePage >= totalRunnerPages} onClick={() => setRunnerPage(p => p + 1)}>›</button>
+          <button className="btn btn-sm btn-outline" disabled={safePage >= totalRunnerPages} onClick={() => setRunnerPage(totalRunnerPages)}>»</button>
+          <span style={{ marginLeft: 12, fontSize: 13, color: 'var(--text2)' }}>Show</span>
+          <select
+            value={runnerPerPage}
+            onChange={e => { setRunnerPerPage(Number(e.target.value)); setRunnerPage(1); }}
+            style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)' }}
+          >
+            {[50, 100, 200, 500, 1000].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 13, color: 'var(--text2)' }}>per page</span>
+        </div>
+      )}
       {hasActiveColFilters && (
         <div style={{ marginTop: 12, fontSize: 13 }}>
           <a href="#" onClick={e => { e.preventDefault(); setColFilters({}); }} style={{ color: 'var(--accent)' }}>Clear filters</a>
@@ -1375,7 +1455,7 @@ const TableBrowser = () => {
               )}
             </div>
           </div>
-          <div className="table-wrap" style={{ overflowX: 'auto', maxWidth: '100%' }}>
+          <div className="table-wrap table-wrap-scrollable" style={{ maxWidth: '100%' }}>
             {loading ? (
               <div className="loading"><span className="spinner" /> Loading...</div>
             ) : (
@@ -1436,7 +1516,7 @@ const TableBrowser = () => {
               <select
                 value={perPage}
                 onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--bg)' }}
+                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)' }}
               >
                 {[25, 50, 100, 200, 500].map(n => (
                   <option key={n} value={n}>{n}</option>

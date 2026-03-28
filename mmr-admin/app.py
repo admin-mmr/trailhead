@@ -75,6 +75,11 @@ def index():
     return send_file(template_path, mimetype='text/html')
 
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
+
 # ---------------------------------------------------------------------------
 # Register blueprints
 # ---------------------------------------------------------------------------

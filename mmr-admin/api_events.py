@@ -303,15 +303,18 @@ NYRR_UPCOMING_API_KEY = "ZUSQ2ZfFgH5ia2E38BEKS4VVkVwIL9Y9aCLhk043"
 @login_required
 def api_discover_upcoming():
     """Fetch upcoming/announced events from the NYRR public widget API."""
+    import traceback
     try:
         import requests as req_lib
         resp = req_lib.get(NYRR_UPCOMING_API, params={
             'api_key': NYRR_UPCOMING_API_KEY,
             'widget_scope': 'Endurance,Ticketed,Volunteer,Trainings,Auction',
-        }, timeout=15)
+        }, timeout=30)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
+        tb = traceback.format_exc()
+        print(f'[discover-upcoming] NYRR API error: {e}\n{tb}', flush=True)
         return json_response({'ok': False, 'error': f'NYRR widget API error: {e}'}, 502)
 
     # The widget API returns a list of event groups; flatten to individual events

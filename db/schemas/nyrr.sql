@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS nyrr_event_runners (
     team_code           VARCHAR(20)     NULL,
     is_registered_only  TINYINT(1)      NOT NULL DEFAULT 0,
     mmr_member_id       VARCHAR(10)     NULL,
-    match_method        ENUM('auto_name', 'auto_lastname', 'manual', 'not_member', 'unmatched')
+    match_method        ENUM('auto_name', 'auto_lastname', 'auto_firstlast', 'manual', 'not_member', 'unmatched')
                             NULL,
     matched_by          VARCHAR(100)    NULL,
     matched_at          DATETIME        NULL,

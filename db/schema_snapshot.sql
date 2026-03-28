@@ -17,6 +17,7 @@ sync_changes	InnoDB	utf8mb4_unicode_ci
 sync_metadata	InnoDB	utf8mb4_unicode_ci	
 sync_snapshots	InnoDB	utf8mb4_unicode_ci	
 viewer_admins	InnoDB	utf8mb4_unicode_ci	
+viewer_user_settings	InnoDB	utf8mb4_unicode_ci	
 webapp_events	InnoDB	utf8mb4_unicode_ci	
 section
 === 2. COLUMNS ===
@@ -134,7 +135,7 @@ nyrr_event_runners	14	gender_place	int	YES	NULL
 nyrr_event_runners	15	team_code	varchar(20)	YES	NULL		MUL	
 nyrr_event_runners	16	is_registered_only	tinyint(1)	NO	0			
 nyrr_event_runners	17	mmr_member_id	varchar(10)	YES	NULL		MUL	
-nyrr_event_runners	18	match_method	enum('auto_name','auto_lastname','manual','not_member','unmatched')	YES	NULL		MUL	
+nyrr_event_runners	18	match_method	enum('auto_name','auto_lastname','auto_firstlast','manual','not_member','unmatched')	YES	NULL		MUL	
 nyrr_event_runners	19	matched_by	varchar(100)	YES	NULL			
 nyrr_event_runners	20	matched_at	datetime	YES	NULL			
 nyrr_event_runners	21	scan_timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
@@ -231,32 +232,39 @@ viewer_admins	1	id	int	NO	NULL	auto_increment	PRI
 viewer_admins	2	email	varchar(255)	NO	NULL		UNI	
 viewer_admins	3	role	enum('admin','super_admin')	NO	admin			
 viewer_admins	4	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+viewer_user_settings	1	id	int	NO	NULL	auto_increment	PRI	
+viewer_user_settings	2	email	varchar(255)	NO	NULL		MUL	
+viewer_user_settings	3	table_name	varchar(255)	NO	NULL			
+viewer_user_settings	4	visible_columns	json	YES	NULL			
+viewer_user_settings	5	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+viewer_user_settings	6	updated_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
 webapp_events	1	EventID	varchar(50)	NO	NULL		PRI	
 webapp_events	2	EventType	varchar(50)	NO	NULL			
-webapp_events	3	Timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
-webapp_events	4	ExpiresAt	datetime	YES	NULL			
-webapp_events	5	MemberID	varchar(10)	YES	NULL		MUL	
-webapp_events	6	Email	varchar(255)	NO	NULL		MUL	
-webapp_events	7	PaymentIntent	varchar(100)	YES	NULL			
-webapp_events	8	Amount	decimal(10,2)	YES	NULL			
-webapp_events	9	PaymentMethod	varchar(50)	YES	NULL			
-webapp_events	10	PayerName	varchar(100)	YES	NULL			
-webapp_events	11	MemoField	text	YES	NULL			
-webapp_events	12	Last4Digits	varchar(10)	YES	NULL			
-webapp_events	13	FamilyMemberEmails	text	YES	NULL			
-webapp_events	14	Status	enum('pending','approved','rejected')	NO	pending		MUL	
-webapp_events	15	MatchedMessageId	varchar(100)	YES	NULL		MUL	
-webapp_events	16	MatchedTransactionNumber	varchar(100)	YES	NULL			
-webapp_events	17	AdminApprover	varchar(255)	YES	NULL			
-webapp_events	18	ApprovalDate	datetime	YES	NULL			
-webapp_events	19	Notes	text	YES	NULL			
-webapp_events	20	PaymentDate	datetime	YES	NULL			
-webapp_events	21	ScreenshotFileId	varchar(255)	YES	NULL			
-webapp_events	22	GDriveFilePath	varchar(500)	YES	NULL			
-webapp_events	23	OCRText	text	YES	NULL			
-webapp_events	24	OCRTimestamp	datetime	YES	NULL			
-webapp_events	25	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-webapp_events	26	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+webapp_events	3	EventCategory	varchar(50)	YES	payment			
+webapp_events	4	Timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
+webapp_events	5	ExpiresAt	datetime	YES	NULL			
+webapp_events	6	MemberID	varchar(10)	YES	NULL		MUL	
+webapp_events	7	Email	varchar(255)	NO	NULL		MUL	
+webapp_events	8	PaymentIntent	varchar(100)	YES	NULL			
+webapp_events	9	Amount	decimal(10,2)	YES	NULL			
+webapp_events	10	PaymentMethod	varchar(50)	YES	NULL			
+webapp_events	11	PayerName	varchar(100)	YES	NULL			
+webapp_events	12	MemoField	text	YES	NULL			
+webapp_events	13	Last4Digits	varchar(10)	YES	NULL			
+webapp_events	14	FamilyMemberEmails	text	YES	NULL			
+webapp_events	15	Status	enum('pending','matched','approved','rejected','expired','error')	NO	pending		MUL	
+webapp_events	16	MatchedMessageId	varchar(100)	YES	NULL		MUL	
+webapp_events	17	MatchedTransactionNumber	varchar(100)	YES	NULL			
+webapp_events	18	AdminApprover	varchar(255)	YES	NULL			
+webapp_events	19	ApprovalDate	datetime	YES	NULL			
+webapp_events	20	Notes	text	YES	NULL			
+webapp_events	21	PaymentDate	datetime	YES	NULL			
+webapp_events	22	ScreenshotFileId	varchar(255)	YES	NULL			
+webapp_events	23	GDriveFilePath	varchar(500)	YES	NULL			
+webapp_events	24	OCRText	text	YES	NULL			
+webapp_events	25	OCRTimestamp	datetime	YES	NULL			
+webapp_events	26	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+webapp_events	27	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
 section
 === 3. INDEXES ===
 table	index_name	non_unique	seq	column_name	index_type	nullable
@@ -325,6 +333,9 @@ sync_snapshots	idx_timestamp	1	1	snapshot_timestamp	BTREE	YES
 sync_snapshots	PRIMARY	0	1	snapshot_id	BTREE	
 viewer_admins	email	0	1	email	BTREE	
 viewer_admins	PRIMARY	0	1	id	BTREE	
+viewer_user_settings	PRIMARY	0	1	id	BTREE	
+viewer_user_settings	uq_user_table	0	1	email	BTREE	
+viewer_user_settings	uq_user_table	0	2	table_name	BTREE	
 webapp_events	idx_pe_email	1	1	Email	BTREE	
 webapp_events	idx_pe_matchedmessageid	1	1	MatchedMessageId	BTREE	YES
 webapp_events	idx_pe_memberid	1	1	MemberID	BTREE	YES

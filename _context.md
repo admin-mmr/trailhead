@@ -146,3 +146,23 @@ Last commit: 3acc92a
 - **Root cause (JS crash):** `payments.js` re-declared `const { useState, ... } = React` which was already declared in `index.html`. Babel compiles both in global scope → duplicate `const` error. Fix: removed duplicate destructuring, use globals from index.html.
 - **Updated:** `DEPLOY_AZURE.md` — removed all stale `cd tools/nyrr-viewer` references.
 - **Files changed:** `mmr-admin/static/payments.js`, `mmr-admin/DEPLOY_AZURE.md`
+
+### 2026-03-28 01:09 ET — Fix 8 bugs in mmr-admin (batch)
+- **Bug 6 (root cause):** `match_method` ENUM missing `'auto_firstlast'` — Tier 2 auto-match was silently failing. Added to schema, snapshot, and created migration `0009_match_method_enum.sql`. **Must run migration on Azure DB.**
+- **Bug 1:** favicon.ico returning 500 — added `/favicon.ico` route returning 204 in `app.py`.
+- **Bug 5:** Runner table had no pagination — added client-side paging (50/100/200/500/1000 per page) with page controls.
+- **Bug 3:** Resync error details not visible — error notes now display with red alert styling when `processing_status='Error'`.
+- **Bug 2:** Discover Upcoming 502 — increased timeout to 30s, added traceback logging for debugging.
+- **Bug 7:** Admin "Refresh from Sheets" — new `/api/admin/refresh-sheets` endpoint triggers GitHub Actions `sync-all-sheets-ordered.yml` via API. Button added to Admin panel. **Requires `GITHUB_TOKEN` env var on Azure.**
+- **Bug 8:** "Show xx per page" dropdown text invisible (black on dark) — added `color: var(--text)` to both Data Browser and runner table selects.
+- **Bug 9:** Data Browser wide tables — added `.table-wrap-scrollable` class with `max-height: 70vh`, sticky `thead`, both horizontal and vertical scrollbars always visible.
+- **Files changed:** `db/schemas/nyrr.sql`, `db/schema_snapshot.sql`, `db/migrations/0009_match_method_enum.sql` (new), `mmr-admin/app.py`, `mmr-admin/api_events.py`, `mmr-admin/api_admin.py`, `mmr-admin/templates/index.html`
+- **Still open:** Run migration 0009 on Azure DB; add `GITHUB_TOKEN` to Azure env; investigate NYRR widget API connectivity from Azure (Bug 2 needs deployed logs)
+
+### 2026-03-28 01:18 ET — Auto-Guess Payment Matching (Python + GitHub Action)
+- **basecamp/ops/auto_guess_payments.py** (new, ~280 lines) — Python port of GAS `autoMatchUnmatchedPayments()`. Scans `gmail_transactions` for unprocessed $30/$50 payments, extracts MemberID from memo, creates `payments` record, updates `members` + family, marks Gmail row processed. Supports `--commit` vs dry-run, `--start`/`--end` overrides.
+- **.github/workflows/auto-guess-payments.yml** (new) — Auto-runs after Sheets sync via `workflow_run` trigger. Also manual via `workflow_dispatch` with dry_run/date inputs. Sends email notification.
+- **mmr-admin/api_admin.py** — New `/api/admin/auto-guess` endpoint to trigger workflow from admin UI.
+- **mmr-admin/templates/index.html** — "Auto-Guess Payment Matching" section in Admin panel with Run / Dry Run buttons.
+- **Config needed:** Set GitHub repo variables: `MEMBERSHIP_COLLECTION_START`, `MEMBERSHIP_COLLECTION_END`, `MEMBERSHIP_YEAR_END`, `INDIVIDUAL_PRICE`, `FAMILY_PRICE` in Settings → Variables → Actions.
+- **Still open:** Set repo variables for collection window; add `GITHUB_TOKEN` to Azure env
