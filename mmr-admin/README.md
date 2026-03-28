@@ -7,16 +7,17 @@ data sync, and MySQL data browsing. (Formerly nyrr-viewer.)
 
 ```bash
 # 1. Load DB credentials
+
 source load-env.sh
 
 # 2. Install dependencies
-pip install -r mmr-admin/requirements.txt
+pip3 install -r mmr-admin/requirements.txt
 
 # 3. Enable pre-commit hooks (one-time per clone)
 git config core.hooksPath .githooks
 
 # 4. Run
-python mmr-admin/app.py
+python3 mmr-admin/app.py
 
 # 5. Open http://localhost:5050
 ```
