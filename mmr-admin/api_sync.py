@@ -11,6 +11,7 @@ Routes: /api/load/<event_id> (POST), /api/load/<event_code>/status
 
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import datetime
 from typing import Any, Dict
@@ -21,6 +22,8 @@ from auth import login_required
 from db import query, get_conn
 from helpers import json_response
 from nyrr_api import NyrrApiClient
+
+logger = logging.getLogger(__name__)
 
 sync_bp = Blueprint('sync', __name__)
 

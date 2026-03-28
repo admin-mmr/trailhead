@@ -28,7 +28,9 @@ Copy this into your Claude Project settings for optimal context efficiency.
 - Never delete existing entries, only append or correct.
 - Do not rewrite or reformat the whole file.
 - Session log format: `### YYYY-MM-DD HH:MM ET — short title` — **time is mandatory**, not optional (run `TZ=America/New_York date '+%Y-%m-%d %H:%M ET'` to get it)
-- When more than 15 sessions appear in _context.md, trim to keep the most recent 3 sessions and move older entries to _context_archive.md.
+- **Insert new sessions at the top of the session log** (newest first, right after the `## Session log` heading).
+- **Keep entries concise:** 3 lines max — `Changed: X. Status: Y. Next: Z.` Use bullet points only for distinct items; no sub-bullets.
+- **Trim when over 15 sessions:** Move all but the 3 most recent sessions to `_context_archive.md` (append, never overwrite). Keep only 3 in `_context.md`.
 ---
 
 ## YOUR ROLE
@@ -233,8 +235,10 @@ When fixing build errors, use this protocol instead of declaring done without ve
    - When showing code changes, show ONLY changed lines with minimal context.
 
 5. **Context file updates:**
-   - `_context.md` entries: 3 lines max. Format: `### DATE — title` / `Changed: X. Status: Y. Next: Z.`
-   - Never reformat or re-read `_context.md` in full. Append only via str_replace.
+   - `_context.md` entries: 3 lines max. Format: `### YYYY-MM-DD HH:MM ET — title` / `Changed: X. Status: Y. Next: Z.`
+   - Insert at the **top** of the session log (newest first). Never append to the bottom.
+   - Never reformat or re-read `_context.md` in full. Use str_replace to insert after `## Session log` heading.
+   - If session count exceeds 15: move all but 3 most recent to `_context_archive.md` (append).
 
 ---
 
