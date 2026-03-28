@@ -58,17 +58,6 @@ def api_load_event(event_id):
     force_reload = request.json.get('force_reload', False)
     logger.info(f"📋 Event found: event_code={event_code}, force_reload={force_reload}")
 
-    # Initialize job status
-    with _jobs_lock:
-        _jobs[event_code] = {
-            'status': 'running',
-            'message': 'Starting three-step sync...',
-            'step': 'init',
-            'rows_written': 0,
-            'teams_processed': 0,
-            'started_at': datetime.utcnow().isoformat(),
-        }
-
     # Start background worker
     thread = threading.Thread(
         target=_sync_worker,
@@ -104,6 +93,17 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
     start_time = time.time()
     client = NyrrApiClient()
     conn = None
+
+    # Initialize job status (must happen before any _jobs access)
+    with _jobs_lock:
+        _jobs[event_code] = {
+            'status': 'running',
+            'message': 'Starting three-step sync...',
+            'step': 'init',
+            'rows_written': 0,
+            'teams_processed': 0,
+            'started_at': datetime.utcnow().isoformat(),
+        }
 
     try:
         # --- Step 1: Load all finishers ---
