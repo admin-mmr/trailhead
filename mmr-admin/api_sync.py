@@ -130,35 +130,57 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
         conn = None
 
         # --- Phase 2: Fetch runners from NYRR API (no DB connection open) ---
+        def _fetch_progress(fetched, total):
+            with _jobs_lock:
+                if total:
+                    _jobs[event_code]['message'] = f'Fetching from NYRR API: {fetched}/{total} runners...'
+                else:
+                    _jobs[event_code]['message'] = f'Fetching from NYRR API: {fetched} runners so far...'
+
         if scope == 'all':
-            runners = client.get_event_finishers(event_code)
+            runners = client.get_event_finishers(event_code, progress_cb=_fetch_progress)
         else:
             runners = client.get_team_runners(event_code, TEAM_CODE)
 
         with _jobs_lock:
             _jobs[event_code]['message'] = f'Got {len(runners)} runners. Upserting...'
 
-        # Prepare row tuples, skipping blank runner_ids
+        # Dedup key is bib_number (unique per event). Skip runners with no bib.
+        #
+        # Two API sources, each provides different fields:
+        #   scope='all'  → runners/finishers-filter: has canonical nyrr_runner_id, no teamCode
+        #   scope='mmr'  → teams/teamRunners:        has teamCode='MMR', runner_id may differ
+        #
+        # Upsert strategy:
+        #   - 'finishers': always set nyrr_runner_id; leave team_code alone on conflict
+        #   - 'mmr_team':  always set team_code='MMR'; leave nyrr_runner_id alone on conflict
+        #   - sync_source advances: NULL→source, or existing→'both'
+        is_finishers = (scope == 'all')
+        this_source = 'finishers' if is_finishers else 'mmr_team'
+
         row_tuples = []
         for runner in runners:
-            if not runner.runner_id:
+            if not runner.bib:
                 continue
             full_name = f"{runner.first_name} {runner.last_name}".strip()
+            team = 'MMR' if not is_finishers else (runner.team_code or '')
             row_tuples.append((
                 event_id,
-                str(runner.runner_id),
+                str(runner.runner_id) if runner.runner_id else None,
                 full_name,
                 runner.first_name,
                 runner.last_name,
                 runner.age,
                 runner.gender,
+                getattr(runner, 'city', '') or '',
                 runner.state_province,
                 runner.bib,
                 runner.overall_time,
                 runner.pace,
                 runner.overall_place,
                 runner.gender_place,
-                runner.team_code or '',
+                team,
+                this_source,
             ))
 
         # --- Phase 3: Batch upsert with fresh connection ---
@@ -166,27 +188,56 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
         conn.autocommit = False
         cursor = conn.cursor()
 
-        upsert_sql = """
-            INSERT INTO nyrr_event_runners
-                (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
-                 age, gender, state_province, bib_number, finish_time, pace,
-                 overall_place, gender_place, team_code, is_registered_only, scan_timestamp)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW())
-            ON DUPLICATE KEY UPDATE
-                runner_name = VALUES(runner_name),
-                first_name = VALUES(first_name),
-                last_name = VALUES(last_name),
-                age = VALUES(age),
-                gender = VALUES(gender),
-                state_province = VALUES(state_province),
-                bib_number = VALUES(bib_number),
-                finish_time = VALUES(finish_time),
-                pace = VALUES(pace),
-                overall_place = VALUES(overall_place),
-                gender_place = VALUES(gender_place),
-                team_code = VALUES(team_code),
-                scan_timestamp = NOW()
-        """
+        if is_finishers:
+            # finishers-filter: write canonical runner_id + race data; don't clobber team_code
+            upsert_sql = """
+                INSERT INTO nyrr_event_runners
+                    (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
+                     age, gender, city, state_province, bib_number, finish_time, pace,
+                     overall_place, gender_place, team_code, sync_source,
+                     is_registered_only, scan_timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW())
+                ON DUPLICATE KEY UPDATE
+                    nyrr_runner_id  = VALUES(nyrr_runner_id),
+                    runner_name     = VALUES(runner_name),
+                    first_name      = VALUES(first_name),
+                    last_name       = VALUES(last_name),
+                    age             = VALUES(age),
+                    gender          = VALUES(gender),
+                    city            = VALUES(city),
+                    state_province  = VALUES(state_province),
+                    finish_time     = VALUES(finish_time),
+                    pace            = VALUES(pace),
+                    overall_place   = VALUES(overall_place),
+                    gender_place    = VALUES(gender_place),
+                    sync_source     = IF(sync_source = 'mmr_team', 'both', VALUES(sync_source)),
+                    scan_timestamp  = NOW()
+            """
+        else:
+            # teams/teamRunners: write team_code='MMR'; don't clobber canonical runner_id
+            upsert_sql = """
+                INSERT INTO nyrr_event_runners
+                    (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
+                     age, gender, city, state_province, bib_number, finish_time, pace,
+                     overall_place, gender_place, team_code, sync_source,
+                     is_registered_only, scan_timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW())
+                ON DUPLICATE KEY UPDATE
+                    runner_name     = VALUES(runner_name),
+                    first_name      = VALUES(first_name),
+                    last_name       = VALUES(last_name),
+                    age             = VALUES(age),
+                    gender          = VALUES(gender),
+                    city            = VALUES(city),
+                    state_province  = VALUES(state_province),
+                    finish_time     = VALUES(finish_time),
+                    pace            = VALUES(pace),
+                    overall_place   = VALUES(overall_place),
+                    gender_place    = VALUES(gender_place),
+                    team_code       = 'MMR',
+                    sync_source     = IF(sync_source = 'finishers', 'both', VALUES(sync_source)),
+                    scan_timestamp  = NOW()
+            """
 
         rows_written = 0
         for i in range(0, len(row_tuples), BATCH_SIZE):
@@ -326,3 +377,39 @@ def _load_event_background(event_id: int, event_code: str, scope: str = 'team', 
                 conn.close()
             except Exception:
                 pass
+
+
+@sync_bp.route('/api/events/<int:event_id>/runners', methods=['DELETE'])
+@login_required
+def api_delete_event_runners(event_id):
+    """
+    Delete all runners for a given event so it can be reloaded from scratch.
+    Also resets the event processing_status to 'Pending'.
+    """
+    rows = query("SELECT event_code FROM nyrr_events WHERE id = %s", [event_id])
+    if not rows:
+        return json_response({'ok': False, 'error': 'Event not found'}, 404)
+
+    event_code = rows[0]['event_code']
+
+    # Abort if a sync job is currently running for this event
+    with _jobs_lock:
+        job = _jobs.get(event_code, {})
+        if job.get('status') == 'running':
+            return json_response({'ok': False, 'error': 'Sync in progress — wait for it to finish first'}, 409)
+
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM nyrr_event_runners WHERE nyrr_event_id = %s", (event_id,))
+        deleted = cursor.rowcount
+        cursor.execute(
+            "UPDATE nyrr_events SET processing_status = 'Pending', notes = NULL WHERE id = %s",
+            (event_id,)
+        )
+        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
+
+    return json_response({'ok': True, 'deleted': deleted, 'event_code': event_code})

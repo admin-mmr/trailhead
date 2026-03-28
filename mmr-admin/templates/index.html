@@ -656,6 +656,13 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
     );
   }
 
+  const clearRunners = async (eventId, eventCode) => {
+    if (!window.confirm(`Delete ALL runners for ${eventCode}? This cannot be undone.`)) return;
+    const r = await api(`/api/events/${eventId}/runners`, { method: 'DELETE' });
+    setToast(r.ok ? `Cleared ${r.deleted} runners for ${eventCode}` : (r.error || 'Clear failed'));
+    if (r.ok) { loadEvents(); loadStats(); }
+  };
+
   const triggerLoad = async (eventId, eventCode, scope = 'team', forceReload = false) => {
     setLoadingIds(prev => ({ ...prev, [eventId]: true }));
     const r = await api(`/api/load/${eventId}`, {
@@ -809,6 +816,9 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
                               </div>
                               <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, 'all', isForce); setOpenDropdown(null); }}>
                                 All runners
+                              </div>
+                              <div className="dropdown-item" style={{ color: 'var(--danger, #e55)' }} onClick={() => { setOpenDropdown(null); clearRunners(ev.id, ev.event_code); }}>
+                                🗑 Clear all runners
                               </div>
                             </div>
                           )}
@@ -1268,22 +1278,25 @@ const TableBrowser = () => {
     api('/api/tables').then(r => r.ok && setTables(r.data));
   }, []);
 
-  // Debounce filter changes — send to server after 400ms of inactivity
+  // Apply colFilters immediately (called on Enter/Tab)
+  const applyFiltersNow = React.useCallback(() => {
+    if (filterTimerRef.current) { clearTimeout(filterTimerRef.current); filterTimerRef.current = null; }
+    const newActive = {};
+    Object.entries(colFilters).forEach(([k, v]) => { if (v && v.trim()) newActive[k] = v.trim(); });
+    setActiveFilters(prev => {
+      const oldKeys = Object.keys(prev).sort().join(',');
+      const newKeys = Object.keys(newActive).sort().join(',');
+      const oldVals = Object.values(prev).sort().join(',');
+      const newVals = Object.values(newActive).sort().join(',');
+      if (oldKeys !== newKeys || oldVals !== newVals) { setPage(1); return newActive; }
+      return prev;
+    });
+  }, [colFilters]);
+
+  // Debounce filter changes — send to server after 800ms of inactivity
   useEffect(() => {
     if (filterTimerRef.current) clearTimeout(filterTimerRef.current);
-    filterTimerRef.current = setTimeout(() => {
-      // Only trigger fetch if filters actually changed
-      const newActive = {};
-      Object.entries(colFilters).forEach(([k, v]) => { if (v && v.trim()) newActive[k] = v.trim(); });
-      const oldKeys = Object.keys(activeFilters).sort().join(',');
-      const newKeys = Object.keys(newActive).sort().join(',');
-      const oldVals = Object.values(activeFilters).sort().join(',');
-      const newVals = Object.values(newActive).sort().join(',');
-      if (oldKeys !== newKeys || oldVals !== newVals) {
-        setActiveFilters(newActive);
-        setPage(1);
-      }
-    }, 400);
+    filterTimerRef.current = setTimeout(applyFiltersNow, 800);
     return () => { if (filterTimerRef.current) clearTimeout(filterTimerRef.current); };
   }, [colFilters]);
 
@@ -1482,6 +1495,7 @@ const TableBrowser = () => {
                             placeholder={`Filter ${c.COLUMN_NAME}`}
                             value={colFilters[c.COLUMN_NAME] || ''}
                             onChange={e => setColFilters(prev => ({ ...prev, [c.COLUMN_NAME]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applyFiltersNow(); } }}
                           />
                         </th>
                       ))}

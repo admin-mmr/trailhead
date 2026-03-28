@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://rmsprodapi.nyrr.org/api/v2"
 
-DEFAULT_PAGE_SIZE = 51          # matches the GAS client / NYRR's apparent default
+DEFAULT_PAGE_SIZE = 500         # NYRR ignores pageSize and returns up to 500 items/page
 DEFAULT_SLEEP_SECONDS = 2.0     # polite delay between paginated requests
 REQUEST_TIMEOUT = 30            # seconds
 
@@ -391,6 +391,7 @@ class NyrrApiClient:
         *,
         items_key: str = "items",
         total_key: str = "totalItems",
+        progress_cb=None,  # optional callable(fetched: int, total: int)
     ) -> List[Dict[str, Any]]:
         """
         Fetch all pages from a paginated POST endpoint.
@@ -413,11 +414,19 @@ class NyrrApiClient:
                 "paginate %s  page=%d  got=%d  cumulative=%d  server_total=%d",
                 path, page_index, len(items), len(all_items), total,
             )
+            if progress_cb:
+                progress_cb(len(all_items), total)
 
-            # Stop when we received fewer items than requested (last page).
-            # Do NOT trust totalItems alone — NYRR sometimes caps it
-            # (e.g. reports 500 even when there are more).
+            # Stop conditions:
+            # 1. Received fewer items than page_size → last page.
+            # 2. totalItems is known and we've fetched that many → done.
+            #    (NYRR sometimes reports correct totalItems for large events)
+            # 3. No items returned → empty page, stop.
+            if len(items) == 0:
+                break
             if len(items) < self.page_size:
+                break
+            if total and len(all_items) >= total:
                 break
 
             page_index += 1
@@ -486,6 +495,7 @@ class NyrrApiClient:
         sort_column: str = "overallTime",
         sort_descending: bool = False,
         page: Optional[int] = None,
+        progress_cb=None,
     ) -> List[NyrrFinisher]:
         """
         Get all finishers for an event.  Paginates automatically.
@@ -499,7 +509,7 @@ class NyrrApiClient:
             "sortColumn": sort_column,
             "sortDescending": sort_descending,
         }
-        raw = self._paginate("runners/finishers-filter", body)
+        raw = self._paginate("runners/finishers-filter", body, progress_cb=progress_cb)
         return [NyrrFinisher.from_api(item) for item in raw]
 
     def get_runner_races(

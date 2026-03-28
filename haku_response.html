@@ -1,0 +1,1951 @@
+<div class="event-list-haku-widget-body">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400..900;1,400..900&family=Didact+Gothic&family=Josefin+Slab:ital,wght@0,100..700;1,100..700&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Nunito:ital,wght@0,200..1000;1,200..1000&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Oswald:wght@200..700&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap');
+    .event-list-haku-widget-body {
+      --haku-foreground-color: #333;
+      --haku-background-color: white;
+      --haku-filter-color: #333;
+      --haku-filter-font-family: Inter;
+      --haku-name-font-family: Inter;
+      --haku-name-font-color: #0447c0;
+      --haku-tag-font-family: Inter;
+      --haku-tag-font-color: #01215b;
+      --haku-price-font-family: Inter;
+      --haku-price-font-color: #3db069;
+      --haku-body-font-family: Inter;
+      --haku-title-font-family: Inter;
+      --haku-divider-color: #efefef;
+      --haku-divider-style: 1px solid var(--haku-divider-color);
+
+      width: 100%;
+      color: var(--haku-foreground-color);
+      background-color: var(--haku-background-color);
+      font-family: var(--haku-body-font-family), sans-serif;
+    }
+    .title-bar {
+      display: flex;
+      align-items: center;
+    }
+    .title-bar-title {
+      margin-right: 15px;
+      font-family: var(--haku-title-font-family), sans-serif;
+    }
+    .filter-header-icon svg {
+      transition: all 0.3s ease;
+    }
+    .filter-header-icon--up svg {
+      transform: rotate(-90deg) !important;
+    }
+    .filter-header-note {
+      display: block;
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 700;
+      font-style: normal;
+      letter-spacing: 1px;
+      margin-right: 10px;
+      color: var(--haku-filter-color);
+      font-family: var(--haku-filter-font-family), sans-serif;
+    }
+    .ellipsis {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: inline-block;
+      vertical-align: top;
+      max-width: 100%;
+    }
+    .filter-header-main {
+      display: flex;
+    }
+    .filter-header-link {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      padding: 0 10px;
+    }
+    .filter-header-item {
+      position: relative;
+      width: max-content;
+      margin-right: 10px;
+      border: var(--haku-divider-style);
+    }
+    .filter-header-available-events,
+    .filter-header-item--reset {
+      border: 0;
+    }
+    a {
+      text-decoration: none;
+      color: var(--haku-foreground-color);
+    }
+    .filter-header-item--reset a:hover {
+      text-decoration: underline;
+    }
+    .filter-header-list {
+      background: #ffffff;
+      color: var(--haku-filter-color);
+      font-family: var(--haku-filter-font-family), sans-serif;
+    }
+    .filter-header-list ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .filter-dd-item {
+      padding: 10px;
+      cursor: pointer;
+    }
+    .filter-dd-item label {
+      cursor: pointer;
+    }
+    .upcoming-race, .upcoming-race a, .upcoming-race-date-col {
+      display: flex;
+      align-items: start;
+    }
+    .upcoming-race {
+      padding: 30px 20px;
+      height: max-content;
+      border-bottom: var(--haku-divider-style);
+    }
+    .upcoming-race-date-col {
+      flex-shrink: 0;
+      flex-grow: 0;
+    }
+    .upcoming-race h2, .upcoming-race p, .upcoming-race h3 {
+      margin: 0;
+    }
+    .upcoming-race-details {
+      flex-grow: 1;
+    }
+    .upcoming-race-day {
+      padding-left: 2px;
+      font-size: 16px;
+      font-weight: bold;
+      line-height: 20px;
+    }
+    .upcoming-race-title {
+      font-size: 28px;
+      font-weight: bold;
+      color: var(--haku-name-font-color);
+      font-family: var(--haku-name-font-family), sans-serif;
+    }
+    .upcoming-race-date-separator {
+      display: flex;
+      align-self: center;
+      font-size: 24px;
+    }
+    .hidden {
+      visibility: hidden;
+    }
+    .upcoming-race-date {
+      font-size: 48px;
+      line-height: 60px;
+      font-weight: bold;
+    }
+    .upcoming-race-time {
+      font-weight: normal;
+    }
+    .upcoming-race .upcoming-race-location,
+    .upcoming-race .upcoming-race-pricing,
+    .upcoming-race .upcoming-race-sub-type,
+    .upcoming-race .upcoming-race-title,
+    .upcoming-race .upcoming-race-description {
+      margin-bottom: 6px !important;
+    }
+    .upcoming-race .upcoming-race-description {
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 4;
+      display: -webkit-box;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: normal;
+    }
+    .upcoming-race-pricing {
+      color: var(--haku-price-font-color);
+      font-family: var(--haku-price-font-family), sans-serif;
+    }
+    .upcoming-race-tag {
+      background: #e6f1fb;
+      padding: 5px;
+      color: var(--haku-tag-font-color);
+      font-family: var(--haku-tag-font-family), sans-serif;
+      font-weight: bold;
+      display: inline-block;
+      margin-right: 2px;
+    }
+    .filter-dd-item:hover, .filter-dd-item:active {
+      background-color: #f7f9fb;
+    }
+    h6.filter-header-note {
+      margin: 12px 12px 12px 0;
+      text-decoration: underline;
+    }
+    .filter-header--showing {
+      border: none;
+    }
+    .filter-header--showing .filter-header-note {
+      text-decoration: none;
+    }
+    .upcoming-race .learn-more-btn {
+      box-sizing: border-box;
+      padding: 10px 20px;
+      width: max-content;
+      text-transform: uppercase;
+      font-weight: bold;
+    }
+    .upcoming-race .learn-more-btn {
+      border: var(--haku-divider-style);
+    }
+    .upcoming-race-status {
+      box-sizing: border-box;
+      text-align: center;
+      padding: 10px 20px;
+      border-radius: 20px;
+      width: max-content;
+      font-weight: bold;
+      font-size: 14px;
+      text-transform: uppercase;
+      margin: 10px 0 16px 0 !important;
+    }
+  </style>
+  <style>
+  @media (min-width: 300px) {
+    .title-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: start;
+    }
+    .title-bar-title {
+      margin: 10px 0;
+    }
+    .filter-header-available-events.filter-header-link {
+      padding: 0;
+      margin-bottom: 10px;
+    }
+    .filter-header-available-events.filter-header-link input {
+      margin-left: 0;
+    }
+    .filter-header--showing {
+      display: none;
+    }
+    .filter-header-main {
+      flex-direction: column;
+    }
+    .filter-header-main .filter-header-item {
+      border-left: none;
+      border-right: none;
+      width: 100%;
+    }
+    .filter-header-main .filter-header-link {
+      justify-content: space-between;
+    }
+    .filter-header-list {
+      position: relative;
+      border: none;
+      width: 100%;
+      box-shadow: none;
+      border-radius: 0;
+    }
+    .filter-header-main .filter-dd-item {
+      border: none;
+    }
+    .upcoming-race {
+      flex-direction: column;
+    }
+
+    .upcoming-race .upcoming-race-tags {
+      margin-bottom: 6px !important;
+    }
+
+    .upcoming-race .upcoming-race-date-separator,
+    .upcoming-race .upcoming-race-end-date,
+    .upcoming-race .upcoming-race-icon,
+    .upcoming-race .upcoming-race-desktop-day {
+      display: none;
+    }
+
+    .upcoming-race .upcoming-race-date-col {
+      min-width: 0;
+      width: 100px;
+    }
+
+    .upcoming-race-day {
+      width: max-content;
+    }
+
+    .upcoming-race-day p {
+      display: inline-block;
+      text-transform: uppercase;
+    }
+
+    .upcoming-race-time {
+      font-weight: bold;
+    }
+
+    .upcoming-race .upcoming-race-aux {
+      align-self: start;
+    }
+
+    .upcoming-race .upcoming-race-desktop-day {
+      display: none;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .title-bar {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+    }
+    .title-bar-title {
+      margin: 20px 10px 20px 0;
+    }
+    .filter-header-available-events.filter-header-link {
+      padding: 0 10px;
+      margin-bottom: 0;
+    }
+    .filter-header-available-events.filter-header-link input {
+      margin-left: 10px;
+    }
+    .filter-header--showing {
+      display: block;
+    }
+    .filter-header-main {
+      flex-direction: row;
+    }
+    .filter-header-main .filter-header-item {
+      border: var(--haku-divider-style);
+      width: max-content;
+    }
+    .filter-header-list {
+      position: absolute;
+      width: max-content;
+      background: #ffffff;
+      border-color: #e5e5e5;
+      border-style: solid;
+      box-shadow: 0 50px 70px -25px rgba(0, 0, 0, 0.3);
+      border-width: 1px;
+      border-radius: 4px;
+    }
+    .filter-header-main .filter-dd-item {
+      border-bottom: 1px solid #e5e5e5;
+    }
+    .upcoming-race {
+      flex-direction: row;
+    }
+
+    .upcoming-race .upcoming-race-mobile-day,
+    .upcoming-race .upcoming-race-mobile-preposition {
+      display: none;
+    }
+
+    .upcoming-race .upcoming-race-desktop-day {
+      display: inline;
+    }
+
+    .upcoming-race-day p {
+      display: block;
+      text-transform: normal;
+    }
+
+    .upcoming-race-time {
+      font-weight: normal;
+    }
+
+    .upcoming-race-icon,
+    .upcoming-race-details,
+    .upcoming-race-aux {
+      padding-left: 20px;
+    }
+
+    .upcoming-race .upcoming-race-aux {
+      align-self: center;
+      display: flex;
+      align-items: center;
+    }
+
+    .upcoming-race .learn-more-btn {
+      padding: 20px 30px;
+    }
+
+    .upcoming-race .upcoming-race-tags {
+      margin-bottom: 0 !important;
+    }
+
+    .upcoming-race .upcoming-race-status {
+      margin: 0 20px 0 0 !important;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .upcoming-race-icon,
+    .upcoming-race-details,
+    .upcoming-race-aux {
+      padding-left: 40px;
+    }
+
+    .upcoming-race .upcoming-race-icon,
+    .upcoming-race .upcoming-race-date-separator,
+    .upcoming-race .upcoming-race-end-date {
+      display: block;
+    }
+
+    .upcoming-race .upcoming-race-date-col {
+      min-width: 200px;
+      width: auto;
+    }
+  }
+</style>
+
+  <header class="title-bar">
+      <h2 class="title-bar-title">Upcoming Races</h2>
+    <label class="filter-header-item filter-header-link filter-no-dropdown filter-header-available-events">
+      <input type="checkbox" id="available_only" value="available_only">
+      <span class="filter-header-note" style="margin-left: 10px; margin-right: 0">Show available races only</span>
+    </label>
+  </header>
+  <section class="event-filters">
+    <div class="filter-header-main">
+  <div class="filter-header-item filter-header--showing">
+    <span class="filter-header-link filter-no-dropdown">
+      <h6 class="filter-header-note">Showing: </h6>
+    </span>
+  </div>
+    <div class="filter-header-item" id="month">
+      <a href="#" class="filter-header-link">
+        <h6 class="filter-header-note">Month</h6>
+        <div class="filter-header-icon">
+          <?xml version="1.0" encoding="iso-8859-1"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+<svg height="12px" width="12px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+   viewBox="0 0 185.343 185.343" xml:space="preserve" style="transform: rotate(90deg);">
+<g>
+  <g>
+    <path style="fill:var(--haku-filter-color);" d="M51.707,185.343c-2.741,0-5.493-1.044-7.593-3.149c-4.194-4.194-4.194-10.981,0-15.175
+      l74.352-74.347L44.114,18.32c-4.194-4.194-4.194-10.987,0-15.175c4.194-4.194,10.987-4.194,15.18,0l81.934,81.934
+      c4.194,4.194,4.194,10.987,0,15.175l-81.934,81.939C57.201,184.293,54.454,185.343,51.707,185.343z"/>
+  </g>
+</g>
+</svg>
+
+        </div>
+      </a>
+      <div class="filter-header-list" style="display: none;">
+        <ul>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/03/01" data-to-date="2026/04/01" id="month_3" name="month_3" type="checkbox" value="3" />
+                <span>March</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/04/01" data-to-date="2026/05/01" id="month_4" name="month_4" type="checkbox" value="4" />
+                <span>April</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/05/01" data-to-date="2026/06/01" id="month_5" name="month_5" type="checkbox" value="5" />
+                <span>May</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/06/01" data-to-date="2026/07/01" id="month_6" name="month_6" type="checkbox" value="6" />
+                <span>June</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/07/01" data-to-date="2026/08/01" id="month_7" name="month_7" type="checkbox" value="7" />
+                <span>July</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/08/01" data-to-date="2026/09/01" id="month_8" name="month_8" type="checkbox" value="8" />
+                <span>August</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/09/01" data-to-date="2026/10/01" id="month_9" name="month_9" type="checkbox" value="9" />
+                <span>September</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/10/01" data-to-date="2026/11/01" id="month_10" name="month_10" type="checkbox" value="10" />
+                <span>October</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/11/01" data-to-date="2026/12/01" id="month_11" name="month_11" type="checkbox" value="11" />
+                <span>November</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2026/12/01" data-to-date="2027/01/01" id="month_12" name="month_12" type="checkbox" value="12" />
+                <span>December</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2027/01/01" data-to-date="2027/02/01" id="month_1" name="month_1" type="checkbox" value="1" />
+                <span>January</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-from-date="2027/02/01" data-to-date="2027/03/01" id="month_2" name="month_2" type="checkbox" value="2" />
+                <span>February</span>
+              </label>
+            </li>
+        </ul>
+      </div>
+    </div>
+    <div class="filter-header-item" id="locations">
+      <a href="#" class="filter-header-link">
+        <h6 class="filter-header-note">All Locations</h6>
+        <div class="filter-header-icon">
+          <?xml version="1.0" encoding="iso-8859-1"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+<svg height="12px" width="12px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+   viewBox="0 0 185.343 185.343" xml:space="preserve" style="transform: rotate(90deg);">
+<g>
+  <g>
+    <path style="fill:var(--haku-filter-color);" d="M51.707,185.343c-2.741,0-5.493-1.044-7.593-3.149c-4.194-4.194-4.194-10.981,0-15.175
+      l74.352-74.347L44.114,18.32c-4.194-4.194-4.194-10.987,0-15.175c4.194-4.194,10.987-4.194,15.18,0l81.934,81.934
+      c4.194,4.194,4.194,10.987,0,15.175l-81.934,81.939C57.201,184.293,54.454,185.343,51.707,185.343z"/>
+  </g>
+</g>
+</svg>
+
+        </div>
+      </a>
+      <div class="filter-header-list" style="display: none;">
+        <ul>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-location="new york" id="locations_new_york" name="locations_new york" type="checkbox" value="new york" />
+                <span>New York</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-location="manhattan" id="locations_manhattan" name="locations_manhattan" type="checkbox" value="manhattan" />
+                <span>Manhattan</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-location="corona" id="locations_corona" name="locations_corona" type="checkbox" value="corona" />
+                <span>Corona</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-location="brooklyn" id="locations_brooklyn" name="locations_brooklyn" type="checkbox" value="brooklyn" />
+                <span>Brooklyn</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-location="queens" id="locations_queens" name="locations_queens" type="checkbox" value="queens" />
+                <span>Queens</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-location="new york city" id="locations_new_york_city" name="locations_new york city" type="checkbox" value="new york city" />
+                <span>New York City</span>
+              </label>
+            </li>
+        </ul>
+      </div>
+    </div>
+    <div class="filter-header-item" id="event_tag">
+      <a href="#" class="filter-header-link">
+        <h6 class="filter-header-note">All Tags</h6>
+        <div class="filter-header-icon">
+          <?xml version="1.0" encoding="iso-8859-1"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+<svg height="12px" width="12px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+   viewBox="0 0 185.343 185.343" xml:space="preserve" style="transform: rotate(90deg);">
+<g>
+  <g>
+    <path style="fill:var(--haku-filter-color);" d="M51.707,185.343c-2.741,0-5.493-1.044-7.593-3.149c-4.194-4.194-4.194-10.981,0-15.175
+      l74.352-74.347L44.114,18.32c-4.194-4.194-4.194-10.987,0-15.175c4.194-4.194,10.987-4.194,15.18,0l81.934,81.934
+      c4.194,4.194,4.194,10.987,0,15.175l-81.934,81.939C57.201,184.293,54.454,185.343,51.707,185.343z"/>
+  </g>
+</g>
+</svg>
+
+        </div>
+      </a>
+      <div class="filter-header-list" style="display: none;">
+        <ul>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="9+1 Credit" id="event_tag_9_1_credit" name="event_tag_9+1 credit" type="checkbox" value="9+1 credit" />
+                <span>9+1 Credit</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Scored" id="event_tag_scored" name="event_tag_scored" type="checkbox" value="scored" />
+                <span>Scored</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Non-Scored Walk" id="event_tag_non-scored_walk" name="event_tag_non-scored walk" type="checkbox" value="non-scored walk" />
+                <span>Non-Scored Walk</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Prize Money" id="event_tag_prize_money" name="event_tag_prize money" type="checkbox" value="prize money" />
+                <span>Prize Money</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Club Points" id="event_tag_club_points" name="event_tag_club points" type="checkbox" value="club points" />
+                <span>Club Points</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Youth Events - Stage 1" id="event_tag_youth_events_-_stage_1" name="event_tag_youth events - stage 1" type="checkbox" value="youth events - stage 1" />
+                <span>Youth Events - Stage 1</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="youth" id="event_tag_youth" name="event_tag_youth" type="checkbox" value="youth" />
+                <span>youth</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Youth Events - Stage 2" id="event_tag_youth_events_-_stage_2" name="event_tag_youth events - stage 2" type="checkbox" value="youth events - stage 2" />
+                <span>Youth Events - Stage 2</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Track &amp; Field" id="event_tag_track___field" name="event_tag_track &amp; field" type="checkbox" value="track &amp; field" />
+                <span>Track &amp; Field</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Women&#x27;s Race" id="event_tag_women_s_race" name="event_tag_women&#x27;s race" type="checkbox" value="women&#x27;s race" />
+                <span>Women&#x27;s Race</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Finisher Medals" id="event_tag_finisher_medals" name="event_tag_finisher medals" type="checkbox" value="finisher medals" />
+                <span>Finisher Medals</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Time Qualifier" id="event_tag_time_qualifier" name="event_tag_time qualifier" type="checkbox" value="time qualifier" />
+                <span>Time Qualifier</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Youth Events - Stage 3" id="event_tag_youth_events_-_stage_3" name="event_tag_youth events - stage 3" type="checkbox" value="youth events - stage 3" />
+                <span>Youth Events - Stage 3</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="virtual" id="event_tag_virtual" name="event_tag_virtual" type="checkbox" value="virtual" />
+                <span>virtual</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="4 Out of 6 Credit" id="event_tag_4_out_of_6_credit" name="event_tag_4 out of 6 credit" type="checkbox" value="4 out of 6 credit" />
+                <span>4 Out of 6 Credit</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Virtual 6 Credit" id="event_tag_virtual_6_credit" name="event_tag_virtual 6 credit" type="checkbox" value="virtual 6 credit" />
+                <span>Virtual 6 Credit</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Team for Kids" id="event_tag_team_for_kids" name="event_tag_team for kids" type="checkbox" value="team for kids" />
+                <span>Team for Kids</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Team for Climate" id="event_tag_team_for_climate" name="event_tag_team for climate" type="checkbox" value="team for climate" />
+                <span>Team for Climate</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Wave Starts" id="event_tag_wave_starts" name="event_tag_wave starts" type="checkbox" value="wave starts" />
+                <span>Wave Starts</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="ITO Packages" id="event_tag_ito_packages" name="event_tag_ito packages" type="checkbox" value="ito packages" />
+                <span>ITO Packages</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-tag="Charity Spots" id="event_tag_charity_spots" name="event_tag_charity spots" type="checkbox" value="charity spots" />
+                <span>Charity Spots</span>
+              </label>
+            </li>
+        </ul>
+      </div>
+    </div>
+    <div class="filter-header-item" id="statuses">
+      <a href="#" class="filter-header-link">
+        <h6 class="filter-header-note">All Statuses</h6>
+        <div class="filter-header-icon">
+          <?xml version="1.0" encoding="iso-8859-1"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+<svg height="12px" width="12px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+   viewBox="0 0 185.343 185.343" xml:space="preserve" style="transform: rotate(90deg);">
+<g>
+  <g>
+    <path style="fill:var(--haku-filter-color);" d="M51.707,185.343c-2.741,0-5.493-1.044-7.593-3.149c-4.194-4.194-4.194-10.981,0-15.175
+      l74.352-74.347L44.114,18.32c-4.194-4.194-4.194-10.987,0-15.175c4.194-4.194,10.987-4.194,15.18,0l81.934,81.934
+      c4.194,4.194,4.194,10.987,0,15.175l-81.934,81.939C57.201,184.293,54.454,185.343,51.707,185.343z"/>
+  </g>
+</g>
+</svg>
+
+        </div>
+      </a>
+      <div class="filter-header-list" style="display: none;">
+        <ul>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-status="Near Capacity" id="statuses_near_capacity" name="statuses_near capacity" type="checkbox" value="near capacity" />
+                <span>Near Capacity</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-status="Sold Out" id="statuses_sold_out" name="statuses_sold out" type="checkbox" value="sold out" />
+                <span>Sold Out</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-status="Youth Available" id="statuses_youth_available" name="statuses_youth available" type="checkbox" value="youth available" />
+                <span>Youth Available</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-status="Available" id="statuses_available" name="statuses_available" type="checkbox" value="available" />
+                <span>Available</span>
+              </label>
+            </li>
+        </ul>
+      </div>
+    </div>
+    <div class="filter-header-item" id="sub_types">
+      <a href="#" class="filter-header-link">
+        <h6 class="filter-header-note">All Distances</h6>
+        <div class="filter-header-icon">
+          <?xml version="1.0" encoding="iso-8859-1"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+<svg height="12px" width="12px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+   viewBox="0 0 185.343 185.343" xml:space="preserve" style="transform: rotate(90deg);">
+<g>
+  <g>
+    <path style="fill:var(--haku-filter-color);" d="M51.707,185.343c-2.741,0-5.493-1.044-7.593-3.149c-4.194-4.194-4.194-10.981,0-15.175
+      l74.352-74.347L44.114,18.32c-4.194-4.194-4.194-10.987,0-15.175c4.194-4.194,10.987-4.194,15.18,0l81.934,81.934
+      c4.194,4.194,4.194,10.987,0,15.175l-81.934,81.939C57.201,184.293,54.454,185.343,51.707,185.343z"/>
+  </g>
+</g>
+</svg>
+
+        </div>
+      </a>
+      <div class="filter-header-list" style="display: none;">
+        <ul>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="other" id="sub_types_other" name="sub_types_other" type="checkbox" value="other" />
+                <span>Other</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="4 miles" id="sub_types_4_miles" name="sub_types_4 miles" type="checkbox" value="4 miles" />
+                <span>4 Miles</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="1 mile" id="sub_types_1_mile" name="sub_types_1 mile" type="checkbox" value="1 mile" />
+                <span>1 Mile</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="kids dash" id="sub_types_kids_dash" name="sub_types_kids dash" type="checkbox" value="kids dash" />
+                <span>Kids Dash</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="half marathon" id="sub_types_half_marathon" name="sub_types_half marathon" type="checkbox" value="half marathon" />
+                <span>Half Marathon</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="5k" id="sub_types_5k" name="sub_types_5k" type="checkbox" value="5k" />
+                <span>5K</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="1/2 mile" id="sub_types_1_2_mile" name="sub_types_1/2 mile" type="checkbox" value="1/2 mile" />
+                <span>1/2 Mile</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="10k" id="sub_types_10k" name="sub_types_10k" type="checkbox" value="10k" />
+                <span>10K</span>
+              </label>
+            </li>
+            <li class="filter-dd-item">
+              <label class="filter-dd-option">
+                <input data-distance="marathon" id="sub_types_marathon" name="sub_types_marathon" type="checkbox" value="marathon" />
+                <span>Marathon</span>
+              </label>
+            </li>
+        </ul>
+      </div>
+    </div>
+  <div class="filter-header-item filter-header-item--reset">
+    <a href="#reset" class="filter-header-link filter-header-link--reset filter-no-dropdown">
+      <h6 class="filter-header-note">Reset Filters</h6>
+    </a>
+  </div>
+</div>
+
+  </section>
+  <section class="events">
+    <div class="empty-view" style="border-bottom: var(--haku-divider-style); padding: 60px 0; width: 100%; text-align: center; display: none">
+  <h2>WE COULDN&#x27;T FIND ANY EVENTS</h2>
+  <p>We couldn&#x27;t find any events. Try resetting any filters or check back again later to see if any events have been added.</p>
+</div>
+  <div class="upcoming-event"
+      data-start-date="2026/04/12"
+      data-location="new york"
+      data-sub-types="other,4 miles"
+      data-tags="9+1 Credit,Scored,Non-Scored Walk,Prize Money,Club Points"
+      data-status="Near Capacity"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">12</h2>
+            <div class="upcoming-race-day">
+              <p>Apr <span class="upcoming-race-mobile-day">12</span></p>
+              <p>Sun</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:30 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>12</h2>
+            <div class="upcoming-race-day">
+              <p>Apr</p>
+              <p>Sun</p>
+              <p class="upcoming-race-time">08:30 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="Bb65496cc2c94bb5936fc4ceb9b9b84fa26b1c6e" src="https://s3.amazonaws.com/hakuapps/prod/bb65496cc2c94bb5936fc4ceb9b9b84fa26b1c6e.png?1769442029" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Run as One 4M Presented by JPMorgan Chase + 1.4 Mile Health Walk</h3>
+              <p class="upcoming-race-location">New York</p>
+              <p class="upcoming-race-sub-type">Other and 4 Miles</p>
+              <p class="upcoming-race-description"><p>Join thousands as we "Run as One" to raise funds and awareness for lung cancer research.</p></p>
+              <p class="upcoming-race-pricing">$37.01</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Non-Scored Walk</span>
+                  <span class="upcoming-race-tag">Prize Money</span>
+                  <span class="upcoming-race-tag">Club Points</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/run-as-one-4m-presented-by-jpmorgan-chase"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/04/19"
+      data-location="manhattan"
+      data-sub-types="1 mile,4 miles"
+      data-tags="Scored,9+1 Credit,Non-Scored Walk"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">19</h2>
+            <div class="upcoming-race-day">
+              <p>Apr <span class="upcoming-race-mobile-day">19</span></p>
+              <p>Sun</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>19</h2>
+            <div class="upcoming-race-day">
+              <p>Apr</p>
+              <p>Sun</p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="2fc4ae58bcb117f815b4f3f4b9731dbe79013a02" src="https://s3.amazonaws.com/hakuapps/prod/2fc4ae58bcb117f815b4f3f4b9731dbe79013a02.png?1769442733" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">RBC Race for the Kids 4M Presented by NYRR + 1 Mile Family Walk</h3>
+              <p class="upcoming-race-location">Manhattan</p>
+              <p class="upcoming-race-sub-type">1 Mile and 4 Miles</p>
+              <p class="upcoming-race-description"><p>What started as a single race in New York in 2009, RBC Race for the Kids has grown into a series of 25+ events that take place around the world. More than 525,000 participants have raised over $84 million for youth charities across the globe. </p></p>
+              <p class="upcoming-race-pricing">$37.01</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Non-Scored Walk</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/rbc-race-for-the-kids-4m-presented-by-nyrr"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/04/19"
+      data-location="manhattan"
+      data-sub-types="kids dash"
+      data-tags="Youth Events - Stage 1,youth"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">19</h2>
+            <div class="upcoming-race-day">
+              <p>Apr <span class="upcoming-race-mobile-day">19</span></p>
+              <p>Sun</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">09:15 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>19</h2>
+            <div class="upcoming-race-day">
+              <p>Apr</p>
+              <p>Sun</p>
+              <p class="upcoming-race-time">09:15 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="Dc3d82d232e430570d3cb7eedfa245a9bab79585" src="https://s3.amazonaws.com/hakuapps/prod/dc3d82d232e430570d3cb7eedfa245a9bab79585.png?1765895886" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Rising NYRR at the RBC Race for the Kids 4M</h3>
+              <p class="upcoming-race-location">Manhattan</p>
+              <p class="upcoming-race-sub-type">Kids Dash</p>
+              <p class="upcoming-race-description"><p class="p1" style="margin-bottom: 0px; font-variant-numeric: normal; font-variant-east-asian: normal; font-variant-alternates: normal; font-size-adjust: none; font-kerning: auto; font-optical-sizing: auto; font-feature-settings: normal; font-variation-settings: normal; font-variant-position: normal; font-variant-emoji: normal; font-stretch: normal; line-height: normal;"><span style="text-align: center;">From one race in New York in 2009 to a global movement, RBC Race for the Kids has grown into a series of 25+ family-friendly races worldwide!</span></p></p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Youth Events - Stage 1</span>
+                  <span class="upcoming-race-tag">youth</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/rnyrr-at-rbc-race-for-the-kids-4m"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/04/25"
+      data-location="new york"
+      data-sub-types="kids dash"
+      data-tags="Youth Events - Stage 1,Youth Events - Stage 2,youth,Track &amp; Field"
+      data-status="Youth Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">25</h2>
+            <div class="upcoming-race-day">
+              <p>Apr <span class="upcoming-race-mobile-day">25</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">09:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>25</h2>
+            <div class="upcoming-race-day">
+              <p>Apr</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">09:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="31a98a0dd25b5794a0bdb10377eba931c1eab3bd" src="https://s3.amazonaws.com/hakuapps/prod/31a98a0dd25b5794a0bdb10377eba931c1eab3bd.png?1768320433" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Rising NYRR Spring Jamboree Presented by TCS</h3>
+              <p class="upcoming-race-location">New York</p>
+              <p class="upcoming-race-sub-type">Kids Dash</p>
+              <p class="upcoming-race-description"><p>Take the kids to Icahn Stadium on Randall's Island for a fun day of track and field events! </p></p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Youth Events - Stage 1</span>
+                  <span class="upcoming-race-tag">Youth Events - Stage 2</span>
+                  <span class="upcoming-race-tag">youth</span>
+                  <span class="upcoming-race-tag">Track &amp; Field</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/rising-nyrr-spring-jamboree"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/04/26"
+      data-location="new york"
+      data-sub-types="half marathon"
+      data-tags="9+1 Credit,Scored,Women&#x27;s Race,Finisher Medals,Time Qualifier"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">26</h2>
+            <div class="upcoming-race-day">
+              <p>Apr <span class="upcoming-race-mobile-day">26</span></p>
+              <p>Sun</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>26</h2>
+            <div class="upcoming-race-day">
+              <p>Apr</p>
+              <p>Sun</p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="7457027893de79db8f303530786d1e079caeab52" src="https://s3.amazonaws.com/hakuapps/prod/7457027893de79db8f303530786d1e079caeab52.png?1769442064" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Maybelline Women&#x27;s Half</h3>
+              <p class="upcoming-race-location">New York</p>
+              <p class="upcoming-race-sub-type">Half Marathon</p>
+              <p class="upcoming-race-description"><div class="ewa-rteLine" style="">Celebrate women's empowerment at the 2nd annual Maybelline Women’s Half in Central Park. </div></p>
+              <p class="upcoming-race-pricing">$63.45</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Women&#x27;s Race</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+                  <span class="upcoming-race-tag">Time Qualifier</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/womens-half-marathon"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/05/02"
+      data-location="corona"
+      data-sub-types="5k"
+      data-tags="9+1 Credit,Scored"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">02</h2>
+            <div class="upcoming-race-day">
+              <p>May <span class="upcoming-race-mobile-day">02</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>02</h2>
+            <div class="upcoming-race-day">
+              <p>May</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="D1746399de3eaf0fdef7f89cbfe9447d0d65e42d" src="https://s3.amazonaws.com/hakuapps/prod/d1746399de3eaf0fdef7f89cbfe9447d0d65e42d.png?1769442880" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">NYRR Mindful 5K</h3>
+              <p class="upcoming-race-location">Corona</p>
+              <p class="upcoming-race-sub-type">5K</p>
+              <p class="upcoming-race-description"><p>Join us to celebrate Mental Health Awareness Month in Queens at the NYRR Mindful 5K on Saturday, May 2.</p></p>
+              <p class="upcoming-race-pricing">$37.01</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Scored</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/nyrr-mindful-5k"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/05/02"
+      data-location="new york"
+      data-sub-types="1 mile,kids dash,1/2 mile"
+      data-tags="Youth Events - Stage 1,Youth Events - Stage 2,Youth Events - Stage 3,youth"
+      data-status="Youth Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">02</h2>
+            <div class="upcoming-race-day">
+              <p>May <span class="upcoming-race-mobile-day">02</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">09:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>02</h2>
+            <div class="upcoming-race-day">
+              <p>May</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">09:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="A0b283ae6d41bf0d5758e50dfb85edd7b9898596" src="https://s3.amazonaws.com/hakuapps/prod/a0b283ae6d41bf0d5758e50dfb85edd7b9898596.png?1767882581" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Rising NYRR at the NYRR Mindful 5K</h3>
+              <p class="upcoming-race-location">New York</p>
+              <p class="upcoming-race-sub-type">1 Mile, Kids Dash, &amp; 1/2 Mile</p>
+              <p class="upcoming-race-description"><p><span style="text-align: center;">Bring the kids to the Rising NYRR at the NYRR Mindful 5K in Flushing Meadows Corona Park as we kick off Mental Health Awareness Month!</span></p></p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Youth Events - Stage 1</span>
+                  <span class="upcoming-race-tag">Youth Events - Stage 2</span>
+                  <span class="upcoming-race-tag">Youth Events - Stage 3</span>
+                  <span class="upcoming-race-tag">youth</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/rising-nyrr-at-the-mindful-5k"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/05/05"
+      data-location="new york"
+      data-sub-types="5k"
+      data-tags="Scored,9+1 Credit"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">05</h2>
+            <div class="upcoming-race-day">
+              <p>May <span class="upcoming-race-mobile-day">05</span></p>
+              <p>Tue</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">06:00 PM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>05</h2>
+            <div class="upcoming-race-day">
+              <p>May</p>
+              <p>Tue</p>
+              <p class="upcoming-race-time">06:00 PM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="E0919fe5dcd94a68ab5224283e3eafa586c88893" src="https://s3.amazonaws.com/hakuapps/prod/e0919fe5dcd94a68ab5224283e3eafa586c88893.png?1769454016" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">NYRR BK 5K</h3>
+              <p class="upcoming-race-location">New York</p>
+              <p class="upcoming-race-sub-type">5K</p>
+              <p class="upcoming-race-description"><div style="line-height: 18px;">Get ready, Brooklyn! The race you know and love is back with a new name but the same BK energy.</div></p>
+              <p class="upcoming-race-pricing">$37.01</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/nyrr-brooklyn-r-u-n-5k"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/05/09"
+      data-location="new york"
+      data-sub-types="half marathon"
+      data-tags="virtual,4 Out of 6 Credit,Finisher Medals,Scored,Virtual 6 Credit"
+      data-status="Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">09</h2>
+            <div class="upcoming-race-day">
+              <p>May <span class="upcoming-race-mobile-day">09</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">12:01 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date" style="padding-left: 10px">
+            <h2>17</h2>
+            <div class="upcoming-race-day">
+              <p>May</p>
+              <p>Sun</p>
+              <p class="upcoming-race-time">11:59 PM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="57ed701946231850887500a0466b7877d216ec78" src="https://s3.amazonaws.com/hakuapps/prod/57ed701946231850887500a0466b7877d216ec78.png?1771011065" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Virtual RBC Brooklyn Half</h3>
+              <p class="upcoming-race-location">New York</p>
+              <p class="upcoming-race-sub-type">Half Marathon</p>
+              <p class="upcoming-race-description"><p><span data-contrast="auto" xml:lang="EN-US" lang="EN-US" class="TextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; line-height: 18px;"><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">F</span><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">inish your own Coney Island Boardwalk&nbsp;</span></span><span data-contrast="auto" xml:lang="EN-US" lang="EN-US" class="TextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; line-height: 17px;"><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">in the Virtual&nbsp;</span><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">RBC Brooklyn Half</span><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">&nbsp;Powered by Strava anywhere, anytime between May&nbsp;</span><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">9</span><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">&nbsp;and May 1</span><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">7</span><span class="NormalTextRun SCXW134790076 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">.</span></span><span class="EOP SCXW134790076 BCX0" data-ccp-props="{&quot;201341983&quot;:0,&quot;335559739&quot;:0,&quot;335559740&quot;:240}" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; line-height: 17px;">&nbsp;</span></p></p>
+              <p class="upcoming-race-pricing">$31.72 - $68.73</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">virtual</span>
+                  <span class="upcoming-race-tag">4 Out of 6 Credit</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Virtual 6 Credit</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/virtual-rbc-brooklyn-half"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/05/16"
+      data-location="brooklyn"
+      data-sub-types="half marathon"
+      data-tags="9+1 Credit,4 Out of 6 Credit,Finisher Medals,Club Points,Scored,Prize Money,Team for Kids,Team for Climate,Wave Starts,ITO Packages"
+      data-status="Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">16</h2>
+            <div class="upcoming-race-day">
+              <p>May <span class="upcoming-race-mobile-day">16</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">07:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>16</h2>
+            <div class="upcoming-race-day">
+              <p>May</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">07:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="Be052e5e5e3cddf22b048cf2566177d51b28fd2a" src="https://s3.amazonaws.com/hakuapps/prod/be052e5e5e3cddf22b048cf2566177d51b28fd2a.jpg?1769448239" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">2026 RBC Brooklyn Half</h3>
+              <p class="upcoming-race-location">Brooklyn</p>
+              <p class="upcoming-race-sub-type">Half Marathon</p>
+              <p class="upcoming-race-description"><p><span data-contrast="auto" xml:lang="EN-US" lang="EN-US" class="TextRun SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; line-height: 20.85px;"><span class="NormalTextRun CommentStart CommentHighlightPipeClicked CommentHighlightClicked CommentImportant SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; box-shadow: rgb(24, 90, 189) -2px 0px 0px 0px !important;">Get ready for a 13.1-mile journey through the best of Brooklyn</span></span><span data-contrast="none" xml:lang="EN-US" lang="EN-US" class="TextRun SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; line-height: 20.85px;"><span class="NormalTextRun CommentHighlightClicked CommentImportant SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">—</span></span><span data-contrast="auto" xml:lang="EN-US" lang="EN-US" class="TextRun SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; line-height: 20.85px;"><span class="NormalTextRun CommentHighlightClicked CommentImportant SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">from the tree-lined roadways in Prospect Park to the legendary Coney Island boardwalk</span></span><span data-contrast="none" xml:lang="EN-US" lang="EN-US" class="TextRun SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; line-height: 20.85px;"><span class="NormalTextRun CommentHighlightClicked CommentImportant SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">—</span></span><span data-contrast="auto" xml:lang="EN-US" lang="EN-US" class="TextRun SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text; line-height: 20.85px;"><span class="NormalTextRun CommentHighlightClicked CommentImportant SCXW234805238 BCX0" style="-webkit-user-drag: none; -webkit-tap-highlight-color: transparent; margin: 0px; padding: 0px; user-select: text;">at the 2026 RBC Brooklyn Half on Saturday, May 16.&nbsp;</span></span></p></p>
+              <p class="upcoming-race-pricing">$126.90</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">4 Out of 6 Credit</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+                  <span class="upcoming-race-tag">Club Points</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Prize Money</span>
+                  <span class="upcoming-race-tag">Team for Kids</span>
+                  <span class="upcoming-race-tag">Team for Climate</span>
+                  <span class="upcoming-race-tag">Wave Starts</span>
+                  <span class="upcoming-race-tag">ITO Packages</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/rbc-brooklyn-half"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/05/16"
+      data-location="brooklyn"
+      data-sub-types="kids dash,1 mile"
+      data-tags="Youth Events - Stage 1,Youth Events - Stage 2,Youth Events - Stage 3,Finisher Medals,youth"
+      data-status="Youth Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">16</h2>
+            <div class="upcoming-race-day">
+              <p>May <span class="upcoming-race-mobile-day">16</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>16</h2>
+            <div class="upcoming-race-day">
+              <p>May</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="3ade8f868bbef0b6f0f71aee0f4c44d4aa2fd952" src="https://s3.amazonaws.com/hakuapps/prod/3ade8f868bbef0b6f0f71aee0f4c44d4aa2fd952.png?1767882533" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Boardwalk Kids Run at the RBC Brooklyn Half</h3>
+              <p class="upcoming-race-location">Brooklyn</p>
+              <p class="upcoming-race-sub-type">Kids Dash and 1 Mile</p>
+              <p class="upcoming-race-description"><p><span style="text-align: center;">Give the young athletes in your life a chance to join in on the race-day fun in Coney Island at the Boardwalk Kids Run at the RBC Brooklyn Half!</span></p></p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Youth Events - Stage 1</span>
+                  <span class="upcoming-race-tag">Youth Events - Stage 2</span>
+                  <span class="upcoming-race-tag">Youth Events - Stage 3</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+                  <span class="upcoming-race-tag">youth</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/boardwalk-kids-run-at-the-rbc-brooklyn-half"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/06/06"
+      data-location="new york"
+      data-sub-types="10k"
+      data-tags="9+1 Credit,Scored,Women&#x27;s Race,Prize Money,Finisher Medals"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">06</h2>
+            <div class="upcoming-race-day">
+              <p>Jun <span class="upcoming-race-mobile-day">06</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>06</h2>
+            <div class="upcoming-race-day">
+              <p>Jun</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="0422733836500e9435aca2b717fb056a688a31a8" src="https://s3.amazonaws.com/hakuapps/prod/0422733836500e9435aca2b717fb056a688a31a8.png?1769449286" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Mastercard New York Mini 10K – Women’s Race</h3>
+              <p class="upcoming-race-location">New York</p>
+              <p class="upcoming-race-sub-type">10K</p>
+              <p class="upcoming-race-description"><p style="">Join us in Central Park on Saturday, June 6 for the Mastercard New York Mini 10K and follow in the footsteps of legends at the 54th running of this historic women's road race.</p></p>
+              <p class="upcoming-race-pricing">$58.16</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Women&#x27;s Race</span>
+                  <span class="upcoming-race-tag">Prize Money</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/new-york-mini-10k"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/06/06"
+      data-location="new york"
+      data-sub-types="1/2 mile,1 mile"
+      data-tags="Youth Events - Stage 2,Youth Events - Stage 3,Finisher Medals,youth"
+      data-status="Youth Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">06</h2>
+            <div class="upcoming-race-day">
+              <p>Jun <span class="upcoming-race-mobile-day">06</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:50 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>06</h2>
+            <div class="upcoming-race-day">
+              <p>Jun</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">08:50 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="8ea8a86ddc1ea1471375e0f857e350289330f00d" src="https://s3.amazonaws.com/hakuapps/prod/8ea8a86ddc1ea1471375e0f857e350289330f00d.jpg?1767815507" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Girls Run at the Mastercard New York Mini 10K</h3>
+              <p class="upcoming-race-location">New York</p>
+              <p class="upcoming-race-sub-type">1/2 Mile and 1 Mile</p>
+              <p class="upcoming-race-description"><p>Young runners will follow in the footsteps of legends when they take on the Girls Run at the Mastercard New York Mini 10K!</p></p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Youth Events - Stage 2</span>
+                  <span class="upcoming-race-tag">Youth Events - Stage 3</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+                  <span class="upcoming-race-tag">youth</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/girls-run-at-the-mastercard-new-york-mini-10k"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/06/20"
+      data-location="queens"
+      data-sub-types="10k"
+      data-tags="9+1 Credit,Scored,Finisher Medals,4 Out of 6 Credit,Prize Money,Club Points,Wave Starts,Team for Kids"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">20</h2>
+            <div class="upcoming-race-day">
+              <p>Jun <span class="upcoming-race-mobile-day">20</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">07:45 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>20</h2>
+            <div class="upcoming-race-day">
+              <p>Jun</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">07:45 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="84c8b08871c3b4a1af31a822a1c231ce7818d072" src="https://s3.amazonaws.com/hakuapps/prod/84c8b08871c3b4a1af31a822a1c231ce7818d072.png?1769452611" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Citizens Queens 10K</h3>
+              <p class="upcoming-race-location">Queens</p>
+              <p class="upcoming-race-sub-type">10K</p>
+              <p class="upcoming-race-description"><p>Join us in celebrating "The World's Borough" at the Citizens Queens 10K in Flushing Meadows Corona Park on Saturday, June 20.</p></p>
+              <p class="upcoming-race-pricing">$63.45</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+                  <span class="upcoming-race-tag">4 Out of 6 Credit</span>
+                  <span class="upcoming-race-tag">Prize Money</span>
+                  <span class="upcoming-race-tag">Club Points</span>
+                  <span class="upcoming-race-tag">Wave Starts</span>
+                  <span class="upcoming-race-tag">Team for Kids</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/nyrr-queens-10k"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/06/20"
+      data-location="queens"
+      data-sub-types="1 mile,kids dash,1/2 mile"
+      data-tags="Youth Events - Stage 1,Youth Events - Stage 2,Youth Events - Stage 3,Finisher Medals,youth"
+      data-status="Youth Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">20</h2>
+            <div class="upcoming-race-day">
+              <p>Jun <span class="upcoming-race-mobile-day">20</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">09:10 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>20</h2>
+            <div class="upcoming-race-day">
+              <p>Jun</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">09:10 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="Ffd4a1efb1951b215e840b1aa74027bba56de4a1" src="https://s3.amazonaws.com/hakuapps/prod/ffd4a1efb1951b215e840b1aa74027bba56de4a1.png?1765896003" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Flushing Meadows Kids Run at the Citizens Queens 10K</h3>
+              <p class="upcoming-race-location">Queens</p>
+              <p class="upcoming-race-sub-type">1 Mile, Kids Dash, &amp; 1/2 Mile</p>
+              <p class="upcoming-race-description"><p><span style="text-align: center;">Join us at Flushing Meadows Corona Park for the Flushing Meadows Kids Run at the Citizens Queens 10K!</span></p></p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Youth Events - Stage 1</span>
+                  <span class="upcoming-race-tag">Youth Events - Stage 2</span>
+                  <span class="upcoming-race-tag">Youth Events - Stage 3</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+                  <span class="upcoming-race-tag">youth</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/flushing-meadows-kids-run-at-the-citizens-queens-10k"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/06/27"
+      data-location="manhattan"
+      data-sub-types="4 miles"
+      data-tags="9+1 Credit,Scored,Prize Money"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">27</h2>
+            <div class="upcoming-race-day">
+              <p>Jun <span class="upcoming-race-mobile-day">27</span></p>
+              <p>Sat</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>27</h2>
+            <div class="upcoming-race-day">
+              <p>Jun</p>
+              <p>Sat</p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="61163acd6ab27e21ed66dc047e991c74bf691399" src="https://s3.amazonaws.com/hakuapps/prod/61163acd6ab27e21ed66dc047e991c74bf691399.png?1769619277" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Front Runners New York LGBTQ+ Pride Run 4M</h3>
+              <p class="upcoming-race-location">Manhattan</p>
+              <p class="upcoming-race-sub-type">4 Miles</p>
+              <p class="upcoming-race-description"><p>Join a powerful celebration of unity at the Front Runners New York LGBTQ+ Pride Run™ 4M.</p></p>
+              <p class="upcoming-race-pricing">$37.01</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Prize Money</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/front-runners-new-york-lgbt-pride-run-4m"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/06/28"
+      data-location="manhattan"
+      data-sub-types="4 miles"
+      data-tags="9+1 Credit,Scored,Finisher Medals"
+      data-status="Sold Out"
+      data-available="false">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">28</h2>
+            <div class="upcoming-race-day">
+              <p>Jun <span class="upcoming-race-mobile-day">28</span></p>
+              <p>Sun</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:15 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>28</h2>
+            <div class="upcoming-race-day">
+              <p>Jun</p>
+              <p>Sun</p>
+              <p class="upcoming-race-time">08:15 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="32beaee391176d21047675ba8361452d90199f51" src="https://s3.amazonaws.com/hakuapps/prod/32beaee391176d21047675ba8361452d90199f51.png?1771345693" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Achilles Hope &amp; Possibility 4M Presented by TD</h3>
+              <p class="upcoming-race-location">Manhattan</p>
+              <p class="upcoming-race-sub-type">4 Miles</p>
+              <p class="upcoming-race-description"><p>Join us in celebrating disability inclusion at the 24th annual Achilles Hope &amp; Possibility 4M, presented by TD. </p></p>
+              <p class="upcoming-race-pricing">$37.01</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/achilles-hope-possibility-4m-presented-by-td-bank"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/06/28"
+      data-location="manhattan"
+      data-sub-types="kids dash"
+      data-tags="Youth Events - Stage 1,youth"
+      data-status="Youth Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">28</h2>
+            <div class="upcoming-race-day">
+              <p>Jun <span class="upcoming-race-mobile-day">28</span></p>
+              <p>Sun</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">09:45 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>28</h2>
+            <div class="upcoming-race-day">
+              <p>Jun</p>
+              <p>Sun</p>
+              <p class="upcoming-race-time">09:45 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="77744c0a691cc7ba0195ca1301b4c44e66cd9b8c" src="https://s3.amazonaws.com/hakuapps/prod/77744c0a691cc7ba0195ca1301b4c44e66cd9b8c.png?1772742315" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">Achilles Hope &amp; Possibility Kids Races with Rising NYRR</h3>
+              <p class="upcoming-race-location">Manhattan</p>
+              <p class="upcoming-race-sub-type">Kids Dash</p>
+              <p class="upcoming-race-description"><p><span style="text-align: center;">Celebrate disability inclusion at the Achilles Hope &amp; Possibility Kids Races with Rising New York Road Runners!</span></p></p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">Youth Events - Stage 1</span>
+                  <span class="upcoming-race-tag">youth</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/achilles-hope-possibility-kids-races-with-rising-nyrr"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+  <div class="upcoming-event"
+      data-start-date="2026/11/01"
+      data-location="new york city"
+      data-sub-types="marathon"
+      data-tags="9+1 Credit,Finisher Medals,Scored,Prize Money,Team for Climate,Team for Kids,Wave Starts,ITO Packages,Charity Spots"
+      data-status="Available"
+      data-available="true">
+    <div>
+      <article class="upcoming-race upcoming-race--positive">
+        <div class="upcoming-race-date-col">
+          <div class="upcoming-race-date">
+            <h2 class="upcoming-race-desktop-day">01</h2>
+            <div class="upcoming-race-day">
+              <p>Nov <span class="upcoming-race-mobile-day">01</span></p>
+              <p>Sun</p>
+              <p class="upcoming-race-mobile-preposition"> at </p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+          <div class="upcoming-race-date-separator hidden"> - </div>
+          <div class="upcoming-race-date upcoming-race-end-date hidden" style="padding-left: 10px">
+            <h2>01</h2>
+            <div class="upcoming-race-day">
+              <p>Nov</p>
+              <p>Sun</p>
+              <p class="upcoming-race-time">08:00 AM</p>
+            </div>
+          </div>
+        </div>
+        <div class="upcoming-race-icon">
+          <img alt="56d29f76846b2a11b424c89ece4b5b413bf43ae5" src="https://s3.amazonaws.com/hakuapps/prod/56d29f76846b2a11b424c89ece4b5b413bf43ae5.png?1768862631" style="width: 100px; object-fit: contain" />
+        </div>
+        <div class="upcoming-race-details">
+          <div class="upcoming-race-details-main">
+            <h3 class="upcoming-race-title">2026 TCS New York City Marathon</h3>
+              <p class="upcoming-race-location">New York City</p>
+              <p class="upcoming-race-sub-type">Marathon</p>
+              <p class="upcoming-race-description"><p><span style="font-variant-ligatures: common-ligatures; orphans: 2; widows: 2; text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial;">All event information is subject to change. Visit&nbsp;</span><a target="_blank" class="c-link c-link--focus-visible" data-stringify-link="http://nyrr.org/tcsnycmarathon" delay="150" data-sk="tooltip_parent" href="http://nyrr.org/tcsnycmarathon" rel="noopener noreferrer" style="box-sizing: inherit; font-variant-ligatures: common-ligatures; orphans: 2; widows: 2;">nyrr.org/tcsnycmarathon</a><span style="font-variant-ligatures: common-ligatures; orphans: 2; widows: 2; text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial;">&nbsp;for more information about the 2026 TCS New York City Marathon.</span><br></p></p>
+              <p class="upcoming-race-pricing">$333.11</p>
+              <p class="upcoming-race-tags">
+                  <span class="upcoming-race-tag">9+1 Credit</span>
+                  <span class="upcoming-race-tag">Finisher Medals</span>
+                  <span class="upcoming-race-tag">Scored</span>
+                  <span class="upcoming-race-tag">Prize Money</span>
+                  <span class="upcoming-race-tag">Team for Climate</span>
+                  <span class="upcoming-race-tag">Team for Kids</span>
+                  <span class="upcoming-race-tag">Wave Starts</span>
+                  <span class="upcoming-race-tag">ITO Packages</span>
+                  <span class="upcoming-race-tag">Charity Spots</span>
+              </p>
+          </div>
+        </div>
+        <div class="upcoming-race-aux">
+            <a target=_blank
+              href="https://events.nyrr.org/tcs-new-york-city-marathon"
+              class="learn-more-btn">
+              Learn More
+            </a>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  </section>
+</div>

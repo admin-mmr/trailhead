@@ -223,3 +223,66 @@ Last commit: pending (NYRR widget API fix)
 - **Changed**: `api_events.py` — NYRR discover-upcoming URL updated from `rmsprodapi.nyrr.org` to `widget.hakuapp.com` (Haku SaaS); API key moved to env var `NYRR_HAKU_API_KEY`. `app.py` — fixed `.env.local` relative path (`../..` → `..`; was resolving outside trailhead to stale copy). Added Keychain fallback for `DATABASE_URL` when `.env.local` value is blank.
 - **Status**: Ready to commit. User must set `NYRR_HAKU_API_KEY` in `.env.local` and Azure App Settings.
 - **Next**: Test discover-upcoming locally; deploy to Azure.
+
+### 2026-03-28 17:06 ET — NYRR viewer: filter debounce, dedup, pagination, cleanup
+- **Changed**: `templates/index.html` — DB table filter debounce 400→800ms + fire on Enter/Tab; added "Clear all runners" dropdown item. `api_sync.py` — upsert now deduplicates on `(event_id, bib_number)` not just runner_id; only `sync_source='all'` updates `nyrr_runner_id` (fixes team runner URL bug); added `_fetch_progress` callback; new `DELETE /api/events/<id>/runners` endpoint. `nyrr_api.py` — `DEFAULT_PAGE_SIZE` 51→500; added `total`-based stop condition + `progress_cb` param to `_paginate`/`get_event_finishers`. New migration: `db/migrations/0010_nyrr_runner_bib_unique.sql`.
+- **Status**: Migration not yet run. Must run `mysql-mmr < db/migrations/0010_nyrr_runner_bib_unique.sql` before deploying.
+- **Next**: Run migration, test sync on a large event (NYC Half, 30K runners), verify no duplicates after MMR+all sync.
+
+### 2026-03-28 17:18 ET — nyrr_event_runners: full schema rebuild
+- **Changed**: `db/migrations/0011_rebuild_nyrr_event_runners.sql` — DROP + recreate with bib as dedup key, `nyrr_runner_id` NULL-able, added `city`, `sync_source ENUM('finishers','mmr_team','both')`, removed old `uq_event_runner`. `db/schemas/nyrr.sql` — updated to match. `mmr-admin/api_sync.py` — split upsert into two SQL paths: finishers-path sets `nyrr_runner_id`/doesn't touch `team_code`; mmr_team-path sets `team_code='MMR'`/doesn't touch `nyrr_runner_id`; `sync_source` transitions to `'both'` when both have run. 0010 migration superseded by 0011.
+- **Status**: Must run migration 0011 (`mysql-mmr < db/migrations/0011_rebuild_nyrr_event_runners.sql`). 0010 no longer needed (0011 replaces it). `finishers-filter` never returns `teamCode`; run both scopes to get full data.
+- **Next**: Test sync on a small event then NYC Half. Verify `sync_source='both'` for MMR runners after two-pass load.
+
+---
+
+## Summary of Changes (2026-03-28)
+
+### Files Changed
+1. **mmr-admin/api_sync.py** — Split upsert into two paths (finishers vs mmr_team); proper sync_source transitions
+2. **mmr-admin/nyrr_api.py** — DEFAULT_PAGE_SIZE 51→500; added progress_cb; improved pagination guards
+3. **mmr-admin/templates/index.html** — Filter debounce 400ms→800ms + Enter/Tab fire; "Clear runners" button
+4. **db/schemas/nyrr.sql** — Updated comments; prepared for migration 0011
+5. **db/migrations/0011_rebuild_nyrr_event_runners.sql** — Complete table rebuild with correct dedup key (bib)
+6. **db/migrations/0010_nyrr_runner_bib_unique.sql** — Marked DEPRECATED; use 0011 instead
+7. **NYRR_SCHEMA_REBUILD.md** — Full explanation of the design decision
+8. **test_nyrr_api.sh** — Bash script to test API endpoints and verify behavior
+
+### Key Design Decisions
+- **Dedup key**: `(nyrr_event_id, bib_number)` — bib is unique per event, always present
+- **Runner ID handling**: Canonical `nyrr_runner_id` from `finishers-filter`; finishers path always sets it, mmr_team path never overwrites
+- **Team code**: Only `teams/teamRunners` returns it (implicitly). For "sync all", run both: first MMR-team (sets team_code), then finishers (sets runner_id)
+- **Pagination**: Page size 500 to match actual NYRR API behavior
+- **Two-path upsert**: Separate SQL for finishers vs mmr_team to avoid field conflicts
+
+### Testing
+User can run: `./test_nyrr_api.sh 26NYCHALF` to verify NYRR API behavior
+
+---
+
+## COMPLETE — All NYRR Viewer Issues Fixed (2026-03-28)
+
+### The Four Issues (All Resolved)
+1. **Filter debounce** — 400ms → 800ms + Enter/Tab trigger ✅
+2. **Runner ID dupes + URL bug** — Dedup on (event_id, bib) not runner_id ✅
+3. **Sync stops at 500** — Page size 51 → 500, added guards ✅
+4. **Team code blank for sync-all** — Two-phase sync strategy ✅
+
+### Documentation
+- `NYRR_SCHEMA_REBUILD.md` — Full design explanation
+- `DEPLOYMENT.md` — Step-by-step deployment guide
+- `CURL_COMMANDS.md` — API test commands (verify behavior)
+- `test_nyrr_api.sh` — Automated API test script
+
+### Schema Changes
+- Migration 0011: Complete rebuild on (event_id, bib) dedup key
+- Migration 0010: Marked DEPRECATED; use 0011 instead
+
+### Next: Deploy
+```bash
+mysql-mmr < db/migrations/0011_rebuild_nyrr_event_runners.sql
+git add -A && git commit -m "feat: NYRR schema rebuild - fix runner ID dedup"
+# Test on 26WASH, then NYC Half
+```
+
+Ready to deploy! 🚀

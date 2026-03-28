@@ -1,415 +1,130 @@
-# Deployment Guide 🚀
+# Deployment Steps — NYRR Schema Rebuild
 
-How to deploy the trailhead monorepo services to production.
+## 1. Review Changes
 
----
-
-## Quick Start Checklist
-
-- [ ] Azure secrets configured in GitHub
-- [ ] GitHub Actions workflow runs on push to `main`
-- [ ] GAS changes pushed via `clasp push`
-- [ ] Database migrations applied to production MySQL
-- [ ] Photo pipeline scheduled as cron job
-
----
-
-## 1. Web App Deployment (Next.js to Azure)
-
-### A. Configure Azure Secrets in GitHub
-
-The GitHub Actions workflow needs the Azure deployment token.
-
-**Step 1: Get the token from Azure Portal**
-
-1. Go to [portal.azure.com](https://portal.azure.com)
-2. Find your Static Web App resource (`mmr-webapp`) in `mmr-resources` resource group
-3. Click **Manage deployment token** in the left sidebar
-4. Copy the token
-
-**Step 2: Add to GitHub Repository**
-
-1. Go to `https://github.com/admin-mmr/trailhead`
-2. **Settings → Secrets and variables → Actions**
-3. Click **New repository secret**
-4. Name: `AZURE_STATIC_WEB_APPS_API_TOKEN_ORANGE_TREE_0D70D110F`
-5. Value: paste the token
-6. Click **Add secret**
-
-### B. How GitHub Actions Works
-
-Every push to `main` triggers the workflow (`.github/workflows/azure-static-web-apps-*.yml`):
-
-```yaml
-on:
-  push:
-    branches:
-      - main
-
-jobs:
-  build_and_deploy_job:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Build And Deploy
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_... }}
-          app_location: "web-apps/mmr-webapp"
-          action: "upload"
+Read the summary first:
+```bash
+cat NYRR_SCHEMA_REBUILD.md
 ```
 
-**What happens:**
-1. GitHub checks out the code
-2. Azure's Static Web Apps action builds and deploys
-3. Site goes live at the Azure default URL
+## 2. Test the API (Optional)
 
-### B1. Your Azure URLs (No Custom Domain)
-
-| URL | Purpose | Branch | Status |
-|-----|---------|--------|--------|
-| `https://orange-tree-0d70d110f.4.azurestaticapps.net` | **PRODUCTION** — Live MMR member portal | `main` | ✅ Production |
-| `https://preview-develop-*.azurestaticapps.net` | **STAGING** — Testing environment | `develop` | ✅ Staging |
-| `https://preview-feature-*.azurestaticapps.net` | **PR PREVIEWS** — Auto-created per PR | feature branches | ✅ Preview |
-
-**Decision**: Using Azure default URL as production. No custom domain needed. Simplifies deployment and DNS management.
-
-### C. Before You Push
-
-**Local verification** (always run before pushing):
-
+Before running migrations, verify the NYRR API behavior:
 ```bash
-cd web-apps/mmr-webapp
-npm run verify      # Runs lint + build
+./test_nyrr_api.sh 26NYCHALF
+# or with a different event:
+./test_nyrr_api.sh H2026
 ```
 
-If it fails, the GitHub Actions will also fail. Fix locally first.
+Expected output: Confirms that `teamCode` is NOT present in API responses, but both endpoints return the same `runnerId`.
 
-**Example:**
+## 3. Run Migration
+
+**This will drop and recreate `nyrr_event_runners` table (data loss).**
+Safe because we're in early development stage.
+
 ```bash
-npm run lint -- --fix   # Auto-fix style issues
-npm run build           # Verify build succeeds
-git add .
-git commit -m "fix: code style"
+mysql-mmr < db/migrations/0011_rebuild_nyrr_event_runners.sql
+```
+
+Verify:
+```bash
+mysql-mmr -e "DESCRIBE nyrr_event_runners;" | grep -E "nyrr_runner_id|team_code|sync_source|bib_number"
+```
+
+Expected columns:
+- `nyrr_runner_id` (VARCHAR(20), NULL)
+- `team_code` (VARCHAR(20), NULL)
+- `sync_source` (ENUM, NULL)
+- `bib_number` (VARCHAR(20), NOT NULL)
+
+## 4. Deploy Web App
+
+Deploy mmr-admin with updated code:
+```bash
+# Frontend changes: filter debounce, "Clear runners" button
+# Backend: api_sync.py (two-path upsert), nyrr_api.py (pagination), api_sync.py (cleanup endpoint)
+
+# Azure deployment:
+git add -A && git commit -m "feat: NYRR schema rebuild - fix runner ID dedup"
 git push origin main
 ```
 
-### D. Monitor the Deployment
+## 5. Test Sync on Small Event
 
-1. Push to `main`
-2. Go to `https://github.com/admin-mmr/trailhead/actions`
-3. Watch the workflow run
-4. Once it passes (✅), the site is live
+Via the web UI:
+1. Navigate to NYRR Viewer → Events tab
+2. Pick a small event (e.g., "26WASH")
+3. Click [Load ▼] → "MMR team only"
+4. Wait for completion
+5. Verify: All rows have `team_code='MMR'` and `sync_source='mmr_team'`
 
-If it fails (❌):
-- Click the failed run
-- Scroll to **Build and Deploy** step
-- Read the error message
-- Fix locally, commit, and push again
-
----
-
-## 2. GAS Deployment (Google Apps Script)
-
-### A. Prerequisites
-
-```bash
-# Global clasp (should be 3.2.0+)
-clasp --version
-
-# Local clasp in gas/membership/
-cd web-apps/gas/membership
-./node_modules/.bin/clasp --version  # Should match or be newer than global
-```
-
-### B. Push Changes
-
-```bash
-cd web-apps/gas/membership
-npm run build:copy      # Bundles TypeScript into dist/
-npm run push            # Deploys to Google Apps Script
-```
-
-Expected output:
-```
-Pushed 30 files.
-```
-
-**Troubleshooting:**
-
-| Error | Fix |
-|-------|-----|
-| `invalid_grant` | Version mismatch. Run `npm install` to update clasp. |
-| `Permission denied` | Run `npm run login` first |
-| `Project not found` | Check `.clasprc.json` has correct `projectId` |
-
-### C. Schedule Membership Renewal Reminders
-
-In Google Apps Script Editor (https://script.google.com):
-
-1. Open the Membership project
-2. **Triggers** (left sidebar)
-3. Click **+ Create new trigger**
-4. Function: `sendRenewalReminders`
-5. Deployment: Head
-6. Event source: Time-driven
-7. Type of time-based trigger: Day timer
-8. Time of day: 8:00 AM
-9. Click **Save**
-
-Now the script runs nightly at 8 AM to send renewal reminders.
-
----
-
-## 3. Database Migrations (MySQL on Azure)
-
-### A. Connect to Production MySQL
-
-```bash
-# Install MySQL client (Mac)
-brew install mysql-client
-
-# Connect
-mysql -h mmr-mysql-v4.mysql.database.azure.com \
-      -u mmradmin \
-      -p mmrdb
-
-# Type password when prompted
-```
-
-**Note**: MySQL host is `mmr-mysql-v4.mysql.database.azure.com` (not `mmr-mysql`).
-
-### B. Apply Schema Migrations
-
-Migrations live in `basecamp/migrations/` (numbered: `0001_*.sql`, `0002_*.sql`, etc.).
-
-**Check which migrations have been applied:**
+Then:
+1. Click [Load ▼] → "All runners"
+2. Wait for completion
+3. Verify:
+   - MMR runners now have `sync_source='both'` and `nyrr_runner_id` set
+   - Non-MMR runners have `sync_source='finishers'`, `team_code=NULL`, `nyrr_runner_id` set
+   - No duplicates (check via database viewer tab)
 
 ```sql
-SELECT * FROM schema_migrations;
+SELECT nyrr_event_id, bib_number, COUNT(*) as cnt
+FROM nyrr_event_runners
+WHERE nyrr_event_id = <event_id>
+GROUP BY nyrr_event_id, bib_number
+HAVING cnt > 1;
+-- Should return no rows (no duplicates)
 ```
 
-**Apply a new migration:**
+## 6. Test on Large Event (Optional)
 
+NYC Half (30K runners):
+1. Click [Load ▼] → "All runners"
+2. Watch progress in sync status
+3. Expected: ~2 minutes to fetch 30K runners (60 pages × 500 items, 2s sleep between)
+4. Verify completion and no data loss
+
+## 7. Cleanup
+
+Delete the superseded migration (if manual cleanup needed):
 ```bash
-# Read the migration file
-cat basecamp/migrations/0003_add_year_born.sql
-
-# Apply it (from MySQL CLI)
-mysql -h mmr-mysql.mysql.database.azure.com -u mmradmin -p mmrdb < basecamp/migrations/0003_add_year_born.sql
-
-# Verify it worked
-SELECT * FROM schema_migrations;
+# Cannot delete due to permissions, but it's marked DEPRECATED in file
+# Never run migration 0010; use 0011 instead
+cat db/migrations/0010_nyrr_runner_bib_unique.sql
 ```
 
-### C. Backup Before Migrations
+## 8. Document Status
 
-```bash
-# Backup the entire database
-mysqldump -h mmr-mysql.mysql.database.azure.com \
-          -u mmradmin \
-          -p mmrdb > backup_$(date +%Y%m%d).sql
-```
+Update your records:
+- ✅ Schema rebuild complete
+- ✅ Two-API sync strategy implemented
+- ✅ Pagination fix for 30K+ events
+- ✅ Filter debounce + clear runners UI
+- ⏳ Test on production events
+- ⏳ Monitor for any sync issues
 
-Store the backup somewhere safe (Google Drive, local machine).
+## Rollback (If Needed)
 
----
+If something breaks:
+1. Keep a DB backup from before migration
+2. Restore: `mysql-mmr < backup.sql`
+3. Revert code: `git revert <commit-hash>`
+4. Root cause analysis before retrying
 
-## 4. Photo Pipeline Scheduling (GitHub Actions Cron)
+## Key Files Modified
 
-If you want to run the photo pipeline automatically (e.g., nightly processing):
-
-### A. Create a Workflow
-
-```yaml
-# .github/workflows/photo-pipeline.yml
-name: Photo Pipeline Nightly
-
-on:
-  schedule:
-    - cron: '0 2 * * *'  # 2 AM UTC daily
-
-jobs:
-  process_photos:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r photo-manager/requirements.txt
-      - name: Process photos
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
-          AZURE_VISION_KEY: ${{ secrets.AZURE_VISION_KEY }}
-        run: python photo-manager/src/process_photos.py --event latest
-```
-
-### B. Add Secrets to GitHub
-
-1. **Settings → Secrets and variables → Actions**
-2. Add:
-   - `GOOGLE_SERVICE_ACCOUNT` — contents of service account JSON
-   - `AZURE_VISION_KEY` — Azure Computer Vision key
-
----
-
-## 5. Environment Variables on Azure
-
-The web app needs secrets at runtime. Set them in Azure Static Web Apps settings:
-
-### A. In Azure Portal
-
-1. Go to `https://portal.azure.com`
-2. Find Static Web App **`mmr-webapp`** in resource group **`mmr-resources`**
-3. **Settings → Configuration**
-4. Add these **Application settings** (Environment variables):
-
-| Name | Value | Source |
-|------|-------|--------|
-| `DATABASE_URL` | `mysql://mmradmin:PASSWORD@mmr-mysql-v4.mysql.database.azure.com:3306/mmrdb?ssl=true` | From `.env.local` |
-| `JWT_SECRET` | Long random string | From `.env.local` |
-| `AZURE_STORAGE_CONNECTION_STRING` | From `mmrunnersstorage` account | Portal → mmrunnersstorage → Access keys |
-| `AZURE_COMM_CONNECTION_STRING` | From `mmr-comm` service | Portal → mmr-comm → Keys |
-| `NEXT_PUBLIC_APP_URL` | `https://www.mmrunners.org` | Fixed |
-
-**Critical:** Do NOT commit these to GitHub. They stay in Azure only.
-
-### B. Test in GitHub Actions
-
-To use secrets in workflows (e.g., for testing):
-
-```yaml
-- name: Test app
-  env:
-    DATABASE_URL: ${{ secrets.DATABASE_URL }}
-    JWT_SECRET: ${{ secrets.JWT_SECRET }}
-  run: npm run build
-```
-
----
-
-## 6. Emergency Rollback
-
-If something breaks in production:
-
-### A. Rollback Web App
-
-1. Go to `https://github.com/admin-mmr/trailhead/deployments`
-2. Find the last good deployment
-3. Click **Reactivate**
-
-Or revert the last commit:
-
-```bash
-git revert HEAD
-git push origin main
-```
-
-### B. Rollback GAS
-
-In Google Apps Script Editor:
-
-1. **Project settings → Deployments**
-2. Find the previous version
-3. Click the three-dot menu → **Manage versions**
-4. Select the stable version
-5. Create a new deployment from that version
-
-### C. Rollback Database
-
-Restore from backup:
-
-```bash
-mysql -h mmr-mysql.mysql.database.azure.com \
-      -u mmradmin \
-      -p mmrdb < backup_YYYYMMDD.sql
-```
-
----
-
-## Monitoring & Logs
-
-### A. GitHub Actions Logs
-
-```
-github.com/admin-mmr/trailhead/actions
-  → Click a workflow run
-  → View the detailed logs
-```
-
-### B. Azure Application Insights
-
-In Azure Portal:
-
-1. Static Web App → **Monitoring → Logs**
-2. Query examples:
-
-```kusto
-// Show recent errors
-requests
-| where resultCode >= 400
-| order by timestamp desc
-| take 20
-```
-
-### C. MySQL Slow Queries
-
-```sql
--- Show slow queries (over 1 second)
-SELECT * FROM mysql.slow_log LIMIT 10;
-```
-
----
-
-## Troubleshooting Deployments
-
-| Problem | Diagnosis | Fix |
-|---------|-----------|-----|
-| GitHub Actions fails build | Check logs in Actions tab | Run `npm run verify` locally first |
-| Azure deployment rejected | Check secret name matches workflow | Verify `AZURE_STATIC_WEB_APPS_API_TOKEN_*` exists in GitHub Secrets |
-| `DATABASE_URL` undefined | Env var not set in Azure | Add to Azure Static Web App configuration |
-| GAS push fails | Clasp version mismatch | `npm install` in gas/membership/ |
-| Photo pipeline timeout | Too many API calls | Add rate limiting in photo-manager code |
-| MySQL connection fails | Network/IP issue | Check Azure firewall allows your IP |
-
----
-
-## Deployment Checklist Before Going Live
-
-Before deploying to production:
-
-- [ ] All tests pass locally (`npm run verify`)
-- [ ] Database migration tested on a backup first
-- [ ] GitHub Actions workflow has run successfully
-- [ ] GAS changes pushed via `npm run push`
-- [ ] Environment variables configured in Azure Portal
-- [ ] Backup of database created
-- [ ] Team notified of deployment
-- [ ] Monitoring setup (Application Insights, error logging)
-
----
+| File | Change | Impact |
+|------|--------|--------|
+| `db/migrations/0011_rebuild_nyrr_event_runners.sql` | New schema | Data loss (intentional) |
+| `mmr-admin/api_sync.py` | Two-path upsert | No upsert dupes |
+| `mmr-admin/nyrr_api.py` | Page size 500 | Fix 30K pagination |
+| `mmr-admin/templates/index.html` | UI improvements | Better UX |
+| `NYRR_SCHEMA_REBUILD.md` | Documentation | Reference |
+| `test_nyrr_api.sh` | Test script | Verify API behavior |
 
 ## Support
 
-For deployment issues:
-1. Check the **Troubleshooting** section above
-2. Look at GitHub Actions logs
-3. Check Azure Portal for errors
-4. See [`MONOREPO.md`](MONOREPO.md) for architecture overview
-5. Reference [`AZURE_RESOURCES.md`](AZURE_RESOURCES.md) for exact service names and connection strings
-
----
-
-## See Also
-
-- [`AZURE_RESOURCES.md`](AZURE_RESOURCES.md) — Exact Azure resource names and connection details
-- [`MONOREPO.md`](MONOREPO.md) — Architecture overview
-- [`PROJECT_PLAN.md`](PROJECT_PLAN.md) — Upcoming features
-
----
-
-## License
-
-MIT — see [`LICENSE`](LICENSE)
+If issues arise, check:
+1. Are both syncs running? (Sync all alone leaves `team_code=NULL`)
+2. Is pagination working? (Check logs for page count)
+3. Are rows truly deduplicated? (Run SQL check above)
