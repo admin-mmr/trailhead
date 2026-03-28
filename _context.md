@@ -1,7 +1,7 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-27
-Last commit: 3acc92a
+Last updated: 2026-03-28
+Last commit: pending (git lock conflict — clean up locally)
 
 ---
 
@@ -178,7 +178,29 @@ Last commit: 3acc92a
 - **Root cause 2**: Page showed "Not authenticated." error on 401 instead of redirecting to `/login`. Fixed both auto-check and manual button paths to redirect → `/login?from=...` on 401.
 - **Files changed**: `.github/workflows/azure-static-web-apps-*.yml`, `app/membership/inactive/page.tsx`
 
-### 2026-03-28 11:09 ET — Join flow refactor + hero text + Sheets sync
-- Changed hero badge: EN "Family · Support · Pursuit · Community", ZH "有家·有爱·一起奔跑". New `/api/members/enroll` saves member after Step 2, assigns MemberID, syncs Sheets. `findOrCreateMember` now updates existing member info. Content-type guard on API calls prevents HTML-parse crash. Added `lib/sheets/sync.ts` + `googleapis` dep.
-- **Files**: `page.tsx` (hero), `join/page.tsx`, `payments/submit/route.ts`, `members/enroll/route.ts` (new), `lib/db/members.ts`, `lib/sheets/sync.ts` (new)
-- **Next**: Set `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_KEY`, `SPREADSHEET_ID` env vars. Verify "WebApp Events" sheet tab exists. Run full build locally.
+### 2026-03-28 11:53 ET — Join flow refactor + hero text + Google Sheets sync
+- **Done**: Hero badge EN "Family · Support · Pursuit · Community" / ZH "有家·有爱·一起奔跑". New `POST /api/members/enroll` (Step 2) saves member to MySQL, assigns MemberID, syncs to "Membership Master" Sheets tab. Step 3 shows MemberID banner + includes in payment memo. `findOrCreateMember` updates existing member profile on re-enrollment. Content-type guards on payment/proof API calls. `lib/sheets/sync.ts` supports both local dev (GOOGLE_APPLICATION_CREDENTIALS file) and Azure SWA (GOOGLE_SERVICE_ACCOUNT_JSON env var). Installed `googleapis`.
+- **Files changed**: `app/(public)/page.tsx`, `app/(public)/join/page.tsx`, `app/api/members/enroll/route.ts` (new), `app/api/payments/submit/route.ts`, `lib/db/members.ts`, `lib/sheets/sync.ts` (new), `load-env.sh`, `package.json`
+- **Status**: Ready to commit. Git lock conflict — run `rm -f .git/HEAD.lock && git add -A && git commit` locally.
+- **Local setup**: `GOOGLE_SHEETS_MEMBERSHIP_ID` in `.env.local`. Sheets sync will warn if not set but join flow works without it.
+- **Azure setup**: Set `GOOGLE_SERVICE_ACCOUNT_JSON` (raw JSON) and `GOOGLE_SHEETS_MEMBERSHIP_ID` (spreadsheet ID) as SWA Application Settings.
+
+### 2026-03-28 12:02 ET — mmr-admin: fix env.local warning + match_method truncation
+- **Changed**: Patched `mmr-admin/app.py` to skip `.env.local` load on Azure (checks `WEBSITE_SITE_NAME`). Identified migration 0009 not applied — `match_method` ENUM missing `auto_firstlast`, causing Tier 2 auto-match to silently fail with truncation error on NYC Half load.
+- **Status**: `app.py` patch saved. User needs to run `mysql-mmr < db/migrations/0009_match_method_enum.sql` and re-run auto-match.
+- **Next**: Deploy app.py change; apply migration; re-match NYC Half.
+
+### 2026-03-28 12:13 ET — mmr-webapp /join: inline validation + UX improvements
+- **Changed**: `/join` info form — gender moved up and required, phone now optional, `FieldErrors` state + `validateInfoField` with human-readable messages, `onBlur` + submit-time client validation, red border/hint on errors. `enroll/route.ts` — phone uses `z.preprocess` for empty→undefined, gender `z.enum` required, yearBorn range messages.
+- **Status**: All changes saved. Build times out in sandbox — run `npm run build` locally to verify.
+- **Next**: Deploy; test /join flow end-to-end.
+
+### 2026-03-28 12:48 ET — mmr-webapp: start-dev.sh pulls Google creds + DB from Keychain
+- **Changed**: `start-dev.sh` now exports `GOOGLE_APPLICATION_CREDENTIALS` from `MMR_GOOGLE_CREDS_PATH` Keychain entry in addition to `DATABASE_URL`. `package.json` `dev` script now calls `start-dev.sh` directly so `npm run dev` and `mmr-web` both get Keychain secrets. `dev:bare` added to bypass for CI/Azure.
+- **Status**: Done. Update `mmr-web` alias to call `./start-dev.sh` (or just use `npm run dev`).
+- **Next**: No action needed unless Keychain entries are missing.
+
+### 2026-03-28 13:20 ET — mmr-admin: fix NYRR API + env path + Keychain fallback
+- **Changed**: `api_events.py` — NYRR discover-upcoming URL updated from `rmsprodapi.nyrr.org` to `widget.hakuapp.com` (Haku SaaS); API key moved to env var `NYRR_HAKU_API_KEY`. `app.py` — fixed `.env.local` relative path (`../..` → `..`; was resolving outside trailhead to stale copy). Added Keychain fallback for `DATABASE_URL` when `.env.local` value is blank.
+- **Status**: Ready to commit. User must set `NYRR_HAKU_API_KEY` in `.env.local` and Azure App Settings.
+- **Next**: Test discover-upcoming locally; deploy to Azure.

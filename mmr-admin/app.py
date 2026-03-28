@@ -29,7 +29,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ON_AZURE = bool(os.environ.get('WEBSITE_SITE_NAME'))
 
 if not _ON_AZURE:
-    _WEBAPP_ENV = os.path.join(_HERE, '..', '..', 'web-apps', 'mmr-webapp', '.env.local')
+    _WEBAPP_ENV = os.path.join(_HERE, '..', 'web-apps', 'mmr-webapp', '.env.local')
     try:
         from dotenv import load_dotenv
         if os.path.exists(_WEBAPP_ENV):
@@ -39,6 +39,20 @@ if not _ON_AZURE:
             print('  ⚠  mmr-webapp/.env.local not found — OAuth vars must be set manually', flush=True)
     except ImportError:
         print('  ⚠  python-dotenv not installed — run: pip install python-dotenv', flush=True)
+
+    # If DATABASE_URL still empty/blank, try Keychain (macOS only)
+    if not os.environ.get('DATABASE_URL', '').strip():
+        import subprocess, shutil
+        if shutil.which('security'):
+            result = subprocess.run(
+                ['security', 'find-generic-password', '-s', 'MMR_DATABASE_URL', '-w'],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                os.environ['DATABASE_URL'] = result.stdout.strip()
+                print('  ✓ DATABASE_URL loaded from Keychain (MMR_DATABASE_URL)', flush=True)
+            else:
+                print('  ⚠  DATABASE_URL not found in Keychain (MMR_DATABASE_URL)', flush=True)
 
 from flask import Flask, send_file
 

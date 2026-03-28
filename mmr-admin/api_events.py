@@ -295,8 +295,8 @@ def api_discover_events():
 # Discover upcoming (future) events from NYRR widget API
 # ---------------------------------------------------------------------------
 
-NYRR_UPCOMING_API = "https://rmsprodapi.nyrr.org/api/v2/event_lists"
-NYRR_UPCOMING_API_KEY = "ZUSQ2ZfFgH5ia2E38BEKS4VVkVwIL9Y9aCLhk043"
+NYRR_UPCOMING_API = "https://widget.hakuapp.com/v2/event_lists"
+NYRR_UPCOMING_API_KEY = os.environ.get("NYRR_HAKU_API_KEY", "")
 
 
 @events_bp.route('/api/discover-upcoming', methods=['POST'])
