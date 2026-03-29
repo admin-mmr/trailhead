@@ -51,29 +51,31 @@ def api_events():
     sql += " ORDER BY event_date DESC"
     rows = query(sql, params)
 
-    # Calculate LIVE counts from nyrr_event_runners table instead of cached columns
-    for r in rows:
-        event_id = r.get('id')
-
-        # Query live counts
-        live_counts = query("""
+    # Get live runner counts in ONE query (LEFT JOIN + GROUP BY, not N+1)
+    event_ids = [r['id'] for r in rows]
+    if event_ids:
+        placeholders = ','.join(['%s'] * len(event_ids))
+        counts_by_event = query(f"""
             SELECT
+              nyrr_event_id,
               COUNT(*) as total,
               SUM(CASE WHEN team_code = 'MMR' THEN 1 ELSE 0 END) as mmr_count,
               SUM(CASE WHEN mmr_member_id IS NOT NULL THEN 1 ELSE 0 END) as matched_count
             FROM nyrr_event_runners
-            WHERE nyrr_event_id = %s
-        """, [event_id])
+            WHERE nyrr_event_id IN ({placeholders})
+            GROUP BY nyrr_event_id
+        """, event_ids)
 
-        if live_counts:
-            counts = live_counts[0]
+        counts_map = {c['nyrr_event_id']: c for c in counts_by_event}
+        for r in rows:
+            counts = counts_map.get(r['id'], {})
             r['result_count'] = counts.get('total') or 0
             r['mmr_runner_count'] = counts.get('mmr_count') or 0
             r['mmr_matched_count'] = counts.get('matched_count') or 0
 
-        mmr = r.get('mmr_runner_count') or 0
-        matched = r.get('mmr_matched_count') or 0
-        r['match_pct'] = round(matched / mmr * 100, 1) if mmr > 0 else 0
+            mmr = r.get('mmr_runner_count') or 0
+            matched = r.get('mmr_matched_count') or 0
+            r['match_pct'] = round(matched / mmr * 100, 1) if mmr > 0 else 0
 
     return json_response({'ok': True, 'data': rows})
 
