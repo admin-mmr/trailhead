@@ -15,11 +15,18 @@ Last commit: pending (NYRR widget API fix)
 
 ## Open items
 
-- [ ] (add open tasks here)
+- [ ] remove upcoming events from the first tab Events in the dashboard. Currently upcoming events are shown Completed status. not sure what it means. 
+- [ ] App title changed to MMR Admin Portal
+- [ ] if possible, for any past events, we record the total number of finishers and compare with the number of finishers we have in our database. If there is a significant gap, we can prioritize syncing that event. This will help us identify which events are most in need of syncing and ensure that we are focusing our efforts on the events that will have the biggest impact on our data quality.
 
 ## Session log
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
+
+### 2026-03-29 15:06 ET — Fix Azure deployment: add _paginate_streaming to basecamp NyrrApiClient
+- Changed: `basecamp/python/nyrr_api.py` — added `_paginate_streaming()` generator method (was missing, only in mmr-admin version). Azure deployment failed with `AttributeError: 'NyrrApiClient' object has no attribute '_paginate_streaming'` because import path resolved to basecamp version.
+- Status: Fixed. Both nyrr_api.py versions now in sync for streaming pagination.
+- Next: Commit and redeploy to Azure.
 
 ### 2026-03-29 01:47 ET — Implement divide-and-conquer sync via age/gender split + MMR-first pass
 - Changed: `mmr-admin/api_sync.py` STEP 1 — replaced searchString loop with binary-tree divide-and-conquer on age (0–100). New `_probe()` helper tests totalItems for filter combo cheaply (pageSize=1). New `_divide_and_conquer(age_from, age_to, gender)` recursively bisects age range until ≤1000, then: ≤500 → 1 pass, 501–1000 → asc+desc passes, >1000 & age_from==age_to → split by gender (M/W/X) + ungendered. Pass 0 always fetches teamCode=MMR first (MMR members, all ages). Added `probe_finishers.py` tool to test any filter combo against API (supports age range, gender, state, country, team, etc.).
