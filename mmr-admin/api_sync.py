@@ -413,11 +413,30 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         elapsed = time.time() - start_time
         logger.error(f"❌ SYNC FAILED for {event_code} after {elapsed:.2f}s")
         logger.error(f"   Exception: {type(e).__name__}: {e}")
-        logger.error(f"   Traceback:\n{traceback.format_exc()}")
+        # Log traceback at DEBUG level only (don't spam terminal with full stack trace)
+        logger.debug(f"   Full traceback:\n{traceback.format_exc()}")
+
+        # Format error message for UI (include context, suppress raw traceback)
+        error_msg = str(e)
+        if isinstance(e, mysql.connector.errors.DatabaseError):
+            if e.errno == 1048:
+                error_msg = f"Database error: Column cannot be null (check data format)"
+            elif e.errno == 1205:
+                error_msg = f"Database timeout: Too much lock contention"
+            elif e.errno == 2003:
+                error_msg = f"Database connection failed: Check network"
+            else:
+                error_msg = f"Database error {e.errno}: {error_msg}"
+        elif isinstance(e, ConnectionError):
+            error_msg = f"Network error: Cannot reach NYRR API or database"
+        elif isinstance(e, ValueError):
+            error_msg = f"Invalid data: {error_msg}"
+        else:
+            error_msg = f"{type(e).__name__}: {error_msg}"
 
         with _jobs_lock:
             _jobs[event_code]['status'] = 'error'
-            _jobs[event_code]['message'] = str(e)[:500]
+            _jobs[event_code]['message'] = error_msg[:500]
             _jobs[event_code]['finished_at'] = datetime.utcnow().isoformat()
             _jobs[event_code]['total_elapsed_sec'] = elapsed
             _jobs[event_code]['error_type'] = type(e).__name__
