@@ -165,7 +165,8 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
         # Paginate and write each page immediately
         logger.debug(f"  └─ Streaming pages from NYRR API...")
-        for page_num, page_runners in enumerate(client._paginate_streaming(
+        from nyrr_api import NyrrFinisher
+        for page_num, page_raw in enumerate(client._paginate_streaming(
             "runners/finishers-filter",
             {
                 "eventCode": event_code,
@@ -176,28 +177,31 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
             },
             progress_cb=_page_progress,
         ), 1):
+            # Convert raw API data to NyrrFinisher objects
+            page_runners = [NyrrFinisher.from_api(item) for item in page_raw]
+
             # Convert page to row tuples
             row_tuples = []
             for runner in page_runners:
-                full_name = f"{runner.get('firstName', '')} {runner.get('lastName', '')}".strip()
+                full_name = f"{runner.first_name} {runner.last_name}".strip()
                 row_tuples.append((
                     event_id,
-                    str(runner.get('runnerId', '')),
+                    str(runner.runner_id),
                     full_name,
-                    runner.get('firstName', ''),
-                    runner.get('lastName', ''),
-                    runner.get('age'),
-                    runner.get('gender', ''),
-                    runner.get('city', '') or '',
-                    runner.get('stateProvince', ''),
-                    runner.get('bibNumber'),
-                    runner.get('overallTime', ''),
-                    runner.get('pace', ''),
-                    runner.get('overallPlace'),
-                    runner.get('genderPlace'),
-                    runner.get('ageGradeTime', '') or '',
-                    runner.get('ageGradePlace'),
-                    runner.get('ageGradePercent'),
+                    runner.first_name,
+                    runner.last_name,
+                    runner.age,
+                    runner.gender,
+                    getattr(runner, 'city', '') or '',
+                    runner.state_province,
+                    runner.bib,
+                    runner.overall_time,
+                    runner.pace,
+                    runner.overall_place,
+                    runner.gender_place,
+                    getattr(runner, 'age_grade_time', '') or '',
+                    getattr(runner, 'age_grade_place', None),
+                    getattr(runner, 'age_grade_percent', None),
                 ))
 
             # Upsert this page with retry
