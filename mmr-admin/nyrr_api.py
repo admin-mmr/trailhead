@@ -423,13 +423,10 @@ class NyrrApiClient:
                 progress_cb(len(all_items), total)
 
             # Stop conditions:
-            # 1. Received fewer items than page_size → last page.
-            # 2. totalItems is known and we've fetched that many → done.
-            #    (NYRR sometimes reports correct totalItems for large events)
-            # 3. No items returned → empty page, stop.
+            # 1. No items returned → empty page, stop (definitive end).
+            # 2. totalItems is known and we've fetched that many → done (authoritative).
+            # NOTE: Don't stop on len(items) < page_size; NYRR may return fewer items mid-set
             if len(items) == 0:
-                break
-            if len(items) < self.page_size:
                 break
             if total and len(all_items) >= total:
                 break
@@ -483,9 +480,10 @@ class NyrrApiClient:
 
             yield items  # Yield this page for processing
 
-            # Stop conditions
-            if len(items) < self.page_size:
-                break
+            # Stop conditions:
+            # 1. If total is known and we've fetched that many, we're done (authoritative)
+            # 2. Empty page always means no more data
+            # NOTE: Don't stop on len(items) < page_size; NYRR may return fewer items mid-set
             if total and cumulative >= total:
                 break
 
