@@ -108,35 +108,15 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         }
 
     try:
-        # --- Step 1: Load all finishers ---
-        logger.info("⏱️  STEP 1: Starting finishers fetch...")
+        # --- Step 1: Fetch and upsert finishers (streaming, per-page) ---
+        logger.info("⏱️  STEP 1: Starting finishers fetch & upsert (streaming)...")
         step1_start = time.time()
 
         with _jobs_lock:
             _jobs[event_code]['step'] = 'step1_finishers'
-            _jobs[event_code]['message'] = 'Step 1: Fetching all finishers from NYRR API...'
+            _jobs[event_code]['message'] = 'Step 1: Fetching and upserting finishers from NYRR API...'
 
-        def _fetch_progress(fetched, total):
-            logger.debug(f"  └─ Progress: {fetched}/{total if total else '?'} finishers")
-            with _jobs_lock:
-                if total:
-                    _jobs[event_code]['message'] = f'Step 1: Fetched {fetched}/{total} finishers...'
-                else:
-                    _jobs[event_code]['message'] = f'Step 1: Fetched {fetched} finishers...'
-
-        logger.debug(f"  └─ Calling client.get_event_finishers(event_code={event_code})...")
-        runners = client.get_event_finishers(event_code, progress_cb=_fetch_progress)
-        step1_elapsed = time.time() - step1_start
-
-        logger.info(f"✅ STEP 1 complete: {len(runners)} runners fetched in {step1_elapsed:.2f}s")
-        with _jobs_lock:
-            _jobs[event_code]['message'] = f'Step 1 complete: Got {len(runners)} runners. Upserting...'
-            _jobs[event_code]['step1_elapsed_sec'] = step1_elapsed
-
-        # --- Phase 1b: Upsert runners ---
-        logger.info("⏱️  PHASE 1b: Upserting runners to database...")
-        upsert_start = time.time()
-
+        # Connect once for all pages
         conn = get_conn()
         conn.autocommit = False
         cursor = conn.cursor()
@@ -175,63 +155,77 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
               scan_timestamp = NOW()
         """
 
-        BATCH_SIZE = 50  # Small batches to avoid lock wait timeouts on Azure MySQL
         MAX_RETRIES = 3
         RETRY_DELAY = 2  # seconds
         rows_written = 0
-        logger.debug(f"  └─ Starting batch upsert: BATCH_SIZE={BATCH_SIZE}, total_runners={len(runners)}")
+        pages_written = 0
 
-        for i in range(0, len(runners), BATCH_SIZE):
-            batch = runners[i : i + BATCH_SIZE]
+        def _page_progress(cumulative, total):
+            logger.debug(f"  └─ Progress: {cumulative}/{total if total else '?'} finishers")
+
+        # Paginate and write each page immediately
+        logger.debug(f"  └─ Streaming pages from NYRR API...")
+        for page_num, page_runners in enumerate(client._paginate_streaming(
+            "runners/finishers-filter",
+            {
+                "eventCode": event_code,
+                "searchString": None,
+                "handicap": None,
+                "sortColumn": "overallTime",
+                "sortDescending": False,
+            },
+            progress_cb=_page_progress,
+        ), 1):
+            # Convert page to row tuples
             row_tuples = []
-            for runner in batch:
-                full_name = f"{runner.first_name} {runner.last_name}".strip()
+            for runner in page_runners:
+                full_name = f"{runner.get('firstName', '')} {runner.get('lastName', '')}".strip()
                 row_tuples.append((
                     event_id,
-                    str(runner.runner_id),
+                    str(runner.get('runnerId', '')),
                     full_name,
-                    runner.first_name,
-                    runner.last_name,
-                    runner.age,
-                    runner.gender,
-                    getattr(runner, 'city', '') or '',
-                    runner.state_province,
-                    runner.bib,
-                    runner.overall_time,
-                    runner.pace,
-                    runner.overall_place,
-                    runner.gender_place,
-                    getattr(runner, 'age_grade_time', '') or '',
-                    getattr(runner, 'age_grade_place', None),
-                    getattr(runner, 'age_grade_percent', None),
+                    runner.get('firstName', ''),
+                    runner.get('lastName', ''),
+                    runner.get('age'),
+                    runner.get('gender', ''),
+                    runner.get('city', '') or '',
+                    runner.get('stateProvince', ''),
+                    runner.get('bibNumber'),
+                    runner.get('overallTime', ''),
+                    runner.get('pace', ''),
+                    runner.get('overallPlace'),
+                    runner.get('genderPlace'),
+                    runner.get('ageGradeTime', '') or '',
+                    runner.get('ageGradePlace'),
+                    runner.get('ageGradePercent'),
                 ))
 
-            # Retry loop for lock wait timeouts
+            # Upsert this page with retry
             for attempt in range(1, MAX_RETRIES + 1):
                 try:
                     batch_start = time.time()
                     cursor.executemany(upsert_sql, row_tuples)
                     conn.commit()
                     batch_elapsed = time.time() - batch_start
-                    rows_written += len(batch)
+                    rows_written += len(row_tuples)
+                    pages_written += 1
                     break  # success
                 except mysql.connector.errors.DatabaseError as e:
                     if e.errno == 1205 and attempt < MAX_RETRIES:
-                        logger.warning(f"  └─ Lock timeout on batch {i//BATCH_SIZE + 1}, attempt {attempt}/{MAX_RETRIES}. Retrying in {RETRY_DELAY}s...")
+                        logger.warning(f"  └─ Lock timeout on page {page_num}, attempt {attempt}/{MAX_RETRIES}. Retrying in {RETRY_DELAY}s...")
                         conn.rollback()
-                        time.sleep(RETRY_DELAY * attempt)  # progressive backoff
+                        time.sleep(RETRY_DELAY * attempt)
                     else:
-                        raise  # re-raise on final attempt or non-timeout error
+                        raise
 
-            batch_num = i // BATCH_SIZE + 1
-            logger.debug(f"  └─ Batch {batch_num}: {len(batch)} rows in {batch_elapsed:.3f}s, total={rows_written}/{len(runners)}")
+            logger.debug(f"  └─ Page {page_num}: {len(row_tuples)} rows in {batch_elapsed:.3f}s, total={rows_written}")
 
             with _jobs_lock:
                 _jobs[event_code]['rows_written'] = rows_written
-                _jobs[event_code]['message'] = f'Step 1: Upserted {rows_written}/{len(runners)} finishers...'
+                _jobs[event_code]['message'] = f'Step 1: Upserted {rows_written} finishers ({pages_written} pages)...'
 
-        upsert_elapsed = time.time() - upsert_start
-        logger.info(f"✅ PHASE 1b complete: Upserted {rows_written} rows in {upsert_elapsed:.2f}s ({rows_written/upsert_elapsed:.1f} rows/sec)")
+        step1_elapsed = time.time() - step1_start
+        logger.info(f"✅ STEP 1 complete: Upserted {rows_written} rows in {step1_elapsed:.2f}s ({rows_written/step1_elapsed:.1f} rows/sec, {pages_written} pages)")
 
         cursor.close()
         conn.close()
@@ -268,6 +262,8 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
         total_backfilled = 0
         total_inserted = 0
+        TEAM_BATCH_SIZE = 100  # Batch updates/inserts to avoid lock timeouts
+
         for idx, team in enumerate(teams):
             team_code = team.team_code
             team_start = time.time()
@@ -278,23 +274,63 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
             updates_in_team = 0
             inserts_in_team = 0
-            for runner in team_runners:
-                # First try UPDATE
-                cursor.execute(
-                    """
-                    UPDATE nyrr_event_runners
-                    SET team_code = %s
-                    WHERE nyrr_event_id = %s AND bib_number = %s
-                    """,
-                    (team_code, event_id, runner.bib)
-                )
-                updates_in_team += cursor.rowcount
 
-                # If UPDATE didn't match any rows, INSERT the runner
-                if cursor.rowcount == 0:
+            # Batch updates first
+            update_bibs = [(team_code, event_id, runner.bib) for runner in team_runners]
+            for batch_idx in range(0, len(update_bibs), TEAM_BATCH_SIZE):
+                batch = update_bibs[batch_idx : batch_idx + TEAM_BATCH_SIZE]
+                try:
+                    cursor.executemany(
+                        """
+                        UPDATE nyrr_event_runners
+                        SET team_code = %s
+                        WHERE nyrr_event_id = %s AND bib_number = %s
+                        """,
+                        batch
+                    )
+                    updates_in_team += cursor.rowcount
+                    conn.commit()
+                except Exception as e:
+                    logger.warning(f"    └─ Batch update error for {team_code}: {e}")
+                    conn.rollback()
+
+            # Collect runners that need INSERT (those that weren't updated)
+            insert_batch = []
+            for runner in team_runners:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM nyrr_event_runners WHERE nyrr_event_id = %s AND bib_number = %s",
+                    (event_id, runner.bib)
+                )
+                if cursor.fetchone()[0] == 0:
                     full_name = f"{runner.first_name} {runner.last_name}".strip()
+                    insert_batch.append((
+                        event_id,
+                        str(runner.runner_id),
+                        full_name,
+                        runner.first_name,
+                        runner.last_name,
+                        runner.age,
+                        runner.gender,
+                        getattr(runner, 'city', '') or '',
+                        runner.state_province,
+                        runner.bib,
+                        runner.overall_time,
+                        runner.pace,
+                        runner.overall_place,
+                        runner.gender_place,
+                        getattr(runner, 'age_grade_time', '') or '',
+                        getattr(runner, 'age_grade_place', None),
+                        getattr(runner, 'age_grade_percent', None),
+                        team_code,
+                        team_code
+                    ))
+
+            # Batch inserts
+            for insert_idx in range(0, len(insert_batch), TEAM_BATCH_SIZE):
+                batch = insert_batch[insert_idx : insert_idx + TEAM_BATCH_SIZE]
+                if batch:
                     try:
-                        cursor.execute(
+                        cursor.executemany(
                             """
                             INSERT INTO nyrr_event_runners
                               (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
@@ -305,34 +341,14 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                             ON DUPLICATE KEY UPDATE team_code = %s
                             """,
-                            (
-                                event_id,
-                                str(runner.runner_id),
-                                full_name,
-                                runner.first_name,
-                                runner.last_name,
-                                runner.age,
-                                runner.gender,
-                                getattr(runner, 'city', '') or '',
-                                runner.state_province,
-                                runner.bib,
-                                runner.overall_time,
-                                runner.pace,
-                                runner.overall_place,
-                                runner.gender_place,
-                                getattr(runner, 'age_grade_time', '') or '',
-                                getattr(runner, 'age_grade_place', None),
-                                getattr(runner, 'age_grade_percent', None),
-                                team_code,
-                                team_code
-                            )
+                            batch
                         )
                         inserts_in_team += cursor.rowcount
+                        conn.commit()
+                    except Exception as e:
+                        logger.warning(f"    └─ Batch insert error for {team_code}: {e}")
+                        conn.rollback()
 
-                    except Exception as insert_err:
-                        logger.warning(f"    └─ Failed to insert runner {runner.bib}: {insert_err}")
-
-            conn.commit()
             total_backfilled += updates_in_team
             total_inserted += inserts_in_team
             team_elapsed = time.time() - team_start

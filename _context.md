@@ -21,6 +21,11 @@ Last commit: pending (NYRR widget API fix)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
 
+### 2026-03-28 20:20 ET — Refactor: stream NYRR finishers per-page + batch team updates
+- Changed: `nyrr_api.py` — added `_paginate_streaming()` generator that yields pages instead of buffering all items. `api_sync.py` STEP 1 now uses streaming to write each page (~50 runners) immediately to DB; eliminated 500-item buffer. STEP 3 now batches team updates in 100-runner batches instead of individual UPDATEs—less transaction overhead, fewer lock timeouts.
+- Status: Refactored. Syntax verified. Streaming reduces memory footprint + catches DB connection issues early + incremental progress saves.
+- Next: Test on next sync run; expect faster, more resilient pipeline.
+
 ### 2026-03-28 19:56 ET — Clean up: remove ALL admin functionality from mmr-webapp SWA
 - Deleted: Entire `web-apps/mmr-webapp/app/admin/` directory including 6 pages (admin dashboard, NYRR events list, event detail, member detail, match review, sync status) + 2 API routes (`/api/admin`, `/api/admin/sync-status`) + orphaned `components/ProgressModal.tsx` component. All admin functionality now lives exclusively in `mmr-admin/` Flask app on Azure WA.
 - Status: Complete. TypeScript build passes. No broken imports. mmr-webapp now member-facing only. Admin APIs in webapp removed; member-facing APIs (`/api/nyrr/*` for portal) retained.

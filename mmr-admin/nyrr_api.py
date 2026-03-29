@@ -445,6 +445,59 @@ class NyrrApiClient:
 
         return all_items
 
+    def _paginate_streaming(
+        self,
+        path: str,
+        body: Dict[str, Any],
+        *,
+        items_key: str = "items",
+        total_key: str = "totalItems",
+        progress_cb=None,  # optional callable(fetched: int, total: int)
+    ):
+        """
+        Fetch all pages from a paginated POST endpoint, yielding each page.
+        Useful for processing large datasets without buffering everything in memory.
+        """
+        cumulative = 0
+        page_index = 1
+        total = 0
+
+        while True:
+            page_body = {**body, "pageIndex": page_index, "pageSize": self.page_size}
+            data = self._post(path, page_body)
+
+            items = data.get(items_key, [])
+            total = data.get(total_key, 0)
+
+            if not items:
+                break
+
+            cumulative += len(items)
+            logger.debug(
+                "paginate_streaming %s  page=%d  got=%d  cumulative=%d  server_total=%d",
+                path, page_index, len(items), cumulative, total,
+            )
+
+            if progress_cb:
+                progress_cb(cumulative, total)
+
+            yield items  # Yield this page for processing
+
+            # Stop conditions
+            if len(items) < self.page_size:
+                break
+            if total and cumulative >= total:
+                break
+
+            page_index += 1
+            time.sleep(self.sleep_seconds)
+
+        if total and cumulative != total:
+            logger.info(
+                "paginate_streaming %s: fetched %d items but server reported totalItems=%d",
+                path, cumulative, total,
+            )
+
     # ==================================================================
     # 3.1  Events
     # ==================================================================
