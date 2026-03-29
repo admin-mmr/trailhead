@@ -409,7 +409,20 @@ class NyrrApiClient:
 
         while True:
             page_body = {**body, "pageIndex": page_index, "pageSize": self.page_size}
-            data = self._post(path, page_body)
+            try:
+                data = self._post(path, page_body)
+            except requests.exceptions.HTTPError as e:
+                # NYRR API returns 400 "Please use the advanced filter to find more"
+                # when finishers-filter hits its ~500 result limit. This is expected.
+                if e.response.status_code == 400:
+                    logger.info(
+                        "paginate %s: API limit reached at page %d (%d items fetched). "
+                        "Stopping pagination gracefully.",
+                        path, page_index, len(all_items)
+                    )
+                    break
+                else:
+                    raise
 
             items = data.get(items_key, [])
             total = data.get(total_key, 0)
@@ -461,7 +474,20 @@ class NyrrApiClient:
 
         while True:
             page_body = {**body, "pageIndex": page_index, "pageSize": self.page_size}
-            data = self._post(path, page_body)
+            try:
+                data = self._post(path, page_body)
+            except requests.exceptions.HTTPError as e:
+                # NYRR API returns 400 "Please use the advanced filter to find more"
+                # when finishers-filter hits its ~500 result limit. This is expected.
+                if e.response.status_code == 400:
+                    logger.info(
+                        "paginate_streaming %s: API limit reached at page %d (%d items fetched). "
+                        "Stopping pagination gracefully.",
+                        path, page_index, cumulative
+                    )
+                    break
+                else:
+                    raise
 
             items = data.get(items_key, [])
             total = data.get(total_key, 0)
