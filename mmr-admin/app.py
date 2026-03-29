@@ -124,6 +124,9 @@ app.register_blueprint(sync_bp)
 from api_payments import payments_bp
 app.register_blueprint(payments_bp)
 
+from api_district_members import district_members_bp
+app.register_blueprint(district_members_bp)
+
 
 # ---------------------------------------------------------------------------
 # Main

@@ -15,25 +15,26 @@ Last commit: pending (Match all runners + status tooltip)
 
 ## Open items
 
-- [ ] add a tab to visualize members table. one view to see the expiration date distribution. add a selector active only or all, show the district distribution, and the distribution of the number of events per member. another view to see the list of members, with a filter for expired vs active, and a search by name. (This will help us understand our membership base better and identify any issues with expiration or engagement.)
-- [ ] in Payments tab, pending events show Member column. can we have a mouse over to show email address and copy? that way the admin can email the members in another window by copying the email address. (This will improve admin efficiency when managing pending payments and communicating with members.)
-(All cleared! See latest session log.)
-
 ## Session log
 
-<!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
+<!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
 
-### 2026-03-29 17:45 ET — Match all runners + member status tooltip
+### 2026-03-29 21:18 UTC — Add Members by District view for group leaders
+- Changed: Created `mmr-admin/api_district_members.py` — new blueprint with 3 endpoints: `/api/district/list` (fetch members by district with filters), `/api/district/districts` (dropdown list), `/api/district/export-csv` (POST to export selected or all members in district as CSV). Created `mmr-admin/templates/DistrictMembersPanel.js` — React component with district selector, member table (cols: MemberID, Name, WeChat ID, Email, Phone, Status, Last Login, Last Modified, Expires), checkboxes for multi-select, export buttons. `mmr-admin/app.py` — registered district_members_bp. `mmr-admin/templates/index.html` — added script import + new tab "Members by District" with conditional rendering.
+- Status: Complete. Feature-ready for group leaders to view/select members and export CSVs.
+- Next: Test on localhost with actual district data; verify CSV export formatting + download flow.
+
+### 2026-03-29 17:45 UTC — Match all runners + member status tooltip
 - Changed: `mmr-admin/api_events.py` — `/api/events/<id>/runners` endpoint now joins members table to fetch `member_status` (Active/Inactive). `mmr-admin/templates/index.html` — matched column badge now shows member status on mouse hover via `title` attribute.
 - Status: Complete. Matching applies to all runners in event (not MMR-only), accounts for members running under other club names.
 - Note: Matching scope is intentionally all runners, not filtered by team_code; members table represents MMR roster.
 
-### 2026-03-29 17:35 ET — Enhanced matching: auto-update members table + age/gender validation
+### 2026-03-29 17:35 UTC — Enhanced matching: auto-update members table + age/gender validation
 - Changed: `.github/workflows/sync-nyrr-weekly.yml` — changed from Sunday to **Tuesday 2 AM UTC**; removed daily job (sync-nyrr-recurring.yml); added finisher count audit step before main sync. `mmr-admin/api_events.py` — all three match tiers (Tier 1: NYRR name, Tier 2: first+last, Tier 3: partial) now: (1) auto-update members.NYRRRunnerName + members.YearBornGuess when match found, (2) validate age if member has YearBorn or YearBornGuess (±1 year tolerance), (3) validate gender match (case-insensitive first letter). Validation only applies if member has birth year; skips if none.
 - Status: Complete. Consolidated NYRR jobs to Tuesday weekly. Finisher audit + full sync in one run.
 - Next: Run migrations 0013 + 0014; commit changes; monitor first Tuesday run for match quality improvements.
 
-### 2026-03-29 17:15 ET — Implement finisher count audit + partial name matching (Tiers 1–3)
+### 2026-03-29 17:15 UTC — Implement finisher count audit + partial name matching (Tiers 1–3)
 - Changed: `db/migrations/0013_add_nyrr_finisher_count.sql` — added `nyrr_finisher_count` column to track NYRR API finisher totals. `db/migrations/0014_add_auto_partial_name_match_method.sql` — extended match_method ENUM to include 'auto_partial_name'. `db/schemas/nyrr.sql` — updated schema to reflect both changes. `mmr-admin/api_sync.py` — store total_finishers from NYRR API (fixed to use _probe() without age limits) and populate nyrr_finisher_count on sync completion. `mmr-admin/api_events.py` — added Tier 3 auto-match: partial name matching (first name OR last name match).
 - Status: Complete. Ready to run migrations and deploy.
 - Next: Enhanced matching with member table updates + validation.
