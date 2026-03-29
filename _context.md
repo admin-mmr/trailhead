@@ -21,6 +21,11 @@ Last commit: pending (NYRR widget API fix)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
 
+### 2026-03-29 01:47 ET — Implement divide-and-conquer sync via age/gender split + MMR-first pass
+- Changed: `mmr-admin/api_sync.py` STEP 1 — replaced searchString loop with binary-tree divide-and-conquer on age (0–100). New `_probe()` helper tests totalItems for filter combo cheaply (pageSize=1). New `_divide_and_conquer(age_from, age_to, gender)` recursively bisects age range until ≤1000, then: ≤500 → 1 pass, 501–1000 → asc+desc passes, >1000 & age_from==age_to → split by gender (M/W/X) + ungendered. Pass 0 always fetches teamCode=MMR first (MMR members, all ages). Added `probe_finishers.py` tool to test any filter combo against API (supports age range, gender, state, country, team, etc.).
+- Status: Syntax verified. Ready to test on large event (target: handle 30K+ via MMR pass + age/gender bisect).
+- Next: Test on H2026; monitor logs to verify age splits + gender splits activate as needed.
+
 ### 2026-03-28 20:20 ET — Refactor: stream NYRR finishers per-page + batch team updates
 - Changed: `nyrr_api.py` — added `_paginate_streaming()` generator that yields pages instead of buffering all items. `api_sync.py` STEP 1 now uses streaming to write each page (~50 runners) immediately to DB; eliminated 500-item buffer. STEP 3 now batches team updates in 100-runner batches instead of individual UPDATEs—less transaction overhead, fewer lock timeouts.
 - Status: Refactored. Syntax verified. Streaming reduces memory footprint + catches DB connection issues early + incremental progress saves.

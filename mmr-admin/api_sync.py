@@ -160,73 +160,150 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         rows_written = 0
         pages_written = 0
 
-        def _page_progress(cumulative, total):
-            logger.debug(f"  └─ Progress: {cumulative}/{total if total else '?'} finishers")
-
-        # Paginate and write each page immediately
-        logger.debug(f"  └─ Streaming pages from NYRR API...")
         from nyrr_api import NyrrFinisher
-        for page_num, page_raw in enumerate(client._paginate_streaming(
-            "runners/finishers-filter",
-            {
+
+        def _probe(age_from=None, age_to=None, gender=None, team_code=None, sort_desc=False):
+            """Single pageSize=1 call to get totalItems for a filter combination."""
+            data = client._post("runners/finishers-filter", {
                 "eventCode": event_code,
-                "searchString": None,
-                "handicap": None,
-                "sortColumn": "overallTime",
-                "sortDescending": False,
-            },
-            progress_cb=_page_progress,
-        ), 1):
-            # Convert raw API data to NyrrFinisher objects
-            page_runners = [NyrrFinisher.from_api(item) for item in page_raw]
+                "ageFrom": age_from,
+                "ageTo": age_to,
+                "gender": gender,
+                "teamCode": team_code,
+                "sortColumn": "bib",
+                "sortDescending": sort_desc,
+                "pageIndex": 1,
+                "pageSize": 1,
+            })
+            return data.get("totalItems", 0)
 
-            # Convert page to row tuples
-            row_tuples = []
-            for runner in page_runners:
-                full_name = f"{runner.first_name} {runner.last_name}".strip()
-                row_tuples.append((
-                    event_id,
-                    str(runner.runner_id),
-                    full_name,
-                    runner.first_name,
-                    runner.last_name,
-                    runner.age,
-                    runner.gender,
-                    getattr(runner, 'city', '') or '',
-                    runner.state_province,
-                    runner.bib,
-                    runner.overall_time,
-                    runner.pace,
-                    runner.overall_place,
-                    runner.gender_place,
-                    getattr(runner, 'age_grade_time', '') or '',
-                    getattr(runner, 'age_grade_place', None),
-                    getattr(runner, 'age_grade_percent', None),
-                ))
+        def _upsert_pages(label, age_from=None, age_to=None, gender=None, team_code=None, sort_desc=False):
+            """Fetch all pages for a given filter set and upsert to DB."""
+            nonlocal rows_written, pages_written
+            for page_num, page_raw in enumerate(client._paginate_streaming(
+                "runners/finishers-filter",
+                {
+                    "eventCode": event_code,
+                    "ageFrom": age_from,
+                    "ageTo": age_to,
+                    "gender": gender,
+                    "teamCode": team_code,
+                    "sortColumn": "bib",
+                    "sortDescending": sort_desc,
+                },
+            ), 1):
+                page_runners = [NyrrFinisher.from_api(item) for item in page_raw]
+                row_tuples = []
+                for runner in page_runners:
+                    full_name = f"{runner.first_name} {runner.last_name}".strip()
+                    row_tuples.append((
+                        event_id,
+                        str(runner.runner_id),
+                        full_name,
+                        runner.first_name,
+                        runner.last_name,
+                        runner.age,
+                        runner.gender,
+                        getattr(runner, 'city', '') or '',
+                        runner.state_province,
+                        runner.bib,
+                        runner.overall_time,
+                        runner.pace,
+                        runner.overall_place,
+                        runner.gender_place,
+                        getattr(runner, 'age_grade_time', '') or '',
+                        getattr(runner, 'age_grade_place', None),
+                        getattr(runner, 'age_grade_percent', None),
+                    ))
 
-            # Upsert this page with retry
-            for attempt in range(1, MAX_RETRIES + 1):
-                try:
-                    batch_start = time.time()
-                    cursor.executemany(upsert_sql, row_tuples)
-                    conn.commit()
-                    batch_elapsed = time.time() - batch_start
-                    rows_written += len(row_tuples)
-                    pages_written += 1
-                    break  # success
-                except mysql.connector.errors.DatabaseError as e:
-                    if e.errno == 1205 and attempt < MAX_RETRIES:
-                        logger.warning(f"  └─ Lock timeout on page {page_num}, attempt {attempt}/{MAX_RETRIES}. Retrying in {RETRY_DELAY}s...")
-                        conn.rollback()
-                        time.sleep(RETRY_DELAY * attempt)
-                    else:
-                        raise
+                for attempt in range(1, MAX_RETRIES + 1):
+                    try:
+                        batch_start = time.time()
+                        cursor.executemany(upsert_sql, row_tuples)
+                        conn.commit()
+                        batch_elapsed = time.time() - batch_start
+                        rows_written += len(row_tuples)
+                        pages_written += 1
+                        break
+                    except mysql.connector.errors.DatabaseError as e:
+                        if e.errno == 1205 and attempt < MAX_RETRIES:
+                            logger.warning(f"  └─ Lock timeout [{label}] page {page_num}, attempt {attempt}/{MAX_RETRIES}. Retrying in {RETRY_DELAY}s...")
+                            conn.rollback()
+                            time.sleep(RETRY_DELAY * attempt)
+                        else:
+                            raise
 
-            logger.debug(f"  └─ Page {page_num}: {len(row_tuples)} rows in {batch_elapsed:.3f}s, total={rows_written}")
+                logger.debug(f"  └─ [{label}] page {page_num}: {len(row_tuples)} rows in {batch_elapsed:.3f}s, total={rows_written}")
+
+        def _divide_and_conquer(age_from: int, age_to: int, gender=None, depth=0):
+            """
+            Recursively split age range until totalItems <= 1000, then fetch.
+            - If <=500: single pass (sortAsc only)
+            - If 501-1000: two passes (sortAsc + sortDesc) to guarantee all pages
+            - If >1000 and age_from==age_to: split by gender M/W/X + null-gender pass
+            - Otherwise: bisect the age range
+            """
+            indent = "  " * (depth + 2)
+            label_base = f"age {age_from}-{age_to}" + (f" gender={gender}" if gender else "")
+            total = _probe(age_from=age_from, age_to=age_to, gender=gender)
+            logger.info(f"{indent}└─ {label_base}: totalItems={total}")
+
+            with _jobs_lock:
+                _jobs[event_code]['message'] = f'Step 1: Fetching age {age_from}-{age_to}{" "+gender if gender else ""} ({total} runners)...'
+
+            if total == 0:
+                return
+
+            if total <= 500:
+                _upsert_pages(label_base, age_from=age_from, age_to=age_to, gender=gender, sort_desc=False)
+            elif total <= 1000:
+                # Two passes: asc + desc ensures all pages are reachable under the 500-cap
+                _upsert_pages(label_base + " asc",  age_from=age_from, age_to=age_to, gender=gender, sort_desc=False)
+                _upsert_pages(label_base + " desc", age_from=age_from, age_to=age_to, gender=gender, sort_desc=True)
+            elif age_from == age_to:
+                # Can't split further by age — break by gender
+                if gender is not None:
+                    # Already split by gender and still >1000 — log warning, fetch anyway
+                    logger.warning(f"{indent}⚠️  age={age_from} gender={gender} still {total} items — fetching with dual-pass anyway")
+                    _upsert_pages(label_base + " asc",  age_from=age_from, age_to=age_to, gender=gender, sort_desc=False)
+                    _upsert_pages(label_base + " desc", age_from=age_from, age_to=age_to, gender=gender, sort_desc=True)
+                else:
+                    logger.info(f"{indent}└─ Splitting age={age_from} by gender...")
+                    for g in ("M", "W", "X"):
+                        _divide_and_conquer(age_from, age_to, gender=g, depth=depth + 1)
+                    # Catch runners with no/blank gender
+                    total_ungendered = _probe(age_from=age_from, age_to=age_to)
+                    mmr_gendered = sum(_probe(age_from=age_from, age_to=age_to, gender=g) for g in ("M", "W", "X"))
+                    if total_ungendered > mmr_gendered:
+                        logger.info(f"{indent}└─ age={age_from} ungendered pass ({total_ungendered - mmr_gendered} likely)")
+                        _upsert_pages(f"age {age_from} ungendered asc",  age_from=age_from, age_to=age_to, sort_desc=False)
+                        _upsert_pages(f"age {age_from} ungendered desc", age_from=age_from, age_to=age_to, sort_desc=True)
+            else:
+                # Bisect the age range
+                mid = (age_from + age_to) // 2
+                _divide_and_conquer(age_from, mid,      gender=gender, depth=depth + 1)
+                _divide_and_conquer(mid + 1, age_to,    gender=gender, depth=depth + 1)
 
             with _jobs_lock:
                 _jobs[event_code]['rows_written'] = rows_written
-                _jobs[event_code]['message'] = f'Step 1: Upserted {rows_written} finishers ({pages_written} pages)...'
+
+        # ── Pass 0: MMR members first (teamCode=MMR, covers all ages) ──────────
+        mmr_total = _probe(team_code="MMR")
+        logger.info(f"  └─ MMR members totalItems={mmr_total}")
+        if mmr_total > 0:
+            if mmr_total <= 500:
+                _upsert_pages("MMR asc", team_code="MMR", sort_desc=False)
+            else:
+                _upsert_pages("MMR asc",  team_code="MMR", sort_desc=False)
+                _upsert_pages("MMR desc", team_code="MMR", sort_desc=True)
+        with _jobs_lock:
+            _jobs[event_code]['rows_written'] = rows_written
+            _jobs[event_code]['message'] = f'Step 1: MMR pass done ({rows_written} rows). Starting divide & conquer...'
+
+        # ── Pass 1+: divide & conquer the full field by age ───────────────────
+        total_finishers = _probe(age_from=0, age_to=100)
+        logger.info(f"  └─ Total finishers (age 0-100) = {total_finishers}")
+        _divide_and_conquer(0, 100)
 
         step1_elapsed = time.time() - step1_start
         logger.info(f"✅ STEP 1 complete: Upserted {rows_written} rows in {step1_elapsed:.2f}s ({rows_written/step1_elapsed:.1f} rows/sec, {pages_written} pages)")
