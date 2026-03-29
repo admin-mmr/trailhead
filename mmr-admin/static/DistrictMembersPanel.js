@@ -10,6 +10,7 @@ window.DistrictMembersPanel = () => {
   const [selectedMembers, setSelectedMembers] = React.useState(new Set());
   const [loading, setLoading] = React.useState(false);
   const [statusFilter, setStatusFilter] = React.useState('');
+  const [renewedFilter, setRenewedFilter] = React.useState('');
   const [error, setError] = React.useState('');
   const [exportLoading, setExportLoading] = React.useState(false);
 
@@ -18,7 +19,7 @@ window.DistrictMembersPanel = () => {
     fetchDistricts();
   }, []);
 
-  // Fetch members when district changes
+  // Fetch members when district or filters change
   React.useEffect(() => {
     if (selectedDistrict) {
       fetchMembers();
@@ -26,7 +27,7 @@ window.DistrictMembersPanel = () => {
       setMembers([]);
       setSelectedMembers(new Set());
     }
-  }, [selectedDistrict, statusFilter]);
+  }, [selectedDistrict, statusFilter, renewedFilter]);
 
   const fetchDistricts = async () => {
     try {
@@ -50,6 +51,7 @@ window.DistrictMembersPanel = () => {
       const params = new URLSearchParams();
       if (selectedDistrict) params.append('district', selectedDistrict);
       if (statusFilter) params.append('status', statusFilter);
+      if (renewedFilter) params.append('renewed', renewedFilter);
 
       const response = await fetch(`/api/district/list?${params.toString()}`);
       const data = await response.json();
@@ -103,6 +105,39 @@ window.DistrictMembersPanel = () => {
         const a = document.createElement('a');
         a.href = url;
         a.download = `members_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Export failed');
+      }
+    } catch (err) {
+      setError(`Export error: ${err.message}`);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const exportAllDistricts = async () => {
+    setExportLoading(true);
+    try {
+      const response = await fetch('/api/district/export-all-districts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: statusFilter,
+          renewed: renewedFilter,
+        }),
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `all_districts_members_${new Date().toISOString().slice(0, 10)}.zip`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -237,8 +272,41 @@ window.DistrictMembersPanel = () => {
           </select>
         </div>
 
-        {selectedDistrict && (
-          <div style={{ flex: 1, minWidth: '200px' }}>
+        <div style={{ minWidth: '180px' }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: '12px',
+              fontWeight: '600',
+              marginBottom: '6px',
+              color: 'var(--text2)',
+              textTransform: 'uppercase',
+            }}
+          >
+            Renewal Status
+          </label>
+          <select
+            value={renewedFilter}
+            onChange={(e) => setRenewedFilter(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              background: 'var(--input-bg)',
+              color: 'var(--text)',
+              fontSize: '14px',
+              cursor: 'pointer',
+            }}
+          >
+            <option value="">All</option>
+            <option value="yes">Renewed</option>
+            <option value="no">Not Renewed</option>
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', flex: 1, minWidth: '200px' }}>
+          {selectedDistrict && (
             <button
               onClick={fetchMembers}
               disabled={loading}
@@ -256,8 +324,26 @@ window.DistrictMembersPanel = () => {
             >
               {loading ? 'Loading...' : 'Refresh'}
             </button>
-          </div>
-        )}
+          )}
+
+          <button
+            onClick={exportAllDistricts}
+            disabled={exportLoading}
+            style={{
+              padding: '8px 16px',
+              background: 'var(--green)',
+              color: '#0f172a',
+              border: 'none',
+              borderRadius: 'var(--radius)',
+              cursor: exportLoading ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              opacity: exportLoading ? 0.6 : 1,
+            }}
+          >
+            {exportLoading ? 'Exporting...' : '⬇ Export All Districts'}
+          </button>
+        </div>
       </div>
 
       {/* Members Table */}

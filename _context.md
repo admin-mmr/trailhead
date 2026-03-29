@@ -19,6 +19,11 @@ Last commit: pending (Match all runners + status tooltip)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
 
+### 2026-03-29 22:02 UTC — Add one-click bulk export (all districts as ZIP)
+- Changed: `mmr-admin/api_district_members.py` — added POST `/api/district/export-all-districts` endpoint. Fetches all districts, generates one CSV per district with same status/renewal filters, zips them, returns as single ZIP download. `mmr-admin/static/DistrictMembersPanel.js` — added `exportAllDistricts()` function and green "Export All Districts" button (applies current status + renewal filters across all districts).
+- Status: Complete. One-click export: generates separate CSV per district, respects selected filters.
+- Next: Test on Azure; verify ZIP generation and filter application across districts.
+
 ### 2026-03-29 21:18 UTC — Add Members by District view for group leaders
 - Changed: Created `mmr-admin/api_district_members.py` — new blueprint with 3 endpoints: `/api/district/list` (fetch members by district with filters), `/api/district/districts` (dropdown list), `/api/district/export-csv` (POST to export selected or all members in district as CSV). Created `mmr-admin/templates/DistrictMembersPanel.js` — React component with district selector, member table (cols: MemberID, Name, WeChat ID, Email, Phone, Status, Last Login, Last Modified, Expires), checkboxes for multi-select, export buttons. `mmr-admin/app.py` — registered district_members_bp. `mmr-admin/templates/index.html` — added script import + new tab "Members by District" with conditional rendering.
 - Status: Complete. Feature-ready for group leaders to view/select members and export CSVs.

@@ -7,8 +7,10 @@ from flask import Blueprint, jsonify, request, Response
 from functools import wraps
 import csv
 import io
+import os
+import zipfile
 from datetime import datetime
-from db import get_connection
+from db import get_conn, query, execute
 from auth import login_required
 
 district_members_bp = Blueprint('district_members', __name__, url_prefix='/api/district')
@@ -32,17 +34,25 @@ def get_district_members():
     Query params:
     - district: filter by district (optional)
     - status: filter by status (active/not active/pending, optional)
+    - renewed: filter by renewal status (yes/no, optional) — yes if Expiration >= MEMBERSHIP_YEAR_END
     - limit: number of records (default 500)
     """
     try:
         district = request.args.get('district', '').strip()
         status = request.args.get('status', '').strip()
+        renewed = request.args.get('renewed', '').strip().lower()  # 'yes', 'no', or ''
         limit = min(int(request.args.get('limit', 500)), 5000)
 
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
+        # Get membership year end from env (e.g., "2027-03-31")
+        year_end_str = os.environ.get('MEMBERSHIP_YEAR_END', '')
+        year_end_date = None
+        if year_end_str:
+            try:
+                year_end_date = datetime.strptime(year_end_str, '%Y-%m-%d').date()
+            except ValueError:
+                pass
 
-        query = """
+        sql = """
             SELECT
                 MemberID,
                 CONCAT(FirstName, ' ', LastName) as Name,
@@ -60,18 +70,25 @@ def get_district_members():
         params = []
 
         if district:
-            query += " AND District = %s"
+            sql += " AND District = %s"
             params.append(district)
 
         if status:
-            query += " AND Status = %s"
+            sql += " AND Status = %s"
             params.append(status)
 
-        query += " ORDER BY District, LastName, FirstName LIMIT %s"
+        if renewed and year_end_date:
+            if renewed == 'yes':
+                sql += " AND Expiration >= %s"
+                params.append(year_end_date)
+            elif renewed == 'no':
+                sql += " AND Expiration < %s"
+                params.append(year_end_date)
+
+        sql += " ORDER BY District, LastName, FirstName LIMIT %s"
         params.append(limit)
 
-        cursor.execute(query, params)
-        members = cursor.fetchall()
+        members = query(sql, params)
 
         # Format dates for JSON serialization
         for member in members:
@@ -81,9 +98,6 @@ def get_district_members():
                 member['LastModified'] = member['LastModified'].isoformat()
             if member['Expiration']:
                 member['Expiration'] = member['Expiration'].isoformat()
-
-        cursor.close()
-        conn.close()
 
         return jsonify({
             'success': True,
@@ -100,22 +114,15 @@ def get_district_members():
 def get_districts():
     """Fetch unique district list for dropdown."""
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        query = """
+        sql = """
             SELECT DISTINCT District
             FROM members
             WHERE District IS NOT NULL AND District != ''
             ORDER BY District
         """
 
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        districts = [row[0] for row in rows]
-
-        cursor.close()
-        conn.close()
+        rows = query(sql)
+        districts = [row['District'] for row in rows]
 
         return jsonify({
             'success': True,
@@ -142,12 +149,9 @@ def export_csv():
         include_all = data.get('includeAll', False)
         district = data.get('district', '')
 
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
-
         if include_all and district:
             # Export all members in this district
-            query = """
+            sql = """
                 SELECT
                     MemberID,
                     CONCAT(FirstName, ' ', LastName) as Name,
@@ -163,11 +167,11 @@ def export_csv():
                 WHERE District = %s
                 ORDER BY LastName, FirstName
             """
-            cursor.execute(query, [district])
+            rows = query(sql, [district])
         elif member_ids:
             # Export selected members
             placeholders = ','.join(['%s'] * len(member_ids))
-            query = f"""
+            sql = f"""
                 SELECT
                     MemberID,
                     CONCAT(FirstName, ' ', LastName) as Name,
@@ -183,17 +187,11 @@ def export_csv():
                 WHERE MemberID IN ({placeholders})
                 ORDER BY District, LastName, FirstName
             """
-            cursor.execute(query, member_ids)
+            rows = query(sql, member_ids)
         else:
-            cursor.close()
-            conn.close()
             return jsonify({'success': False, 'error': 'No members selected'}), 400
 
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-
-        # Generate CSV
+        # Generate CSV with UTF-8-sig encoding for Excel compatibility with Chinese characters
         output = io.StringIO()
         writer = csv.DictWriter(
             output,
@@ -230,12 +228,141 @@ def export_csv():
                 'Expiration': expiration
             })
 
-        # Return as downloadable file
-        output.seek(0)
+        # Encode with UTF-8-sig for Excel to recognize Unicode characters properly
+        csv_content = output.getvalue().encode('utf-8-sig')
         return Response(
-            output.getvalue(),
-            mimetype='text/csv',
+            csv_content,
+            mimetype='text/csv; charset=utf-8',
             headers={'Content-Disposition': f'attachment;filename=members_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'}
+        )
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@district_members_bp.route('/export-all-districts', methods=['POST'])
+@login_required
+def export_all_districts():
+    """
+    Export members from all districts as separate CSVs in a ZIP file.
+    Body: {
+        "status": "active/not active/pending/empty" (optional),
+        "renewed": "yes/no/empty" (optional)
+    }
+    Returns ZIP file with one CSV per district.
+    """
+    try:
+        data = request.get_json() or {}
+        status_filter = data.get('status', '').strip()
+        renewed_filter = data.get('renewed', '').strip().lower()
+
+        # Get membership year end from env
+        year_end_str = os.environ.get('MEMBERSHIP_YEAR_END', '')
+        year_end_date = None
+        if year_end_str:
+            try:
+                year_end_date = datetime.strptime(year_end_str, '%Y-%m-%d').date()
+            except ValueError:
+                pass
+
+        # Fetch all districts
+        sql = """
+            SELECT DISTINCT District
+            FROM members
+            WHERE District IS NOT NULL AND District != ''
+            ORDER BY District
+        """
+        district_rows = query(sql)
+        districts = [row['District'] for row in district_rows]
+
+        if not districts:
+            return jsonify({'success': False, 'error': 'No districts found'}), 400
+
+        # Create ZIP file in memory
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for district in districts:
+                # Build query for this district with filters
+                sql = """
+                    SELECT
+                        MemberID,
+                        CONCAT(FirstName, ' ', LastName) as Name,
+                        Email,
+                        WeChatID,
+                        PhoneNumber,
+                        District,
+                        Status,
+                        LastLoginDate,
+                        LastUpdated as ModifiedAt,
+                        Expiration
+                    FROM members
+                    WHERE District = %s
+                """
+                params = [district]
+
+                if status_filter:
+                    sql += " AND Status = %s"
+                    params.append(status_filter)
+
+                if renewed_filter and year_end_date:
+                    if renewed_filter == 'yes':
+                        sql += " AND Expiration >= %s"
+                        params.append(year_end_date)
+                    elif renewed_filter == 'no':
+                        sql += " AND Expiration < %s"
+                        params.append(year_end_date)
+
+                sql += " ORDER BY LastName, FirstName"
+                members = query(sql, params)
+
+                # Create CSV for this district
+                csv_buffer = io.StringIO()
+                writer = csv.DictWriter(
+                    csv_buffer,
+                    fieldnames=[
+                        'Member ID',
+                        'Name',
+                        'Email',
+                        'WeChat ID',
+                        'Phone',
+                        'District',
+                        'Status',
+                        'Last Login',
+                        'Last Modified',
+                        'Expiration'
+                    ]
+                )
+
+                writer.writeheader()
+                for row in members:
+                    last_login = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else 'Never'
+                    modified = row['ModifiedAt'].strftime('%Y-%m-%d %H:%M') if row['ModifiedAt'] else 'N/A'
+                    expiration = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else 'N/A'
+
+                    writer.writerow({
+                        'Member ID': row['MemberID'],
+                        'Name': row['Name'],
+                        'Email': row['Email'],
+                        'WeChat ID': row['WeChatID'] or '',
+                        'Phone': row['PhoneNumber'] or '',
+                        'District': row['District'],
+                        'Status': row['Status'],
+                        'Last Login': last_login,
+                        'Last Modified': modified,
+                        'Expiration': expiration
+                    })
+
+                # Add CSV to ZIP with UTF-8-sig encoding for Chinese characters
+                csv_filename = f"{district.replace('/', '_')}_members.csv"
+                csv_content = csv_buffer.getvalue().encode('utf-8-sig')
+                zf.writestr(csv_filename, csv_content)
+
+        # Return ZIP as downloadable file
+        zip_buffer.seek(0)
+        return Response(
+            zip_buffer.getvalue(),
+            mimetype='application/zip',
+            headers={'Content-Disposition': f'attachment;filename=all_districts_members_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip'}
         )
 
     except Exception as e:
