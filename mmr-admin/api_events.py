@@ -119,9 +119,11 @@ def api_event_runners(event_id):
     search = request.args.get('q', '')
 
     sql = """
-        SELECT er.*, e.event_code, e.event_name, e.event_date
+        SELECT er.*, e.event_code, e.event_name, e.event_date,
+               m.Status as member_status
         FROM nyrr_event_runners er
         JOIN nyrr_events e ON e.id = er.nyrr_event_id
+        LEFT JOIN members m ON m.MemberID = er.mmr_member_id
         WHERE er.nyrr_event_id = %s
     """
     params: list = [event_id]
@@ -178,7 +180,21 @@ def api_run_automatch(event_id):
         """, (event_id,))
         t1_matched = cursor.rowcount
 
+        # After Tier 1: Update members with NYRRRunnerName and infer YearBornGuess
+        if t1_matched > 0:
+            cursor.execute("""
+                UPDATE members m
+                INNER JOIN nyrr_event_runners er ON m.MemberID = er.mmr_member_id
+                SET m.NYRRRunnerName = er.runner_name,
+                    m.YearBornGuess = YEAR(CURDATE()) - er.age,
+                    m.UpdatedAt = NOW()
+                WHERE er.match_method = 'auto_name'
+                  AND er.nyrr_event_id = %s
+                  AND (m.NYRRRunnerName IS NULL OR m.NYRRRunnerName = '')
+            """, (event_id,))
+
         # Tier 2: Match by first + last name when exactly one member matches
+        # With age/gender validation (if member has YearBorn or YearBornGuess)
         cursor.execute("""
             UPDATE nyrr_event_runners er
             INNER JOIN (
@@ -191,6 +207,7 @@ def api_run_automatch(event_id):
                 HAVING COUNT(*) = 1
             ) uniq ON LOWER(TRIM(er.first_name)) = uniq.fn
                   AND LOWER(TRIM(er.last_name)) = uniq.ln
+            INNER JOIN members m ON uniq.MemberID = m.MemberID
             SET er.mmr_member_id = uniq.MemberID,
                 er.match_method = 'auto_firstlast',
                 er.matched_by = 'Viewer',
@@ -199,9 +216,87 @@ def api_run_automatch(event_id):
               AND er.first_name IS NOT NULL AND er.first_name != ''
               AND er.last_name IS NOT NULL AND er.last_name != ''
               AND er.nyrr_event_id = %s
+              -- Age/gender validation: only if member has YearBorn or YearBornGuess
+              AND (
+                -- If member has YearBorn set, validate runner age matches
+                (m.YearBorn IS NOT NULL AND ABS(YEAR(CURDATE()) - m.YearBorn - er.age) <= 1)
+                -- OR if member has YearBornGuess, validate runner age matches
+                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(YEAR(CURDATE()) - m.YearBornGuess - er.age) <= 1)
+                -- OR if member has no birth year, skip validation
+                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NULL)
+              )
+              -- Optional: also check gender if both have gender data
+              AND (
+                er.gender IS NULL
+                OR m.Gender IS NULL
+                OR LOWER(er.gender) = LOWER(SUBSTRING(m.Gender, 1, 1))
+              )
         """, (event_id,))
         t2_matched = cursor.rowcount
-        matched = t1_matched + t2_matched
+
+        # After Tier 2: Update members with NYRRRunnerName and infer YearBornGuess
+        if t2_matched > 0:
+            cursor.execute("""
+                UPDATE members m
+                INNER JOIN nyrr_event_runners er ON m.MemberID = er.mmr_member_id
+                SET m.NYRRRunnerName = er.runner_name,
+                    m.YearBornGuess = CASE WHEN m.YearBornGuess IS NULL THEN YEAR(CURDATE()) - er.age ELSE m.YearBornGuess END,
+                    m.UpdatedAt = NOW()
+                WHERE er.match_method = 'auto_firstlast'
+                  AND er.nyrr_event_id = %s
+                  AND (m.NYRRRunnerName IS NULL OR m.NYRRRunnerName = '')
+            """, (event_id,))
+
+        # Tier 3: Match by partial name (first name OR last name)
+        # With age/gender validation (if member has YearBorn or YearBornGuess)
+        cursor.execute("""
+            UPDATE nyrr_event_runners er
+            INNER JOIN members m ON (
+                LOWER(TRIM(er.first_name)) = LOWER(TRIM(m.FirstName))
+                OR LOWER(TRIM(er.last_name)) = LOWER(TRIM(m.LastName))
+            )
+            SET er.mmr_member_id = m.MemberID,
+                er.match_method = 'auto_partial_name',
+                er.matched_by = 'Viewer',
+                er.matched_at = NOW()
+            WHERE er.mmr_member_id IS NULL
+              AND er.first_name IS NOT NULL AND er.first_name != ''
+              AND er.last_name IS NOT NULL AND er.last_name != ''
+              AND m.FirstName IS NOT NULL AND m.FirstName != ''
+              AND m.LastName IS NOT NULL AND m.LastName != ''
+              -- Age/gender validation: only if member has YearBorn or YearBornGuess
+              AND (
+                -- If member has YearBorn set, validate runner age matches
+                (m.YearBorn IS NOT NULL AND ABS(YEAR(CURDATE()) - m.YearBorn - er.age) <= 1)
+                -- OR if member has YearBornGuess, validate runner age matches
+                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(YEAR(CURDATE()) - m.YearBornGuess - er.age) <= 1)
+                -- OR if member has no birth year, skip validation
+                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NULL)
+              )
+              -- Optional: also check gender if both have gender data
+              AND (
+                er.gender IS NULL
+                OR m.Gender IS NULL
+                OR LOWER(er.gender) = LOWER(SUBSTRING(m.Gender, 1, 1))
+              )
+              AND er.nyrr_event_id = %s
+            LIMIT 5000
+        """, (event_id,))
+        t3_matched = cursor.rowcount
+
+        # After Tier 3: Update members with NYRRRunnerName and infer YearBornGuess
+        if t3_matched > 0:
+            cursor.execute("""
+                UPDATE members m
+                INNER JOIN nyrr_event_runners er ON m.MemberID = er.mmr_member_id
+                SET m.NYRRRunnerName = er.runner_name,
+                    m.YearBornGuess = CASE WHEN m.YearBornGuess IS NULL THEN YEAR(CURDATE()) - er.age ELSE m.YearBornGuess END,
+                    m.UpdatedAt = NOW()
+                WHERE er.match_method = 'auto_partial_name'
+                  AND er.nyrr_event_id = %s
+                  AND (m.NYRRRunnerName IS NULL OR m.NYRRRunnerName = '')
+            """, (event_id,))
+        matched = t1_matched + t2_matched + t3_matched
 
         # Refresh matched count on the event
         cursor.execute("""
@@ -219,6 +314,7 @@ def api_run_automatch(event_id):
         parts = []
         if t1_matched: parts.append(f'{t1_matched} by NYRR name')
         if t2_matched: parts.append(f'{t2_matched} by first/last name')
+        if t3_matched: parts.append(f'{t3_matched} by partial name')
         detail = f' ({", ".join(parts)})' if parts else ''
         return json_response({'ok': True, 'matched': matched,
                                'message': f'Auto-matched {matched} runner(s){detail}.'})

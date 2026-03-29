@@ -1343,7 +1343,9 @@ const EventDetail = ({ eventId, onBack }) => {
                     <td>
                       {r.mmr_member_id ? (
                         <div className="match-cell">
-                          <span className="badge badge-green">{r.mmr_member_id}</span>
+                          <span className="badge badge-green" title={`Status: ${r.member_status || 'unknown'}`}>
+                            {r.mmr_member_id}
+                          </span>
                           <button className="btn-unmatch" onClick={() => handleUnmatch(r)} title="Remove this match">
                             ↩ Unmatch
                           </button>

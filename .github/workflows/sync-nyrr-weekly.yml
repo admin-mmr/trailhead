@@ -1,9 +1,9 @@
-name: 🏃 Weekly NYRR Full Sync (Sunday)
+name: 🏃 Weekly NYRR Sync & Finisher Audit (Tuesday)
 
 on:
   schedule:
-    # Run every Sunday at 2:00 AM UTC
-    - cron: '0 2 * * 0'
+    # Run every Tuesday at 2:00 AM UTC
+    - cron: '0 2 * * 2'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -43,6 +43,74 @@ jobs:
           MYSQL_DATABASE=$MYSQL_DATABASE
           EOF
 
+      - name: Run finisher count audit (gap analysis)
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          NYRR_API_KEY: ${{ secrets.NYRR_API_KEY }}
+        run: |
+          python << 'EOF'
+          import logging
+          import os
+          import sys
+          sys.path.insert(0, 'mmr-admin')
+          from db import get_conn, query
+          from nyrr_api import NyrrApiClient
+
+          logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+          logger = logging.getLogger(__name__)
+
+          try:
+              client = NyrrApiClient()
+              rows = query("""
+                  SELECT id, event_code, event_name, event_date,
+                         nyrr_finisher_count, result_count, processing_status
+                  FROM nyrr_events
+                  WHERE is_upcoming = 0 AND event_date <= CURDATE()
+                    AND (nyrr_finisher_count IS NULL OR nyrr_finisher_count > result_count)
+                  ORDER BY event_date DESC LIMIT 50
+              """)
+
+              if not rows:
+                  logger.info("✓ No events need finisher count audit")
+              else:
+                  logger.info(f"📊 Auditing {len(rows)} past events...")
+                  conn = get_conn()
+                  cursor = conn.cursor()
+                  updated_count = 0
+                  gaps_found = 0
+
+                  for event in rows:
+                      event_id, event_code, event_name, _, finisher_count, result_count, status = event
+                      try:
+                          data = client._post("runners/finishers-filter", {
+                              "eventCode": event_code, "pageIndex": 1, "pageSize": 1
+                          })
+                          total_finishers = data.get("totalItems", 0)
+                          if finisher_count != total_finishers:
+                              cursor.execute(
+                                  "UPDATE nyrr_events SET nyrr_finisher_count = %s WHERE id = %s",
+                                  (total_finishers, event_id)
+                              )
+                              conn.commit()
+                              updated_count += 1
+                              if result_count < total_finishers:
+                                  gap_pct = ((total_finishers - result_count) / total_finishers * 100) if total_finishers > 0 else 0
+                                  logger.warning(f"⚠ Gap: {event_code} — NYRR: {total_finishers} | DB: {result_count} ({gap_pct:.1f}% gap)")
+                                  gaps_found += 1
+                      except Exception as e:
+                          logger.error(f"✗ Failed to audit {event_code}: {e}")
+
+                  cursor.close()
+                  conn.close()
+                  logger.info(f"✅ Audit: {updated_count} updated, {gaps_found} gaps found")
+
+          except Exception as e:
+              logger.error(f"❌ Audit failed: {e}")
+          EOF
+
       - name: Run NYRR weekly full sync
         env:
           MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
@@ -75,7 +143,7 @@ jobs:
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: 'GitHub Actions <noreply@github.com>'
           body: |
-            Workflow: Weekly NYRR Full Sync (Sunday)
+            Workflow: Weekly NYRR Sync & Finisher Audit (Tuesday)
             Status: FAILED
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -210,7 +278,7 @@ jobs:
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: 'GitHub Actions <noreply@github.com>'
           body: |
-            Workflow: Weekly NYRR Full Sync (Sunday)
+            Workflow: Weekly NYRR Sync & Finisher Audit (Tuesday)
             Status: SUCCESS
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             Time: ${{ github.event.repository.updated_at }}

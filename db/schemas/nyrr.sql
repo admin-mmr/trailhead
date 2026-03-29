@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS nyrr_events (
                             NOT NULL DEFAULT 'Pending',
     processed_at        DATETIME        NULL,
     processed_by        VARCHAR(100)    NULL,
-    result_count        INT             NOT NULL DEFAULT 0,
+    nyrr_finisher_count INT             NULL DEFAULT NULL,  -- Total finishers from NYRR API (all runners)
+    result_count        INT             NOT NULL DEFAULT 0,  -- Count of runners in our DB
     mmr_runner_count    INT             NOT NULL DEFAULT 0,
     mmr_matched_count   INT             NOT NULL DEFAULT 0,
     notes               TEXT            NULL,
@@ -62,7 +63,7 @@ CREATE TABLE IF NOT EXISTS nyrr_event_runners (
     sync_source         ENUM('finishers', 'mmr_team', 'both') NULL,
     is_registered_only  TINYINT(1)      NOT NULL DEFAULT 0,
     mmr_member_id       VARCHAR(10)     NULL,
-    match_method        ENUM('auto_name', 'auto_lastname', 'auto_firstlast', 'manual', 'not_member', 'unmatched')
+    match_method        ENUM('auto_name', 'auto_lastname', 'auto_firstlast', 'auto_partial_name', 'manual', 'not_member', 'unmatched')
                             NULL,
     matched_by          VARCHAR(100)    NULL,
     matched_at          DATETIME        NULL,

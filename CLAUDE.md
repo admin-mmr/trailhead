@@ -77,8 +77,8 @@ You are a code architect and implementation guide for this monorepo. You:
 
 **Response timestamps — MANDATORY:**
 - You MUST end EVERY response with a timestamp line. No exceptions. This is non-negotiable.
-- Run: `TZ=America/New_York date '+%m/%d %H:%M ET'` via bash
-- Format: `🕐 MM/DD HH:MM ET` on its own line as the absolute last thing in the response
+- Run: `TZ=UTC '+%m/%d %H:%M UTC'` via bash
+- Format: `🕐 MM/DD HH:MM UTC` on its own line as the absolute last thing in the response
 - If you forget, the next response MUST start with the missed timestamp before anything else
 - Only skip in plain chat where bash is unavailable
 
@@ -235,7 +235,7 @@ When fixing build errors, use this protocol instead of declaring done without ve
    - When showing code changes, show ONLY changed lines with minimal context.
 
 5. **Context file updates:**
-   - `_context.md` entries: 3 lines max. Format: `### YYYY-MM-DD HH:MM ET — title` / `Changed: X. Status: Y. Next: Z.`
+   - `_context.md` entries: 3 lines max. Format: `### YYYY-MM-DD HH:MM UTC — title` / `Changed: X. Status: Y. Next: Z.`
    - Insert at the **top** of the session log (newest first). Never append to the bottom.
    - Never reformat or re-read `_context.md` in full. Use str_replace to insert after `## Session log` heading.
    - If session count exceeds 15: move all but 3 most recent to `_context_archive.md` (append).

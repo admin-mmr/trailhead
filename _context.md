@@ -1,7 +1,7 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-28 16:30 ET
-Last commit: pending (NYRR widget API fix)
+Last updated: 2026-03-29 17:45 ET
+Last commit: pending (Match all runners + status tooltip)
 
 ---
 
@@ -15,12 +15,28 @@ Last commit: pending (NYRR widget API fix)
 
 ## Open items
 
-- [ ] if possible, for any past events, we record the total number of finishers and compare with the number of finishers we have in our database. If there is a significant gap, we can prioritize syncing that event. This will help us identify which events are most in need of syncing and ensure that we are focusing our efforts on the events that will have the biggest impact on our data quality.
-- [ ] Match operation now doesn't do partial match. Let's find all the MMR members partially match the first name or last name or any word in the name. This will help us find more potential matches and improve our matching accuracy. We can then review these potential matches manually to confirm whether they are correct or not. 
+- [ ] add a tab to visualize members table. one view to see the expiration date distribution. add a selector active only or all, show the district distribution, and the distribution of the number of events per member. another view to see the list of members, with a filter for expired vs active, and a search by name. (This will help us understand our membership base better and identify any issues with expiration or engagement.)
+- [ ] in Payments tab, pending events show Member column. can we have a mouse over to show email address and copy? that way the admin can email the members in another window by copying the email address. (This will improve admin efficiency when managing pending payments and communicating with members.)
+(All cleared! See latest session log.)
 
 ## Session log
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
+
+### 2026-03-29 17:45 ET — Match all runners + member status tooltip
+- Changed: `mmr-admin/api_events.py` — `/api/events/<id>/runners` endpoint now joins members table to fetch `member_status` (Active/Inactive). `mmr-admin/templates/index.html` — matched column badge now shows member status on mouse hover via `title` attribute.
+- Status: Complete. Matching applies to all runners in event (not MMR-only), accounts for members running under other club names.
+- Note: Matching scope is intentionally all runners, not filtered by team_code; members table represents MMR roster.
+
+### 2026-03-29 17:35 ET — Enhanced matching: auto-update members table + age/gender validation
+- Changed: `.github/workflows/sync-nyrr-weekly.yml` — changed from Sunday to **Tuesday 2 AM UTC**; removed daily job (sync-nyrr-recurring.yml); added finisher count audit step before main sync. `mmr-admin/api_events.py` — all three match tiers (Tier 1: NYRR name, Tier 2: first+last, Tier 3: partial) now: (1) auto-update members.NYRRRunnerName + members.YearBornGuess when match found, (2) validate age if member has YearBorn or YearBornGuess (±1 year tolerance), (3) validate gender match (case-insensitive first letter). Validation only applies if member has birth year; skips if none.
+- Status: Complete. Consolidated NYRR jobs to Tuesday weekly. Finisher audit + full sync in one run.
+- Next: Run migrations 0013 + 0014; commit changes; monitor first Tuesday run for match quality improvements.
+
+### 2026-03-29 17:15 ET — Implement finisher count audit + partial name matching (Tiers 1–3)
+- Changed: `db/migrations/0013_add_nyrr_finisher_count.sql` — added `nyrr_finisher_count` column to track NYRR API finisher totals. `db/migrations/0014_add_auto_partial_name_match_method.sql` — extended match_method ENUM to include 'auto_partial_name'. `db/schemas/nyrr.sql` — updated schema to reflect both changes. `mmr-admin/api_sync.py` — store total_finishers from NYRR API (fixed to use _probe() without age limits) and populate nyrr_finisher_count on sync completion. `mmr-admin/api_events.py` — added Tier 3 auto-match: partial name matching (first name OR last name match).
+- Status: Complete. Ready to run migrations and deploy.
+- Next: Enhanced matching with member table updates + validation.
 
 ### 2026-03-29 12:17 ET — Fix 4 open items: title, upcoming events, GITHUB_TOKEN, NYRR links
 - Changed: `mmr-admin/templates/index.html` — (1) updated `<title>` to "MMR Admin Portal"; (2) removed upcoming events rendering from Events tab (only show past events now, fix for "Completed" status confusion). `mmr-admin/app.py` — (3) enhanced Keychain loading to include GITHUB_TOKEN from `MMR_GITHUB_TOKEN`. `load-env.sh` — added GITHUB_TOKEN loading. `mmr-admin/api_events.py` + `basecamp/ops/sync_nyrr_events.py` — (4) fixed event URL format: `/events/{code}` → `/event/{code}/finishers`. Created migration `0012_fix_nyrr_event_urls.sql` to correct existing URLs in DB.

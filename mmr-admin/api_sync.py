@@ -301,8 +301,13 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
             _jobs[event_code]['message'] = f'Step 1: MMR pass done ({rows_written} rows). Starting divide & conquer...'
 
         # ── Pass 1+: divide & conquer the full field by age ───────────────────
-        total_finishers = _probe(age_from=0, age_to=100)
-        logger.info(f"  └─ Total finishers (age 0-100) = {total_finishers}")
+        total_finishers = _probe()
+        logger.info(f"  └─ Total finishers (all ages) = {total_finishers}")
+
+        # Store total_finishers for later update to nyrr_events
+        with _jobs_lock:
+            _jobs[event_code]['nyrr_finisher_count'] = total_finishers
+
         _divide_and_conquer(0, 100)
 
         step1_elapsed = time.time() - step1_start
@@ -447,14 +452,20 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         logger.info("⏱️  Finalizing: updating nyrr_events status...")
         finalize_start = time.time()
 
+        # Get finisher count from job state
+        finisher_count = None
+        with _jobs_lock:
+            finisher_count = _jobs[event_code].get('nyrr_finisher_count')
+
         cursor.execute(
             """
             UPDATE nyrr_events
             SET processing_status = 'Completed', processed_at = NOW(), processed_by = 'Viewer',
-                result_count = (SELECT COUNT(*) FROM nyrr_event_runners WHERE nyrr_event_id = %s)
+                result_count = (SELECT COUNT(*) FROM nyrr_event_runners WHERE nyrr_event_id = %s),
+                nyrr_finisher_count = %s
             WHERE id = %s
             """,
-            (event_id, event_id)
+            (event_id, finisher_count, event_id)
         )
         conn.commit()
 
