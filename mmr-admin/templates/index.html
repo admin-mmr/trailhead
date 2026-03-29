@@ -126,6 +126,30 @@
     .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--surface2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-content { background: var(--surface); border-radius: var(--radius); padding: 24px; width: 100%; max-width: 420px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+    .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+    .modal-subtitle { font-size: 12px; color: var(--text2); margin-bottom: 20px; }
+    .progress-container { margin-bottom: 20px; }
+    .progress-bar-container { width: 100%; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #38bdf8 0%, #a78bfa 100%); transition: width 0.3s ease; border-radius: 4px; }
+    .progress-text { font-size: 12px; color: var(--text2); text-align: right; }
+    .steps-container { space: 12px; }
+    .step { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .step-icon { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; font-size: 12px; font-weight: 700; }
+    .step-icon.pending { background: var(--surface2); color: var(--text2); }
+    .step-icon.active { background: var(--accent); color: var(--bg); animation: spin 0.6s linear infinite; }
+    .step-icon.completed { background: var(--green); color: var(--bg); }
+    .step-content { flex: 1; min-width: 0; }
+    .step-label { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+    .step-detail { font-size: 11px; color: var(--text2); }
+    .loading-dots { display: flex; gap: 4px; align-items: center; justify-content: center; margin-top: 16px; }
+    .loading-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 1.4s infinite; }
+    .loading-dot:nth-child(1) { animation-delay: 0s; }
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
     .empty { text-align: center; padding: 60px 20px; color: var(--text2); }
     .empty .big { font-size: 40px; margin-bottom: 8px; }
 
@@ -605,6 +629,112 @@ const AdminPanel = ({ userRole, userEmail }) => {
 };
 
 // ═══════════════════════════════════════════════════
+// Progress Modal Component
+// ═══════════════════════════════════════════════════
+const ProgressModal = ({ isOpen, title, jobStatus }) => {
+  if (!isOpen) return null;
+
+  const steps = [
+    { id: 'step1_finishers', label: 'Step 1: Fetching finishers' },
+    { id: 'step2_teams', label: 'Step 2: Enumerating teams' },
+    { id: 'step3_backfill', label: 'Step 3: Backfilling team codes' },
+  ];
+
+  const getStepStatus = (stepId) => {
+    if (!jobStatus) return 'pending';
+    const currentStep = jobStatus.step || '';
+
+    // Step 1
+    if (stepId === 'step1_finishers') {
+      if (currentStep === 'step1_finishers') return 'active';
+      if (currentStep === 'step2_teams' || currentStep === 'step3_backfill') return 'completed';
+      return 'pending';
+    }
+
+    // Step 2
+    if (stepId === 'step2_teams') {
+      if (currentStep === 'step2_teams') return 'active';
+      if (currentStep === 'step3_backfill') return 'completed';
+      return 'pending';
+    }
+
+    // Step 3
+    if (stepId === 'step3_backfill') {
+      if (currentStep === 'step3_backfill') return 'active';
+      if (jobStatus.status === 'done') return 'completed';
+      return 'pending';
+    }
+
+    return 'pending';
+  };
+
+  const completedCount = steps.filter(s => getStepStatus(s.id) === 'completed').length;
+  const overallProgress = ((completedCount + (steps.find(s => getStepStatus(s.id) === 'active') ? 0.5 : 0)) / steps.length) * 100;
+
+  const renderStepIcon = (status) => {
+    if (status === 'completed') return '✓';
+    if (status === 'active') return '↻';
+    return '○';
+  };
+
+  const getDetailText = (stepId) => {
+    if (!jobStatus) return '';
+
+    if (stepId === 'step1_finishers') {
+      return jobStatus.rows_written ? `${jobStatus.rows_written} runners fetched` : 'Fetching...';
+    }
+    if (stepId === 'step2_teams') {
+      return jobStatus.teams_processed ? `${jobStatus.teams_processed} teams found` : 'Searching...';
+    }
+    if (stepId === 'step3_backfill') {
+      return jobStatus.teams_processed ? `${jobStatus.teams_processed} teams processed` : 'Processing...';
+    }
+    return '';
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <div className="modal-title">{title}</div>
+        <div className="modal-subtitle">{jobStatus?.message || 'Starting sync...'}</div>
+
+        <div className="progress-container">
+          <div className="progress-bar-container">
+            <div className="progress-bar-fill" style={{ width: `${Math.min(overallProgress, 100)}%` }} />
+          </div>
+          <div className="progress-text">{Math.round(overallProgress)}%</div>
+        </div>
+
+        <div className="steps-container">
+          {steps.map((step) => {
+            const status = getStepStatus(step.id);
+            return (
+              <div key={step.id} className="step">
+                <div className={`step-icon ${status}`}>
+                  {renderStepIcon(status)}
+                </div>
+                <div className="step-content">
+                  <div className="step-label">{step.label}</div>
+                  {(status === 'active' || status === 'completed') && (
+                    <div className="step-detail">{getDetailText(step.id)}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="loading-dots">
+          <div className="loading-dot" />
+          <div className="loading-dot" />
+          <div className="loading-dot" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
 // Dashboard view
 // ═══════════════════════════════════════════════════
 const Dashboard = ({ onSelectEvent, onGoSettings }) => {
@@ -618,6 +748,7 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
   const [dbError, setDbError] = useState(false);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [forceFlags, setForceFlags] = useState({});
+  const [progressModal, setProgressModal] = useState({ isOpen: false, eventCode: null, jobStatus: null });
 
   const loadStats = () => api('/api/stats').then(r => {
     if (r.db_error) setDbError(true);
@@ -665,25 +796,31 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
 
   const triggerLoad = async (eventId, eventCode, forceReload = false) => {
     setLoadingIds(prev => ({ ...prev, [eventId]: true }));
+    setProgressModal({ isOpen: true, eventCode, jobStatus: null });
+
     const r = await api(`/api/load/${eventId}`, {
       method: 'POST',
       body: JSON.stringify({ force_reload: forceReload }),
     });
     if (r.ok) {
       setToast(`Loading started for ${eventCode}...`);
-      // Poll status
+      // Poll status more frequently
       const poll = setInterval(async () => {
         const s = await api(`/api/load/${eventCode}/status`);
+        setProgressModal(prev => ({ ...prev, jobStatus: s }));
+
         if (s.status === 'done' || s.status === 'error') {
           clearInterval(poll);
           setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
+          setProgressModal({ isOpen: false, eventCode: null, jobStatus: null });
           setToast(s.message || `${eventCode}: ${s.status}`);
           loadEvents();
           loadStats();
         }
-      }, 2000);
+      }, 1000); // Poll every 1 second instead of 2
     } else {
       setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
+      setProgressModal({ isOpen: false, eventCode: null, jobStatus: null });
       setToast(r.error || 'Load failed');
     }
   };
@@ -717,6 +854,12 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
 
   return (
     <div>
+      <ProgressModal
+        isOpen={progressModal.isOpen}
+        title={`Loading ${progressModal.eventCode}...`}
+        jobStatus={progressModal.jobStatus}
+      />
+
       {stats && (
         <div className="stats-grid">
           <div className="stat-card"><div className="label">Total Events</div><div className="value accent">{stats.total_events}</div></div>

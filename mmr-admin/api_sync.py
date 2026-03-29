@@ -18,6 +18,8 @@ import time
 from datetime import datetime
 from typing import Any, Dict
 
+import mysql.connector.errors
+
 from flask import Blueprint, request
 
 from auth import login_required
@@ -173,7 +175,9 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
               scan_timestamp = NOW()
         """
 
-        BATCH_SIZE = 500
+        BATCH_SIZE = 50  # Small batches to avoid lock wait timeouts on Azure MySQL
+        MAX_RETRIES = 3
+        RETRY_DELAY = 2  # seconds
         rows_written = 0
         logger.debug(f"  └─ Starting batch upsert: BATCH_SIZE={BATCH_SIZE}, total_runners={len(runners)}")
 
@@ -202,13 +206,25 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                     getattr(runner, 'age_grade_percent', None),
                 ))
 
-            batch_start = time.time()
-            cursor.executemany(upsert_sql, row_tuples)
-            conn.commit()
-            batch_elapsed = time.time() - batch_start
-            rows_written += len(batch)
+            # Retry loop for lock wait timeouts
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    batch_start = time.time()
+                    cursor.executemany(upsert_sql, row_tuples)
+                    conn.commit()
+                    batch_elapsed = time.time() - batch_start
+                    rows_written += len(batch)
+                    break  # success
+                except mysql.connector.errors.DatabaseError as e:
+                    if e.errno == 1205 and attempt < MAX_RETRIES:
+                        logger.warning(f"  └─ Lock timeout on batch {i//BATCH_SIZE + 1}, attempt {attempt}/{MAX_RETRIES}. Retrying in {RETRY_DELAY}s...")
+                        conn.rollback()
+                        time.sleep(RETRY_DELAY * attempt)  # progressive backoff
+                    else:
+                        raise  # re-raise on final attempt or non-timeout error
 
-            logger.debug(f"  └─ Batch {i//BATCH_SIZE + 1}: {len(batch)} rows in {batch_elapsed:.3f}s, total={rows_written}/{len(runners)}")
+            batch_num = i // BATCH_SIZE + 1
+            logger.debug(f"  └─ Batch {batch_num}: {len(batch)} rows in {batch_elapsed:.3f}s, total={rows_written}/{len(runners)}")
 
             with _jobs_lock:
                 _jobs[event_code]['rows_written'] = rows_written
@@ -251,6 +267,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         logger.debug(f"  └─ DB connection acquired for backfill")
 
         total_backfilled = 0
+        total_inserted = 0
         for idx, team in enumerate(teams):
             team_code = team.team_code
             team_start = time.time()
@@ -260,7 +277,9 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
             logger.debug(f"    └─ Got {len(team_runners)} runners for {team_code}")
 
             updates_in_team = 0
+            inserts_in_team = 0
             for runner in team_runners:
+                # First try UPDATE
                 cursor.execute(
                     """
                     UPDATE nyrr_event_runners
@@ -271,18 +290,61 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                 )
                 updates_in_team += cursor.rowcount
 
+                # If UPDATE didn't match any rows, INSERT the runner
+                if cursor.rowcount == 0:
+                    full_name = f"{runner.first_name} {runner.last_name}".strip()
+                    try:
+                        cursor.execute(
+                            """
+                            INSERT INTO nyrr_event_runners
+                              (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
+                               age, gender, city, state_province, bib_number,
+                               finish_time, pace, overall_place, gender_place,
+                               age_grade_time, age_grade_place, age_grade_percent,
+                               team_code, scan_timestamp)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                            ON DUPLICATE KEY UPDATE team_code = %s
+                            """,
+                            (
+                                event_id,
+                                str(runner.runner_id),
+                                full_name,
+                                runner.first_name,
+                                runner.last_name,
+                                runner.age,
+                                runner.gender,
+                                getattr(runner, 'city', '') or '',
+                                runner.state_province,
+                                runner.bib,
+                                runner.overall_time,
+                                runner.pace,
+                                runner.overall_place,
+                                runner.gender_place,
+                                getattr(runner, 'age_grade_time', '') or '',
+                                getattr(runner, 'age_grade_place', None),
+                                getattr(runner, 'age_grade_percent', None),
+                                team_code,
+                                team_code
+                            )
+                        )
+                        inserts_in_team += cursor.rowcount
+
+                    except Exception as insert_err:
+                        logger.warning(f"    └─ Failed to insert runner {runner.bib}: {insert_err}")
+
             conn.commit()
             total_backfilled += updates_in_team
+            total_inserted += inserts_in_team
             team_elapsed = time.time() - team_start
 
-            logger.debug(f"    └─ {team_code}: {updates_in_team} updates, {team_elapsed:.3f}s")
+            logger.debug(f"    └─ {team_code}: {updates_in_team} updates, {inserts_in_team} inserts, {team_elapsed:.3f}s")
 
             with _jobs_lock:
                 _jobs[event_code]['teams_processed'] = idx + 1
-                _jobs[event_code]['message'] = f'Step 3: Backfilled {idx + 1}/{len(teams)} teams...'
+                _jobs[event_code]['message'] = f'Step 3: Backfilled {idx + 1}/{len(teams)} teams ({total_inserted} new runners)...'
 
         step3_elapsed = time.time() - step3_start
-        logger.info(f"✅ STEP 3 complete: {len(teams)} teams, {total_backfilled} runner-team assignments in {step3_elapsed:.2f}s")
+        logger.info(f"✅ STEP 3 complete: {len(teams)} teams, {total_backfilled} updates + {total_inserted} new inserts ({total_backfilled + total_inserted} total) in {step3_elapsed:.2f}s")
 
         # --- Finalize ---
         logger.info("⏱️  Finalizing: updating nyrr_events status...")
@@ -314,17 +376,18 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
         logger.info(f"✅ FINALIZE complete: {final_count} total runners in DB, {finalize_elapsed:.2f}s")
         logger.info(f"🎉 FULL SYNC COMPLETE in {total_elapsed:.2f}s ({total_elapsed/60:.1f}m)")
-        logger.info(f"   Summary: {rows_written} runners fetched, {len(teams)} teams, {total_backfilled} assignments")
+        logger.info(f"   Summary: {rows_written} fetched (Step 1), {len(teams)} teams, {total_backfilled} updates + {total_inserted} new inserts")
 
         with _jobs_lock:
             _jobs[event_code]['status'] = 'done'
-            _jobs[event_code]['message'] = f'✅ Sync complete: {rows_written} runners, {len(teams)} teams backfilled'
+            _jobs[event_code]['message'] = f'✅ Sync complete: {final_count} total runners ({rows_written} from Step 1, {total_inserted} from team enrichment)'
             _jobs[event_code]['finished_at'] = datetime.utcnow().isoformat()
             _jobs[event_code]['step3_elapsed_sec'] = step3_elapsed
             _jobs[event_code]['finalize_elapsed_sec'] = finalize_elapsed
             _jobs[event_code]['total_elapsed_sec'] = total_elapsed
             _jobs[event_code]['final_count'] = final_count
             _jobs[event_code]['total_backfilled'] = total_backfilled
+            _jobs[event_code]['total_inserted'] = total_inserted
 
     except Exception as e:
         elapsed = time.time() - start_time

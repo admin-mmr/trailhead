@@ -21,6 +21,26 @@ Last commit: pending (NYRR widget API fix)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
 
+### 2026-03-28 19:56 ET — Clean up: remove ALL admin functionality from mmr-webapp SWA
+- Deleted: Entire `web-apps/mmr-webapp/app/admin/` directory including 6 pages (admin dashboard, NYRR events list, event detail, member detail, match review, sync status) + 2 API routes (`/api/admin`, `/api/admin/sync-status`) + orphaned `components/ProgressModal.tsx` component. All admin functionality now lives exclusively in `mmr-admin/` Flask app on Azure WA.
+- Status: Complete. TypeScript build passes. No broken imports. mmr-webapp now member-facing only. Admin APIs in webapp removed; member-facing APIs (`/api/nyrr/*` for portal) retained.
+- Next: None—mmr-webapp separation is clean. Admin UI fully migrated to mmr-admin.
+
+### 2026-03-28 19:48 ET — Dashboard: query live runner counts instead of stale cached columns
+- Changed: `mmr-admin/api_events.py` — replaced all 3 endpoints (`/api/events`, `/api/events/<id>`, `/api/stats`) to query **LIVE counts from `nyrr_event_runners` table** instead of cached `mmr_runner_count` column. Now calculates: total runners, MMR runners (team_code='MMR'), matched runners (mmr_member_id IS NOT NULL). Dashboard will show real "2 MMR runners" instead of stale "100".
+- Status: Complete. No cached data—all counts computed per-request from live DB state.
+- Next: Reload mmr-admin UI and verify dashboard shows correct live counts.
+
+### 2026-03-29 00:02 ET — Remove 500-runner cap via team enrichment in Step 3
+- Changed: `mmr-admin/api_sync.py` — Step 3 now INSERTs missing runners from `teams/teamRunners` calls, not just UPDATEs. Root cause: `runners/finishers-filter` endpoint returns ~500 results (NYRR API limit), but `teams/teamRunners` returns ALL team members (~13K for NYC Half). Step 3 now captures full dataset. If runner missing from DB (Step 1), INSERT with full details + team_code. Added `total_inserted` tracking.
+- Status: Ready to test. NYC Half should now load all finishers.
+- Next: Trigger re-sync of H2026 to verify all ~13K runners load.
+
+### 2026-03-28 19:35 ET — mmr-admin UI: progress modal displays real backend data
+- Changed: `mmr-admin/templates/index.html` — fixed ProgressModal to display **real backend data** from job status: `message` (human-friendly desc), `rows_written` (actual runner count), `teams_processed` (team progress), `step` (current step id). Modal subtitle now shows dynamic message from backend instead of hardcoded "30,000+ runners". Step detail text shows actual counts: "200 runners fetched", "5 teams found", "5 teams processed".
+- Status: Complete. Modal now pulls all text from backend via polling `/api/load/{eventCode}/status`. Tested with 200-person event—now shows "200 runners fetched" instead of generic "30,000+".
+- Next: Test locally to verify real-time updates display correctly.
+
 ### 2026-03-28 23:45 ET — Fix NyrrTeam dataclass bug
 - Changed: `mmr-admin/nyrr_api.py` — added missing `@dataclass` decorator to `NyrrTeam` class (line 247). This was causing "object is not subscriptable" error on event detail page.
 - Status: Fixed. Error was preventing event details from rendering.

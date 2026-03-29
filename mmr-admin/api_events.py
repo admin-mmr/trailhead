@@ -51,7 +51,26 @@ def api_events():
     sql += " ORDER BY event_date DESC"
     rows = query(sql, params)
 
+    # Calculate LIVE counts from nyrr_event_runners table instead of cached columns
     for r in rows:
+        event_id = r.get('id')
+
+        # Query live counts
+        live_counts = query("""
+            SELECT
+              COUNT(*) as total,
+              SUM(CASE WHEN team_code = 'MMR' THEN 1 ELSE 0 END) as mmr_count,
+              SUM(CASE WHEN mmr_member_id IS NOT NULL THEN 1 ELSE 0 END) as matched_count
+            FROM nyrr_event_runners
+            WHERE nyrr_event_id = %s
+        """, [event_id])
+
+        if live_counts:
+            counts = live_counts[0]
+            r['result_count'] = counts.get('total') or 0
+            r['mmr_runner_count'] = counts.get('mmr_count') or 0
+            r['mmr_matched_count'] = counts.get('matched_count') or 0
+
         mmr = r.get('mmr_runner_count') or 0
         matched = r.get('mmr_matched_count') or 0
         r['match_pct'] = round(matched / mmr * 100, 1) if mmr > 0 else 0
@@ -62,11 +81,30 @@ def api_events():
 @events_bp.route('/api/events/<int:event_id>')
 @login_required
 def api_event_detail(event_id):
-    """Single event detail."""
+    """Single event detail with live runner counts."""
     rows = query("SELECT * FROM nyrr_events WHERE id = %s", [event_id])
     if not rows:
         return json_response({'ok': False, 'error': 'Not found'}, 404)
-    return json_response({'ok': True, 'data': rows[0]})
+
+    event = rows[0]
+
+    # Get live counts from nyrr_event_runners
+    live_counts = query("""
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN team_code = 'MMR' THEN 1 ELSE 0 END) as mmr_count,
+          SUM(CASE WHEN mmr_member_id IS NOT NULL THEN 1 ELSE 0 END) as matched_count
+        FROM nyrr_event_runners
+        WHERE nyrr_event_id = %s
+    """, [event_id])
+
+    if live_counts:
+        counts = live_counts[0]
+        event['result_count'] = counts.get('total') or 0
+        event['mmr_runner_count'] = counts.get('mmr_count') or 0
+        event['mmr_matched_count'] = counts.get('matched_count') or 0
+
+    return json_response({'ok': True, 'data': event})
 
 
 @events_bp.route('/api/events/<int:event_id>/runners')
@@ -193,21 +231,36 @@ def api_run_automatch(event_id):
 @events_bp.route('/api/stats')
 @login_required
 def api_stats():
-    """Dashboard summary stats."""
-    rows = query("""
+    """Dashboard summary stats with live runner counts."""
+    # Get event counts and status breakdown
+    event_rows = query("""
         SELECT
             COUNT(*) AS total_events,
             SUM(is_upcoming) AS upcoming_events,
             SUM(CASE WHEN processing_status = 'Pending' THEN 1 ELSE 0 END) AS pending,
             SUM(CASE WHEN processing_status = 'InProgress' THEN 1 ELSE 0 END) AS in_progress,
             SUM(CASE WHEN processing_status = 'Completed' THEN 1 ELSE 0 END) AS completed,
-            SUM(CASE WHEN processing_status = 'Error' THEN 1 ELSE 0 END) AS errors,
-            SUM(IFNULL(result_count, 0)) AS total_runners,
-            SUM(IFNULL(mmr_runner_count, 0)) AS total_mmr_runners,
-            SUM(IFNULL(mmr_matched_count, 0)) AS total_matched
+            SUM(CASE WHEN processing_status = 'Error' THEN 1 ELSE 0 END) AS errors
         FROM nyrr_events
     """)
-    return json_response({'ok': True, 'data': rows[0] if rows else {}})
+
+    # Get LIVE runner counts from nyrr_event_runners table
+    runner_rows = query("""
+        SELECT
+            COUNT(*) AS total_runners,
+            SUM(CASE WHEN team_code = 'MMR' THEN 1 ELSE 0 END) AS total_mmr_runners,
+            SUM(CASE WHEN mmr_member_id IS NOT NULL THEN 1 ELSE 0 END) AS total_matched
+        FROM nyrr_event_runners
+    """)
+
+    stats = event_rows[0] if event_rows else {}
+    if runner_rows:
+        runner_counts = runner_rows[0]
+        stats['total_runners'] = runner_counts.get('total_runners') or 0
+        stats['total_mmr_runners'] = runner_counts.get('total_mmr_runners') or 0
+        stats['total_matched'] = runner_counts.get('total_matched') or 0
+
+    return json_response({'ok': True, 'data': stats})
 
 
 @events_bp.route('/api/stats/years')
