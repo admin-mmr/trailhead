@@ -15,13 +15,17 @@ Last commit: pending (NYRR widget API fix)
 
 ## Open items
 
-- [ ] remove upcoming events from the first tab Events in the dashboard. Currently upcoming events are shown Completed status. not sure what it means. 
-- [ ] App title changed to MMR Admin Portal
 - [ ] if possible, for any past events, we record the total number of finishers and compare with the number of finishers we have in our database. If there is a significant gap, we can prioritize syncing that event. This will help us identify which events are most in need of syncing and ensure that we are focusing our efforts on the events that will have the biggest impact on our data quality.
+- [ ] Match operation now doesn't do partial match. Let's find all the MMR members partially match the first name or last name or any word in the name. This will help us find more potential matches and improve our matching accuracy. We can then review these potential matches manually to confirm whether they are correct or not. 
 
 ## Session log
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM ET — short title -->
+
+### 2026-03-29 12:17 ET — Fix 4 open items: title, upcoming events, GITHUB_TOKEN, NYRR links
+- Changed: `mmr-admin/templates/index.html` — (1) updated `<title>` to "MMR Admin Portal"; (2) removed upcoming events rendering from Events tab (only show past events now, fix for "Completed" status confusion). `mmr-admin/app.py` — (3) enhanced Keychain loading to include GITHUB_TOKEN from `MMR_GITHUB_TOKEN`. `load-env.sh` — added GITHUB_TOKEN loading. `mmr-admin/api_events.py` + `basecamp/ops/sync_nyrr_events.py` — (4) fixed event URL format: `/events/{code}` → `/event/{code}/finishers`. Created migration `0012_fix_nyrr_event_urls.sql` to correct existing URLs in DB.
+- Status: All 4 items complete. Upcoming events hidden, title updated, GITHUB_TOKEN Keychain support added, event links fixed.
+- Next: Run migration 0012, test UI to confirm past events only; add GITHUB_TOKEN to Keychain per user's PAT.
 
 ### 2026-03-29 15:06 ET — Fix Azure deployment: add _paginate_streaming to basecamp NyrrApiClient
 - Changed: `basecamp/python/nyrr_api.py` — added `_paginate_streaming()` generator method (was missing, only in mmr-admin version). Azure deployment failed with `AttributeError: 'NyrrApiClient' object has no attribute '_paginate_streaming'` because import path resolved to basecamp version.

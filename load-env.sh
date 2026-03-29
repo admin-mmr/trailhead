@@ -35,4 +35,12 @@ else
     echo "  ⚠️  GOOGLE_SHEETS_MEMBERSHIP_ID not set (Sheets sync will not work)"
 fi
 
+GITHUB_TOKEN=$(security find-generic-password -a "$USER" -s "MMR_GITHUB_TOKEN" -w 2>/dev/null || echo "")
+if [ -n "$GITHUB_TOKEN" ]; then
+    export GITHUB_TOKEN
+    echo "  ✓ GITHUB_TOKEN set"
+else
+    echo "  ⚠️  GITHUB_TOKEN not set (GitHub workflow triggers will not work)"
+fi
+
 echo "✅ All environment variables loaded!"

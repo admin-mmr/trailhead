@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NYRR Data Viewer — MMR</title>
+  <title>MMR Admin Portal</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
@@ -992,7 +992,6 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
                   <div className="empty" style={{ padding: 40 }}><div className="big">-</div>No events found</div>
                 ) : (
                   <>
-                    {renderTable(upcoming, '📅 Upcoming Events', false)}
                     {renderTable(past, '📦 Past Events', true)}
                   </>
                 )}
@@ -1922,7 +1921,7 @@ const App = () => {
     <div className="app">
       <div className="header">
         <div>
-          <h1>NYRR Data Viewer</h1>
+          <h1>MMR Admin Portal</h1>
           <div className="subtitle">
             Misty Mountain Runners — Event Management & Data Browser
             {versionInfo && versionInfo.commit && (

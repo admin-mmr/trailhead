@@ -323,7 +323,7 @@ def api_discover_events():
         """, (
             ev.event_code,
             ev.event_name,
-            f"https://results.nyrr.org/events/{ev.event_code}",
+            f"https://results.nyrr.org/event/{ev.event_code}/finishers",
             ev.venue,
             ev.distance_unit_code,
             event_date_str,

@@ -40,19 +40,22 @@ if not _ON_AZURE:
     except ImportError:
         print('  ⚠  python-dotenv not installed — run: pip install python-dotenv', flush=True)
 
-    # If DATABASE_URL still empty/blank, try Keychain (macOS only)
-    if not os.environ.get('DATABASE_URL', '').strip():
-        import subprocess, shutil
-        if shutil.which('security'):
-            result = subprocess.run(
-                ['security', 'find-generic-password', '-s', 'MMR_DATABASE_URL', '-w'],
-                capture_output=True, text=True
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                os.environ['DATABASE_URL'] = result.stdout.strip()
-                print('  ✓ DATABASE_URL loaded from Keychain (MMR_DATABASE_URL)', flush=True)
-            else:
-                print('  ⚠  DATABASE_URL not found in Keychain (MMR_DATABASE_URL)', flush=True)
+    # Load secrets from Keychain (macOS only) that aren't in .env.local
+    import subprocess, shutil
+    if shutil.which('security'):
+        keychain_vars = ['MMR_DATABASE_URL', 'MMR_GITHUB_TOKEN']
+        for kchn_name in keychain_vars:
+            env_name = kchn_name.replace('MMR_', '')
+            if not os.environ.get(env_name, '').strip():
+                result = subprocess.run(
+                    ['security', 'find-generic-password', '-s', kchn_name, '-w'],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    os.environ[env_name] = result.stdout.strip()
+                    print(f'  ✓ {env_name} loaded from Keychain ({kchn_name})', flush=True)
+    else:
+        print('  ⚠  security command not found — Keychain secrets unavailable', flush=True)
 
 from flask import Flask, send_file
 
