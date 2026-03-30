@@ -162,8 +162,8 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
         from nyrr_api import NyrrFinisher
 
-        def _probe(age_from=None, age_to=None, gender=None, team_code=None, pace_min=None, pace_max=None, sort_column="bib", sort_desc=False):
-            """Single pageSize=1 call to get totalItems for a filter combination."""
+        def _probe(age_from=None, age_to=None, gender=None, team_code=None, pace_min=None, pace_max=None, sort_column="bib", sort_desc=False, return_pace=False):
+            """Single pageSize=1 call to get totalItems for a filter combination. Optionally return first item's pace."""
             data = client._post("runners/finishers-filter", {
                 "eventCode": event_code,
                 "ageFrom": age_from,
@@ -177,6 +177,13 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                 "pageIndex": 1,
                 "pageSize": 1,
             })
+            if return_pace:
+                # Extract pace from first item if available
+                items = data.get("items", [])
+                pace = items[0].get("pace") if items else None
+                if pace and pace.count(':') == 1:
+                    pace = "00:" + pace
+                return data.get("totalItems", 0), pace
             return data.get("totalItems", 0)
 
         def _upsert_pages(label, age_from=None, age_to=None, gender=None, team_code=None, pace_min=None, pace_max=None, sort_desc=False):
@@ -305,18 +312,17 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
             if total <= 500:
                 _upsert_pages(label_base, age_from=age_from, age_to=age_to, gender=gender, sort_desc=False)
-            elif total <= 1000:
-                # Two passes: asc + desc ensures all pages are reachable under the 500-cap
-                _upsert_pages(label_base + " asc",  age_from=age_from, age_to=age_to, gender=gender, sort_desc=False)
-                _upsert_pages(label_base + " desc", age_from=age_from, age_to=age_to, gender=gender, sort_desc=True)
             elif age_from == age_to:
                 # Can't split further by age — break by gender
                 if gender is not None:
-                    # Already split by gender and still >1000 — split by pace
-                    logger.info(f"{indent}⚠️  age={age_from} gender={gender} still {total} items — splitting by pace...")
-                    # Use fallback max pace (typical marathon: 20:00 min/mile)
-                    max_pace = "00:20:00"
-                    logger.info(f"{indent}└─ Max pace estimate: {max_pace}")
+                    # Already split by gender and still >1000 — get max pace and split by pace
+                    logger.info(f"{indent}⚠️  age={age_from} gender={gender} still {total} items — querying max pace...")
+                    # Query sorted by pace descending to get slowest runner's pace
+                    total_pace, max_pace = _probe(age_from=age_from, age_to=age_to, gender=gender,
+                                                  sort_column="pace", sort_desc=True, return_pace=True)
+                    if not max_pace:
+                        max_pace = "00:20:00"  # Fallback
+                    logger.info(f"{indent}└─ Max pace: {max_pace}")
                     _split_by_pace(age_from, age_to, gender, max_pace, depth=depth + 1)
                 else:
                     logger.info(f"{indent}└─ Splitting age={age_from} by gender...")
@@ -343,8 +349,9 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         logger.info(f"  └─ MMR members totalItems={mmr_total}")
         if mmr_total > 0:
             if mmr_total <= 500:
-                _upsert_pages("MMR asc", team_code="MMR", sort_desc=False)
+                _upsert_pages("MMR", team_code="MMR", sort_desc=False)
             else:
+                logger.warning(f"  └─ MMR has {mmr_total} members (>500). Consider pre-filtering or splitting by district.")
                 _upsert_pages("MMR asc",  team_code="MMR", sort_desc=False)
                 _upsert_pages("MMR desc", team_code="MMR", sort_desc=True)
         with _jobs_lock:
