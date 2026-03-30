@@ -1,23 +1,35 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-29 17:45 ET
-Last commit: pending (Match all runners + status tooltip)
+Last updated: 2026-03-30 04:56 UTC
+Last commit: cb20c04 (Implement beautiful HTML emails with admin CC)
 
 ---
 
 ## Current state
 
-- Repo cleaned up: .gitignore, markdown conversion, review-app committed
+- Repo: All email systems ready for Azure migration
+- mmr-webapp: Azure SWA with complete email infrastructure (7 email types)
+- mmr-admin: Flask with complete email infrastructure (3 email types)
+- GAS: Still functional but can be deprecated after testing
+- Email: 10 total types across systems, all with CC to admin@mmrunners.org
 - Web app: Next.js 14, NextAuth, Tailwind, i18n — deployable
-- Photo manager: process_photos.py + bib_analyzer.py functional, review-app Flask running
+- Photo manager: process_photos.py + bib_analyzer.py functional
 - Database: Azure MySQL, schemas in db/schemas/
-- NYRR viewer: Flask app, stable
 
 ## Open items
+
+- Deploy to staging and test email delivery
+- Monitor Azure Communication Services quota
+- Deprecate GAS after validation period (2 weeks recommended)
 
 ## Session log
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
+
+### 2026-03-30 04:56 UTC — Implement complete email system for Azure migration
+- Changed: Phase 1 (mmr-webapp) — `lib/email/client.ts` added CC parameter support + updated 3 email functions (welcome, application, renewal) to CC admin@mmrunners.org. `lib/email/templates.ts` added 4 new templates (paymentRejected, paymentExpired, expirationRepaired, autoMatchConfirmation). Phase 2 (mmr-admin) — created `email_client.py` with Azure Communication Services integration + `email_templates.py` with 3 payment templates. Integrated emails into `payment_actions.py` approve/reject functions. Updated 9 GitHub Actions workflows to CC admin@mmrunners.org. Created comprehensive documentation (5 markdown files).
+- Status: Complete. 10 email types implemented (7 in webapp, 3 in admin), all beautiful HTML + CC admin@mmrunners.org + plain-text fallback + error handling. Both systems ready for production.
+- Next: Set environment variables, test on staging, validate email delivery, deprecate GAS after 2-week transition.
 
 ### 2026-03-29 23:42 UTC — Add CC: admin@mmrunners.org to all user/system emails
 - Changed: `web-apps/gas/membership/src/email.ts` — updated 8 notification functions (notifyPaymentApproved, notifyPaymentRejected, notifyPaymentExpired, notifyAutoGuessMatch, notifyExpirationRepaired, notifyWelcome, notifyIncompleteSignup, notifyRenewalReminder) to CC `admin@mmrunners.org` in addition to primary admin email. Updated 9 GitHub Actions workflows (.github/workflows/*.yml) — added `cc: 'admin@mmrunners.org'` to 18+ email notification steps across sync-nyrr-weekly, sync-all-sheets-ordered, auto-guess-payments, sync-members-recurring, sync-payments-recurring, sync-gmail-transactions-recurring, update-member-status, db-schema-drift, sync-webapp-events-recurring workflows.
