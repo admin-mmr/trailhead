@@ -27,7 +27,9 @@ DATABASE_URL=$(security find-generic-password -a "$USER" -s "MMR_DATABASE_URL" -
 export DATABASE_URL
 echo "  ✓ DATABASE_URL set"
 
-GOOGLE_SHEETS_MEMBERSHIP_ID=$(security find-generic-password -a "$USER" -s "MMR_GOOGLE_SHEETS_MEMBERSHIP_ID" -w 2>/dev/null || echo "")
+if [ -z "$GOOGLE_SHEETS_MEMBERSHIP_ID" ]; then
+    GOOGLE_SHEETS_MEMBERSHIP_ID=$(security find-generic-password -a "$USER" -s "MMR_GOOGLE_SHEETS_MEMBERSHIP_ID" -w 2>/dev/null || echo "")
+fi
 if [ -n "$GOOGLE_SHEETS_MEMBERSHIP_ID" ]; then
     export GOOGLE_SHEETS_MEMBERSHIP_ID
     echo "  ✓ GOOGLE_SHEETS_MEMBERSHIP_ID set"
@@ -35,7 +37,9 @@ else
     echo "  ⚠️  GOOGLE_SHEETS_MEMBERSHIP_ID not set (Sheets sync will not work)"
 fi
 
-GITHUB_TOKEN=$(security find-generic-password -a "$USER" -s "MMR_GITHUB_TOKEN" -w 2>/dev/null || echo "")
+if [ -z "$GITHUB_TOKEN" ]; then
+    GITHUB_TOKEN=$(security find-generic-password -a "$USER" -s "MMR_GITHUB_TOKEN" -w 2>/dev/null || echo "")
+fi
 if [ -n "$GITHUB_TOKEN" ]; then
     export GITHUB_TOKEN
     echo "  ✓ GITHUB_TOKEN set"
