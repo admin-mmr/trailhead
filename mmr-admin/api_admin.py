@@ -77,7 +77,7 @@ def api_delete_admin(email):
 # Trigger Google Sheets → MySQL refresh via GitHub Actions
 # ---------------------------------------------------------------------------
 
-GITHUB_REPO = 'cathylin/trailhead'
+GITHUB_REPO = 'admin-mmr/trailhead'
 WORKFLOW_FILE = 'sync-all-sheets-ordered.yml'
 
 

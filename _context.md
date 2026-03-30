@@ -23,6 +23,9 @@ Last commit: (pending)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
 
+### 2026-03-30 15:03 ET — Gmail quick-approve + layout overhaul
+Changed: Gmail table full-width, Pending Events collapsible. Added ⚡ Quick Approve inline popover to Gmail rows — extracts MemberID from memo, pre-fills dropdown + payment type from amount, calls admin-create. Also: GITHUB_REPO fix, checkbox multi-select on events, Approve All Matched / Auto-Guess & Approve All buttons. Status: all in static/payments.js + api_admin.py. Next: Gmail sheet ProcessTime+PaymentID sync (item 8).
+
 ### 2026-03-30 23:30 UTC — Restore progress modal + add team size splitting
 
 - Changed: `mmr-admin/templates/index.html` — added `SimpleProgressModal` component with 1.5-second polling on `/api/load/<event_code>/status`. Shows step, runner count, teams processed. Auto-closes when job done/error. Updated `triggerLoad()` to open modal and refresh events after completion.

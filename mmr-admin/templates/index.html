@@ -659,7 +659,7 @@ const SimpleProgressModal = ({ isOpen, eventCode, onClose }) => {
     return () => clearInterval(poll);
   }, [isOpen, eventCode]);
 
-  if (!isOpen || !status) return null;
+  if (!isOpen || !status || status.status === 'not_found') return null;
 
   const step = status.step || 'unknown';
   const stepNum = step.includes('step1') ? 1 : step.includes('step2') ? 2 : step.includes('step3') ? 3 : 0;
@@ -672,7 +672,7 @@ const SimpleProgressModal = ({ isOpen, eventCode, onClose }) => {
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <div className="modal-title">{isDone ? '✅ Done!' : isError ? '❌ Error' : '⏳ Loading...'}</div>
+        <div className="modal-title">{isDone ? '✅ Done!' : isError ? '❌ Error' : status.status === 'cancelled' ? '🛑 Cancelled' : '⏳ Loading...'}</div>
         <div className="modal-subtitle">{message}</div>
 
         <div style={{ marginBottom: 20, fontSize: 13, color: 'var(--text2)' }}>
@@ -696,9 +696,16 @@ const SimpleProgressModal = ({ isOpen, eventCode, onClose }) => {
           </div>
         )}
 
-        {(isDone || isError) && (
+        {(isDone || isError || status.status === 'cancelled') && (
           <button className="btn btn-primary" onClick={onClose} style={{ width: '100%', marginTop: 16 }}>
             Close
+          </button>
+        )}
+        {!isDone && !isError && status.status !== 'cancelled' && (
+          <button className="btn btn-danger" onClick={async () => {
+            await api(`/api/load/${eventCode}/cancel`, { method: 'POST' });
+          }} style={{ width: '100%', marginTop: 16, background: 'var(--danger, #ef4444)', color: '#fff', border: 'none' }}>
+            Cancel
           </button>
         )}
       </div>
