@@ -82,6 +82,7 @@ jobs:
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: '❌ Gmail Transactions Sync Failed - GitHub Actions'
           to: ${{ secrets.NOTIFICATION_EMAIL }}
+          cc: 'admin@mmrunners.org'
           from: 'GitHub Actions <noreply@github.com>'
           body: |
             Workflow: Recurring Gmail Transactions Sync
@@ -105,6 +106,7 @@ jobs:
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: '✓ Gmail Transactions Sync Completed Successfully'
           to: ${{ secrets.NOTIFICATION_EMAIL }}
+          cc: 'admin@mmrunners.org'
           from: 'GitHub Actions <noreply@github.com>'
           body: |
             Workflow: Recurring Gmail Transactions Sync

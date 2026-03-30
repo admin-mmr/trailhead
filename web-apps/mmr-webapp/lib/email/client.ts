@@ -3,6 +3,10 @@ import {
   welcomeEmailHtml,
   applicationReceivedEmailHtml,
   renewalReminderEmailHtml,
+  paymentRejectedEmailHtml,
+  paymentExpiredEmailHtml,
+  expirationRepairedEmailHtml,
+  autoMatchConfirmationEmailHtml,
 } from './templates'
 import pool from '@/lib/db/connection'
 
@@ -20,14 +24,26 @@ interface SendEmailParams {
   subject: string
   html: string
   text?: string
+  cc?: string | string[]
 }
 
-export async function sendEmail({ to, subject, html, text }: SendEmailParams): Promise<void> {
+export async function sendEmail({ to, subject, html, text, cc }: SendEmailParams): Promise<void> {
   const emailClient = getEmailClient()
+
+  // Normalize CC to array of objects
+  let ccRecipients: Array<{ address: string }> = []
+  if (cc) {
+    const ccAddresses = Array.isArray(cc) ? cc : cc.split(',').map(e => e.trim())
+    ccRecipients = ccAddresses.map(address => ({ address }))
+  }
+
   const message = {
     senderAddress: process.env.EMAIL_SENDER_ADDRESS!,
     content: { subject, html, plainText: text ?? '' },
-    recipients: { to: [{ address: to }] },
+    recipients: {
+      to: [{ address: to }],
+      ...(ccRecipients.length > 0 && { cc: ccRecipients }),
+    },
   }
   const poller = await emailClient.beginSend(message)
   await poller.pollUntilDone()
@@ -45,6 +61,7 @@ export async function sendMemberWelcomeEmail(params: {
   const planLabel = params.planLabel ?? 'Individual Membership'
   await sendEmail({
     to:      params.to,
+    cc:      'admin@mmrunners.org',
     subject: `Welcome to Misty Mountain Runners! 🎉 Your Member ID: ${params.memberId}`,
     html:    welcomeEmailHtml({ ...params, planLabel }),
   })
@@ -62,6 +79,7 @@ export async function sendApplicationReceivedEmail(params: {
 }): Promise<void> {
   await sendEmail({
     to:      params.to,
+    cc:      'admin@mmrunners.org',
     subject: `MMR Membership Application Received — Ref ${params.referenceId}`,
     html:    applicationReceivedEmailHtml(params),
   })
@@ -95,6 +113,7 @@ export async function sendRenewalReminders(): Promise<{ sent: number; skipped: n
     try {
       await sendEmail({
         to:      member.email,
+        cc:      'admin@mmrunners.org',
         subject: `Your MMR membership expires in ${member.days_left} day${member.days_left !== 1 ? 's' : ''}`,
         html:    renewalReminderEmailHtml({
           firstName,
@@ -116,4 +135,73 @@ export async function sendRenewalReminders(): Promise<{ sent: number; skipped: n
   }
 
   return { sent, skipped }
+}
+
+// ── Payment rejected ──────────────────────────────────────────────────────────
+
+export async function sendPaymentRejectedEmail(params: {
+  to:            string
+  firstName:     string
+  planLabel:     string
+  amount:        number
+  referenceId:   string
+  reason?:       string
+}): Promise<void> {
+  await sendEmail({
+    to:      params.to,
+    cc:      'admin@mmrunners.org',
+    subject: `MMR Payment Could Not Be Verified — Ref ${params.referenceId}`,
+    html:    paymentRejectedEmailHtml(params),
+  })
+}
+
+// ── Payment expired ───────────────────────────────────────────────────────────
+
+export async function sendPaymentExpiredEmail(params: {
+  to:          string
+  firstName:   string
+  referenceId: string
+  expiresAt:   string
+}): Promise<void> {
+  await sendEmail({
+    to:      params.to,
+    cc:      'admin@mmrunners.org',
+    subject: `⏰ Your MMR payment submission has expired — Ref ${params.referenceId}`,
+    html:    paymentExpiredEmailHtml(params),
+  })
+}
+
+// ── Expiration repaired ───────────────────────────────────────────────────────
+
+export async function sendExpirationRepairedEmail(params: {
+  to:        string
+  firstName: string
+  memberId:  string
+  expiresAt: string
+  planLabel: string
+}): Promise<void> {
+  await sendEmail({
+    to:      params.to,
+    cc:      'admin@mmrunners.org',
+    subject: `Your MMR membership record has been updated`,
+    html:    expirationRepairedEmailHtml(params),
+  })
+}
+
+// ── Auto-match confirmation ───────────────────────────────────────────────────
+
+export async function sendAutoMatchConfirmationEmail(params: {
+  to:            string
+  firstName:     string
+  memberId:      string
+  paymentIntent: string
+  expiresAt:     string
+  amount:        number
+}): Promise<void> {
+  await sendEmail({
+    to:      params.to,
+    cc:      'admin@mmrunners.org',
+    subject: `✅ Your MMR payment has been matched — Membership activated`,
+    html:    autoMatchConfirmationEmailHtml(params),
+  })
 }

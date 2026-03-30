@@ -266,6 +266,7 @@ jobs:
           password: ${{ env.MAIL_PASSWORD }}
           subject: "${{ steps.status.outputs.emoji }} Sync Report - ${{ steps.status.outputs.overall }}"
           to: ${{ env.NOTIFICATION_EMAIL }}
+          cc: 'admin@mmrunners.org'
           from: "MMR Sync Bot <${{ env.MAIL_USERNAME }}>"
           body: |
             Sync Run Report

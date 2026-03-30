@@ -19,6 +19,11 @@ Last commit: pending (Match all runners + status tooltip)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
 
+### 2026-03-29 23:42 UTC — Add CC: admin@mmrunners.org to all user/system emails
+- Changed: `web-apps/gas/membership/src/email.ts` — updated 8 notification functions (notifyPaymentApproved, notifyPaymentRejected, notifyPaymentExpired, notifyAutoGuessMatch, notifyExpirationRepaired, notifyWelcome, notifyIncompleteSignup, notifyRenewalReminder) to CC `admin@mmrunners.org` in addition to primary admin email. Updated 9 GitHub Actions workflows (.github/workflows/*.yml) — added `cc: 'admin@mmrunners.org'` to 18+ email notification steps across sync-nyrr-weekly, sync-all-sheets-ordered, auto-guess-payments, sync-members-recurring, sync-payments-recurring, sync-gmail-transactions-recurring, update-member-status, db-schema-drift, sync-webapp-events-recurring workflows.
+- Status: Complete. All user-facing and system emails now CC admin@mmrunners.org for audit/oversight.
+- Next: Deploy changes; verify CC recipient receives emails without spam flagging.
+
 ### 2026-03-29 22:02 UTC — Add one-click bulk export (all districts as ZIP)
 - Changed: `mmr-admin/api_district_members.py` — added POST `/api/district/export-all-districts` endpoint. Fetches all districts, generates one CSV per district with same status/renewal filters, zips them, returns as single ZIP download. `mmr-admin/static/DistrictMembersPanel.js` — added `exportAllDistricts()` function and green "Export All Districts" button (applies current status + renewal filters across all districts).
 - Status: Complete. One-click export: generates separate CSV per district, respects selected filters.

@@ -86,6 +86,7 @@ jobs:
           password:       ${{ secrets.MAIL_PASSWORD }}
           subject:        '⚠️ MMR DB schema drift detected'
           to:             ${{ secrets.NOTIFICATION_EMAIL }}
+          cc:             'admin@mmrunners.org'
           from:           'GitHub Actions <noreply@github.com>'
           body: |
             The live mmrdb schema no longer matches the committed snapshot.
@@ -123,6 +124,7 @@ jobs:
           password:       ${{ secrets.MAIL_PASSWORD }}
           subject:        '❌ DB Schema Drift Check failed to run'
           to:             ${{ secrets.NOTIFICATION_EMAIL }}
+          cc:             'admin@mmrunners.org'
           from:           'GitHub Actions <noreply@github.com>'
           body: |
             The DB schema drift check workflow itself failed (not a drift alert —

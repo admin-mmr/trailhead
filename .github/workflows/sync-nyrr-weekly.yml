@@ -141,6 +141,7 @@ jobs:
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: '❌ NYRR Weekly Sync Failed - GitHub Actions'
           to: ${{ secrets.NOTIFICATION_EMAIL }}
+          cc: 'admin@mmrunners.org'
           from: 'GitHub Actions <noreply@github.com>'
           body: |
             Workflow: Weekly NYRR Sync & Finisher Audit (Tuesday)
@@ -276,6 +277,7 @@ jobs:
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: '✓ NYRR Weekly Sync Completed Successfully'
           to: ${{ secrets.NOTIFICATION_EMAIL }}
+          cc: 'admin@mmrunners.org'
           from: 'GitHub Actions <noreply@github.com>'
           body: |
             Workflow: Weekly NYRR Sync & Finisher Audit (Tuesday)

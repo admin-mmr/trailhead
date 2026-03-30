@@ -82,6 +82,7 @@ jobs:
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: '❌ Members Sync Failed - GitHub Actions'
           to: ${{ secrets.NOTIFICATION_EMAIL }}
+          cc: 'admin@mmrunners.org'
           from: 'GitHub Actions <noreply@github.com>'
           body: |
             Workflow: Recurring Members Sync

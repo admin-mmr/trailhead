@@ -138,6 +138,7 @@ jobs:
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: '❌ Member Status Update Failed'
           to: ${{ secrets.NOTIFICATION_EMAIL }}
+          cc: 'admin@mmrunners.org'
           from: 'GitHub Actions <noreply@github.com>'
           body: |
             Workflow: Daily Member Status Update

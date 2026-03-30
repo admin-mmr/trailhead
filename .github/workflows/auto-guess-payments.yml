@@ -118,6 +118,7 @@ jobs:
           password: ${{ env.MAIL_PASSWORD }}
           subject: "🤖 Auto-Guess Payment Matching — ${{ steps.autoguess.outputs.exit_code == '0' && '✅ Success' || '⚠️ Errors' }}"
           to: ${{ env.NOTIFICATION_EMAIL }}
+          cc: 'admin@mmrunners.org'
           from: "MMR Auto-Guess <${{ env.MAIL_USERNAME }}>"
           body: |
             Auto-Guess Payment Matching Report

@@ -113,7 +113,7 @@ function notifyPaymentApproved(memberID: string, paymentIntent: string): void {
 
   sendEmail({
     to:          m.email,
-    cc:          adminEmail,
+    cc:          `${adminEmail}, admin@mmrunners.org`,
     subject,
     body,
     htmlBody:    buildEmailHtml(htmlInner),
@@ -160,7 +160,7 @@ function notifyPaymentRejected(memberID: string, reason: string): void {
 
   sendEmail({
     to:          m.email,
-    cc:          adminEmail,
+    cc:          `${adminEmail}, admin@mmrunners.org`,
     subject,
     body,
     htmlBody:    buildEmailHtml(htmlInner),
@@ -203,7 +203,7 @@ function notifyPaymentExpired(memberID: string, eventID: string): void {
 
   sendEmail({
     to:          m.email,
-    cc:          adminEmail,
+    cc:          `${adminEmail}, admin@mmrunners.org`,
     subject,
     body,
     htmlBody:    buildEmailHtml(htmlInner),
@@ -263,7 +263,7 @@ function notifyAutoGuessMatch(memberID: string, paymentIntent: string, transacti
 
   sendEmail({
     to:          m.email,
-    cc:          adminEmail,
+    cc:          `${adminEmail}, admin@mmrunners.org`,
     subject,
     body,
     htmlBody:    buildEmailHtml(htmlInner),
@@ -320,7 +320,7 @@ function notifyExpirationRepaired(memberID: string, newExpiration: string): void
 
   sendEmail({
     to:          m.email,
-    cc:          adminEmail,
+    cc:          `${adminEmail}, admin@mmrunners.org`,
     subject,
     body,
     htmlBody:    buildEmailHtml(htmlInner),
@@ -382,7 +382,7 @@ function notifyWelcome(memberID: string): void {
 
   sendEmail({
     to:          m.email,
-    cc:          adminEmail,
+    cc:          `${adminEmail}, admin@mmrunners.org`,
     subject,
     body,
     htmlBody:    buildEmailHtml(htmlInner),
@@ -468,7 +468,7 @@ function notifyIncompleteSignup(memberID: string, email: string): void {
 
   sendEmail({
     to:          email,
-    cc:          adminEmail,
+    cc:          `${adminEmail}, admin@mmrunners.org`,
     subject,
     body,
     htmlBody:    buildEmailHtml(htmlInner),
@@ -547,7 +547,7 @@ function notifyRenewalReminder(memberID: string): void {
 
   sendEmail({
     to:          m.email,
-    cc:          adminEmail,
+    cc:          `${adminEmail}, admin@mmrunners.org`,
     subject,
     body,
     htmlBody:    buildEmailHtml(htmlInner),

@@ -33,6 +33,11 @@ from sheets_sync import (  # noqa: F401
     sync_event_to_sheets,
     sync_payment_to_sheets,
 )
+from email_client import (  # noqa: F401
+    send_payment_approved_email,
+    send_payment_rejected_email,
+    send_membership_activated_email,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +293,21 @@ def approve_event(event_id: str, admin_email: str, notes: str = '') -> Dict[str,
             period_end=result.get('new_expiration', ''),
         )
 
+    # Send approval email to member
+    try:
+        member = get_member(event.get('MemberID', ''))
+        if member:
+            send_payment_approved_email(
+                to=member.get('Email', ''),
+                first_name=member.get('FirstName', 'Member'),
+                member_id=event.get('MemberID', ''),
+                payment_intent=event.get('PaymentIntent', ''),
+                expires_at=result.get('new_expiration', ''),
+                amount=float(event.get('Amount', 0)),
+            )
+    except Exception as e:
+        print(f'[approve_event] Email send failed for {event_id}: {e}')
+
     result['event_id'] = event_id
     result['status'] = 'approved'
     return result
@@ -328,6 +348,20 @@ def reject_event(event_id: str, admin_email: str, notes: str = '') -> Dict[str, 
     ])
 
     sync_event_to_sheets(event_id, 'rejected', admin_email)
+
+    # Send rejection email to member
+    try:
+        member = get_member(event.get('MemberID', ''))
+        if member:
+            send_payment_rejected_email(
+                to=member.get('Email', ''),
+                first_name=member.get('FirstName', 'Member'),
+                member_id=event.get('MemberID', ''),
+                reason=notes or 'Payment could not be verified.',
+                reference_id=event_id,
+            )
+    except Exception as e:
+        print(f'[reject_event] Email send failed for {event_id}: {e}')
 
     return {'ok': True, 'event_id': event_id, 'status': 'rejected'}
 

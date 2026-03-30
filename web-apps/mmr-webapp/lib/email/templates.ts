@@ -278,3 +278,228 @@ export function passwordResetEmailHtml(params: {
     </div>
   `)
 }
+
+// ── Payment rejected ──────────────────────────────────────────────────────────
+
+export function paymentRejectedEmailHtml(params: {
+  firstName:   string
+  planLabel:   string
+  amount:      number
+  referenceId: string
+  reason?:     string
+}): string {
+  const { firstName, planLabel, amount, referenceId, reason } = params
+  return wrap(firstName, `
+    <h2 style="color:#c0502a;margin:0 0 8px;">Payment couldn't be verified</h2>
+    <p style="color:#555;margin:0 0 24px;">
+      Hi ${firstName}, unfortunately we were unable to verify your payment for your
+      <strong>${planLabel}</strong> membership.
+    </p>
+
+    <div style="background:#fff8f5;border:1px solid #fdddd3;border-radius:12px;padding:20px;
+                margin-bottom:24px;">
+      <table style="width:100%;border-collapse:collapse;font-family:sans-serif;">
+        <tr>
+          <td style="font-size:13px;color:#888;padding-bottom:8px;">Plan</td>
+          <td style="font-size:14px;font-weight:600;color:#333;text-align:right;padding-bottom:8px;">
+            ${planLabel}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size:13px;color:#888;padding:8px 0;">Amount</td>
+          <td style="font-size:14px;font-weight:600;color:#333;text-align:right;padding:8px 0;">
+            $${amount}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size:13px;color:#888;padding-top:8px;">Reference</td>
+          <td style="font-size:14px;font-family:monospace;color:#c0502a;text-align:right;padding-top:8px;">
+            ${referenceId}
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    ${reason ? `
+    <div style="background:#fef3e2;border-left:3px solid #E86033;padding:16px;margin-bottom:24px;">
+      <p style="font-size:13px;color:#666;margin:0;"><strong>Reason:</strong> ${reason}</p>
+    </div>
+    ` : ''}
+
+    <p style="color:#555;margin:0 0 16px;">
+      Please check that your payment was sent correctly, then resubmit your payment information:
+    </p>
+    <a href="${PORTAL}/payment"
+       style="display:inline-block;background:#E86033;color:#ffffff;padding:12px 28px;
+              border-radius:99px;text-decoration:none;font-weight:600;font-size:15px;">
+      Resubmit Payment →
+    </a>
+
+    <p style="color:#555;margin:24px 0 0;">
+      If you need help or have questions about your payment, please reply to this email or contact us at
+      <a href="mailto:${FEEDBACK}" style="color:#1F497D;">${FEEDBACK}</a>.
+    </p>
+  `)
+}
+
+// ── Payment expired ───────────────────────────────────────────────────────────
+
+export function paymentExpiredEmailHtml(params: {
+  firstName:   string
+  referenceId: string
+  expiresAt:   string
+}): string {
+  const { firstName, referenceId, expiresAt } = params
+  const expiry = new Date(expiresAt).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  })
+  return wrap(firstName, `
+    <h2 style="color:#c0502a;margin:0 0 8px;">⏰ Payment submission expired</h2>
+    <p style="color:#555;margin:0 0 24px;">
+      Hi ${firstName}, your payment submission (Ref <code style="background:#f5f5f5;padding:2px 6px;
+      border-radius:4px;font-family:monospace;">${referenceId}</code>) expired on <strong>${expiry}</strong>
+      before we could verify it.
+    </p>
+
+    <div style="background:#fef3e2;border:1px solid #fdddd3;border-radius:12px;padding:20px;
+                margin-bottom:24px;text-align:center;">
+      <p style="margin:0;font-size:13px;color:#c0502a;">Expired on</p>
+      <p style="margin:6px 0 0;font-size:18px;font-weight:700;color:#E86033;">${expiry}</p>
+    </div>
+
+    <p style="color:#555;margin:0 0 16px;">
+      If you've already paid, please resubmit your payment proof so we can activate your membership.
+      If you haven't paid yet, you can submit your payment now:
+    </p>
+    <a href="${PORTAL}/payment"
+       style="display:inline-block;background:#E86033;color:#ffffff;padding:12px 28px;
+              border-radius:99px;text-decoration:none;font-weight:600;font-size:15px;">
+      Submit or Resubmit Payment →
+    </a>
+
+    <p style="color:#555;margin:24px 0 0;">
+      If you have any questions, just reply to this email or reach out to
+      <a href="mailto:${FEEDBACK}" style="color:#1F497D;">${FEEDBACK}</a>.
+    </p>
+  `)
+}
+
+// ── Expiration repaired ───────────────────────────────────────────────────────
+
+export function expirationRepairedEmailHtml(params: {
+  firstName:   string
+  memberId:    string
+  expiresAt:   string
+  planLabel:   string
+}): string {
+  const { firstName, memberId, expiresAt, planLabel } = params
+  const expiry = new Date(expiresAt).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  })
+  return wrap(firstName, `
+    <h2 style="color:#1F497D;margin:0 0 8px;">✓ Membership record updated</h2>
+    <p style="color:#555;margin:0 0 24px;">
+      Hi ${firstName}, we performed a routine verification of your membership record and made a small update.
+      No action is needed from you.
+    </p>
+
+    <div style="background:#f0f8f4;border:1px solid #c8e6c9;border-radius:12px;padding:20px;
+                margin-bottom:24px;">
+      <table style="width:100%;border-collapse:collapse;font-family:sans-serif;">
+        <tr>
+          <td style="font-size:13px;color:#888;padding-bottom:8px;">Member ID</td>
+          <td style="font-size:14px;font-weight:600;color:#2e7d32;text-align:right;padding-bottom:8px;">
+            ${memberId}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size:13px;color:#888;padding:8px 0;">Plan</td>
+          <td style="font-size:14px;font-weight:600;color:#333;text-align:right;padding:8px 0;">
+            ${planLabel}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size:13px;color:#888;padding-top:8px;">Valid until</td>
+          <td style="font-size:14px;font-weight:700;color:#2e7d32;text-align:right;padding-top:8px;">
+            ${expiry}
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="color:#555;margin:0 0 16px;">
+      We've corrected your membership expiration date to ensure it reflects your actual payment record.
+      Your membership is valid and you have full access to all member benefits.
+    </p>
+    <a href="${PORTAL}"
+       style="display:inline-block;background:#1F497D;color:#ffffff;padding:12px 28px;
+              border-radius:99px;text-decoration:none;font-weight:600;font-size:15px;">
+      View My Portal →
+    </a>
+
+    <p style="color:#555;margin:24px 0 0;">
+      If you think this is incorrect or have any questions, just reply to this email.
+    </p>
+  `)
+}
+
+// ── Auto-match confirmation ───────────────────────────────────────────────────
+
+export function autoMatchConfirmationEmailHtml(params: {
+  firstName:     string
+  memberId:      string
+  paymentIntent: string
+  expiresAt:     string
+  amount:        number
+}): string {
+  const { firstName, memberId, paymentIntent, expiresAt, amount } = params
+  const expiry = new Date(expiresAt).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  })
+  return wrap(firstName, `
+    <h2 style="color:#2e7d32;margin:0 0 8px;">✅ Payment matched & membership updated</h2>
+    <p style="color:#555;margin:0 0 24px;">
+      Hi ${firstName}, we found your <strong>${paymentIntent}</strong> payment ($${amount}) and have automatically
+      updated your membership. You're all set!
+    </p>
+
+    <div style="background:#f0f8f4;border:1px solid #c8e6c9;border-radius:12px;padding:20px;
+                margin-bottom:24px;">
+      <table style="width:100%;border-collapse:collapse;font-family:sans-serif;">
+        <tr>
+          <td style="font-size:13px;color:#888;padding-bottom:8px;">Member ID</td>
+          <td style="font-size:18px;font-weight:800;color:#2e7d32;text-align:right;padding-bottom:8px;">
+            ${memberId}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size:13px;color:#888;padding:8px 0;">Plan</td>
+          <td style="font-size:14px;font-weight:600;color:#333;text-align:right;padding:8px 0;">
+            ${paymentIntent}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size:13px;color:#888;padding-top:8px;">Valid until</td>
+          <td style="font-size:14px;font-weight:700;color:#2e7d32;text-align:right;padding-top:8px;">
+            ${expiry}
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="color:#555;margin:0 0 16px;">
+      Your membership is now active and you have access to all member benefits including club events,
+      race results, and team photos.
+    </p>
+    <a href="${PORTAL}"
+       style="display:inline-block;background:#1F497D;color:#ffffff;padding:12px 28px;
+              border-radius:99px;text-decoration:none;font-weight:600;font-size:15px;">
+      Go to My Portal →
+    </a>
+
+    <p style="font-size:13px;color:#888;margin:24px 0 0;">
+      We matched your payment automatically using your Member ID. If you think this is incorrect,
+      please reply to this email and we'll sort it out right away.
+    </p>
+  `)
+}
