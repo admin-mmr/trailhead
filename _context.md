@@ -1,33 +1,33 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-30 20:26 UTC
+Last updated: 2026-03-30 20:28 UTC
 Last commit: (pending)
 
 ---
 
 ## Current state
 
-- Repo: Progress bar flickering fixed; pace-based sharding tool created
-- mmr-admin: ProgressModal separated state (stepStatus vs jobStatus) to prevent sync info flicker
-- probe_finishers.py: Added pace filters + pace extraction from first item
-- split_by_pace.py: New standalone script for binary-splitting large age+gender groups by pace
+- Repo: Progress bar fixed; pace-based auto-sharding integrated into api_sync.py Step 1
+- mmr-admin: ProgressModal cleaned up; api_sync.py now uses binary pace-splitting for >1000 age+gender combos
+- probe_finishers.py: Supports pace filters + pace extraction
+- split_by_pace.py: Available as standalone exploration tool
 - Email, Web, Photo, DB: All systems from prior sessions still functional
 
 ## Open items
 
-- Integrate split_by_pace logic into api_sync.py for auto-sharding >500 groups
-- Test pace splitting on H2026, M2025 events for various age+gender combos
-- Deploy and validate on staging
+- Test pace splitting on staging (H2026, M2025) for various age+gender combos
+- Monitor API response times and queue load with new splitting logic
+- Validate all runners are fetched (no duplicates or gaps)
 
 ## Session log
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
 
-### 2026-03-30 20:26 UTC — Fix progress modal flicker; add binary pace splitting tool
+### 2026-03-30 20:28 UTC — Integrate pace splitting into api_sync.py Step 1
 
-- Changed: `mmr-admin/templates/index.html` — renamed jobStatus → stepStatus in ProgressModal to separate step progress from unrelated sync job info (fixes flickering "No sync job" message). `mmr-admin/probe_finishers.py` — added pace filters (paceFrom, paceTo) + pace extraction from first API item result. Created `mmr-admin/split_by_pace.py` — new script that queries max pace (slowest runner in group), then recursively binary-splits pace ranges by MM:SS until each shard ≤500 items. Pace formats normalized to 00:MM:SS for API consistency.
-- Status: Complete. Progress modal clean, split_by_pace ready for manual exploration.
-- Next: Integrate split_by_pace into api_sync.py Step 1 to auto-shard large groups; test on staging.
+- Changed: `mmr-admin/api_sync.py` — added helpers `_pace_to_seconds()`, `_seconds_to_pace()`, and `_split_by_pace()` for recursive pace-range binary-splitting. Updated `_probe()` and `_upsert_pages()` signatures to accept pace_min/pace_max filters. Modified `_divide_and_conquer()` to call `_split_by_pace()` when age+gender combo still >1000 after all age/gender splits. When triggered, estimates max pace as 00:20:00 and recursively halves pace ranges until each shard ≤500 items.
+- Status: Complete. api_sync.py Step 1 now auto-handles >1000 groups via pace-splitting.
+- Next: Test on H2026/M2025 staging; validate fetch completeness; monitor queue/API times.
 
 ### 2026-03-30 04:56 UTC — Implement complete email system for Azure migration
 - Changed: Phase 1 (mmr-webapp) — `lib/email/client.ts` added CC parameter support + updated 3 email functions (welcome, application, renewal) to CC admin@mmrunners.org. `lib/email/templates.ts` added 4 new templates (paymentRejected, paymentExpired, expirationRepaired, autoMatchConfirmation). Phase 2 (mmr-admin) — created `email_client.py` with Azure Communication Services integration + `email_templates.py` with 3 payment templates. Integrated emails into `payment_actions.py` approve/reject functions. Updated 9 GitHub Actions workflows to CC admin@mmrunners.org. Created comprehensive documentation (5 markdown files).

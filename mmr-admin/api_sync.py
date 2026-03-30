@@ -162,7 +162,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
         from nyrr_api import NyrrFinisher
 
-        def _probe(age_from=None, age_to=None, gender=None, team_code=None, sort_desc=False):
+        def _probe(age_from=None, age_to=None, gender=None, team_code=None, pace_min=None, pace_max=None, sort_column="bib", sort_desc=False):
             """Single pageSize=1 call to get totalItems for a filter combination."""
             data = client._post("runners/finishers-filter", {
                 "eventCode": event_code,
@@ -170,14 +170,16 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                 "ageTo": age_to,
                 "gender": gender,
                 "teamCode": team_code,
-                "sortColumn": "bib",
+                "paceFrom": pace_min,
+                "paceTo": pace_max,
+                "sortColumn": sort_column,
                 "sortDescending": sort_desc,
                 "pageIndex": 1,
                 "pageSize": 1,
             })
             return data.get("totalItems", 0)
 
-        def _upsert_pages(label, age_from=None, age_to=None, gender=None, team_code=None, sort_desc=False):
+        def _upsert_pages(label, age_from=None, age_to=None, gender=None, team_code=None, pace_min=None, pace_max=None, sort_desc=False):
             """Fetch all pages for a given filter set and upsert to DB."""
             nonlocal rows_written, pages_written
             for page_num, page_raw in enumerate(client._paginate_streaming(
@@ -188,6 +190,8 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                     "ageTo": age_to,
                     "gender": gender,
                     "teamCode": team_code,
+                    "paceFrom": pace_min,
+                    "paceTo": pace_max,
                     "sortColumn": "bib",
                     "sortDescending": sort_desc,
                 },
@@ -235,6 +239,51 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
                 logger.debug(f"  └─ [{label}] page {page_num}: {len(row_tuples)} rows in {batch_elapsed:.3f}s, total={rows_written}")
 
+        def _pace_to_seconds(pace_str: str) -> int:
+            """Convert MM:SS or 00:MM:SS pace to seconds."""
+            parts = pace_str.split(':')
+            if len(parts) == 2:
+                m, s = int(parts[0]), int(parts[1])
+                return m * 60 + s
+            elif len(parts) == 3:
+                h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+                return h * 3600 + m * 60 + s
+            return 0
+
+        def _seconds_to_pace(seconds: int) -> str:
+            """Convert seconds to 00:MM:SS pace."""
+            m = seconds // 60
+            s = seconds % 60
+            return f"00:{m:02d}:{s:02d}"
+
+        def _split_by_pace(age_from: int, age_to: int, gender: str, max_pace: str, depth: int = 0):
+            """
+            Recursively binary-split by pace until each shard <= 500 items.
+            Called when age+gender combo is still >1000 after age/gender splitting.
+            """
+            indent = "  " * (depth + 3)
+
+            # Base case: shard is small enough
+            total_pace = _probe(age_from=age_from, age_to=age_to, gender=gender, pace_max=max_pace)
+            label_pace = f"age {age_from}-{age_to} gender={gender} pace 00:00-{max_pace}"
+            logger.info(f"{indent}└─ {label_pace}: {total_pace} items")
+
+            if total_pace == 0:
+                return
+
+            if total_pace <= 500:
+                _upsert_pages(label_pace, age_from=age_from, age_to=age_to, gender=gender,
+                             pace_min="00:00", pace_max=max_pace, sort_desc=False)
+            else:
+                # Recursive case: split by pace
+                logger.info(f"{indent}└─ Splitting pace range by half...")
+                max_sec = _pace_to_seconds(max_pace)
+                mid_sec = max_sec // 2
+                mid_pace = _seconds_to_pace(mid_sec)
+
+                _split_by_pace(age_from, age_to, gender, mid_pace, depth + 1)
+                _split_by_pace(age_from, age_to, gender, max_pace, depth + 1)
+
         def _divide_and_conquer(age_from: int, age_to: int, gender=None, depth=0):
             """
             Recursively split age range until totalItems <= 1000, then fetch.
@@ -263,10 +312,12 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
             elif age_from == age_to:
                 # Can't split further by age — break by gender
                 if gender is not None:
-                    # Already split by gender and still >1000 — log warning, fetch anyway
-                    logger.warning(f"{indent}⚠️  age={age_from} gender={gender} still {total} items — fetching with dual-pass anyway")
-                    _upsert_pages(label_base + " asc",  age_from=age_from, age_to=age_to, gender=gender, sort_desc=False)
-                    _upsert_pages(label_base + " desc", age_from=age_from, age_to=age_to, gender=gender, sort_desc=True)
+                    # Already split by gender and still >1000 — split by pace
+                    logger.info(f"{indent}⚠️  age={age_from} gender={gender} still {total} items — splitting by pace...")
+                    # Use fallback max pace (typical marathon: 20:00 min/mile)
+                    max_pace = "00:20:00"
+                    logger.info(f"{indent}└─ Max pace estimate: {max_pace}")
+                    _split_by_pace(age_from, age_to, gender, max_pace, depth=depth + 1)
                 else:
                     logger.info(f"{indent}└─ Splitting age={age_from} by gender...")
                     for g in ("M", "W", "X"):
