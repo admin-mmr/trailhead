@@ -630,106 +630,77 @@ const AdminPanel = ({ userRole, userEmail }) => {
 };
 
 // ═══════════════════════════════════════════════════
-// Progress Modal Component
+// SimpleProgressModal — polling status from backend
 // ═══════════════════════════════════════════════════
-const ProgressModal = ({ isOpen, title, stepStatus }) => {
-  if (!isOpen) return null;
+const SimpleProgressModal = ({ isOpen, eventCode, onClose }) => {
+  const [status, setStatus] = useState(null);
+  const [pollingId, setPollingId] = useState(null);
 
-  const steps = [
-    { id: 'step1_finishers', label: 'Step 1: Fetching finishers' },
-    { id: 'step2_teams', label: 'Step 2: Enumerating teams' },
-    { id: 'step3_backfill', label: 'Step 3: Backfilling team codes' },
-  ];
-
-  const getStepStatus = (stepId) => {
-    if (!stepStatus) return 'pending';
-    const currentStep = stepStatus.step || '';
-
-    // Step 1
-    if (stepId === 'step1_finishers') {
-      if (currentStep === 'step1_finishers') return 'active';
-      if (currentStep === 'step2_teams' || currentStep === 'step3_backfill') return 'completed';
-      return 'pending';
+  useEffect(() => {
+    if (!isOpen || !eventCode) {
+      if (pollingId) clearInterval(pollingId);
+      return;
     }
 
-    // Step 2
-    if (stepId === 'step2_teams') {
-      if (currentStep === 'step2_teams') return 'active';
-      if (currentStep === 'step3_backfill') return 'completed';
-      return 'pending';
-    }
+    const poll = setInterval(async () => {
+      try {
+        const s = await api(`/api/load/${eventCode}/status`);
+        setStatus(s);
+        if (s.status === 'done' || s.status === 'error') {
+          clearInterval(poll);
+          setTimeout(onClose, 1000); // Close after 1 sec to show final state
+        }
+      } catch (e) {
+        console.error('Status poll error:', e);
+      }
+    }, 1500); // Poll every 1.5 seconds
 
-    // Step 3
-    if (stepId === 'step3_backfill') {
-      if (currentStep === 'step3_backfill') return 'active';
-      if (jobStatus.status === 'done') return 'completed';
-      return 'pending';
-    }
+    setPollingId(poll);
+    return () => clearInterval(poll);
+  }, [isOpen, eventCode]);
 
-    return 'pending';
-  };
+  if (!isOpen || !status) return null;
 
-  const completedCount = steps.filter(s => getStepStatus(s.id) === 'completed').length;
-  const overallProgress = ((completedCount + (steps.find(s => getStepStatus(s.id) === 'active') ? 0.5 : 0)) / steps.length) * 100;
-
-  const renderStepIcon = (status) => {
-    if (status === 'completed') return '✓';
-    if (status === 'active') return '↻';
-    return '○';
-  };
-
-  const getDetailText = (stepId) => {
-    if (!stepStatus) return '';
-
-    if (stepId === 'step1_finishers') {
-      return stepStatus.rows_written ? `${stepStatus.rows_written} runners fetched` : 'Fetching...';
-    }
-    if (stepId === 'step2_teams') {
-      return stepStatus.teams_processed ? `${stepStatus.teams_processed} teams found` : 'Searching...';
-    }
-    if (stepId === 'step3_backfill') {
-      return stepStatus.teams_processed ? `${stepStatus.teams_processed} teams processed` : 'Processing...';
-    }
-    return '';
-  };
+  const step = status.step || 'unknown';
+  const stepNum = step.includes('step1') ? 1 : step.includes('step2') ? 2 : step.includes('step3') ? 3 : 0;
+  const message = status.message || 'Processing...';
+  const rowsWritten = status.rows_written || 0;
+  const teamsProcessed = status.teams_processed || 0;
+  const isDone = status.status === 'done';
+  const isError = status.status === 'error';
 
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <div className="modal-title">{title}</div>
-        <div className="modal-subtitle">{stepStatus?.message || 'Processing...'}</div>
+        <div className="modal-title">{isDone ? '✅ Done!' : isError ? '❌ Error' : '⏳ Loading...'}</div>
+        <div className="modal-subtitle">{message}</div>
 
-        <div className="progress-container">
-          <div className="progress-bar-container">
-            <div className="progress-bar-fill" style={{ width: `${Math.min(overallProgress, 100)}%` }} />
+        <div style={{ marginBottom: 20, fontSize: 13, color: 'var(--text2)' }}>
+          <div style={{ marginBottom: 8 }}>
+            <strong>Step {stepNum}:</strong> {
+              stepNum === 1 ? 'Fetching runners' :
+              stepNum === 2 ? 'Fetching teams' :
+              stepNum === 3 ? 'Backfilling team codes' :
+              'Initializing'
+            }
           </div>
-          <div className="progress-text">{Math.round(overallProgress)}%</div>
+          {rowsWritten > 0 && <div style={{ marginBottom: 4 }}>📊 Runners: {rowsWritten.toLocaleString()}</div>}
+          {teamsProcessed > 0 && <div>👥 Teams processed: {teamsProcessed}</div>}
         </div>
 
-        <div className="steps-container">
-          {steps.map((step) => {
-            const status = getStepStatus(step.id);
-            return (
-              <div key={step.id} className="step">
-                <div className={`step-icon ${status}`}>
-                  {renderStepIcon(status)}
-                </div>
-                <div className="step-content">
-                  <div className="step-label">{step.label}</div>
-                  {(status === 'active' || status === 'completed') && (
-                    <div className="step-detail">{getDetailText(step.id)}</div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {!isDone && !isError && (
+          <div className="loading-dots">
+            <div className="loading-dot" />
+            <div className="loading-dot" />
+            <div className="loading-dot" />
+          </div>
+        )}
 
-        <div className="loading-dots">
-          <div className="loading-dot" />
-          <div className="loading-dot" />
-          <div className="loading-dot" />
-        </div>
+        {(isDone || isError) && (
+          <button className="btn btn-primary" onClick={onClose} style={{ width: '100%', marginTop: 16 }}>
+            Close
+          </button>
+        )}
       </div>
     </div>
   );
@@ -747,9 +718,7 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
   const [toast, setToast] = useState('');
   const [loadingIds, setLoadingIds] = useState({});
   const [dbError, setDbError] = useState(false);
-  const [openDropdown, setOpenDropdown] = useState(null);
-  const [forceFlags, setForceFlags] = useState({});
-  const [progressModal, setProgressModal] = useState({ isOpen: false, eventCode: null, stepStatus: null });
+  const [progressModal, setProgressModal] = useState({ isOpen: false, eventCode: null });
 
   const loadStats = () => api('/api/stats').then(r => {
     if (r.db_error) setDbError(true);
@@ -788,41 +757,31 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
     );
   }
 
-  const clearRunners = async (eventId, eventCode) => {
-    if (!window.confirm(`Delete ALL runners for ${eventCode}? This cannot be undone.`)) return;
-    const r = await api(`/api/events/${eventId}/runners`, { method: 'DELETE' });
-    setToast(r.ok ? `Cleared ${r.deleted} runners for ${eventCode}` : (r.error || 'Clear failed'));
-    if (r.ok) { loadEvents(); loadStats(); }
-  };
-
-  const triggerLoad = async (eventId, eventCode, forceReload = false) => {
+  const triggerLoad = async (eventId, eventCode) => {
     setLoadingIds(prev => ({ ...prev, [eventId]: true }));
-    setProgressModal({ isOpen: true, eventCode, stepStatus: null });
+    setProgressModal({ isOpen: true, eventCode });
 
-    const r = await api(`/api/load/${eventId}`, {
-      method: 'POST',
-      body: JSON.stringify({ force_reload: forceReload }),
-    });
-    if (r.ok) {
-      setToast(`Loading started for ${eventCode}...`);
-      // Poll status more frequently
-      const poll = setInterval(async () => {
-        const s = await api(`/api/load/${eventCode}/status`);
-        setProgressModal(prev => ({ ...prev, stepStatus: s }));
+    try {
+      const r = await api(`/api/load/${eventId}`, {
+        method: 'POST',
+        body: JSON.stringify({ force_reload: true }),
+      });
 
-        if (s.status === 'done' || s.status === 'error') {
-          clearInterval(poll);
-          setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
-          setProgressModal({ isOpen: false, eventCode: null, stepStatus: null });
-          setToast(s.message || `${eventCode}: ${s.status}`);
-          loadEvents();
-          loadStats();
-        }
-      }, 1000); // Poll every 1 second instead of 2
-    } else {
+      if (!r.ok) {
+        setToast(r.error || 'Load failed');
+        setProgressModal({ isOpen: false, eventCode: null });
+      }
+      // Modal polling will auto-close when status becomes 'done' or 'error'
+    } catch (e) {
+      setToast('Load error: ' + e.message);
+      setProgressModal({ isOpen: false, eventCode: null });
+    } finally {
       setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
-      setProgressModal({ isOpen: false, eventCode: null, stepStatus: null });
-      setToast(r.error || 'Load failed');
+      // Refresh events/stats after modal closes
+      setTimeout(() => {
+        loadEvents();
+        loadStats();
+      }, 1500);
     }
   };
 
@@ -855,11 +814,6 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
 
   return (
     <div>
-      <ProgressModal
-        isOpen={progressModal.isOpen}
-        title={`Loading ${progressModal.eventCode}...`}
-        stepStatus={progressModal.stepStatus}
-      />
 
       {stats && (
         <div className="stats-grid">
@@ -940,37 +894,17 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
                   {isPast && (
                     <td>
                       {(() => {
-                        const done = ev.processing_status === 'Completed';
                         const busy = !!loadingIds[ev.id];
-                        const forceKey = `force_${ev.id}`;
-                        const isForce = !!forceFlags[forceKey];
                         return (
-                          <div style={{ position: 'relative', display: 'inline-block' }}>
-                            <button
-                              className={`btn btn-sm ${done ? 'btn-outline' : 'btn-green'}`}
-                              disabled={busy}
-                              onClick={() => setOpenDropdown(openDropdown === ev.id ? null : ev.id)}
-                            >
-                              {busy
-                                ? <><span className="spinner" />{done ? ' Re-syncing…' : ' Loading…'}</>
-                                : <>{done ? '↻ Re-sync' : '▶ Load'} ▼</>}
-                            </button>
-                            {openDropdown === ev.id && (
-                              <div className="dropdown-menu">
-                                <label className="dropdown-check">
-                                  <input type="checkbox" checked={isForce}
-                                    onChange={e => setForceFlags(f => ({ ...f, [forceKey]: e.target.checked }))} />
-                                  Delete existing first (reload from scratch)
-                                </label>
-                                <div className="dropdown-item" onClick={() => { triggerLoad(ev.id, ev.event_code, isForce); setOpenDropdown(null); }}>
-                                  ✅ Sync all runners + teams
-                                </div>
-                                <div className="dropdown-item" style={{ color: 'var(--danger, #e55)' }} onClick={() => { setOpenDropdown(null); clearRunners(ev.id, ev.event_code); }}>
-                                  🗑 Clear all runners
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <button
+                            className={`btn btn-sm btn-green`}
+                            disabled={busy}
+                            onClick={() => triggerLoad(ev.id, ev.event_code)}
+                          >
+                            {busy
+                              ? <><span className="spinner" /> Loading…</>
+                              : <>▶ Load</>}
+                          </button>
                         );
                       })()}
                     </td>
@@ -1002,6 +936,11 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
         </div>
       </div>
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
+      <SimpleProgressModal
+        isOpen={progressModal.isOpen}
+        eventCode={progressModal.eventCode}
+        onClose={() => setProgressModal({ isOpen: false, eventCode: null })}
+      />
     </div>
   );
 };

@@ -408,19 +408,81 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         total_inserted = 0
         TEAM_BATCH_SIZE = 100  # Batch updates/inserts to avoid lock timeouts
 
-        for idx, team in enumerate(teams):
-            team_code = team.team_code
-            team_start = time.time()
+        # Helper: fetch team runners, optionally filtered by age/gender
+        def _get_team_runners_filtered(team_code_param, age_from=None, age_to=None, gender=None):
+            """
+            Fetch team runners with optional age/gender filtering.
+            Note: NYRR API doesn't support these filters directly, so we fetch all and filter locally.
+            For large teams (>500), this becomes problematic. We paginate locally instead.
+            """
+            return client.get_team_runners(event_code, team_code_param)
 
-            logger.debug(f"  └─ Team {idx+1}/{len(teams)}: fetching runners for team_code={team_code}...")
-            team_runners = client.get_team_runners(event_code, team_code)
-            logger.debug(f"    └─ Got {len(team_runners)} runners for {team_code}")
+        # Helper: split large teams by age+gender
+        def _process_team_runners(team_code_param, all_runners, depth=0):
+            """
+            If team has >500 runners, recursively split by age and gender.
+            """
+            indent = "    " * depth
 
-            updates_in_team = 0
-            inserts_in_team = 0
+            if len(all_runners) <= 500:
+                # Base case: process directly
+                logger.debug(f"{indent}├─ Processing {len(all_runners)} runners for {team_code_param}")
+                return _upsert_team_runners(team_code_param, all_runners)
+
+            # Recursive case: split by gender first
+            logger.info(f"{indent}├─ {team_code_param}: {len(all_runners)} runners > 500, splitting by gender...")
+
+            updates = 0
+            inserts = 0
+
+            # Split by gender (M, W, X, None)
+            genders = {}
+            for runner in all_runners:
+                g = runner.gender or 'null'
+                if g not in genders:
+                    genders[g] = []
+                genders[g].append(runner)
+
+            for gender in ('M', 'W', 'X', 'null'):
+                if gender in genders and genders[gender]:
+                    gender_runners = genders[gender]
+                    logger.debug(f"{indent}│ └─ Gender {gender if gender != 'null' else 'unspecified'}: {len(gender_runners)} runners")
+
+                    if len(gender_runners) <= 500:
+                        u, i = _upsert_team_runners(team_code_param, gender_runners)
+                        updates += u
+                        inserts += i
+                    else:
+                        # Further split by age within this gender
+                        logger.info(f"{indent}│   └─ Still > 500, splitting by age groups...")
+                        age_groups = {}
+                        for runner in gender_runners:
+                            age = runner.age or 0
+                            age_group = (age // 5) * 5  # Group by 5-year spans
+                            if age_group not in age_groups:
+                                age_groups[age_group] = []
+                            age_groups[age_group].append(runner)
+
+                        for age_group in sorted(age_groups.keys()):
+                            age_runners = age_groups[age_group]
+                            logger.debug(f"{indent}│   ├─ Age {age_group}-{age_group+4}: {len(age_runners)} runners")
+                            u, i = _upsert_team_runners(team_code_param, age_runners)
+                            updates += u
+                            inserts += i
+
+            return updates, inserts
+
+        # Helper: upsert a list of team runners to DB
+        def _upsert_team_runners(team_code_param, runners_list):
+            """Batch upsert team runners. Returns (updates_count, inserts_count)."""
+            if not runners_list:
+                return 0, 0
+
+            updates_count = 0
+            inserts_count = 0
 
             # Batch updates first
-            update_bibs = [(team_code, event_id, runner.bib) for runner in team_runners]
+            update_bibs = [(team_code_param, event_id, runner.bib) for runner in runners_list]
             for batch_idx in range(0, len(update_bibs), TEAM_BATCH_SIZE):
                 batch = update_bibs[batch_idx : batch_idx + TEAM_BATCH_SIZE]
                 try:
@@ -432,15 +494,15 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                         """,
                         batch
                     )
-                    updates_in_team += cursor.rowcount
+                    updates_count += cursor.rowcount
                     conn.commit()
                 except Exception as e:
-                    logger.warning(f"    └─ Batch update error for {team_code}: {e}")
+                    logger.warning(f"    └─ Batch update error for {team_code_param}: {e}")
                     conn.rollback()
 
-            # Collect runners that need INSERT (those that weren't updated)
+            # Collect runners that need INSERT
             insert_batch = []
-            for runner in team_runners:
+            for runner in runners_list:
                 cursor.execute(
                     "SELECT COUNT(*) FROM nyrr_event_runners WHERE nyrr_event_id = %s AND bib_number = %s",
                     (event_id, runner.bib)
@@ -465,8 +527,8 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                         getattr(runner, 'age_grade_time', '') or '',
                         getattr(runner, 'age_grade_place', None),
                         getattr(runner, 'age_grade_percent', None),
-                        team_code,
-                        team_code
+                        team_code_param,
+                        team_code_param
                     ))
 
             # Batch inserts
@@ -487,11 +549,24 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                             """,
                             batch
                         )
-                        inserts_in_team += cursor.rowcount
+                        inserts_count += cursor.rowcount
                         conn.commit()
                     except Exception as e:
-                        logger.warning(f"    └─ Batch insert error for {team_code}: {e}")
+                        logger.warning(f"    └─ Batch insert error for {team_code_param}: {e}")
                         conn.rollback()
+
+            return updates_count, inserts_count
+
+        for idx, team in enumerate(teams):
+            team_code = team.team_code
+            team_start = time.time()
+
+            logger.debug(f"  └─ Team {idx+1}/{len(teams)}: fetching runners for team_code={team_code}...")
+            team_runners = client.get_team_runners(event_code, team_code)
+            logger.debug(f"    └─ Got {len(team_runners)} runners for {team_code}")
+
+            # Process runners, splitting by age+gender if >500
+            updates_in_team, inserts_in_team = _process_team_runners(team_code, team_runners)
 
             total_backfilled += updates_in_team
             total_inserted += inserts_in_team

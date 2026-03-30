@@ -23,6 +23,13 @@ Last commit: (pending)
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
 
+### 2026-03-30 23:30 UTC — Restore progress modal + add team size splitting
+
+- Changed: `mmr-admin/templates/index.html` — added `SimpleProgressModal` component with 1.5-second polling on `/api/load/<event_code>/status`. Shows step, runner count, teams processed. Auto-closes when job done/error. Updated `triggerLoad()` to open modal and refresh events after completion.
+- Changed: `mmr-admin/api_sync.py` Step 3 — added `_process_team_runners()` helper to split teams >500 by gender first, then by 5-year age groups if needed. Uses existing `_upsert_team_runners()` batching logic. Handles large clubs that exceed pagination limits.
+- Status: Complete. Progress modal restored; large teams now split intelligently to avoid NYRR API pagination issues.
+- Next: Test on staging with H2026/M2025 events. Verify no load timeout and team_code backfill completeness.
+
 ### 2026-03-30 20:28 UTC — Integrate pace splitting into api_sync.py Step 1
 
 - Changed: `mmr-admin/api_sync.py` — added helpers `_pace_to_seconds()`, `_seconds_to_pace()`, and `_split_by_pace()` for recursive pace-range binary-splitting. Updated `_probe()` and `_upsert_pages()` signatures to accept pace_min/pace_max filters. Modified `_divide_and_conquer()` to call `_split_by_pace()` when age+gender combo still >1000 after all age/gender splits. When triggered, estimates max pace as 00:20:00 and recursively halves pace ranges until each shard ≤500 items.
