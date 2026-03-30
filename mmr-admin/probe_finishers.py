@@ -43,6 +43,12 @@ def probe_totalItems(
     state_province: Optional[str] = None,
     country_code: Optional[str] = None,
     team_code: Optional[str] = None,
+    age_graded_perf_min: Optional[float] = None,
+    age_graded_perf_max: Optional[float] = None,
+    age_graded_place_min: Optional[int] = None,
+    age_graded_place_max: Optional[int] = None,
+    pace_min: Optional[str] = None,
+    pace_max: Optional[str] = None,
     sort_column: str = "bib",
     sort_descending: bool = False,
 ) -> Dict[str, Any]:
@@ -59,12 +65,16 @@ def probe_totalItems(
         "eventCode": str,
         "searchString": str | null,
         "gender": "M" | "W" | "X" | null,
-        "ageMinimum": int | null,
-        "ageMaximum": int | null,
+        "ageFrom": int | null,
+        "ageTo": int | null,
         "handicap": str | null,
         "stateProvince": str | null,
         "countryCode": str | null,
         "teamCode": str | null,
+        "ageGradedPerformanceFrom": float | null,
+        "ageGradedPerformanceTo": float | null,
+        "ageGradedPlaceFrom": int | null,
+        "ageGradedPlaceTo": int | null,
         "sortColumn": str,
         "sortDescending": bool,
         "pageIndex": int,
@@ -81,6 +91,12 @@ def probe_totalItems(
         "stateProvince": state_province,
         "countryCode": country_code,
         "teamCode": team_code,
+        "ageGradedPerformanceFrom": age_graded_perf_min,
+        "ageGradedPerformanceTo": age_graded_perf_max,
+        "ageGradedPlaceFrom": age_graded_place_min,
+        "ageGradedPlaceTo": age_graded_place_max,
+        "paceFrom": pace_min,
+        "paceTo": pace_max,
         "sortColumn": sort_column,
         "sortDescending": sort_descending,
         "pageIndex": 1,
@@ -92,15 +108,25 @@ def probe_totalItems(
         total = data.get("totalItems", 0)
         item : Dict[str, Any]=  data.get("items", [{}])[0] if data.get("items") else {}
         gender : str = item.get("gender", "-")
+        # Extract pace from first item if available
+        first_pace = item.get("pace") if item else None
+
         return {
             "totalItems": total,
-            "gender":gender,
+            "gender": gender,
+            "pace": first_pace,
             "filters": {k: v for k, v in {
                 "searchString": search_string,
                 "gender": gender,
                 "ageFrom": age_min,
                 "ageTo": age_max,
                 "handicap": handicap,
+                "ageGradedPerformanceFrom": age_graded_perf_min,
+                "ageGradedPerformanceTo": age_graded_perf_max,
+                "ageGradedPlaceFrom": age_graded_place_min,
+                "ageGradedPlaceTo": age_graded_place_max,
+                "paceFrom": pace_min,
+                "paceTo": pace_max,
             }.items() if v is not None},
             "status": "ok",
         }
@@ -111,9 +137,15 @@ def probe_totalItems(
                 "filters": {k: v for k, v in {
                     "searchString": search_string,
                     "gender": gender,
-                    "ageMinimum": age_min,
-                    "ageMaximum": age_max,
+                    "ageFrom": age_min,
+                    "ageTo": age_max,
                     "handicap": handicap,
+                    "ageGradedPerformanceFrom": age_graded_perf_min,
+                    "ageGradedPerformanceTo": age_graded_perf_max,
+                    "ageGradedPlaceFrom": age_graded_place_min,
+                    "ageGradedPlaceTo": age_graded_place_max,
+                    "paceFrom": pace_min,
+                    "paceTo": pace_max,
                 }.items() if v is not None},
                 "status": "error_400",
             }
@@ -127,7 +159,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 AVAILABLE FILTER FIELDS:
-  searchString, gender, ageMinimum/ageMaximum, handicap, stateProvince, countryCode, teamCode
+  searchString, gender, ageFrom/ageTo, handicap, stateProvince, countryCode, teamCode,
+  ageGradedPerformanceFrom/ageGradedPerformanceTo, ageGradedPlaceFrom/ageGradedPlaceTo
 
 EXAMPLES:
   # Show base totalItems (no filters)
@@ -167,7 +200,13 @@ Use the results to update api_sync.py's large-event strategy.
     parser.add_argument('--state', help='State/province filter (e.g., "NY")')
     parser.add_argument('--country', help='Country code filter (e.g., "US", "GB")')
     parser.add_argument('--team', help='Team code filter')
-    parser.add_argument('--sort-by', choices=['bib', 'overallTime', 'overallPlace', 'firstName', 'lastName','gender'],
+    parser.add_argument('--agp-min', type=float, help='Age graded performance minimum (e.g., 50)')
+    parser.add_argument('--agp-max', type=float, help='Age graded performance maximum')
+    parser.add_argument('--agp-place-min', type=int, help='Age graded place minimum (e.g., 50)')
+    parser.add_argument('--agp-place-max', type=int, help='Age graded place maximum')
+    parser.add_argument('--pace-min', help='Pace minimum (e.g., "00:05:00")')
+    parser.add_argument('--pace-max', help='Pace maximum (e.g., "00:09:00")')
+    parser.add_argument('--sort-by', choices=['bib', 'overallTime', 'overallPlace', 'firstName', 'lastName','gender', 'pace'],
                         default='bib', help='Sort column (default: bib)')
     parser.add_argument('--sort-desc', action='store_true', help='Sort descending')
     parser.add_argument('--filters', action='store_true',
@@ -323,6 +362,12 @@ Use the results to update api_sync.py's large-event strategy.
             state_province=args.state,
             country_code=args.country,
             team_code=args.team,
+            age_graded_perf_min=args.agp_min,
+            age_graded_perf_max=args.agp_max,
+            age_graded_place_min=args.agp_place_min,
+            age_graded_place_max=args.agp_place_max,
+            pace_min=args.pace_min,
+            pace_max=args.pace_max,
             sort_column=args.sort_by,
             sort_descending=args.sort_desc,
         )

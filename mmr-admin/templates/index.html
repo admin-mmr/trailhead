@@ -632,7 +632,7 @@ const AdminPanel = ({ userRole, userEmail }) => {
 // ═══════════════════════════════════════════════════
 // Progress Modal Component
 // ═══════════════════════════════════════════════════
-const ProgressModal = ({ isOpen, title, jobStatus }) => {
+const ProgressModal = ({ isOpen, title, stepStatus }) => {
   if (!isOpen) return null;
 
   const steps = [
@@ -642,8 +642,8 @@ const ProgressModal = ({ isOpen, title, jobStatus }) => {
   ];
 
   const getStepStatus = (stepId) => {
-    if (!jobStatus) return 'pending';
-    const currentStep = jobStatus.step || '';
+    if (!stepStatus) return 'pending';
+    const currentStep = stepStatus.step || '';
 
     // Step 1
     if (stepId === 'step1_finishers') {
@@ -679,16 +679,16 @@ const ProgressModal = ({ isOpen, title, jobStatus }) => {
   };
 
   const getDetailText = (stepId) => {
-    if (!jobStatus) return '';
+    if (!stepStatus) return '';
 
     if (stepId === 'step1_finishers') {
-      return jobStatus.rows_written ? `${jobStatus.rows_written} runners fetched` : 'Fetching...';
+      return stepStatus.rows_written ? `${stepStatus.rows_written} runners fetched` : 'Fetching...';
     }
     if (stepId === 'step2_teams') {
-      return jobStatus.teams_processed ? `${jobStatus.teams_processed} teams found` : 'Searching...';
+      return stepStatus.teams_processed ? `${stepStatus.teams_processed} teams found` : 'Searching...';
     }
     if (stepId === 'step3_backfill') {
-      return jobStatus.teams_processed ? `${jobStatus.teams_processed} teams processed` : 'Processing...';
+      return stepStatus.teams_processed ? `${stepStatus.teams_processed} teams processed` : 'Processing...';
     }
     return '';
   };
@@ -697,7 +697,7 @@ const ProgressModal = ({ isOpen, title, jobStatus }) => {
     <div className="modal-overlay">
       <div className="modal-content">
         <div className="modal-title">{title}</div>
-        <div className="modal-subtitle">{jobStatus?.message || 'Starting sync...'}</div>
+        <div className="modal-subtitle">{stepStatus?.message || 'Processing...'}</div>
 
         <div className="progress-container">
           <div className="progress-bar-container">
@@ -749,7 +749,7 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
   const [dbError, setDbError] = useState(false);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [forceFlags, setForceFlags] = useState({});
-  const [progressModal, setProgressModal] = useState({ isOpen: false, eventCode: null, jobStatus: null });
+  const [progressModal, setProgressModal] = useState({ isOpen: false, eventCode: null, stepStatus: null });
 
   const loadStats = () => api('/api/stats').then(r => {
     if (r.db_error) setDbError(true);
@@ -797,7 +797,7 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
 
   const triggerLoad = async (eventId, eventCode, forceReload = false) => {
     setLoadingIds(prev => ({ ...prev, [eventId]: true }));
-    setProgressModal({ isOpen: true, eventCode, jobStatus: null });
+    setProgressModal({ isOpen: true, eventCode, stepStatus: null });
 
     const r = await api(`/api/load/${eventId}`, {
       method: 'POST',
@@ -808,12 +808,12 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
       // Poll status more frequently
       const poll = setInterval(async () => {
         const s = await api(`/api/load/${eventCode}/status`);
-        setProgressModal(prev => ({ ...prev, jobStatus: s }));
+        setProgressModal(prev => ({ ...prev, stepStatus: s }));
 
         if (s.status === 'done' || s.status === 'error') {
           clearInterval(poll);
           setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
-          setProgressModal({ isOpen: false, eventCode: null, jobStatus: null });
+          setProgressModal({ isOpen: false, eventCode: null, stepStatus: null });
           setToast(s.message || `${eventCode}: ${s.status}`);
           loadEvents();
           loadStats();
@@ -821,7 +821,7 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
       }, 1000); // Poll every 1 second instead of 2
     } else {
       setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
-      setProgressModal({ isOpen: false, eventCode: null, jobStatus: null });
+      setProgressModal({ isOpen: false, eventCode: null, stepStatus: null });
       setToast(r.error || 'Load failed');
     }
   };
@@ -858,7 +858,7 @@ const Dashboard = ({ onSelectEvent, onGoSettings }) => {
       <ProgressModal
         isOpen={progressModal.isOpen}
         title={`Loading ${progressModal.eventCode}...`}
-        jobStatus={progressModal.jobStatus}
+        stepStatus={progressModal.stepStatus}
       />
 
       {stats && (

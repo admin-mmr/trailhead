@@ -1,30 +1,33 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-30 04:56 UTC
-Last commit: cb20c04 (Implement beautiful HTML emails with admin CC)
+Last updated: 2026-03-30 20:26 UTC
+Last commit: (pending)
 
 ---
 
 ## Current state
 
-- Repo: All email systems ready for Azure migration
-- mmr-webapp: Azure SWA with complete email infrastructure (7 email types)
-- mmr-admin: Flask with complete email infrastructure (3 email types)
-- GAS: Still functional but can be deprecated after testing
-- Email: 10 total types across systems, all with CC to admin@mmrunners.org
-- Web app: Next.js 14, NextAuth, Tailwind, i18n — deployable
-- Photo manager: process_photos.py + bib_analyzer.py functional
-- Database: Azure MySQL, schemas in db/schemas/
+- Repo: Progress bar flickering fixed; pace-based sharding tool created
+- mmr-admin: ProgressModal separated state (stepStatus vs jobStatus) to prevent sync info flicker
+- probe_finishers.py: Added pace filters + pace extraction from first item
+- split_by_pace.py: New standalone script for binary-splitting large age+gender groups by pace
+- Email, Web, Photo, DB: All systems from prior sessions still functional
 
 ## Open items
 
-- Deploy to staging and test email delivery
-- Monitor Azure Communication Services quota
-- Deprecate GAS after validation period (2 weeks recommended)
+- Integrate split_by_pace logic into api_sync.py for auto-sharding >500 groups
+- Test pace splitting on H2026, M2025 events for various age+gender combos
+- Deploy and validate on staging
 
 ## Session log
 
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
+
+### 2026-03-30 20:26 UTC — Fix progress modal flicker; add binary pace splitting tool
+
+- Changed: `mmr-admin/templates/index.html` — renamed jobStatus → stepStatus in ProgressModal to separate step progress from unrelated sync job info (fixes flickering "No sync job" message). `mmr-admin/probe_finishers.py` — added pace filters (paceFrom, paceTo) + pace extraction from first API item result. Created `mmr-admin/split_by_pace.py` — new script that queries max pace (slowest runner in group), then recursively binary-splits pace ranges by MM:SS until each shard ≤500 items. Pace formats normalized to 00:MM:SS for API consistency.
+- Status: Complete. Progress modal clean, split_by_pace ready for manual exploration.
+- Next: Integrate split_by_pace into api_sync.py Step 1 to auto-shard large groups; test on staging.
 
 ### 2026-03-30 04:56 UTC — Implement complete email system for Azure migration
 - Changed: Phase 1 (mmr-webapp) — `lib/email/client.ts` added CC parameter support + updated 3 email functions (welcome, application, renewal) to CC admin@mmrunners.org. `lib/email/templates.ts` added 4 new templates (paymentRejected, paymentExpired, expirationRepaired, autoMatchConfirmation). Phase 2 (mmr-admin) — created `email_client.py` with Azure Communication Services integration + `email_templates.py` with 3 payment templates. Integrated emails into `payment_actions.py` approve/reject functions. Updated 9 GitHub Actions workflows to CC admin@mmrunners.org. Created comprehensive documentation (5 markdown files).
