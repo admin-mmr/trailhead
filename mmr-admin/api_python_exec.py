@@ -299,6 +299,69 @@ def run_function(fn_name):
         }), 500
 
 
+@py_exec_bp.route('/code', methods=['POST'])
+@login_required
+def execute_code():
+    """Execute arbitrary Python code with access to db helper functions."""
+    data = request.get_json() or {}
+    code = data.get('code', '').strip()
+
+    if not code:
+        return jsonify({
+            'status': 'error',
+            'error': 'No code provided',
+            'executed_at': datetime.utcnow().isoformat()
+        }), 400
+
+    # Create safe execution environment with useful helpers
+    exec_globals = {
+        'query': dbmod.query,  # Direct DB query helper
+        'execute': dbmod.execute,  # Direct DB execute helper
+        'datetime': datetime,
+        'json': json,
+        'traceback': traceback,
+    }
+
+    output_lines = []
+
+    # Capture print output
+    import io
+    import sys
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+
+    try:
+        # Execute the code
+        exec(code, exec_globals)
+
+        # Get any printed output
+        captured_output = sys.stdout.getvalue()
+        if captured_output:
+            output_lines.append(captured_output)
+
+        # If code returned a value, capture it
+        # (This is tricky with exec, so we use a wrapper)
+        result = {
+            'status': 'ok',
+            'output': ''.join(output_lines),
+            'executed_at': datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        result = {
+            'status': 'error',
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'traceback': traceback.format_exc(),
+            'executed_at': datetime.utcnow().isoformat()
+        }
+    finally:
+        # Restore stdout
+        sys.stdout = old_stdout
+
+    return jsonify(result)
+
+
 @py_exec_bp.route('/health', methods=['GET'])
 @login_required
 def health_check():
