@@ -87,12 +87,16 @@ def _serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
     Convert datetime and other non-JSON-serializable objects to strings.
     Needed before sending rows to GAS webhook.
     """
+    from decimal import Decimal
+
     result = {}
     for key, value in row.items():
         if isinstance(value, datetime):
             result[key] = value.isoformat()
         elif hasattr(value, 'isoformat'):  # Handle date, time, timedelta, etc.
             result[key] = value.isoformat()
+        elif isinstance(value, Decimal):
+            result[key] = str(float(value))  # Convert Decimal to float then string
         elif value is None:
             result[key] = ''  # GAS prefers empty string over null
         else:
@@ -314,7 +318,7 @@ def _sync_events_to_sheets(job_id: str):
             _sync_jobs[job_id].update(job_update)
 
         events_rows = query(
-            "SELECT * FROM webapp_events WHERE EventStatus NOT IN ('cancelled', 'archived') ORDER BY EventID"
+            "SELECT * FROM webapp_events ORDER BY EventID"
         )
         log_lines.append(f"📥 Fetched {len(events_rows)} events from MySQL")
 
@@ -467,11 +471,21 @@ def _sync_payments_to_sheets(job_id: str):
             payment_id = payment['PaymentID']
             mysql_updated = payment.get('ProcessedDate')
             amount = float(payment.get('Amount', 0))
+            member_id = payment.get('MemberID', '?')
+
+            # Fetch member name for better debugging
+            member_name = '?'
+            if member_id and member_id != '?':
+                member_rows = query("SELECT FirstName, LastName FROM members WHERE MemberID = %s", [member_id])
+                if member_rows:
+                    first = member_rows[0].get('FirstName', '')
+                    last = member_rows[0].get('LastName', '')
+                    member_name = f"{first} {last}".strip() or '?'
 
             if payment_id not in sheets_by_id:
                 rows_to_append.append(payment)
-                log_lines.append(f"✅ {payment_id}: ${amount} (NEW)")
-                inserted.append(f"{payment_id} (${amount})")
+                log_lines.append(f"✅ {payment_id}: ${amount}, {member_id}, {member_name} (NEW)")
+                inserted.append(f"{payment_id}: ${amount}, {member_id}, {member_name}")
             else:
                 sheets_payment = sheets_by_id[payment_id]
                 sheets_updated = sheets_payment.get('ProcessedDate')
@@ -481,11 +495,11 @@ def _sync_payments_to_sheets(job_id: str):
                     sheets_ts = str(sheets_updated) if sheets_updated else ''
                     if mysql_ts > sheets_ts:
                         rows_to_update.append(payment)
-                        log_lines.append(f"🔄 {payment_id}: ${amount} (MySQL newer)")
+                        log_lines.append(f"🔄 {payment_id}: ${amount}, {member_id}, {member_name} (MySQL newer)")
                         updated.append(payment_id)
                 elif mysql_updated:
                     rows_to_update.append(payment)
-                    log_lines.append(f"🔄 {payment_id}: ${amount} (Sheets missing date)")
+                    log_lines.append(f"🔄 {payment_id}: ${amount}, {member_id}, {member_name} (Sheets missing date)")
                     updated.append(payment_id)
 
             if (idx + 1) % 100 == 0:
@@ -752,7 +766,7 @@ def _dry_run_google_to_mysql(job_id: str):
         mysql_member_ids = {m['MemberID'] for m in mysql_members}
         log_lines.append(f"💾 MySQL: {len(mysql_member_ids)} members")
 
-        mysql_events = query("SELECT EventID FROM webapp_events WHERE EventStatus NOT IN ('cancelled', 'archived')")
+        mysql_events = query("SELECT EventID FROM webapp_events")
         mysql_event_ids = {e['EventID'] for e in mysql_events}
         log_lines.append(f"💾 MySQL: {len(mysql_event_ids)} events")
 

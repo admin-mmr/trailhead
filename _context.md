@@ -27,6 +27,9 @@ Last commit: 74dd8b7
 
 ## Session log
 
+### 2026-03-30 02:47 UTC — Fix MySQL→Google sync: Decimal serialization & EventStatus column
+Changed: (1) Fixed JSON serialization error in payments sync by handling Decimal type in _serialize_row(); (2) Fixed EventStatus → Status column name error in 2 event queries; (3) Enhanced payment debug output to show paymentId: amount, memberID, memberName. Status: Complete — syntax check passed, all fixes applied. Next: Run sync and verify all three operations succeed.
+
 ### 2026-03-30 19:24 UTC — Always send email reports from sync operations
 Changed: Added email sending to all sync error handlers (members, events, payments, import, dry-run). Previously only sent email on success. Now always sends report with full log, even on error. Ensures admins see failures and can debug. Status: Complete. Next: Test and verify email delivery.
 
