@@ -7,6 +7,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-03-31 21:12 UTC — Fix camelCase/PascalCase mismatch in all four GAS webhook tables
+Root cause identified: GAS webhook returns TypeScript objects with **camelCase keys** (messageId, memberID, eventID, etc.), but MySQL schema uses **PascalCase** (MessageId, MemberID, EventID, etc.). This caused silent failures: "MessageId=None" in logs because Python code looked for 'MessageId' but received 'messageId'. Created `_normalize_gas_keys()` function with comprehensive CASE_MAP covering all four tables (Members, Events, Payments, Transactions). Applied normalization to all four webhook fetch operations. Next sync run will show correct PascalCase keys in logs, fixing "missing MessageId" skips. Committed 9160044. Status: Complete.
+
 ### 2026-03-31 21:05 UTC — Fix GAS email webhook scope + enhance transaction logging
 Fixed two issues: (1) Removed invalid `email_type='sync_notification'` parameter from `send_generic_email()` call in `_send_sync_report()` (TypeError). Function doesn't accept this param; `email_type` is only for `send_email_webhook()`. (2) Enhanced `_import_transactions()` verbose logging to print first 3 example rows from Google Sheets with all field values in JSON format (helps debug why fields are coming back as None). Updated appsscript.json with gmail.send scope. Committed 2233226. Status: Complete — sync reports now send without error, logging shows actual transaction data.
 
