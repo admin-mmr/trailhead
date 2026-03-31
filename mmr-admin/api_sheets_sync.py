@@ -183,8 +183,13 @@ def _send_sync_report(
     summary: str,
     details: List[str],
     log_content: str,
-) -> bool:
-    """Send sync report email."""
+) -> Dict[str, Any]:
+    """
+    Send sync report email with comprehensive logging.
+
+    Returns:
+        Dict with email_sent (bool), email_log (str), error (str or None)
+    """
     title = f"MMR Sync Report: {operation}"
     body = f"""
 {summary}
@@ -200,16 +205,48 @@ Full Log:
 
 Generated: {datetime.now().isoformat()}
 """
+    email_log_lines = []
+    email_log_lines.append(f"📧 Sending sync report email...")
+    email_log_lines.append(f"   To: {recipient}")
+    email_log_lines.append(f"   Operation: {operation}")
+    email_log_lines.append(f"   Subject: {title}")
+
     try:
-        send_email(
+        email_result = send_email(
             to=recipient,
             subject=title,
             html_content=body.replace('\n', '<br>'),
         )
-        return True
+
+        # Log email result
+        if email_result.get('success'):
+            email_log_lines.append(f"   ✅ {email_result.get('message', 'Email sent')}")
+            email_log_lines.append(f"   Status: {email_result.get('status')}")
+            logger.info(f"✅ Sync report email sent to {recipient}: {operation}")
+            return {
+                'email_sent': True,
+                'email_log': '\n'.join(email_log_lines),
+                'error': None
+            }
+        else:
+            error = email_result.get('error', 'Unknown error')
+            email_log_lines.append(f"   ❌ {email_result.get('message', f'Failed: {error}')}")
+            logger.error(f"❌ Sync report email failed to {recipient}: {error}")
+            return {
+                'email_sent': False,
+                'email_log': '\n'.join(email_log_lines),
+                'error': error
+            }
+
     except Exception as e:
-        logger.error(f"Failed to send sync report: {e}")
-        return False
+        error_msg = str(e)
+        email_log_lines.append(f"   ❌ Exception: {error_msg}")
+        logger.error(f"Failed to send sync report to {recipient}: {error_msg}", exc_info=True)
+        return {
+            'email_sent': False,
+            'email_log': '\n'.join(email_log_lines),
+            'error': error_msg
+        }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -386,13 +423,17 @@ def _sync_members_to_sheets(job_id: str):
             _sync_jobs[job_id].update(job_update)
 
         # Send report email
-        _send_sync_report(
+        email_result = _send_sync_report(
             recipient='admin@mmrunners.org',
             operation='MySQL → Google: Members',
             summary=summary,
             details=inserted[:100],
             log_content='\n'.join(log_lines),
         )
+        if email_result.get('email_log'):
+            log_lines.append(email_result['email_log'])
+        if not email_result.get('email_sent'):
+            log_lines.append(f"⚠️  Email failed: {email_result.get('error', 'Unknown error')}")
 
     except Exception as e:
         error_msg = f"❌ Sync failed: {e}"
@@ -410,13 +451,18 @@ def _sync_members_to_sheets(job_id: str):
 
         # Send error report email
         try:
-            _send_sync_report(
+            email_result = _send_sync_report(
                 recipient='admin@mmrunners.org',
                 operation='MySQL → Google: Members',
                 summary=error_msg,
                 details=[],
                 log_content='\n'.join(log_lines),
             )
+            if email_result.get('email_log'):
+                log_lines.append(email_result['email_log'])
+        except Exception as email_err:
+            log_lines.append(f"⚠️  Failed to send error email: {email_err}")
+            logger.error(f"Failed to send error email: {email_err}")
         except Exception as email_err:
             logger.error(f"Failed to send error email: {email_err}")
 

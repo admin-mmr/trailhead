@@ -26,7 +26,7 @@ def send_email(
     html_content: str,
     text_content: Optional[str] = None,
     cc: Optional[str] = 'admin@mmrunners.org',
-) -> bool:
+) -> Dict[str, Any]:
     """
     Send an email via Azure Communication Services.
 
@@ -38,9 +38,32 @@ def send_email(
         cc: CC recipient(s) — can be single email or comma-separated
 
     Returns:
-        True if sent successfully, False otherwise
+        Dict with keys: success (bool), status (str), message (str), error (str or None)
     """
+    result_data = {
+        'success': False,
+        'to': to,
+        'cc': cc,
+        'subject': subject[:50],
+        'status': None,
+        'message': None,
+        'error': None,
+        'timestamp': None,
+    }
+
     try:
+        from datetime import datetime
+        result_data['timestamp'] = datetime.utcnow().isoformat()
+
+        # Check if connection string is set
+        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING')
+        if not connection_string:
+            error_msg = 'AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING not set'
+            logger.error(f'[email] {error_msg}')
+            result_data['error'] = error_msg
+            result_data['message'] = f'❌ Config error: {error_msg}'
+            return result_data
+
         client = get_email_client()
         sender = 'DoNotReply@mmr-comm.notification.azure.com'
 
@@ -67,18 +90,25 @@ def send_email(
         }
 
         # Send via Azure
+        logger.info(f'[email] sending to {to}, cc={cc}, subject={subject[:50]}...')
         poller = client.begin_send(message)
-        result = poller.result()
+        email_result = poller.result()
+
+        result_data['success'] = True
+        result_data['status'] = email_result.status if hasattr(email_result, 'status') else 'Sent'
+        result_data['message'] = f"✅ Email sent to {to} (status: {result_data['status']})"
 
         logger.info(
-            f'[email] sent to {to}, cc={cc}, subject={subject[:50]}... | '
-            f'status={result.status}'
+            f'[email] SUCCESS: to={to}, cc={cc}, subject={subject[:50]}... | '
+            f'status={result_data["status"]}'
         )
-        return True
+        return result_data
 
     except Exception as e:
-        logger.error(f'[email] failed to send to {to}: {e}')
-        return False
+        result_data['error'] = str(e)
+        result_data['message'] = f"❌ Failed to send to {to}: {e}"
+        logger.error(f'[email] FAILED: to={to}, cc={cc}, error={e}', exc_info=True)
+        return result_data
 
 
 def _strip_html(html: str) -> str:
