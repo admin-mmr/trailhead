@@ -1,18 +1,19 @@
 // ============================================================
 // Webhook endpoint for mmr-admin → Google Sheets sync
 //
-// Receives POST requests from Python payment_actions.py and
-// writes updates to Sheets. Three actions supported:
+// Receives POST requests from Python api_sheets_sync.py and
+// writes updates to Sheets. Four actions supported:
 //
 //   member_updated        — sync any member field changes
 //   event_status_updated  — update webapp_event status
 //   payment_created       — append to Payment-History
+//   get_transactions      — fetch all transactions from Fetch-Gmail sheet
 //
 // Deploy: Apps Script → Deploy → Manage deployments →
 //   Edit existing → New version → Deploy.
 //   URL goes in MySQL config table (SheetsWebhookUrl).
 //
-// Depends on: config.ts, sheets.ts
+// Depends on: config.ts, sheets.ts, types.ts
 // ============================================================
 
 /**
@@ -58,6 +59,8 @@ function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.Tex
         return handleEventStatusUpdated(payload);
       case 'payment_created':
         return handlePaymentCreated(payload);
+      case 'get_transactions':
+        return handleGetTransactions(payload);
       // Legacy — kept for backward compat during rollout
       case 'payment_approved':
         return handlePaymentApproved(payload);
@@ -200,6 +203,34 @@ function handlePaymentCreated(payload: any): GoogleAppsScript.Content.TextOutput
     return jsonResponse({ ok: true, paymentId });
   } catch (err: any) {
     console.error('[webhook] Failed to create payment history:', err);
+    return jsonResponse({ ok: false, error: err.message || String(err) });
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Action: get_transactions
+// Fetches all transactions from the Fetch-Gmail sheet
+// Returns array of FetchGmailRow objects
+// ---------------------------------------------------------------------------
+
+function handleGetTransactions(payload: any): GoogleAppsScript.Content.TextOutput {
+  console.log('[webhook] get_transactions: fetching all gmail transactions');
+
+  try {
+    const sheet = getSheet(SHEET_NAMES.FETCH_GMAIL);
+    const data = sheet.getDataRange().getValues();
+    const transactions: FetchGmailRow[] = [];
+
+    // Row 0 is header; start from row 1
+    for (let i = 1; i < data.length; i++) {
+      transactions.push(rowToFetchGmailRow(data[i], i + 1));
+    }
+
+    console.log(`[webhook] get_transactions: returning ${transactions.length} transactions`);
+    return jsonResponse({ ok: true, transactions });
+  } catch (err: any) {
+    console.error('[webhook] Failed to fetch transactions:', err);
     return jsonResponse({ ok: false, error: err.message || String(err) });
   }
 }

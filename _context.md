@@ -27,6 +27,9 @@ Last commit: 74dd8b7
 
 ## Session log
 
+### 2026-03-30 18:57 UTC — Add get_transactions GAS webhook handler
+Changed: Added `handleGetTransactions()` to webhook.ts (reads all gmail_transactions from Fetch-Gmail sheet). Status: Complete — compiles, ready to deploy. Next: Deploy new GAS version and test Import Now from mmr-admin.
+
 ### 2026-03-31 02:30 UTC — Implement full GAS integration for sync operations
 Changed: Implemented _call_gas_webhook() helper (30 lines); completed all 5 sync functions with actual GAS calls. Members/Events/Payments: fetch from Sheets, compare by ID with LastUpdated versioning, push append/update actions. Import: insert new MessageIds, update Notes if Memo differs. Dry-run: compare all tables, display diffs. File grew from 410→919 lines (40KB). Status: LIVE and ready for deployment. Next: Test with real GAS webhook in staging/production.
 
