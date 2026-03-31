@@ -7,6 +7,9 @@ Last commit: b966b9f (fix: correct GAS webhook action name and configure Azure C
 
 ## Session log
 
+### 2026-03-31 12:45 UTC — Add verbose debug logging & debug helpers for all sync operations
+Added comprehensive debugging capabilities for all sync operations (members, events, payments, transactions). Changed: (1) Enhanced all sync functions with verbose logging showing raw Google Sheets + MySQL data (first 3 rows, column names); (2) Created sync_debug_helpers.py module with callable functions (get_google_*_for_debug, compare_*, show_*_diff) accessible from Python Code Editor; (3) Enhanced result tracking (separate skipped counts, return IDs); (4) Improved datetime comparison with proper parsing. Status: Complete — ready to deploy. Next: Test verbose logs in Azure, use helpers from Python Code Editor for debugging.
+
 ### 2026-03-31 12:40 UTC — Add Python Code Editor to admin portal
 Added dynamic code execution tab: Users can now write & run arbitrary Python code against MySQL with output capture. Changed: (1) New /api/py-exec/code endpoint — executes Python code with access to query(), execute(), datetime, json, traceback; (2) "Python Code" tab in admin portal with textarea editor, 5 example templates (count, sync log, dups, nulls, pretty-print), output viewer, error traceback, download results; (3) Code runs in sandboxed environment with full DB read-write access. Status: Complete — ready to test. Next: Deploy and validate code execution.
 
