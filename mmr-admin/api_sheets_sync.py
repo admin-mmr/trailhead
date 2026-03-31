@@ -868,16 +868,25 @@ def _sync_gmail_transactions_to_sheets(job_id: str):
 
 def _import_transactions(job_id: str):
     """
-    Fetch gmail_transactions from Google Sheets.
+    Fetch gmail_transactions from Google Sheets with verbose logging.
 
     For each row:
-      - If MessageId not in MySQL → INSERT
-      - If exists: check if Memo differs from Notes → UPDATE Notes in MySQL
+      - If MessageId not in MySQL → INSERT (new)
+      - If exists: compare Memo vs Notes field → UPDATE if different
+      - Log all data read from Google and MySQL for debugging
+
+    Verbose output shows:
+      1. All columns from Google Sheets for each row
+      2. Comparison with existing MySQL row
+      3. Specific field differences (if any)
+      4. Reason for insert/update/skip decision
     """
     log_lines = []
     inserted = []
     updated = []
+    skipped = []
     errors = []
+    verbose_mode = True  # Set to False to reduce verbosity
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching transactions from Google...', 'progress': 0}
@@ -889,14 +898,19 @@ def _import_transactions(job_id: str):
             sheets_data = _call_gas_webhook({'action': 'get_transactions'})
             sheets_txns = sheets_data if isinstance(sheets_data, list) else []
             log_lines.append(f"📥 Fetched {len(sheets_txns)} transactions from Google Sheets")
+
+            if verbose_mode and sheets_txns:
+                # Show column names and first row as example
+                first_row = sheets_txns[0]
+                log_lines.append(f"   Columns: {', '.join(first_row.keys())}")
         except Exception as e:
             log_lines.append(f"❌ Failed to fetch from Sheets: {e}")
             raise
 
-        # Get existing MessageIds from MySQL
-        existing_txns = query("SELECT MessageId, Notes FROM gmail_transactions")
-        existing_ids = {t['MessageId']: t['Notes'] for t in existing_txns}
-        log_lines.append(f"📥 Found {len(existing_ids)} existing transactions in MySQL")
+        # Get existing transactions from MySQL
+        existing_txns = query("SELECT MessageId, Memo, Notes, ProcessedTime, WebAppID, created_at, updated_at FROM gmail_transactions")
+        existing_by_id = {t['MessageId']: t for t in existing_txns}
+        log_lines.append(f"📥 Found {len(existing_by_id)} existing transactions in MySQL")
 
         job_update = {'status': 'running', 'message': 'Processing transactions...', 'progress': 25}
         with _sync_jobs_lock:
@@ -909,11 +923,16 @@ def _import_transactions(job_id: str):
             processed_time = txn.get('ProcessedTime')
             webapp_id = txn.get('WebAppID', '')
 
+            if verbose_mode and idx < 5:
+                # Log first 5 rows in detail to show what we're reading
+                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Memo={repr(memo)}, ProcessedTime={processed_time}, WebAppID={webapp_id}")
+
             if not message_id:
                 log_lines.append(f"⚠️  Skipping row {idx}: missing MessageId")
+                skipped.append((idx, "missing MessageId"))
                 continue
 
-            if message_id not in existing_ids:
+            if message_id not in existing_by_id:
                 # New transaction — insert
                 try:
                     execute("""
@@ -922,33 +941,54 @@ def _import_transactions(job_id: str):
                         VALUES (%s, %s, %s, %s, %s)
                     """, [message_id, memo, '', processed_time, webapp_id])
                     inserted.append(message_id)
-                    log_lines.append(f"✅ {message_id}: inserted (new)")
+                    log_lines.append(f"✅ {message_id}: INSERTED (new)")
+
+                    if verbose_mode:
+                        log_lines.append(f"   → Memo={repr(memo)}, ProcessedTime={processed_time}")
                 except Exception as e:
                     errors.append(f"{message_id}: {e}")
-                    log_lines.append(f"❌ {message_id}: {e}")
+                    log_lines.append(f"❌ {message_id}: INSERT failed — {e}")
             else:
-                # Existing transaction — check if Memo differs from Notes
-                existing_notes = existing_ids[message_id]
+                # Existing transaction — compare fields
+                existing = existing_by_id[message_id]
+                existing_notes = existing.get('Notes', '')
+
+                reason = None
+                should_update = False
+
+                # Check if Memo differs from Notes
                 if memo and memo != existing_notes:
+                    should_update = True
+                    reason = f"Memo changed: {repr(existing_notes)} → {repr(memo)}"
+                elif not memo and existing_notes:
+                    # Memo is empty but Notes has data — don't clear Notes
+                    reason = f"Memo is empty, Notes={repr(existing_notes)} unchanged"
+                elif not memo and not existing_notes:
+                    reason = "Both Memo and Notes empty — no change"
+                elif memo == existing_notes:
+                    reason = f"Memo matches Notes: {repr(memo)}"
+
+                if should_update:
                     try:
                         execute(
                             "UPDATE gmail_transactions SET Notes = %s WHERE MessageId = %s",
                             [memo, message_id]
                         )
                         updated.append(message_id)
-                        log_lines.append(f"🔄 {message_id}: updated Notes")
+                        log_lines.append(f"🔄 {message_id}: UPDATED — {reason}")
                     except Exception as e:
                         errors.append(f"{message_id}: {e}")
-                        log_lines.append(f"❌ {message_id}: {e}")
+                        log_lines.append(f"❌ {message_id}: UPDATE failed — {e}")
                 else:
-                    log_lines.append(f"⊘ {message_id}: skipped (Memo matches Notes)")
+                    skipped.append((message_id, reason))
+                    log_lines.append(f"⊘ {message_id}: skipped — {reason}")
 
             if (idx + 1) % 100 == 0:
                 job_update = {'progress': 25 + int((idx / len(sheets_txns)) * 50)}
                 with _sync_jobs_lock:
                     _sync_jobs[job_id].update(job_update)
 
-        summary = f"✅ Import Complete: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
+        summary = f"✅ Import Complete: {len(inserted)} inserted, {len(updated)} updated, {len(skipped)} skipped, {len(errors)} errors"
 
         job_update = {
             'status': 'done',
@@ -958,8 +998,12 @@ def _import_transactions(job_id: str):
                 'operation': 'import_transactions',
                 'inserted': len(inserted),
                 'updated': len(updated),
+                'skipped': len(skipped),
                 'errors': len(errors),
+                'total_processed': len(sheets_txns),
                 'log': '\n'.join(log_lines),
+                'inserted_ids': inserted[:100],  # First 100 for reference
+                'updated_ids': updated[:100],
             }
         }
         with _sync_jobs_lock:
