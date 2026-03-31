@@ -27,6 +27,9 @@ Last commit: 74dd8b7
 
 ## Session log
 
+### 2026-03-30 20:31 UTC — Pause all data sync workflows except schema drift check
+Changed: Disabled schedules for sync-all-sheets-ordered (every 6h), sync-nyrr-weekly (Tue 2 AM), update-member-status, auto-guess-payments. Deleted 5 legacy disabled workflows (sync-members/payments/gmail/webapp/sheets-to-mysql). Status: Complete — all manual-only, db-schema-drift still runs weekly. Next: Resume workflows when ready.
+
 ### 2026-03-30 02:47 UTC — Fix MySQL→Google sync: Decimal serialization & EventStatus column
 Changed: (1) Fixed JSON serialization error in payments sync by handling Decimal type in _serialize_row(); (2) Fixed EventStatus → Status column name error in 2 event queries; (3) Enhanced payment debug output to show paymentId: amount, memberID, memberName. Status: Complete — syntax check passed, all fixes applied. Next: Run sync and verify all three operations succeed.
 

@@ -10,9 +10,10 @@ name: 🔄 Daily Member Status Update
 #   not active → Expiration < NOW() (or NULL) AND no pending Membership event
 
 on:
-  workflow_run:
-    workflows: ["Sync All Sheets (Ordered Sequential)"]
-    types: [completed]
+  # Disabled — depends on sync-all-sheets-ordered which is now disabled
+  # workflow_run:
+  #   workflows: ["Sync All Sheets (Ordered Sequential)"]
+  #   types: [completed]
   workflow_dispatch:    # Allow manual trigger from GitHub Actions UI
     inputs:
       dry_run:

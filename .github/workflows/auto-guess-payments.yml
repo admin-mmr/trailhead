@@ -1,11 +1,11 @@
 name: Auto-Guess Payment Matching
 
 on:
-  # Run after sheets sync completes (picks up fresh gmail_transactions + members)
-  workflow_run:
-    workflows: ["Sync All Sheets (Ordered Sequential)"]
-    types: [completed]
-    branches: [main]
+  # Disabled — depends on sync-all-sheets-ordered which is now disabled
+  # workflow_run:
+  #   workflows: ["Sync All Sheets (Ordered Sequential)"]
+  #   types: [completed]
+  #   branches: [main]
 
   # Manual trigger with optional date overrides
   workflow_dispatch:
