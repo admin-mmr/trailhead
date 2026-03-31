@@ -1135,17 +1135,23 @@ def _import_transactions(job_id: str):
         # Process each transaction
         for idx, txn in enumerate(sheets_txns):
             message_id = txn.get('MessageId')
+            timestamp = txn.get('Timestamp')  # REQUIRED: TimeStamp column is NOT NULL
             memo = txn.get('Memo', '')
             processed_time = txn.get('ProcessedTime')
             webapp_id = txn.get('WebAppID', '')
 
             if verbose_mode and idx < 5:
                 # Log first 5 rows in detail to show what we're reading
-                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Memo={repr(memo)}, ProcessedTime={processed_time}, WebAppID={webapp_id}")
+                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp}, Memo={repr(memo)}, ProcessedTime={processed_time}, WebAppID={webapp_id}")
 
             if not message_id:
                 log_lines.append(f"⚠️  Skipping row {idx}: missing MessageId")
                 skipped.append((idx, "missing MessageId"))
+                continue
+
+            if not timestamp:
+                log_lines.append(f"⚠️  Skipping row {idx}: missing Timestamp (required)")
+                skipped.append((idx, "missing Timestamp"))
                 continue
 
             if message_id not in existing_by_id:
@@ -1153,14 +1159,14 @@ def _import_transactions(job_id: str):
                 try:
                     execute("""
                         INSERT INTO gmail_transactions
-                        (MessageId, Memo, Notes, ProcessedTime, WebAppID)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, [message_id, memo, '', processed_time, webapp_id])
+                        (MessageId, TimeStamp, Memo, Notes, ProcessedTime, WebAppID)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, [message_id, timestamp, memo, '', processed_time, webapp_id])
                     inserted.append(message_id)
                     log_lines.append(f"✅ {message_id}: INSERTED (new)")
 
                     if verbose_mode:
-                        log_lines.append(f"   → Memo={repr(memo)}, ProcessedTime={processed_time}")
+                        log_lines.append(f"   → TimeStamp={timestamp}, Memo={repr(memo)}, ProcessedTime={processed_time}")
                 except Exception as e:
                     errors.append(f"{message_id}: {e}")
                     log_lines.append(f"❌ {message_id}: INSERT failed — {e}")
