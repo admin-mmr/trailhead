@@ -11,6 +11,7 @@ import os
 import logging
 import json
 import requests
+import traceback
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -29,22 +30,52 @@ def get_sheets_webhook_url() -> str:
     # Try env first (for testing)
     env_url = os.environ.get('SHEETS_WEBHOOK_URL')
     if env_url:
+        logger.info(f'[webhook_client] Using SHEETS_WEBHOOK_URL from environment: {env_url[:60]}...')
         return env_url
 
     # Otherwise, fetch from MySQL config table
+    logger.info('[webhook_client] Attempting to fetch SheetsWebhookUrl from MySQL config table')
     try:
         from db import get_db_connection
         conn = get_db_connection()
+        logger.debug('[webhook_client] MySQL connection established')
+
         cursor = conn.cursor(dictionary=True)
-        cursor.execute('SELECT ConfigValue FROM Config WHERE ConfigKey = %s', ('SheetsWebhookUrl',))
+        logger.debug('[webhook_client] Cursor created with dictionary=True')
+
+        # Build and execute query
+        query = 'SELECT ConfigValue FROM Config WHERE ConfigKey = %s'
+        key = 'SheetsWebhookUrl'
+        logger.debug(f'[webhook_client] Executing query: {query} with key={key}')
+
+        cursor.execute(query, (key,))
+        logger.debug('[webhook_client] Query executed successfully')
+
         row = cursor.fetchone()
+        logger.debug(f'[webhook_client] fetchone() returned: {row}')
+        logger.debug(f'[webhook_client] Row type: {type(row)}')
+
+        if row is None:
+            logger.warning('[webhook_client] fetchone() returned None — no matching config found')
+        else:
+            logger.debug(f'[webhook_client] Row keys: {list(row.keys()) if hasattr(row, "keys") else "N/A"}')
+            logger.debug(f'[webhook_client] Full row object: {row}')
+
         cursor.close()
+        logger.debug('[webhook_client] Cursor closed')
+
         conn.close()
+        logger.debug('[webhook_client] Connection closed')
 
         if row and row.get('ConfigValue'):
-            return row['ConfigValue']
+            webhook_url = row['ConfigValue']
+            logger.info(f'[webhook_client] Found SheetsWebhookUrl in config: {webhook_url[:60]}...')
+            return webhook_url
+        else:
+            logger.warning(f'[webhook_client] Row exists but ConfigValue is empty or missing. Row: {row}')
+
     except Exception as e:
-        logger.warning(f'[webhook_client] Failed to fetch webhook URL from MySQL: {e}')
+        logger.error(f'[webhook_client] Failed to fetch webhook URL from MySQL: {type(e).__name__}: {e}', exc_info=True)
 
     raise ValueError('SHEETS_WEBHOOK_URL not found in MySQL config or environment')
 
@@ -75,6 +106,7 @@ def send_email_webhook(
     Returns:
         Dict with keys: success (bool), status (str), message (str), error (str or None), email_id (str)
     """
+    timestamp = datetime.utcnow().isoformat()
     result_data = {
         'success': False,
         'to': to,
@@ -84,12 +116,19 @@ def send_email_webhook(
         'message': None,
         'error': None,
         'email_id': None,
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': timestamp,
     }
 
+    logger.info(
+        f'[webhook_client] Starting email send: to={to}, '
+        f'subject={subject[:40]}..., email_type={email_type}, member_id={member_id}'
+    )
+
     try:
+        logger.debug(f'[webhook_client] Fetching webhook URL from config...')
         webhook_url = get_sheets_webhook_url()
-        logger.info(f'[webhook_client] Using webhook URL: {webhook_url[:60]}...')
+        logger.info(f'[webhook_client] Webhook URL retrieved: {webhook_url[:70]}...')
+        logger.debug(f'[webhook_client] Full webhook URL: {webhook_url}')
 
         # Build payload
         payload = {
@@ -99,26 +138,41 @@ def send_email_webhook(
             'html_content': html_content,
         }
 
+        logger.debug(f'[webhook_client] Base payload built with action=email_send, to={to}, subject length={len(subject)}')
+
         if text_content:
             payload['text_content'] = text_content
+            logger.debug(f'[webhook_client] Added text_content to payload ({len(text_content)} chars)')
 
         if cc:
             payload['cc'] = cc
+            logger.debug(f'[webhook_client] Added cc to payload: {cc}')
 
         if email_type:
             payload['email_type'] = email_type
+            logger.debug(f'[webhook_client] Added email_type to payload: {email_type}')
 
         if member_id:
             payload['member_id'] = member_id
+            logger.debug(f'[webhook_client] Added member_id to payload: {member_id}')
 
         if metadata:
             payload['metadata'] = metadata
+            logger.debug(f'[webhook_client] Added metadata to payload: {json.dumps(metadata)}')
+
+        logger.info(
+            f'[webhook_client] Payload built. HTML length={len(html_content)}, '
+            f'CC={cc}, email_type={email_type}, member_id={member_id}'
+        )
+        logger.debug(f'[webhook_client] Full payload (excluding html_content): {json.dumps({k: (v[:50] if isinstance(v, str) and len(v) > 50 else v) for k, v in payload.items() if k != "html_content"})}')
 
         # Send POST to GAS webhook
         logger.info(
-            f'[webhook_client] Sending email via webhook to {to}, '
+            f'[webhook_client] Sending POST to GAS webhook for {to}, '
             f'subject={subject[:50]}..., email_type={email_type}'
         )
+        logger.debug(f'[webhook_client] Webhook URL: {webhook_url}')
+        logger.debug(f'[webhook_client] Request timeout: 30s')
 
         response = requests.post(
             webhook_url,
@@ -126,10 +180,17 @@ def send_email_webhook(
             timeout=30,
         )
 
+        logger.info(f'[webhook_client] POST response received: status_code={response.status_code}')
+        logger.debug(f'[webhook_client] Response headers: {dict(response.headers)}')
+        logger.debug(f'[webhook_client] Response body (first 200 chars): {response.text[:200]}')
+
         response.raise_for_status()
+        logger.debug('[webhook_client] response.raise_for_status() passed (no HTTP errors)')
 
         # Parse response
         webhook_response = response.json()
+        logger.info(f'[webhook_client] JSON response parsed successfully')
+        logger.debug(f'[webhook_client] Full webhook response: {json.dumps(webhook_response)}')
 
         if webhook_response.get('ok'):
             result_data['success'] = True
@@ -141,8 +202,12 @@ def send_email_webhook(
             )
 
             logger.info(
-                f'[webhook_client] SUCCESS: to={to}, cc={cc}, '
-                f'subject={subject[:50]}..., email_id={result_data["email_id"]}'
+                f'[webhook_client] ✅ SUCCESS: to={to}, cc={cc}, '
+                f'subject={subject[:50]}..., email_id={result_data["email_id"]}, '
+                f'status={result_data["status"]}'
+            )
+            logger.debug(
+                f'[webhook_client] Full success response: {json.dumps(webhook_response)}'
             )
         else:
             error_msg = webhook_response.get('error', 'Unknown error')
@@ -150,8 +215,11 @@ def send_email_webhook(
             result_data['message'] = f"❌ Webhook returned error: {error_msg}"
 
             logger.error(
-                f'[webhook_client] FAILED: to={to}, cc={cc}, '
+                f'[webhook_client] ❌ WEBHOOK ERROR: to={to}, cc={cc}, '
                 f'webhook_error={error_msg}'
+            )
+            logger.debug(
+                f'[webhook_client] Full error response: {json.dumps(webhook_response)}'
             )
 
         return result_data
@@ -160,18 +228,22 @@ def send_email_webhook(
         result_data['error'] = str(e)
         result_data['message'] = f"❌ Webhook request failed: {e}"
         logger.error(
-            f'[webhook_client] Request failed: to={to}, cc={cc}, error={e}',
+            f'[webhook_client] ❌ REQUEST FAILED: to={to}, cc={cc}, '
+            f'error_type={type(e).__name__}, error={e}',
             exc_info=True,
         )
+        logger.debug(f'[webhook_client] Request exception details: {e}')
         return result_data
 
     except Exception as e:
         result_data['error'] = str(e)
         result_data['message'] = f"❌ Failed to send email: {e}"
         logger.error(
-            f'[webhook_client] Unexpected error: to={to}, cc={cc}, error={e}',
+            f'[webhook_client] ❌ UNEXPECTED ERROR: to={to}, cc={cc}, '
+            f'error_type={type(e).__name__}, error={e}',
             exc_info=True,
         )
+        logger.debug(f'[webhook_client] Exception traceback: {traceback.format_exc()}')
         return result_data
 
 
