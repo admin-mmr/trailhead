@@ -2114,10 +2114,14 @@ const PythonExecPanel = () => {
 
   useEffect(() => {
     api('/api/py-exec/list').then(r => {
-      if (r.ok && r.functions) {
+      if (r && r.functions && Array.isArray(r.functions)) {
         setFunctions(r.functions);
         if (r.functions.length > 0) setSelectedFn(r.functions[0].name);
+      } else {
+        console.warn('Failed to load functions:', r);
       }
+    }).catch(err => {
+      console.error('API error:', err);
     });
   }, []);
 

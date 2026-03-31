@@ -198,6 +198,80 @@ def get_sample_transactions(limit=10):
         }
 
 
+def send_test_email():
+    """Send a test hello email to admin@mmrunners.org to verify email pipeline."""
+    try:
+        from email_client import send_email
+
+        # Build HTML email using same template structure as other MMR emails
+        html_content = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:32px 16px;">
+  <tr><td align="center">
+    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,0.08);">
+      <!-- Header -->
+      <tr><td style="background:#5c35a8;padding:28px 36px;text-align:center;">
+        <div style="font-size:26px;margin-bottom:4px;">🏃</div>
+        <div style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">Misty Mountain Runners</div>
+        <div style="color:rgba(255,255,255,0.7);font-size:13px;margin-top:4px;">Admin Test Email</div>
+      </td></tr>
+      <!-- Body -->
+      <tr><td style="padding:36px 36px 28px;">
+        <h2 style="margin:0 0 8px;font-size:22px;color:#222222;font-weight:700;">Hello! 👋</h2>
+        <p style="margin:0 0 20px;font-size:15px;color:#555555;line-height:1.6;">
+          This is a test email from the MMR Admin Portal Python Execution Engine.
+        </p>
+        <div style="background:#f8f6ff;border:1px solid #e9e3ff;border-radius:10px;padding:16px;margin:0 0 20px;font-size:13px;color:#555555;line-height:1.6;">
+          <strong>Test Details:</strong><br>
+          Timestamp: """ + datetime.utcnow().isoformat() + """<br>
+          Recipient: admin@mmrunners.org<br>
+          Template: MMR HTML Email Pipeline
+        </div>
+        <p style="margin:0;font-size:14px;color:#888888;">
+          If you received this, the email pipeline is working correctly! ✅
+        </p>
+      </td></tr>
+      <!-- Footer -->
+      <tr><td style="background:#f8f8fa;padding:20px 36px;text-align:center;border-top:1px solid #eeeeee;">
+        <div style="color:#999999;font-size:12px;line-height:1.6;">
+          Misty Mountain Runners &nbsp;·&nbsp; New York
+          <br>Questions? Email us at <a href="mailto:admin@mmrunners.org" style="color:#5c35a8;text-decoration:none;">admin@mmrunners.org</a>
+        </div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
+
+        result = send_email(
+            to='admin@mmrunners.org',
+            subject='🧪 MMR Admin Portal Test Email',
+            html_content=html_content,
+            cc=None,  # Don't CC ourselves for test email
+        )
+
+        return {
+            'status': 'ok' if result.get('success') else 'error',
+            'sent_to': 'admin@mmrunners.org',
+            'subject': '🧪 MMR Admin Portal Test Email',
+            'message': result.get('message'),
+            'error': result.get('error'),
+            'timestamp': result.get('timestamp')
+        }
+    except Exception as e:
+        return {
+            'status': 'error',
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }
+
+
 def test_db_connection():
     """Test database connectivity and return basic stats."""
     try:
@@ -244,6 +318,7 @@ FUNCTIONS = {
     'check_transaction_nulls': check_transaction_nulls,
     'get_sample_transactions': get_sample_transactions,
     'test_db_connection': test_db_connection,
+    'send_test_email': send_test_email,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
