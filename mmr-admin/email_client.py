@@ -24,23 +24,28 @@ def _get_sender_from_connection_string(connection_string: str) -> str:
     """
     Extract sender email from Azure Communication Services connection string.
 
-    Connection string format: endpoint=https://<resource-name>.communication.azure.com/;access_key=...
-    Sender format (Azure default): DoNotReply@<resource-name>.communication.azure.com
+    Azure provides a default test sender in format:
+    DoNotReply@<resource-guid>.<region>.azurecomm.net
+
+    Connection string format: endpoint=https://<resource-guid>.communication.azure.com/;access_key=...
+    We extract the resource GUID and region to build the test sender email.
     """
     try:
         # Extract endpoint URL
         for part in connection_string.split(';'):
             if part.startswith('endpoint='):
                 endpoint = part.replace('endpoint=', '').strip()
-                # Extract resource name from https://resource-name.communication.azure.com/
-                if 'https://' in endpoint:
-                    domain = endpoint.split('https://')[1].split('/')[0]  # e.g., "resource-name.communication.azure.com"
-                    return f'DoNotReply@{domain}'
+                # Extract resource GUID from https://resource-guid.communication.azure.com/
+                if 'https://' in endpoint and 'communication.azure.com' in endpoint:
+                    resource_guid = endpoint.split('https://')[1].split('.communication.azure.com')[0]
+                    # Azure test sender format: DoNotReply@<guid>.us1.azurecomm.net
+                    # Default to us1 region if not specified in connection string
+                    return f'DoNotReply@{resource_guid}.us1.azurecomm.net'
     except Exception as e:
         logger.warning(f'Failed to extract sender from connection string: {e}')
 
-    # Fallback to hardcoded domain
-    return 'DoNotReply@mmr-comm.communication.azure.com'
+    # Fallback (should rarely reach here if connection string is valid)
+    return 'DoNotReply@example.azurecomm.net'
 
 
 def send_email(
