@@ -1,11 +1,14 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-31 12:35 UTC
-Last commit: b966b9f (fix: correct GAS webhook action name and configure Azure Communication Services)
+Last updated: 2026-03-31 16:20 UTC
+Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py_exec functions)
 
 ---
 
 ## Session log
+
+### 2026-03-31 16:20 UTC — Fix Python Exec Engine + add comprehensive debug info
+Fixed critical bug: replaced all `dbmod.get_db_connection()` with `dbmod.get_conn()` in 7 functions (AttributeError fix). Added extensive debug info to all functions: connection_status, queries_executed, row_counts, error_type, execution_time_ms. Enhanced logging with [PY_EXEC]/[CODE_EXEC] prefixes. Created PYTHON_EXEC_DEBUG_GUIDE.md (11 endpoints documented with curl commands), PYTHON_EXEC_CHANGES.md (technical summary), test_py_exec.sh (automated test script). All functions now return rich debug context for tracing. Committed 7b2491e. Status: Complete — ready for comprehensive testing.
 
 ### 2026-03-31 17:52 UTC — Fix Python Exec + add send_test_email() diagnostic function
 Fixed Python Exec function list loading (was checking non-existent r.ok flag). Added send_test_email() function: sends branded HTML test email via Azure Communication Services to admin@mmrunners.org, matching production email template style. Helps verify email pipeline is working. Committed 9179702.
