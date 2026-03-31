@@ -7,6 +7,9 @@ Last commit: b966b9f (fix: correct GAS webhook action name and configure Azure C
 
 ## Session log
 
+### 2026-03-31 12:50 UTC — Add email sending logging to debug why sync reports aren't received
+Added comprehensive email logging to track send attempts and failures. Changed: (1) Enhanced send_email() to return detailed result dict (success, status, error, timestamp); (2) Updated _send_sync_report() to capture email results and log to sync log; (3) All sync operations now log email success/failure with reason; (4) Created EMAIL_DEBUG.md with troubleshooting workflows (test emails from Python Code, check Azure config, query logs). Status: Complete — ready to test. Next: Test sync operations and verify emails are sent and logged.
+
 ### 2026-03-31 12:45 UTC — Add verbose debug logging & debug helpers for all sync operations
 Added comprehensive debugging capabilities for all sync operations (members, events, payments, transactions). Changed: (1) Enhanced all sync functions with verbose logging showing raw Google Sheets + MySQL data (first 3 rows, column names); (2) Created sync_debug_helpers.py module with callable functions (get_google_*_for_debug, compare_*, show_*_diff) accessible from Python Code Editor; (3) Enhanced result tracking (separate skipped counts, return IDs); (4) Improved datetime comparison with proper parsing. Status: Complete — ready to deploy. Next: Test verbose logs in Azure, use helpers from Python Code Editor for debugging.
 
