@@ -7,6 +7,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-03-31 21:05 UTC — Fix GAS email webhook scope + enhance transaction logging
+Fixed two issues: (1) Removed invalid `email_type='sync_notification'` parameter from `send_generic_email()` call in `_send_sync_report()` (TypeError). Function doesn't accept this param; `email_type` is only for `send_email_webhook()`. (2) Enhanced `_import_transactions()` verbose logging to print first 3 example rows from Google Sheets with all field values in JSON format (helps debug why fields are coming back as None). Updated appsscript.json with gmail.send scope. Committed 2233226. Status: Complete — sync reports now send without error, logging shows actual transaction data.
+
 ### 2026-03-31 20:45 UTC — Add Google Sheets diagnostic module (api_sheets_diags.py)
 Created new api_sheets_diags.py module (436 lines) with 8 diagnostic functions: (1) get_sheets_members()/payments/events/transactions() — read data from Google Sheets; (2) update_sheets_members/payments/events() — write updates to Sheets; (3) compare_sheets_vs_db() — sync health check comparing Sheets row counts vs MySQL. All functions use GAS webhook with rich debug output (row counts, sample columns, timestamps). Registered 8 functions in api_python_exec.py FUNCTIONS dict. Created SHEETS_DIAGS_GUIDE.md with detailed function docs, examples, and data flow. Verified: Python syntax OK, test_imports recognizes module. Status: Complete — ready for use in diagnosing sheet/DB sync issues.
 
