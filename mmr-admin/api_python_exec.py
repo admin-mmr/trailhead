@@ -251,7 +251,15 @@ def check_azure_email_config():
 def send_test_email():
     """Send a test hello email to admin@mmrunners.org to verify email pipeline."""
     try:
+        import os
         from email_client import send_email
+
+        # Get connection string to show which resource we're using
+        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
+        resource_name = 'unknown'
+        if 'communication.azure.com' in connection_string:
+            # Extract: endpoint=https://mmr-comm.unitedstates.communication.azure.com/ → mmr-comm.unitedstates
+            resource_name = connection_string.split('https://')[1].split('.communication.azure.com')[0]
 
         # Use the hardcoded Azure test sender (verified in Azure portal)
         sender = 'DoNotReply@6e248907-c5ac-4a28-8297-f9834526aecd.us1.azurecomm.net'
@@ -311,12 +319,17 @@ def send_test_email():
 
         return {
             'status': 'ok' if result.get('success') else 'error',
+            'azure_resource': resource_name,
             'from_address': sender,
             'sent_to': 'admin@mmrunners.org',
             'subject': '🧪 MMR Admin Portal Test Email',
             'message': result.get('message'),
             'error': result.get('error'),
-            'timestamp': result.get('timestamp')
+            'timestamp': result.get('timestamp'),
+            'debug': {
+                'connection_string_endpoint': connection_string.split(';')[0] if connection_string else 'NOT SET',
+                'note': 'If azure_resource doesn\'t match your mmr-comm resource, update the env var'
+            }
         }
     except Exception as e:
         return {
