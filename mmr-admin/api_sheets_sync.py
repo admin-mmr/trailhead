@@ -122,6 +122,88 @@ def _serialize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [_serialize_row(row) for row in rows]
 
 
+def _normalize_gas_keys(row: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert camelCase keys from GAS webhook to PascalCase (MySQL column names).
+
+    CRITICAL: GAS webhook returns TypeScript objects serialized as JSON with camelCase keys.
+    MySQL schema uses PascalCase column names. This function maps all known camelCase keys
+    to their PascalCase equivalents for all four tables (Members, Events, Payments, Transactions).
+
+    Mappings:
+      - Members: memberID→MemberID, firstName→FirstName, lastName→LastName, etc.
+      - WebApp Events: eventID→EventID, eventType→EventType, memberID→MemberID, etc.
+      - Payment History: paymentID→PaymentID, eventID→EventID, memberID→MemberID, etc.
+      - Fetch Gmail: messageId→MessageId, transactionNumber→TransactionNumber, etc.
+    """
+    CASE_MAP = {
+        # Members table
+        'memberID': 'MemberID',
+        'firstName': 'FirstName',
+        'lastName': 'LastName',
+        'familyID': 'FamilyID',
+        'wechatID': 'WeChatID',
+        'webApp': 'WebApp',
+        'paymentCheck': 'PaymentCheck',
+        'lastUpdated': 'LastUpdated',
+        'membershipFeePaid': 'MembershipFeePaid',
+        'paymentDate': 'PaymentDate',
+        'paymentTransaction': 'PaymentTransaction',
+        'joinYear': 'JoinYear',
+        'phoneNumber': 'PhoneNumber',
+        'lastLoginDate': 'LastLoginDate',
+        'profileLastUpdated': 'ProfileLastUpdated',
+        # WebApp Events table
+        'eventID': 'EventID',
+        'eventType': 'EventType',
+        'expiresAt': 'ExpiresAt',
+        'paymentIntent': 'PaymentIntent',
+        'paymentMethod': 'PaymentMethod',
+        'payerName': 'PayerName',
+        'memoField': 'MemoField',
+        'last4Digits': 'Last4Digits',
+        'familyMemberEmails': 'FamilyMemberEmails',
+        'matchedMessageId': 'MatchedMessageId',
+        'matchedTransactionNumber': 'MatchedTransactionNumber',
+        'adminApprover': 'AdminApprover',
+        'approvalDate': 'ApprovalDate',
+        'screenshotFileId': 'ScreenshotFileId',
+        'gdriveFilePath': 'GDriveFilePath',
+        'ocrText': 'OCRText',
+        'ocrTimestamp': 'OCRTimestamp',
+        # Payment History table
+        'paymentID': 'PaymentID',
+        'transactionReference': 'TransactionReference',
+        'periodStart': 'PeriodStart',
+        'periodEnd': 'PeriodEnd',
+        'processedBy': 'ProcessedBy',
+        'processedDate': 'ProcessedDate',
+        # Fetch Gmail table (transactions)
+        'messageId': 'MessageId',
+        'transactionNumber': 'TransactionNumber',
+        'transactionDate': 'TransactionDate',
+        'originalMemo': 'OriginalMemo',
+        'webAppEventID': 'WebAppID',
+        # Common fields
+        'timestamp': 'Timestamp',
+        'created': 'Created',
+        'sender': 'Sender',
+        'amount': 'Amount',
+        'memo': 'Memo',
+        'subject': 'Subject',
+        'notes': 'Notes',
+        'source': 'Source',
+    }
+
+    normalized = {}
+    for key, value in row.items():
+        # Use mapped key if it exists, otherwise keep original
+        normalized_key = CASE_MAP.get(key, key)
+        normalized[normalized_key] = value
+
+    return normalized
+
+
 def _parse_datetime(value: Any) -> Optional[datetime]:
     """Parse a datetime from various formats (ISO 8601, date string, or datetime object)."""
     if value is None:
@@ -296,6 +378,8 @@ def _sync_members_to_sheets(job_id: str):
         try:
             sheets_data = _call_gas_webhook({'action': 'get_members'})
             sheets_members = sheets_data if isinstance(sheets_data, list) else []
+            # Normalize camelCase to PascalCase
+            sheets_members = [_normalize_gas_keys(row) for row in sheets_members]
             sheets_by_id = {m['MemberID']: m for m in sheets_members if 'MemberID' in m}
             log_lines.append(f"📊 Fetched {len(sheets_by_id)} members from Google Sheets")
 
@@ -501,6 +585,8 @@ def _sync_events_to_sheets(job_id: str):
         try:
             sheets_data = _call_gas_webhook({'action': 'get_events'})
             sheets_events = sheets_data if isinstance(sheets_data, list) else []
+            # Normalize camelCase to PascalCase
+            sheets_events = [_normalize_gas_keys(row) for row in sheets_events]
             sheets_by_id = {e.get('EventID'): e for e in sheets_events if 'EventID' in e}
             log_lines.append(f"📊 Fetched {len(sheets_by_id)} events from Google Sheets")
 
@@ -679,6 +765,8 @@ def _sync_payments_to_sheets(job_id: str):
         try:
             sheets_data = _call_gas_webhook({'action': 'get_payments'})
             sheets_payments = sheets_data if isinstance(sheets_data, list) else []
+            # Normalize camelCase to PascalCase
+            sheets_payments = [_normalize_gas_keys(row) for row in sheets_payments]
             sheets_by_id = {p.get('PaymentID'): p for p in sheets_payments if 'PaymentID' in p}
             log_lines.append(f"📊 Fetched {len(sheets_by_id)} payments from Google Sheets")
         except Exception as e:
@@ -1016,13 +1104,17 @@ def _import_transactions(job_id: str):
         try:
             sheets_data = _call_gas_webhook({'action': 'get_transactions'})
             sheets_txns = sheets_data if isinstance(sheets_data, list) else []
+
+            # CRITICAL: Normalize camelCase keys from GAS to PascalCase (MySQL column names)
+            sheets_txns = [_normalize_gas_keys(row) for row in sheets_txns]
+
             log_lines.append(f"📥 Fetched {len(sheets_txns)} transactions from Google Sheets")
 
             if verbose_mode and sheets_txns:
                 # Show column names and first 3 rows as examples
                 first_row = sheets_txns[0]
                 log_lines.append(f"   Columns: {', '.join(first_row.keys())}")
-                log_lines.append(f"   📋 Example rows from Google Sheets:")
+                log_lines.append(f"   📋 Example rows from Google Sheets (normalized):")
                 for i, row in enumerate(sheets_txns[:3]):
                     # Print all fields with values
                     row_str = json.dumps({k: str(v)[:50] for k, v in row.items()}, indent=0)
