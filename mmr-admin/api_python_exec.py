@@ -24,44 +24,71 @@ py_exec_bp = Blueprint('py_exec', __name__, url_prefix='/api/py-exec')
 
 def get_sheet_vs_db_counts():
     """Compare row counts: Google Sheets transactions vs MySQL."""
+    debug = {'queries_executed': [], 'connection_info': {}}
     try:
-        conn = dbmod.get_db_connection()
+        # Connection info
+        db_config = dbmod.get_db_config()
+        debug['connection_info'] = {
+            'host': db_config.get('host', '?'),
+            'user': db_config.get('user', '?'),
+            'database': db_config.get('database', '?'),
+        }
+
+        conn = dbmod.get_conn()
         cursor = conn.cursor(dictionary=True)
+        debug['connection_status'] = 'connected'
 
-        cursor.execute("SELECT COUNT(*) as cnt FROM transactions")
+        # Total count
+        query1 = "SELECT COUNT(*) as cnt FROM transactions"
+        cursor.execute(query1)
         db_count = cursor.fetchone()['cnt']
+        debug['queries_executed'].append(f"✓ {query1} → {db_count}")
 
-        cursor.execute("SELECT COUNT(*) as cnt FROM transactions WHERE deleted_at IS NULL")
+        # Active count
+        query2 = "SELECT COUNT(*) as cnt FROM transactions WHERE deleted_at IS NULL"
+        cursor.execute(query2)
         db_active = cursor.fetchone()['cnt']
+        debug['queries_executed'].append(f"✓ {query2} → {db_active}")
 
-        cursor.execute("SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'sheet_fetch' ORDER BY created_at DESC LIMIT 1")
+        # Last fetch log
+        query3 = "SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'sheet_fetch' ORDER BY created_at DESC LIMIT 1"
+        cursor.execute(query3)
         last_fetch = cursor.fetchone()
+        debug['queries_executed'].append(f"✓ Fetched last_fetch log entry")
 
         cursor.close()
         conn.close()
+        debug['connection_status'] = 'closed'
 
         return {
             'status': 'ok',
             'db_total_rows': db_count,
             'db_active_rows': db_active,
+            'deleted_rows': db_count - db_active,
             'last_fetch_log': last_fetch,
-            'note': 'To get Google Sheets count, check the last sync log entry for "raw_row_count"'
+            'note': 'To get Google Sheets count, check the last sync log entry for "raw_row_count"',
+            'debug': debug
         }
     except Exception as e:
+        debug['connection_status'] = 'error'
         return {
             'status': 'error',
             'error': str(e),
-            'traceback': traceback.format_exc()
+            'error_type': type(e).__name__,
+            'traceback': traceback.format_exc(),
+            'debug': debug
         }
 
 
 def get_sync_status():
     """Get status of the last 5 sync operations."""
+    debug = {'query_executed': None, 'row_count': 0}
     try:
-        conn = dbmod.get_db_connection()
+        conn = dbmod.get_conn()
         cursor = conn.cursor(dictionary=True)
+        debug['connection_status'] = 'connected'
 
-        cursor.execute("""
+        query = """
             SELECT
                 id, action, status, inserted, updated, errors,
                 raw_row_count, started_at, completed_at,
@@ -69,32 +96,42 @@ def get_sync_status():
             FROM sync_log
             ORDER BY created_at DESC
             LIMIT 5
-        """)
+        """
+        cursor.execute(query)
         logs = cursor.fetchall()
+        debug['query_executed'] = 'SELECT from sync_log (last 5 entries)'
+        debug['row_count'] = len(logs)
 
         cursor.close()
         conn.close()
+        debug['connection_status'] = 'closed'
 
         return {
             'status': 'ok',
             'recent_syncs': logs,
-            'count': len(logs)
+            'count': len(logs),
+            'debug': debug
         }
     except Exception as e:
+        debug['connection_status'] = 'error'
         return {
             'status': 'error',
             'error': str(e),
-            'traceback': traceback.format_exc()
+            'error_type': type(e).__name__,
+            'traceback': traceback.format_exc(),
+            'debug': debug
         }
 
 
 def check_transaction_dups():
     """Check for duplicate transactions (same bib_id, same date)."""
+    debug = {'duplicate_groups_found': 0, 'affected_transaction_ids': []}
     try:
-        conn = dbmod.get_db_connection()
+        conn = dbmod.get_conn()
         cursor = conn.cursor(dictionary=True)
+        debug['connection_status'] = 'connected'
 
-        cursor.execute("""
+        query = """
             SELECT
                 bib_id, transaction_date,
                 COUNT(*) as count,
@@ -105,33 +142,49 @@ def check_transaction_dups():
             HAVING count > 1
             ORDER BY count DESC
             LIMIT 20
-        """)
+        """
+        cursor.execute(query)
         dups = cursor.fetchall()
+        debug['duplicate_groups_found'] = len(dups)
+
+        # Extract all affected IDs
+        all_ids = []
+        for dup in dups:
+            if dup.get('ids'):
+                all_ids.extend(dup['ids'].split(','))
+        debug['total_affected_transactions'] = len(all_ids)
 
         cursor.close()
         conn.close()
+        debug['connection_status'] = 'closed'
 
         return {
             'status': 'ok',
             'duplicate_groups': dups,
             'count': len(dups),
-            'note': 'Each row shows a group of duplicates by bib_id + date'
+            'note': 'Each row shows a group of duplicates by bib_id + date',
+            'debug': debug
         }
     except Exception as e:
+        debug['connection_status'] = 'error'
         return {
             'status': 'error',
             'error': str(e),
-            'traceback': traceback.format_exc()
+            'error_type': type(e).__name__,
+            'traceback': traceback.format_exc(),
+            'debug': debug
         }
 
 
 def check_transaction_nulls():
     """Find transactions with critical NULL values."""
+    debug = {'union_queries': 3, 'null_fields_checked': ['bib_id', 'transaction_date', 'amount']}
     try:
-        conn = dbmod.get_db_connection()
+        conn = dbmod.get_conn()
         cursor = conn.cursor(dictionary=True)
+        debug['connection_status'] = 'connected'
 
-        cursor.execute("""
+        query = """
             SELECT
                 'NULL bib_id' as issue, COUNT(*) as count
             FROM transactions
@@ -146,32 +199,43 @@ def check_transaction_nulls():
                 'NULL amount' as issue, COUNT(*) as count
             FROM transactions
             WHERE deleted_at IS NULL AND amount IS NULL
-        """)
+        """
+        cursor.execute(query)
         issues = cursor.fetchall()
+        debug['issues_found'] = len(issues)
+        debug['issue_breakdown'] = {issue['issue']: issue['count'] for issue in issues}
 
         cursor.close()
         conn.close()
+        debug['connection_status'] = 'closed'
 
+        total = sum(i['count'] for i in issues)
         return {
             'status': 'ok',
             'null_issues': issues,
-            'total_issues': sum(i['count'] for i in issues)
+            'total_issues': total,
+            'debug': debug
         }
     except Exception as e:
+        debug['connection_status'] = 'error'
         return {
             'status': 'error',
             'error': str(e),
-            'traceback': traceback.format_exc()
+            'error_type': type(e).__name__,
+            'traceback': traceback.format_exc(),
+            'debug': debug
         }
 
 
 def get_sample_transactions(limit=10):
     """Fetch sample transaction rows for manual inspection."""
+    debug = {'limit_requested': limit, 'fields_selected': 7}
     try:
-        conn = dbmod.get_db_connection()
+        conn = dbmod.get_conn()
         cursor = conn.cursor(dictionary=True)
+        debug['connection_status'] = 'connected'
 
-        cursor.execute("""
+        query = """
             SELECT
                 id, bib_id, transaction_date, amount,
                 notes, created_at, updated_at
@@ -179,22 +243,30 @@ def get_sample_transactions(limit=10):
             WHERE deleted_at IS NULL
             ORDER BY created_at DESC
             LIMIT %s
-        """, (limit,))
+        """
+        cursor.execute(query, (limit,))
         samples = cursor.fetchall()
+        debug['rows_returned'] = len(samples)
+        debug['sample_ids'] = [s['id'] for s in samples] if samples else []
 
         cursor.close()
         conn.close()
+        debug['connection_status'] = 'closed'
 
         return {
             'status': 'ok',
             'samples': samples,
-            'count': len(samples)
+            'count': len(samples),
+            'debug': debug
         }
     except Exception as e:
+        debug['connection_status'] = 'error'
         return {
             'status': 'error',
             'error': str(e),
-            'traceback': traceback.format_exc()
+            'error_type': type(e).__name__,
+            'traceback': traceback.format_exc(),
+            'debug': debug
         }
 
 
@@ -341,39 +413,62 @@ def send_test_email():
 
 def test_db_connection():
     """Test database connectivity and return basic stats."""
+    debug = {'queries': []}
     try:
-        conn = dbmod.get_db_connection()
+        # Get DB config first
+        db_config = dbmod.get_db_config()
+        debug['config'] = {
+            'host': db_config.get('host', '?'),
+            'user': db_config.get('user', '?'),
+            'database': db_config.get('database', '?'),
+        }
+
+        conn = dbmod.get_conn()
+        debug['connection_status'] = 'connected'
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute("SELECT DATABASE() as db_name")
+        # Test 1: Get database name
+        query1 = "SELECT DATABASE() as db_name"
+        cursor.execute(query1)
         db_info = cursor.fetchone()
+        debug['queries'].append(f"✓ {query1}")
 
-        cursor.execute("""
+        # Test 2: List all tables with column count
+        query2 = """
             SELECT
                 table_name,
                 (SELECT COUNT(*) FROM information_schema.COLUMNS
                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = t.table_name) as col_count
             FROM information_schema.TABLES t
             WHERE TABLE_SCHEMA = DATABASE()
-        """)
+        """
+        cursor.execute(query2)
         tables = cursor.fetchall()
+        debug['queries'].append(f"✓ Listed {len(tables)} tables with column counts")
+        debug['table_count'] = len(tables)
+        debug['table_names'] = [t['table_name'] for t in tables]
 
         cursor.close()
         conn.close()
+        debug['connection_status'] = 'closed'
 
         return {
             'status': 'ok',
             'connected': True,
             'database': db_info['db_name'],
             'tables': tables,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.utcnow().isoformat(),
+            'debug': debug
         }
     except Exception as e:
+        debug['connection_status'] = 'error'
         return {
             'status': 'error',
             'connected': False,
             'error': str(e),
-            'traceback': traceback.format_exc()
+            'error_type': type(e).__name__,
+            'traceback': traceback.format_exc(),
+            'debug': debug
         }
 
 
@@ -410,10 +505,14 @@ def list_functions():
 @login_required
 def run_function(fn_name):
     """Execute a diagnostic function and return results."""
+    execution_start = datetime.utcnow()
+
     if fn_name not in FUNCTIONS:
         return jsonify({
+            'status': 'error',
             'error': f'Function "{fn_name}" not found',
-            'available': list(FUNCTIONS.keys())
+            'available': list(FUNCTIONS.keys()),
+            'timestamp': execution_start.isoformat()
         }), 404
 
     try:
@@ -423,22 +522,38 @@ def run_function(fn_name):
         data = request.get_json() or {}
         kwargs = data.get('kwargs', {})
 
+        # Log execution
+        print(f"[PY_EXEC] Executing: {fn_name}")
+        if kwargs:
+            print(f"[PY_EXEC] With kwargs: {kwargs}")
+
         # Execute function
         result = func(**kwargs)
 
         # Ensure result is JSON-serializable
-        result['executed_at'] = datetime.utcnow().isoformat()
+        execution_end = datetime.utcnow()
+        elapsed_ms = (execution_end - execution_start).total_seconds() * 1000
+
+        result['executed_at'] = execution_end.isoformat()
+        result['execution_time_ms'] = round(elapsed_ms, 2)
         result['function'] = fn_name
 
+        print(f"[PY_EXEC] ✓ {fn_name} completed in {elapsed_ms:.0f}ms (status: {result.get('status', 'unknown')})")
         return jsonify(result)
 
     except Exception as e:
+        execution_end = datetime.utcnow()
+        elapsed_ms = (execution_end - execution_start).total_seconds() * 1000
+        print(f"[PY_EXEC] ✗ {fn_name} failed in {elapsed_ms:.0f}ms: {type(e).__name__}: {str(e)}")
+
         return jsonify({
             'status': 'error',
             'function': fn_name,
             'error': str(e),
+            'error_type': type(e).__name__,
             'traceback': traceback.format_exc(),
-            'executed_at': datetime.utcnow().isoformat()
+            'executed_at': execution_end.isoformat(),
+            'execution_time_ms': round(elapsed_ms, 2)
         }), 500
 
 
@@ -446,6 +561,7 @@ def run_function(fn_name):
 @login_required
 def execute_code():
     """Execute arbitrary Python code with access to db helper functions."""
+    execution_start = datetime.utcnow()
     data = request.get_json() or {}
     code = data.get('code', '').strip()
 
@@ -453,7 +569,7 @@ def execute_code():
         return jsonify({
             'status': 'error',
             'error': 'No code provided',
-            'executed_at': datetime.utcnow().isoformat()
+            'executed_at': execution_start.isoformat()
         }), 400
 
     # Create safe execution environment with useful helpers
@@ -466,6 +582,11 @@ def execute_code():
     }
 
     output_lines = []
+    debug = {
+        'code_length': len(code),
+        'code_lines': len(code.split('\n')),
+        'available_helpers': list(exec_globals.keys()),
+    }
 
     # Capture print output
     import io
@@ -474,6 +595,8 @@ def execute_code():
     sys.stdout = io.StringIO()
 
     try:
+        print(f"[CODE_EXEC] Executing {debug['code_lines']} lines of code ({debug['code_length']} chars)")
+
         # Execute the code
         exec(code, exec_globals)
 
@@ -482,22 +605,34 @@ def execute_code():
         if captured_output:
             output_lines.append(captured_output)
 
-        # If code returned a value, capture it
-        # (This is tricky with exec, so we use a wrapper)
+        execution_end = datetime.utcnow()
+        elapsed_ms = (execution_end - execution_start).total_seconds() * 1000
+
         result = {
             'status': 'ok',
             'output': ''.join(output_lines),
-            'executed_at': datetime.utcnow().isoformat()
+            'executed_at': execution_end.isoformat(),
+            'execution_time_ms': round(elapsed_ms, 2),
+            'debug': debug
         }
+        print(f"[CODE_EXEC] ✓ Execution completed successfully in {elapsed_ms:.0f}ms")
 
     except Exception as e:
+        execution_end = datetime.utcnow()
+        elapsed_ms = (execution_end - execution_start).total_seconds() * 1000
+        debug['error_line'] = traceback.format_exc().split('\n')[-3] if traceback.format_exc() else 'Unknown'
+
         result = {
             'status': 'error',
             'error': str(e),
             'error_type': type(e).__name__,
             'traceback': traceback.format_exc(),
-            'executed_at': datetime.utcnow().isoformat()
+            'executed_at': execution_end.isoformat(),
+            'execution_time_ms': round(elapsed_ms, 2),
+            'debug': debug
         }
+        print(f"[CODE_EXEC] ✗ Execution failed in {elapsed_ms:.0f}ms: {type(e).__name__}")
+
     finally:
         # Restore stdout
         sys.stdout = old_stdout
@@ -509,23 +644,41 @@ def execute_code():
 @login_required
 def health_check():
     """Quick health check: DB connection + function count."""
+    debug = {'checks': {}}
     try:
-        conn = dbmod.get_db_connection()
+        # Check DB config
+        db_config = dbmod.get_db_config()
+        debug['checks']['db_config'] = {
+            'host': db_config.get('host', '?'),
+            'user': db_config.get('user', '?'),
+            'database': db_config.get('database', '?'),
+        }
+
+        # Check connection
+        conn = dbmod.get_conn()
+        debug['checks']['connection_acquired'] = True
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
+        debug['checks']['query_executed'] = True
         cursor.close()
         conn.close()
+        debug['checks']['connection_closed'] = True
 
         return jsonify({
             'status': 'healthy',
             'db_connected': True,
             'function_count': len(FUNCTIONS),
-            'timestamp': datetime.utcnow().isoformat()
+            'available_functions': list(FUNCTIONS.keys()),
+            'timestamp': datetime.utcnow().isoformat(),
+            'debug': debug
         })
     except Exception as e:
+        debug['checks']['error'] = str(e)
         return jsonify({
             'status': 'error',
             'db_connected': False,
             'error': str(e),
-            'timestamp': datetime.utcnow().isoformat()
+            'error_type': type(e).__name__,
+            'timestamp': datetime.utcnow().isoformat(),
+            'debug': debug
         }), 500
