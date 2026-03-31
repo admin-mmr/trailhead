@@ -51,6 +51,37 @@ def _get_config_value(key: str, default: str = '') -> str:
     return rows[0]['ConfigValue'] if rows else default
 
 
+def _call_gas_webhook(payload: Dict) -> Dict:
+    """
+    Call the Google Apps Script webhook to fetch/push Sheets data.
+
+    Args:
+        payload: {action: str, ...}
+
+    Returns:
+        Response data or empty dict on error
+    """
+    webhook_url = _get_config_value('SheetsWebhookUrl', '')
+    if not webhook_url:
+        logger.warning("SheetsWebhookUrl not configured — skipping webhook call")
+        return {}
+
+    import requests
+    try:
+        resp = requests.post(webhook_url, json=payload, timeout=30)
+        if resp.status_code != 200:
+            raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
+
+        body = resp.json()
+        if not body.get('ok'):
+            raise Exception(f"GAS error: {body.get('error', body)}")
+
+        return body.get('data', {})
+    except Exception as e:
+        logger.error(f"GAS webhook failed: {e}")
+        raise
+
+
 def _send_sync_report(
     recipient: str,
     operation: str,
@@ -116,10 +147,15 @@ def _sync_members_to_sheets(job_id: str):
         members_rows = query("SELECT * FROM members ORDER BY MemberID")
         log_lines.append(f"📥 Fetched {len(members_rows)} members from MySQL")
 
-        # TODO: Fetch members from Google Sheets via GAS webhook
-        # For now, simulate with a placeholder request to GAS
-        # sheets_data = _call_gas_webhook({'action': 'get_members'})
-        # For v1, we'll just log the plan
+        # Fetch members from Google Sheets
+        try:
+            sheets_data = _call_gas_webhook({'action': 'get_members'})
+            sheets_members = sheets_data if isinstance(sheets_data, list) else []
+            sheets_by_id = {m['MemberID']: m for m in sheets_members if 'MemberID' in m}
+            log_lines.append(f"📊 Fetched {len(sheets_by_id)} members from Google Sheets")
+        except Exception as e:
+            log_lines.append(f"⚠️  Could not fetch from Sheets: {e}")
+            sheets_by_id = {}
 
         job_update = {
             'status': 'running',
@@ -129,24 +165,66 @@ def _sync_members_to_sheets(job_id: str):
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
+        # Separate rows for appending vs updating
+        rows_to_append = []
+        rows_to_update = []
+
         for idx, member in enumerate(members_rows):
             member_id = member['MemberID']
             mysql_updated = member.get('LastUpdated')
 
-            # TODO: Check if member exists in Google Sheets by MemberID
-            # If not found → mark for append
-            # If found → check LastUpdated and decide to update
+            if member_id not in sheets_by_id:
+                # New member — append to Sheets
+                rows_to_append.append(member)
+                log_lines.append(f"✅ {member_id}: {member.get('FirstName', '')} {member.get('LastName', '')} (NEW)")
+                inserted.append(f"{member_id} ({member.get('FirstName', '')} {member.get('LastName', '')})")
+            else:
+                # Existing member — check versioning
+                sheets_member = sheets_by_id[member_id]
+                sheets_updated = sheets_member.get('LastUpdated')
 
-            # For now, log what would happen
-            log_lines.append(f"✓ {member_id}: would sync {member['FirstName']} {member['LastName']}")
-            inserted.append(f"{member_id} ({member.get('FirstName', '')} {member.get('LastName', '')})")
+                # Compare timestamps
+                if mysql_updated and sheets_updated:
+                    # Both have timestamps — compare them
+                    mysql_ts = str(mysql_updated) if mysql_updated else ''
+                    sheets_ts = str(sheets_updated) if sheets_updated else ''
+                    if mysql_ts > sheets_ts:
+                        rows_to_update.append(member)
+                        log_lines.append(f"🔄 {member_id}: {member.get('FirstName', '')} {member.get('LastName', '')} (MySQL newer)")
+                        updated.append(f"{member_id} (updated)")
+                    else:
+                        log_lines.append(f"⊘ {member_id}: skipped (Sheets newer or same)")
+                elif mysql_updated:
+                    # MySQL has timestamp, Sheets doesn't — update
+                    rows_to_update.append(member)
+                    log_lines.append(f"🔄 {member_id}: {member.get('FirstName', '')} {member.get('LastName', '')} (Sheets missing date)")
+                    updated.append(f"{member_id} (updated)")
+                else:
+                    log_lines.append(f"⊘ {member_id}: skipped (no MySQL LastUpdated)")
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(members_rows)) * 50)}
                 with _sync_jobs_lock:
                     _sync_jobs[job_id].update(job_update)
 
-        summary = f"✅ Members Sync Complete: {len(inserted)} inserted/updated, {len(errors)} errors"
+        # Push changes to Sheets
+        if rows_to_append:
+            try:
+                _call_gas_webhook({'action': 'append_members', 'rows': rows_to_append})
+                log_lines.append(f"📤 Appended {len(rows_to_append)} new members to Sheets")
+            except Exception as e:
+                log_lines.append(f"❌ Failed to append members: {e}")
+                errors.append(f"append_members: {e}")
+
+        if rows_to_update:
+            try:
+                _call_gas_webhook({'action': 'update_members', 'rows': rows_to_update})
+                log_lines.append(f"📤 Updated {len(rows_to_update)} members in Sheets")
+            except Exception as e:
+                log_lines.append(f"❌ Failed to update members: {e}")
+                errors.append(f"update_members: {e}")
+
+        summary = f"✅ Members Sync Complete: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
         log_lines.insert(0, summary)
 
         job_update = {
@@ -191,12 +269,14 @@ def _sync_members_to_sheets(job_id: str):
 
 
 def _sync_events_to_sheets(job_id: str):
-    """Similar to members: compare webapp_events by EventID."""
+    """Compare webapp_events by EventID with smart versioning."""
     log_lines = []
     inserted = []
+    updated = []
+    errors = []
 
     try:
-        job_update = {'status': 'running', 'message': 'Syncing events...', 'progress': 0}
+        job_update = {'status': 'running', 'message': 'Fetching events...', 'progress': 0}
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
@@ -205,11 +285,72 @@ def _sync_events_to_sheets(job_id: str):
         )
         log_lines.append(f"📥 Fetched {len(events_rows)} events from MySQL")
 
-        for event in events_rows:
-            log_lines.append(f"✓ {event['EventID']}: {event.get('EventName', '')}")
-            inserted.append(event['EventID'])
+        # Fetch from Sheets
+        try:
+            sheets_data = _call_gas_webhook({'action': 'get_events'})
+            sheets_events = sheets_data if isinstance(sheets_data, list) else []
+            sheets_by_id = {e.get('EventID'): e for e in sheets_events if 'EventID' in e}
+            log_lines.append(f"📊 Fetched {len(sheets_by_id)} events from Google Sheets")
+        except Exception as e:
+            log_lines.append(f"⚠️  Could not fetch from Sheets: {e}")
+            sheets_by_id = {}
 
-        summary = f"✅ Events Sync: {len(inserted)} processed"
+        job_update = {'status': 'running', 'message': 'Syncing events...', 'progress': 25}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        rows_to_append = []
+        rows_to_update = []
+
+        for idx, event in enumerate(events_rows):
+            event_id = event['EventID']
+            mysql_updated = event.get('UpdatedAt')
+
+            if event_id not in sheets_by_id:
+                rows_to_append.append(event)
+                log_lines.append(f"✅ {event_id}: {event.get('EventName', '')} (NEW)")
+                inserted.append(event_id)
+            else:
+                sheets_event = sheets_by_id[event_id]
+                sheets_updated = sheets_event.get('UpdatedAt')
+
+                if mysql_updated and sheets_updated:
+                    mysql_ts = str(mysql_updated) if mysql_updated else ''
+                    sheets_ts = str(sheets_updated) if sheets_updated else ''
+                    if mysql_ts > sheets_ts:
+                        rows_to_update.append(event)
+                        log_lines.append(f"🔄 {event_id}: updated")
+                        updated.append(event_id)
+                    else:
+                        log_lines.append(f"⊘ {event_id}: skipped (Sheets newer)")
+                elif mysql_updated:
+                    rows_to_update.append(event)
+                    log_lines.append(f"🔄 {event_id}: updated (Sheets missing date)")
+                    updated.append(event_id)
+
+            if (idx + 1) % 50 == 0:
+                job_update = {'progress': 25 + int((idx / len(events_rows)) * 50)}
+                with _sync_jobs_lock:
+                    _sync_jobs[job_id].update(job_update)
+
+        # Push to Sheets
+        if rows_to_append:
+            try:
+                _call_gas_webhook({'action': 'append_events', 'rows': rows_to_append})
+                log_lines.append(f"📤 Appended {len(rows_to_append)} new events")
+            except Exception as e:
+                log_lines.append(f"❌ Failed to append events: {e}")
+                errors.append(f"append_events: {e}")
+
+        if rows_to_update:
+            try:
+                _call_gas_webhook({'action': 'update_events', 'rows': rows_to_update})
+                log_lines.append(f"📤 Updated {len(rows_to_update)} events")
+            except Exception as e:
+                log_lines.append(f"❌ Failed to update events: {e}")
+                errors.append(f"update_events: {e}")
+
+        summary = f"✅ Events Sync: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
 
         job_update = {
             'status': 'done',
@@ -218,14 +359,25 @@ def _sync_events_to_sheets(job_id: str):
             'result': {
                 'operation': 'events_to_sheets',
                 'inserted': len(inserted),
+                'updated': len(updated),
+                'errors': len(errors),
                 'log': '\n'.join(log_lines),
             }
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
+        # Send report email
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation='MySQL → Google: Events',
+            summary=summary,
+            details=inserted[:50],
+            log_content='\n'.join(log_lines),
+        )
+
     except Exception as e:
-        logger.error(f"Events sync error: {e}")
+        logger.error(f"Events sync error: {e}\n{traceback.format_exc()}")
         job_update = {
             'status': 'error',
             'message': f"❌ Events sync failed: {e}",
@@ -236,23 +388,87 @@ def _sync_events_to_sheets(job_id: str):
 
 
 def _sync_payments_to_sheets(job_id: str):
-    """Similar to members/events: compare payments by PaymentID."""
+    """Compare payments by PaymentID with smart versioning."""
     log_lines = []
     inserted = []
+    updated = []
+    errors = []
 
     try:
-        job_update = {'status': 'running', 'message': 'Syncing payments...', 'progress': 0}
+        job_update = {'status': 'running', 'message': 'Fetching payments...', 'progress': 0}
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
         payments_rows = query("SELECT * FROM payments ORDER BY PaymentID DESC LIMIT 500")
         log_lines.append(f"📥 Fetched {len(payments_rows)} recent payments from MySQL")
 
-        for payment in payments_rows:
-            log_lines.append(f"✓ {payment['PaymentID']}: ${payment.get('Amount', 0)}")
-            inserted.append(payment['PaymentID'])
+        # Fetch from Sheets
+        try:
+            sheets_data = _call_gas_webhook({'action': 'get_payments'})
+            sheets_payments = sheets_data if isinstance(sheets_data, list) else []
+            sheets_by_id = {p.get('PaymentID'): p for p in sheets_payments if 'PaymentID' in p}
+            log_lines.append(f"📊 Fetched {len(sheets_by_id)} payments from Google Sheets")
+        except Exception as e:
+            log_lines.append(f"⚠️  Could not fetch from Sheets: {e}")
+            sheets_by_id = {}
 
-        summary = f"✅ Payments Sync: {len(inserted)} processed"
+        job_update = {'status': 'running', 'message': 'Syncing payments...', 'progress': 25}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        rows_to_append = []
+        rows_to_update = []
+
+        for idx, payment in enumerate(payments_rows):
+            payment_id = payment['PaymentID']
+            mysql_updated = payment.get('ProcessedDate')
+            amount = float(payment.get('Amount', 0))
+
+            if payment_id not in sheets_by_id:
+                rows_to_append.append(payment)
+                log_lines.append(f"✅ {payment_id}: ${amount} (NEW)")
+                inserted.append(f"{payment_id} (${amount})")
+            else:
+                sheets_payment = sheets_by_id[payment_id]
+                sheets_updated = sheets_payment.get('ProcessedDate')
+
+                if mysql_updated and sheets_updated:
+                    mysql_ts = str(mysql_updated) if mysql_updated else ''
+                    sheets_ts = str(sheets_updated) if sheets_updated else ''
+                    if mysql_ts > sheets_ts:
+                        rows_to_update.append(payment)
+                        log_lines.append(f"🔄 {payment_id}: ${amount} (MySQL newer)")
+                        updated.append(payment_id)
+                    else:
+                        log_lines.append(f"⊘ {payment_id}: skipped (Sheets newer)")
+                elif mysql_updated:
+                    rows_to_update.append(payment)
+                    log_lines.append(f"🔄 {payment_id}: ${amount} (Sheets missing date)")
+                    updated.append(payment_id)
+
+            if (idx + 1) % 100 == 0:
+                job_update = {'progress': 25 + int((idx / len(payments_rows)) * 50)}
+                with _sync_jobs_lock:
+                    _sync_jobs[job_id].update(job_update)
+
+        # Push to Sheets
+        if rows_to_append:
+            try:
+                _call_gas_webhook({'action': 'append_payments', 'rows': rows_to_append})
+                log_lines.append(f"📤 Appended {len(rows_to_append)} new payments")
+            except Exception as e:
+                log_lines.append(f"❌ Failed to append payments: {e}")
+                errors.append(f"append_payments: {e}")
+
+        if rows_to_update:
+            try:
+                _call_gas_webhook({'action': 'update_payments', 'rows': rows_to_update})
+                log_lines.append(f"📤 Updated {len(rows_to_update)} payments")
+            except Exception as e:
+                log_lines.append(f"❌ Failed to update payments: {e}")
+                errors.append(f"update_payments: {e}")
+
+        summary = f"✅ Payments Sync: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
 
         job_update = {
             'status': 'done',
@@ -261,14 +477,25 @@ def _sync_payments_to_sheets(job_id: str):
             'result': {
                 'operation': 'payments_to_sheets',
                 'inserted': len(inserted),
+                'updated': len(updated),
+                'errors': len(errors),
                 'log': '\n'.join(log_lines),
             }
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
+        # Send report email
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation='MySQL → Google: Payments',
+            summary=summary,
+            details=inserted[:50],
+            log_content='\n'.join(log_lines),
+        )
+
     except Exception as e:
-        logger.error(f"Payments sync error: {e}")
+        logger.error(f"Payments sync error: {e}\n{traceback.format_exc()}")
         job_update = {
             'status': 'error',
             'message': f"❌ Payments sync failed: {e}",
@@ -300,33 +527,102 @@ def _import_transactions(job_id: str):
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
-        # TODO: Call GAS webhook to get gmail_transactions sheet
-        # sheets_txns = _call_gas_webhook({'action': 'get_transactions'})
+        # Fetch transactions from Google Sheets
+        try:
+            sheets_data = _call_gas_webhook({'action': 'get_transactions'})
+            sheets_txns = sheets_data if isinstance(sheets_data, list) else []
+            log_lines.append(f"📥 Fetched {len(sheets_txns)} transactions from Google Sheets")
+        except Exception as e:
+            log_lines.append(f"❌ Failed to fetch from Sheets: {e}")
+            raise
 
-        # For now, just log the intent
-        log_lines.append("📥 Importing gmail_transactions from Google Sheets...")
-        log_lines.append("Note: MessageId is primary key; only update Notes if Memo differs")
+        # Get existing MessageIds from MySQL
+        existing_txns = query("SELECT MessageId, Notes FROM gmail_transactions")
+        existing_ids = {t['MessageId']: t['Notes'] for t in existing_txns}
+        log_lines.append(f"📥 Found {len(existing_ids)} existing transactions in MySQL")
+
+        job_update = {'status': 'running', 'message': 'Processing transactions...', 'progress': 25}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Process each transaction
+        for idx, txn in enumerate(sheets_txns):
+            message_id = txn.get('MessageId')
+            memo = txn.get('Memo', '')
+            processed_time = txn.get('ProcessedTime')
+            webapp_id = txn.get('WebAppID', '')
+
+            if not message_id:
+                log_lines.append(f"⚠️  Skipping row {idx}: missing MessageId")
+                continue
+
+            if message_id not in existing_ids:
+                # New transaction — insert
+                try:
+                    execute("""
+                        INSERT INTO gmail_transactions
+                        (MessageId, Memo, Notes, ProcessedTime, WebAppID)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, [message_id, memo, '', processed_time, webapp_id])
+                    inserted.append(message_id)
+                    log_lines.append(f"✅ {message_id}: inserted (new)")
+                except Exception as e:
+                    errors.append(f"{message_id}: {e}")
+                    log_lines.append(f"❌ {message_id}: {e}")
+            else:
+                # Existing transaction — check if Memo differs from Notes
+                existing_notes = existing_ids[message_id]
+                if memo and memo != existing_notes:
+                    try:
+                        execute(
+                            "UPDATE gmail_transactions SET Notes = %s WHERE MessageId = %s",
+                            [memo, message_id]
+                        )
+                        updated.append(message_id)
+                        log_lines.append(f"🔄 {message_id}: updated Notes")
+                    except Exception as e:
+                        errors.append(f"{message_id}: {e}")
+                        log_lines.append(f"❌ {message_id}: {e}")
+                else:
+                    log_lines.append(f"⊘ {message_id}: skipped (Memo matches Notes)")
+
+            if (idx + 1) % 100 == 0:
+                job_update = {'progress': 25 + int((idx / len(sheets_txns)) * 50)}
+                with _sync_jobs_lock:
+                    _sync_jobs[job_id].update(job_update)
+
+        summary = f"✅ Import Complete: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
 
         job_update = {
             'status': 'done',
-            'message': 'ℹ️ Import transactions ready (awaiting GAS integration)',
+            'message': summary,
             'progress': 100,
             'result': {
                 'operation': 'import_transactions',
-                'inserted': 0,
-                'updated': 0,
+                'inserted': len(inserted),
+                'updated': len(updated),
+                'errors': len(errors),
                 'log': '\n'.join(log_lines),
             }
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
+        # Send report email
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation='Import Transactions from Google',
+            summary=summary,
+            details=inserted[:50],
+            log_content='\n'.join(log_lines),
+        )
+
     except Exception as e:
-        logger.error(f"Transaction import error: {e}")
+        logger.error(f"Transaction import error: {e}\n{traceback.format_exc()}")
         job_update = {
             'status': 'error',
             'message': f"❌ Import failed: {e}",
-            'result': {'error': str(e)}
+            'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
@@ -345,34 +641,162 @@ def _dry_run_google_to_mysql(job_id: str):
     diffs = []
 
     try:
-        job_update = {'status': 'running', 'message': 'Running dry-run comparison...', 'progress': 0}
+        job_update = {'status': 'running', 'message': 'Fetching data for comparison...', 'progress': 0}
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
-        # TODO: Fetch sheets data and compare
-        log_lines.append("🔍 Dry-run: Google → MySQL (no changes)")
-        log_lines.append("This would show differences between Google Sheets and MySQL")
-        log_lines.append("No changes made — for review only.")
+        log_lines.append("🔍 Dry-run: Google → MySQL (no changes made)")
+
+        # Fetch all data from Sheets
+        try:
+            sheets_members_data = _call_gas_webhook({'action': 'get_members'})
+            sheets_members = sheets_members_data if isinstance(sheets_members_data, list) else []
+            sheets_member_ids = {m.get('MemberID') for m in sheets_members if 'MemberID' in m}
+            log_lines.append(f"📊 Sheets: {len(sheets_member_ids)} members")
+        except Exception as e:
+            log_lines.append(f"⚠️  Could not fetch members from Sheets: {e}")
+            sheets_member_ids = set()
+
+        try:
+            sheets_events_data = _call_gas_webhook({'action': 'get_events'})
+            sheets_events = sheets_events_data if isinstance(sheets_events_data, list) else []
+            sheets_event_ids = {e.get('EventID') for e in sheets_events if 'EventID' in e}
+            log_lines.append(f"📊 Sheets: {len(sheets_event_ids)} events")
+        except Exception as e:
+            log_lines.append(f"⚠️  Could not fetch events from Sheets: {e}")
+            sheets_event_ids = set()
+
+        try:
+            sheets_payments_data = _call_gas_webhook({'action': 'get_payments'})
+            sheets_payments = sheets_payments_data if isinstance(sheets_payments_data, list) else []
+            sheets_payment_ids = {p.get('PaymentID') for p in sheets_payments if 'PaymentID' in p}
+            log_lines.append(f"📊 Sheets: {len(sheets_payment_ids)} payments")
+        except Exception as e:
+            log_lines.append(f"⚠️  Could not fetch payments from Sheets: {e}")
+            sheets_payment_ids = set()
+
+        job_update = {'status': 'running', 'message': 'Comparing with MySQL...', 'progress': 40}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Fetch from MySQL
+        mysql_members = query("SELECT MemberID FROM members")
+        mysql_member_ids = {m['MemberID'] for m in mysql_members}
+        log_lines.append(f"💾 MySQL: {len(mysql_member_ids)} members")
+
+        mysql_events = query("SELECT EventID FROM webapp_events WHERE EventStatus NOT IN ('cancelled', 'archived')")
+        mysql_event_ids = {e['EventID'] for e in mysql_events}
+        log_lines.append(f"💾 MySQL: {len(mysql_event_ids)} events")
+
+        mysql_payments = query("SELECT PaymentID FROM payments")
+        mysql_payment_ids = {p['PaymentID'] for p in mysql_payments}
+        log_lines.append(f"💾 MySQL: {len(mysql_payment_ids)} payments")
+
+        job_update = {'status': 'running', 'message': 'Analyzing differences...', 'progress': 70}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        log_lines.append("\n--- MEMBER DIFFERENCES ---")
+        only_in_sheets_m = sheets_member_ids - mysql_member_ids
+        only_in_mysql_m = mysql_member_ids - sheets_member_ids
+
+        if only_in_sheets_m:
+            log_lines.append(f"📌 {len(only_in_sheets_m)} members in Sheets only (not in MySQL):")
+            for mid in sorted(only_in_sheets_m)[:20]:
+                log_lines.append(f"   • {mid}")
+            if len(only_in_sheets_m) > 20:
+                log_lines.append(f"   ... and {len(only_in_sheets_m) - 20} more")
+            diffs.append(f"Members: {len(only_in_sheets_m)} in Sheets only")
+
+        if only_in_mysql_m:
+            log_lines.append(f"📌 {len(only_in_mysql_m)} members in MySQL only (not in Sheets):")
+            for mid in sorted(only_in_mysql_m)[:20]:
+                log_lines.append(f"   • {mid}")
+            if len(only_in_mysql_m) > 20:
+                log_lines.append(f"   ... and {len(only_in_mysql_m) - 20} more")
+            diffs.append(f"Members: {len(only_in_mysql_m)} in MySQL only")
+
+        if not only_in_sheets_m and not only_in_mysql_m:
+            log_lines.append("✅ Members: No differences")
+
+        log_lines.append("\n--- EVENT DIFFERENCES ---")
+        only_in_sheets_e = sheets_event_ids - mysql_event_ids
+        only_in_mysql_e = mysql_event_ids - sheets_event_ids
+
+        if only_in_sheets_e:
+            log_lines.append(f"📌 {len(only_in_sheets_e)} events in Sheets only:")
+            for eid in sorted(only_in_sheets_e)[:20]:
+                log_lines.append(f"   • {eid}")
+            if len(only_in_sheets_e) > 20:
+                log_lines.append(f"   ... and {len(only_in_sheets_e) - 20} more")
+            diffs.append(f"Events: {len(only_in_sheets_e)} in Sheets only")
+
+        if only_in_mysql_e:
+            log_lines.append(f"📌 {len(only_in_mysql_e)} events in MySQL only:")
+            for eid in sorted(only_in_mysql_e)[:20]:
+                log_lines.append(f"   • {eid}")
+            if len(only_in_mysql_e) > 20:
+                log_lines.append(f"   ... and {len(only_in_mysql_e) - 20} more")
+            diffs.append(f"Events: {len(only_in_mysql_e)} in MySQL only")
+
+        if not only_in_sheets_e and not only_in_mysql_e:
+            log_lines.append("✅ Events: No differences")
+
+        log_lines.append("\n--- PAYMENT DIFFERENCES ---")
+        only_in_sheets_p = sheets_payment_ids - mysql_payment_ids
+        only_in_mysql_p = mysql_payment_ids - sheets_payment_ids
+
+        if only_in_sheets_p:
+            log_lines.append(f"📌 {len(only_in_sheets_p)} payments in Sheets only:")
+            for pid in sorted(only_in_sheets_p)[:20]:
+                log_lines.append(f"   • {pid}")
+            if len(only_in_sheets_p) > 20:
+                log_lines.append(f"   ... and {len(only_in_sheets_p) - 20} more")
+            diffs.append(f"Payments: {len(only_in_sheets_p)} in Sheets only")
+
+        if only_in_mysql_p:
+            log_lines.append(f"📌 {len(only_in_mysql_p)} payments in MySQL only:")
+            for pid in sorted(only_in_mysql_p)[:20]:
+                log_lines.append(f"   • {pid}")
+            if len(only_in_mysql_p) > 20:
+                log_lines.append(f"   ... and {len(only_in_mysql_p) - 20} more")
+            diffs.append(f"Payments: {len(only_in_mysql_p)} in MySQL only")
+
+        if not only_in_sheets_p and not only_in_mysql_p:
+            log_lines.append("✅ Payments: No differences")
+
+        diff_count = len(diffs)
+        summary = f"✅ Dry-run complete: {diff_count} difference(s) detected (no changes made)"
 
         job_update = {
             'status': 'done',
-            'message': '✅ Dry-run complete: 0 differences detected',
+            'message': summary,
             'progress': 100,
             'result': {
                 'operation': 'dry_run_google_to_mysql',
                 'differences': diffs,
+                'difference_count': diff_count,
                 'log': '\n'.join(log_lines),
             }
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
+        # Send report email
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation='Google → MySQL Dry-Run',
+            summary=summary + ' (NO CHANGES MADE)',
+            details=diffs,
+            log_content='\n'.join(log_lines),
+        )
+
     except Exception as e:
-        logger.error(f"Dry-run error: {e}")
+        logger.error(f"Dry-run error: {e}\n{traceback.format_exc()}")
         job_update = {
             'status': 'error',
             'message': f"❌ Dry-run failed: {e}",
-            'result': {'error': str(e)}
+            'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
