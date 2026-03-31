@@ -288,6 +288,18 @@ def _sync_members_to_sheets(job_id: str):
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
+        # Send error report email
+        try:
+            _send_sync_report(
+                recipient='admin@mmrunners.org',
+                operation='MySQL → Google: Members',
+                summary=error_msg,
+                details=[],
+                log_content='\n'.join(log_lines),
+            )
+        except Exception as email_err:
+            logger.error(f"Failed to send error email: {email_err}")
+
 
 def _sync_events_to_sheets(job_id: str):
     """Compare webapp_events by EventID with smart versioning."""
@@ -397,13 +409,26 @@ def _sync_events_to_sheets(job_id: str):
 
     except Exception as e:
         logger.error(f"Events sync error: {e}\n{traceback.format_exc()}")
+        error_msg = f"❌ Events sync failed: {e}"
         job_update = {
             'status': 'error',
-            'message': f"❌ Events sync failed: {e}",
+            'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
+
+        # Send error report email
+        try:
+            _send_sync_report(
+                recipient='admin@mmrunners.org',
+                operation='MySQL → Google: Events',
+                summary=error_msg,
+                details=[],
+                log_content='\n'.join(log_lines),
+            )
+        except Exception as email_err:
+            logger.error(f"Failed to send error email: {email_err}")
 
 
 def _sync_payments_to_sheets(job_id: str):
@@ -513,13 +538,26 @@ def _sync_payments_to_sheets(job_id: str):
 
     except Exception as e:
         logger.error(f"Payments sync error: {e}\n{traceback.format_exc()}")
+        error_msg = f"❌ Payments sync failed: {e}"
         job_update = {
             'status': 'error',
-            'message': f"❌ Payments sync failed: {e}",
+            'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
+
+        # Send error report email
+        try:
+            _send_sync_report(
+                recipient='admin@mmrunners.org',
+                operation='MySQL → Google: Payments',
+                summary=error_msg,
+                details=[],
+                log_content='\n'.join(log_lines),
+            )
+        except Exception as email_err:
+            logger.error(f"Failed to send error email: {email_err}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -636,13 +674,26 @@ def _import_transactions(job_id: str):
 
     except Exception as e:
         logger.error(f"Transaction import error: {e}\n{traceback.format_exc()}")
+        error_msg = f"❌ Import failed: {e}"
         job_update = {
             'status': 'error',
-            'message': f"❌ Import failed: {e}",
+            'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
+
+        # Send error report email
+        try:
+            _send_sync_report(
+                recipient='admin@mmrunners.org',
+                operation='Import Transactions from Google',
+                summary=error_msg,
+                details=[],
+                log_content='\n'.join(log_lines),
+            )
+        except Exception as email_err:
+            logger.error(f"Failed to send error email: {email_err}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -810,13 +861,26 @@ def _dry_run_google_to_mysql(job_id: str):
 
     except Exception as e:
         logger.error(f"Dry-run error: {e}\n{traceback.format_exc()}")
+        error_msg = f"❌ Dry-run failed: {e}"
         job_update = {
             'status': 'error',
-            'message': f"❌ Dry-run failed: {e}",
+            'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
+
+        # Send error report email
+        try:
+            _send_sync_report(
+                recipient='admin@mmrunners.org',
+                operation='Google → MySQL: Dry Run',
+                summary=error_msg,
+                details=[],
+                log_content='\n'.join(log_lines),
+            )
+        except Exception as email_err:
+            logger.error(f"Failed to send error email: {email_err}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
