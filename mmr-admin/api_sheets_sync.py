@@ -216,7 +216,6 @@ Generated: {datetime.now().isoformat()}
             to=recipient,
             subject=title,
             html_content=body.replace('\n', '<br>'),
-            email_type='sync_notification',
         )
 
         # Log email result
@@ -1020,9 +1019,14 @@ def _import_transactions(job_id: str):
             log_lines.append(f"📥 Fetched {len(sheets_txns)} transactions from Google Sheets")
 
             if verbose_mode and sheets_txns:
-                # Show column names and first row as example
+                # Show column names and first 3 rows as examples
                 first_row = sheets_txns[0]
                 log_lines.append(f"   Columns: {', '.join(first_row.keys())}")
+                log_lines.append(f"   📋 Example rows from Google Sheets:")
+                for i, row in enumerate(sheets_txns[:3]):
+                    # Print all fields with values
+                    row_str = json.dumps({k: str(v)[:50] for k, v in row.items()}, indent=0)
+                    log_lines.append(f"      [Row {i+1}]: {row_str}")
         except Exception as e:
             log_lines.append(f"❌ Failed to fetch from Sheets: {e}")
             raise
