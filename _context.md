@@ -7,6 +7,9 @@ Last commit: b966b9f (fix: correct GAS webhook action name and configure Azure C
 
 ## Session log
 
+### 2026-03-31 17:52 UTC — Fix Python Exec + add send_test_email() diagnostic function
+Fixed Python Exec function list loading (was checking non-existent r.ok flag). Added send_test_email() function: sends branded HTML test email via Azure Communication Services to admin@mmrunners.org, matching production email template style. Helps verify email pipeline is working. Committed 9179702.
+
 ### 2026-03-31 12:50 UTC — Add email sending logging to debug why sync reports aren't received
 Added comprehensive email logging to track send attempts and failures. Changed: (1) Enhanced send_email() to return detailed result dict (success, status, error, timestamp); (2) Updated _send_sync_report() to capture email results and log to sync log; (3) All sync operations now log email success/failure with reason; (4) Created EMAIL_DEBUG.md with troubleshooting workflows (test emails from Python Code, check Azure config, query logs). Status: Complete — ready to test. Next: Test sync operations and verify emails are sent and logged.
 
