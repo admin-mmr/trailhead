@@ -27,6 +27,9 @@ Last commit: 74dd8b7
 
 ## Session log
 
+### 2026-03-30 19:15 UTC — Fix datetime serialization in Python sync code
+Changed: Added _serialize_row/rows helpers to convert datetime objects to ISO strings before sending to GAS. Applied to all append/update operations (members, events, payments). Removed "skipped (Sheets newer)" log lines. Status: Complete. Next: Test MySQL→Google sync with real data.
+
 ### 2026-03-30 19:08 UTC — Add 9 batch sync handlers to GAS webhook
 Changed: Implemented get_members, get_events, get_payments, append_members/events/payments, update_members/events/payments. Added helper converters (rowToXxxObject, xxxObjectToRow) to handle array↔object mapping. Status: Complete (418 lines, all compile). Next: Deploy new GAS version and retry MySQL→Google sync operations from mmr-admin.
 
