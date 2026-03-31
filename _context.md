@@ -1,11 +1,14 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-30 05:10 UTC
+Last updated: 2026-03-31 12:35 UTC
 Last commit: b966b9f (fix: correct GAS webhook action name and configure Azure Communication Services)
 
 ---
 
 ## Session log
+
+### 2026-03-31 12:35 UTC — Add Python Execution Engine to admin portal
+Created Python diagnostic engine to debug import issues without localhost. Changed: (1) New api_python_exec.py blueprint with 6 safe, read-only diagnostic functions (get_sheet_vs_db_counts, get_sync_status, check_transaction_dups, check_transaction_nulls, get_sample_transactions, test_db_connection); (2) Added UI tab "Python Exec" in index.html with function selector, result viewer, JSON download; (3) Registered blueprint in app.py. Status: Complete — ready to debug why imports show 0 inserted/updated. Next: Run diagnostics to identify why Google Sheets rows aren't syncing to MySQL.
 
 ### 2026-03-30 05:10 UTC — Fix GAS webhook & email service
 Fixed two production errors: (1) Changed `get_gmail_transactions` → `get_transactions` in api_sheets_sync.py line 820 to match GAS webhook handler. (2) Removed SendGrid, switched to Azure Communication Services for email (no account needed, integrated with Azure stack). Sender: DoNotReply@mmr-comm.notification.azure.com (auto-verified). Committed b966b9f.

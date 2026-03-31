@@ -133,6 +133,9 @@ app.register_blueprint(query_bp)
 from api_sheets_sync import sheets_sync_bp
 app.register_blueprint(sheets_sync_bp)
 
+from api_python_exec import py_exec_bp
+app.register_blueprint(py_exec_bp)
+
 
 # ---------------------------------------------------------------------------
 # Main
