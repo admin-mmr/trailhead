@@ -36,13 +36,13 @@ def get_sheets_webhook_url() -> str:
         from db import get_db_connection
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute('SELECT Value FROM Config WHERE Key = %s', ('SheetsWebhookUrl',))
+        cursor.execute('SELECT ConfigValue FROM Config WHERE ConfigKey = %s', ('SheetsWebhookUrl',))
         row = cursor.fetchone()
         cursor.close()
         conn.close()
 
-        if row and row.get('Value'):
-            return row['Value']
+        if row and row.get('ConfigValue'):
+            return row['ConfigValue']
     except Exception as e:
         logger.warning(f'[webhook_client] Failed to fetch webhook URL from MySQL: {e}')
 
