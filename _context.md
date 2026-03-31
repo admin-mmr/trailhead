@@ -1,25 +1,29 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-30 20:28 UTC
-Last commit: (pending)
+Last updated: 2026-03-31 02:23 UTC
+Last commit: 984b0aa
 
 ---
 
 ## Current state
 
-- Repo: Progress bar fixed; pace-based auto-sharding integrated into api_sync.py Step 1
-- mmr-admin: ProgressModal cleaned up; api_sync.py now uses binary pace-splitting for >1000 age+gender combos
-- probe_finishers.py: Supports pace filters + pace extraction
-- split_by_pace.py: Available as standalone exploration tool
-- Email, Web, Photo, DB: All systems from prior sessions still functional
+- Repo: Sync tab added to mmr-admin with MySQL→Google, Import Txns, Google→MySQL dry-run
+- mmr-admin: New api_sheets_sync.py with 5 endpoints (members, events, payments sync + import + dry-run)
+- SyncPanel UI: Three subtabs, real-time job polling, detailed logs, email reports to admin@mmrunners.org
+- Bug fix: payment_actions.py — write to Notes instead of Source on approval (3 locations fixed)
+- All other systems (NYRR sync, payments, query, admin) still functional
 
 ## Open items
 
-- Test pace splitting on staging (H2026, M2025) for various age+gender combos
-- Monitor API response times and queue load with new splitting logic
-- Validate all runners are fetched (no duplicates or gaps)
+- Integrate GAS webhook calls to fetch/push Google Sheets data (placeholder code in api_sheets_sync.py)
+- Implement full Members sync with LastUpdated versioning logic
+- Test sync operations end-to-end with real Google Sheets
+- Add transaction import with Memo→Notes comparison logic
 
 ## Session log
+
+### 2026-03-31 02:23 UTC — Add Sync tab and fix gmail_transactions bug
+Changed: Created api_sheets_sync.py with MySQL→Google/Import/dry-run endpoints; added SyncPanel UI with 3 subtabs to index.html; registered blueprint in app.py; fixed bug in payment_actions.py (3 locations) writing Source→Notes. Status: Code complete, tests pass. Next: Integrate GAS webhook calls to fetch/push actual Sheets data.
 
 ### 2026-03-31 01:47 ET — Add Data Query tab to mmr-admin
 Changed: New `api_query.py` with `/query` route + `query.html` UI. Super-admins get full SQL, regular admins get SELECT-only. Dual table/JSON output, quick ref sidebar. Updated `app.py` blueprint + nav link. Status: Ready for testing. Next: Deploy and verify queries work from admin portal.
