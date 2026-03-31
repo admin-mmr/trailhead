@@ -1530,6 +1530,256 @@ def _dry_run_google_to_mysql(job_id: str):
             logger.error(f"Failed to send error email: {email_err}")
 
 
+def _sync_google_to_mysql(job_id: str):
+    """
+    Fetch data from Google Sheets and sync to MySQL.
+    - Inserts new records from Sheets into MySQL.
+    - Updates existing MySQL records if Sheets data is newer.
+    """
+    log_lines = []
+    inserted_members, updated_members, skipped_members = [], [], []
+    errors = []
+
+    try:
+        job_update = {'status': 'running', 'message': 'Fetching data from Google Sheets...', 'progress': 0}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        log_lines.append("🚀 Live Sync: Google → MySQL")
+
+        # 1. Fetch Members
+        try:
+            sheets_members_data = _call_gas_webhook({'action': 'get_members'})
+            sheets_members = [_normalize_gas_keys(m) for m in (sheets_members_data if isinstance(sheets_members_data, list) else [])]
+            sheets_members_by_id = {m['MemberID']: m for m in sheets_members if m.get('MemberID')}
+            log_lines.append(f"📊 Sheets: Fetched {len(sheets_members_by_id)} members")
+        except Exception as e:
+            log_lines.append(f"⚠️ Could not fetch members from Sheets: {e}")
+            sheets_members_by_id = {}
+
+        mysql_members_rows = query("SELECT * FROM members")
+        mysql_members_by_id = {m['MemberID']: m for m in mysql_members_rows}
+        log_lines.append(f"💾 MySQL: Fetched {len(mysql_members_by_id)} members")
+        
+        member_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'")]
+
+        job_update['message'] = 'Syncing members...'
+        job_update['progress'] = 20
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        for member_id, sheet_member in sheets_members_by_id.items():
+            mysql_member = mysql_members_by_id.get(member_id)
+
+            if not mysql_member:
+                # INSERT new member
+                try:
+                    cols_to_insert = {k: v for k, v in sheet_member.items() if k in member_columns}
+                    # Normalize datetime fields
+                    for k, v in cols_to_insert.items():
+                        if 'date' in k.lower() or 'time' in k.lower():
+                            cols_to_insert[k] = _to_iso_datetime(v)
+
+                    col_names = ', '.join(cols_to_insert.keys())
+                    placeholders = ', '.join(['%s'] * len(cols_to_insert))
+                    sql = f"INSERT INTO members ({col_names}) VALUES ({placeholders})"
+                    execute(sql, list(cols_to_insert.values()))
+                    inserted_members.append(member_id)
+                    log_lines.append(f"✅ Member {member_id}: INSERTED")
+                except Exception as e:
+                    log_lines.append(f"❌ Member {member_id}: INSERT failed: {e}")
+                    errors.append(f"Member {member_id} INSERT: {e}")
+                continue
+
+            # Compare LastUpdated timestamps for existing members
+            sheet_updated_at = _parse_datetime(sheet_member.get('LastUpdated'))
+            mysql_updated_at = mysql_member.get('LastUpdated') # Already a datetime object
+
+            if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
+                try:
+                    cols_to_update = {k: v for k, v in sheet_member.items() if k in member_columns and k != 'MemberID'}
+                    # Normalize datetime fields
+                    for k, v in cols_to_update.items():
+                        if 'date' in k.lower() or 'time' in k.lower():
+                            cols_to_update[k] = _to_iso_datetime(v)
+
+                    set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
+                    sql = f"UPDATE members SET {set_clauses} WHERE MemberID=%s"
+                    values = list(cols_to_update.values()) + [member_id]
+                    execute(sql, values)
+                    updated_members.append(member_id)
+                    log_lines.append(f"🔄 Member {member_id}: UPDATED (Sheets newer)")
+                except Exception as e:
+                    log_lines.append(f"❌ Member {member_id}: UPDATE failed: {e}")
+                    errors.append(f"Member {member_id} UPDATE: {e}")
+            else:
+                skipped_members.append(member_id)
+        
+        # 2. Fetch Events
+        log_lines.append("\n--- Syncing Events ---")
+        inserted_events, updated_events, skipped_events, errors_events = [], [], [], []
+        try:
+            sheets_events_data = _call_gas_webhook({'action': 'get_events'})
+            sheets_events = [_normalize_gas_keys(e) for e in (sheets_events_data if isinstance(sheets_events_data, list) else [])]
+            sheets_events_by_id = {e['EventID']: e for e in sheets_events if e.get('EventID')}
+            log_lines.append(f"📊 Sheets: Fetched {len(sheets_events_by_id)} events")
+
+            mysql_events_rows = query("SELECT * FROM webapp_events")
+            mysql_events_by_id = {e['EventID']: e for e in mysql_events_rows}
+            log_lines.append(f"💾 MySQL: Fetched {len(mysql_events_by_id)} events")
+
+            event_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events'")]
+
+            for event_id, sheet_event in sheets_events_by_id.items():
+                mysql_event = mysql_events_by_id.get(event_id)
+                if not mysql_event:
+                    try:
+                        cols_to_insert = {k: v for k, v in sheet_event.items() if k in event_columns}
+                        for k, v in cols_to_insert.items():
+                            if 'date' in k.lower() or 'time' in k.lower():
+                                cols_to_insert[k] = _to_iso_datetime(v)
+                        col_names = ', '.join(cols_to_insert.keys())
+                        placeholders = ', '.join(['%s'] * len(cols_to_insert))
+                        sql = f"INSERT INTO webapp_events ({col_names}) VALUES ({placeholders})"
+                        execute(sql, list(cols_to_insert.values()))
+                        inserted_events.append(event_id)
+                    except Exception as e:
+                        errors_events.append(f"Event {event_id} INSERT: {e}")
+                else:
+                    sheet_updated_at = _parse_datetime(sheet_event.get('Timestamp')) # Using Timestamp for events
+                    mysql_updated_at = mysql_event.get('Timestamp')
+                    if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
+                        try:
+                            cols_to_update = {k: v for k, v in sheet_event.items() if k in event_columns and k != 'EventID'}
+                            for k, v in cols_to_update.items():
+                                if 'date' in k.lower() or 'time' in k.lower():
+                                    cols_to_update[k] = _to_iso_datetime(v)
+                            set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
+                            sql = f"UPDATE webapp_events SET {set_clauses} WHERE EventID=%s"
+                            values = list(cols_to_update.values()) + [event_id]
+                            execute(sql, values)
+                            updated_events.append(event_id)
+                        except Exception as e:
+                            errors_events.append(f"Event {event_id} UPDATE: {e}")
+                    else:
+                        skipped_events.append(event_id)
+            log_lines.append(f"Events Sync Finished: Inserted {len(inserted_events)}, Updated {len(updated_events)}, Skipped {len(skipped_events)}, Errors {len(errors_events)}")
+            errors.extend(errors_events)
+        except Exception as e:
+            log_lines.append(f"⚠️ Could not sync events: {e}")
+            errors.append(f"Event sync failed: {e}")
+
+        # 3. Fetch Payments
+        log_lines.append("\n--- Syncing Payments ---")
+        inserted_payments, updated_payments, skipped_payments, errors_payments = [], [], [], []
+        try:
+            sheets_payments_data = _call_gas_webhook({'action': 'get_payments'})
+            sheets_payments = [_normalize_gas_keys(p) for p in (sheets_payments_data if isinstance(sheets_payments_data, list) else [])]
+            sheets_payments_by_id = {p['PaymentID']: p for p in sheets_payments if p.get('PaymentID')}
+            log_lines.append(f"📊 Sheets: Fetched {len(sheets_payments_by_id)} payments")
+
+            mysql_payments_rows = query("SELECT * FROM payments")
+            mysql_payments_by_id = {p['PaymentID']: p for p in mysql_payments_rows}
+            log_lines.append(f"💾 MySQL: Fetched {len(mysql_payments_by_id)} payments")
+
+            payment_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments'")]
+
+            for payment_id, sheet_payment in sheets_payments_by_id.items():
+                mysql_payment = mysql_payments_by_id.get(payment_id)
+                if not mysql_payment:
+                    try:
+                        cols_to_insert = {k: v for k, v in sheet_payment.items() if k in payment_columns}
+                        for k, v in cols_to_insert.items():
+                            if 'date' in k.lower() or 'time' in k.lower():
+                                cols_to_insert[k] = _to_iso_datetime(v)
+                        col_names = ', '.join(cols_to_insert.keys())
+                        placeholders = ', '.join(['%s'] * len(cols_to_insert))
+                        sql = f"INSERT INTO payments ({col_names}) VALUES ({placeholders})"
+                        execute(sql, list(cols_to_insert.values()))
+                        inserted_payments.append(payment_id)
+                    except Exception as e:
+                        errors_payments.append(f"Payment {payment_id} INSERT: {e}")
+                else:
+                    sheet_updated_at = _parse_datetime(sheet_payment.get('ProcessedDate')) # Using ProcessedDate for payments
+                    mysql_updated_at = mysql_payment.get('ProcessedDate')
+                    if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
+                        try:
+                            cols_to_update = {k: v for k, v in sheet_payment.items() if k in payment_columns and k != 'PaymentID'}
+                            for k, v in cols_to_update.items():
+                                if 'date' in k.lower() or 'time' in k.lower():
+                                    cols_to_update[k] = _to_iso_datetime(v)
+                            set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
+                            sql = f"UPDATE payments SET {set_clauses} WHERE PaymentID=%s"
+                            values = list(cols_to_update.values()) + [payment_id]
+                            execute(sql, values)
+                            updated_payments.append(payment_id)
+                        except Exception as e:
+                            errors_payments.append(f"Payment {payment_id} UPDATE: {e}")
+                    else:
+                        skipped_payments.append(payment_id)
+            log_lines.append(f"Payments Sync Finished: Inserted {len(inserted_payments)}, Updated {len(updated_payments)}, Skipped {len(skipped_payments)}, Errors {len(errors_payments)}")
+            errors.extend(errors_payments)
+        except Exception as e:
+            log_lines.append(f"⚠️ Could not sync payments: {e}")
+            errors.append(f"Payment sync failed: {e}")
+
+        summary = (f"✅ Sync Google → MySQL Complete. "
+                   f"Members: {len(inserted_members)} inserted, {len(updated_members)} updated. "
+                   f"Events: {len(inserted_events)} inserted, {len(updated_events)} updated. "
+                   f"Payments: {len(inserted_payments)} inserted, {len(updated_payments)} updated.")
+        if errors:
+            summary += f" ({len(errors)} errors)"
+
+        job_update = {
+            'status': 'done',
+            'message': summary,
+            'progress': 100,
+            'result': {
+                'operation': 'sync_google_to_mysql',
+                'inserted_members': len(inserted_members),
+                'updated_members': len(updated_members),
+                'inserted_events': len(inserted_events),
+                'updated_events': len(updated_events),
+                'inserted_payments': len(inserted_payments),
+                'updated_payments': len(updated_payments),
+                'errors': errors,
+                'log': '\n'.join(log_lines),
+            }
+        }
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Send report email
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation='Google → MySQL Sync',
+            summary=summary,
+            details=[f"Inserted Members: {len(inserted_members)}", f"Updated Members: {len(updated_members)}",
+                     f"Inserted Events: {len(inserted_events)}", f"Updated Events: {len(updated_events)}",
+                     f"Inserted Payments: {len(inserted_payments)}", f"Updated Payments: {len(updated_payments)}"] + errors,
+            log_content='\n'.join(log_lines),
+        )
+
+    except Exception as e:
+        logger.error(f"Google → MySQL sync error: {e}\n{traceback.format_exc()}")
+        error_msg = f"❌ Sync failed: {e}"
+        job_update = {
+            'status': 'error',
+            'message': error_msg,
+            'result': {'error': str(e), 'log': '\n'.join(log_lines)}
+        }
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation='Google → MySQL Sync',
+            summary=error_msg,
+            details=[],
+            log_content='\n'.join(log_lines),
+        )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # REST API Endpoints
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1762,6 +2012,26 @@ def api_import_transactions():
         }
 
     thread = threading.Thread(target=_import_transactions, args=(job_id,), daemon=True)
+    thread.start()
+
+    return json_response({'ok': True, 'job_id': job_id})
+
+
+@sheets_sync_bp.route('/api/sync/google-to-mysql', methods=['POST'])
+@login_required
+def api_sync_google_to_mysql():
+    """Trigger sync (Google Sheets → MySQL)."""
+    job_id = _gen_job_id()
+
+    with _sync_jobs_lock:
+        _sync_jobs[job_id] = {
+            'status': 'queued',
+            'message': 'Queued',
+            'progress': 0,
+            'created_at': datetime.utcnow().isoformat(),
+        }
+
+    thread = threading.Thread(target=_sync_google_to_mysql, args=(job_id,), daemon=True)
     thread.start()
 
     return json_response({'ok': True, 'job_id': job_id})
