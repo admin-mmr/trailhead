@@ -7,6 +7,9 @@ Last commit: b966b9f (fix: correct GAS webhook action name and configure Azure C
 
 ## Session log
 
+### 2026-03-31 12:40 UTC — Add Python Code Editor to admin portal
+Added dynamic code execution tab: Users can now write & run arbitrary Python code against MySQL with output capture. Changed: (1) New /api/py-exec/code endpoint — executes Python code with access to query(), execute(), datetime, json, traceback; (2) "Python Code" tab in admin portal with textarea editor, 5 example templates (count, sync log, dups, nulls, pretty-print), output viewer, error traceback, download results; (3) Code runs in sandboxed environment with full DB read-write access. Status: Complete — ready to test. Next: Deploy and validate code execution.
+
 ### 2026-03-31 12:35 UTC — Add Python Execution Engine to admin portal
 Created Python diagnostic engine to debug import issues without localhost. Changed: (1) New api_python_exec.py blueprint with 6 safe, read-only diagnostic functions (get_sheet_vs_db_counts, get_sync_status, check_transaction_dups, check_transaction_nulls, get_sample_transactions, test_db_connection); (2) Added UI tab "Python Exec" in index.html with function selector, result viewer, JSON download; (3) Registered blueprint in app.py. Status: Complete — ready to debug why imports show 0 inserted/updated. Next: Run diagnostics to identify why Google Sheets rows aren't syncing to MySQL.
 
