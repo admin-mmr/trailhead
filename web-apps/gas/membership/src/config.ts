@@ -9,6 +9,8 @@
 
 const MEMBERSHIP_SPREADSHEET_ID = '11SFvgApmDtEv4jz5bTYI9_zEhCFMQAXC4b2z_4s3ljk';
 const GMAIL_SPREADSHEET_ID = '1rVOvhXzSxCRpWdAw3jYq5tWrYdCYtXmfqblTHP_wPqA';
+const EMAIL_LOG_SHEET_ID = '1G0dr2vjW-vMN0UbpxvzdBajmFSQLsiRbLd1A-36xk0I';
+const EMAIL_LOG_SHEET_NAME = 'Current';
 
 // Sheet names
 const SHEET_NAMES = {
@@ -401,3 +403,12 @@ function getDistrictsFromConfig(jsonRequest: string): string {
 (globalThis as any).PCE_COL        = PCE_COL;
 (globalThis as any).MEMBERSHIP_SPREADSHEET_ID = MEMBERSHIP_SPREADSHEET_ID;
 (globalThis as any).GMAIL_SPREADSHEET_ID      = GMAIL_SPREADSHEET_ID;
+(globalThis as any).EMAIL_LOG_SHEET_ID        = EMAIL_LOG_SHEET_ID;
+(globalThis as any).EMAIL_LOG_SHEET_NAME      = EMAIL_LOG_SHEET_NAME;
+
+// CONFIG object for cross-module access
+const CONFIG = {
+  EMAIL_LOG_SHEET_ID,
+  EMAIL_LOG_SHEET_NAME,
+};
+(globalThis as any).CONFIG = CONFIG;

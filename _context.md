@@ -7,6 +7,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-03-31 23:45 UTC — Email webhook consolidation: Azure → GAS + Gmail
+Consolidated all email sending from Azure SDK to GAS webhook + Gmail. Created: (1) email_hook.ts in GAS — handles `email_send` action, sends via Gmail, logs all emails to Email Log sheet (1G0dr2vjW-vMN0UbpxvzdBajmFSQLsiRbLd1A-36xk0I); (2) webhook_client.py in mmr-admin — replaces email_client.py, POSTs to GAS webhook instead of Azure SDK; (3) Updated payment_actions.py, api_sheets_sync.py, api_python_exec.py to use webhook_client. Removed Azure SDK dependency entirely. GAS builds cleanly. Python test_imports.py passes (webhook_client ✅). Status: Complete — ready to deploy GAS and configure webhook URL. See EMAIL_WEBHOOK_CONSOLIDATION.md for full migration guide.
+
 ### 2026-03-31 16:20 UTC — Fix Python Exec Engine + add comprehensive debug info
 Fixed critical bug: replaced all `dbmod.get_db_connection()` with `dbmod.get_conn()` in 7 functions (AttributeError fix). Added extensive debug info to all functions: connection_status, queries_executed, row_counts, error_type, execution_time_ms. Enhanced logging with [PY_EXEC]/[CODE_EXEC] prefixes. Created PYTHON_EXEC_DEBUG_GUIDE.md (11 endpoints documented with curl commands), PYTHON_EXEC_CHANGES.md (technical summary), test_py_exec.sh (automated test script). All functions now return rich debug context for tracing. Committed 7b2491e. Status: Complete — ready for comprehensive testing.
 

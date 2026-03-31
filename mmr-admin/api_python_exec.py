@@ -270,48 +270,30 @@ def get_sample_transactions(limit=10):
         }
 
 
-def check_azure_email_config():
-    """Check Azure Communication Services email configuration and list available sender domains."""
+def check_webhook_email_config():
+    """Check GAS webhook email configuration."""
     try:
-        import os
-        from email_client import get_email_client
+        from webhook_client import get_sheets_webhook_url
 
-        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
-
-        config_info = {
-            'status': 'ok',
-            'connection_string_present': bool(connection_string),
-            'extracted_resource': None,
-            'message': None,
-        }
-
-        # Extract resource from connection string
-        if 'communication.azure.com' in connection_string:
-            parts = connection_string.split('/')
-            for part in parts:
-                if 'communication.azure.com' in part:
-                    config_info['extracted_resource'] = part
-                    break
-
-        # Try to get the client (validates credentials)
         try:
-            client = get_email_client()
-            config_info['client_initialized'] = True
-            config_info['message'] = 'Azure Communication Services client initialized successfully. However, to send emails you need a verified sender domain in your Azure resource.'
-        except Exception as e:
-            config_info['client_initialized'] = False
-            config_info['error'] = str(e)
-
-        config_info['next_steps'] = [
-            '1. Go to Azure Portal → Communication Services → mmr-comm (or your resource)',
-            '2. Navigate to "Email" → "Sender Domains"',
-            '3. Either:',
-            '   a) Verify a custom domain by adding DNS CNAME records (production)',
-            '   b) Use Azure\'s test email if available (sandbox mode)',
-            '4. Alternatively, use SendGrid or another third-party email provider'
-        ]
-
-        return config_info
+            webhook_url = get_sheets_webhook_url()
+            return {
+                'status': 'ok',
+                'webhook_url': webhook_url[:50] + '...' if len(webhook_url) > 50 else webhook_url,
+                'message': 'GAS webhook configured. Emails will be sent via Gmail using Google Apps Script.',
+                'email_log_sheet': '1G0dr2vjW-vMN0UbpxvzdBajmFSQLsiRbLd1A-36xk0I',
+                'note': 'All emails are logged in the Email Log sheet (Current tab)'
+            }
+        except ValueError as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'next_steps': [
+                    '1. Deploy GAS webhook (web-apps/gas/membership/src/webhook.ts)',
+                    '2. Add to MySQL Config table: INSERT INTO Config (Key, Value) VALUES (\'SheetsWebhookUrl\', \'https://script.google.com/...\');',
+                    '3. Or set SHEETS_WEBHOOK_URL environment variable'
+                ]
+            }
     except Exception as e:
         return {
             'status': 'error',
@@ -323,18 +305,7 @@ def check_azure_email_config():
 def send_test_email():
     """Send a test hello email to admin@mmrunners.org to verify email pipeline."""
     try:
-        import os
-        from email_client import send_email
-
-        # Get connection string to show which resource we're using
-        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
-        resource_name = 'unknown'
-        if 'communication.azure.com' in connection_string:
-            # Extract: endpoint=https://mmr-comm.unitedstates.communication.azure.com/ → mmr-comm.unitedstates
-            resource_name = connection_string.split('https://')[1].split('.communication.azure.com')[0]
-
-        # Use the hardcoded Azure test sender (verified in Azure portal)
-        sender = 'DoNotReply@6e248907-c5ac-4a28-8297-f9834526aecd.us1.azurecomm.net'
+        from webhook_client import send_email_webhook
 
         # Build HTML email using same template structure as other MMR emails
         html_content = """<!DOCTYPE html>
@@ -351,22 +322,22 @@ def send_test_email():
       <tr><td style="background:#5c35a8;padding:28px 36px;text-align:center;">
         <div style="font-size:26px;margin-bottom:4px;">🏃</div>
         <div style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">Misty Mountain Runners</div>
-        <div style="color:rgba(255,255,255,0.7);font-size:13px;margin-top:4px;">Admin Test Email</div>
+        <div style="color:rgba(255,255,255,0.7);font-size:13px;margin-top:4px;">Admin Test Email via GAS Webhook</div>
       </td></tr>
       <!-- Body -->
       <tr><td style="padding:36px 36px 28px;">
         <h2 style="margin:0 0 8px;font-size:22px;color:#222222;font-weight:700;">Hello! 👋</h2>
         <p style="margin:0 0 20px;font-size:15px;color:#555555;line-height:1.6;">
-          This is a test email from the MMR Admin Portal Python Execution Engine.
+          This is a test email from the MMR Admin Portal sent via GAS webhook → Gmail.
         </p>
         <div style="background:#f8f6ff;border:1px solid #e9e3ff;border-radius:10px;padding:16px;margin:0 0 20px;font-size:13px;color:#555555;line-height:1.6;">
           <strong>Test Details:</strong><br>
           Timestamp: """ + datetime.utcnow().isoformat() + """<br>
           Recipient: admin@mmrunners.org<br>
-          Template: MMR HTML Email Pipeline
+          Method: GAS Webhook + Gmail
         </div>
         <p style="margin:0;font-size:14px;color:#888888;">
-          If you received this, the email pipeline is working correctly! ✅
+          If you received this, the webhook email pipeline is working correctly! ✅
         </p>
       </td></tr>
       <!-- Footer -->
@@ -382,26 +353,23 @@ def send_test_email():
 </body>
 </html>"""
 
-        result = send_email(
+        result = send_email_webhook(
             to='admin@mmrunners.org',
             subject='🧪 MMR Admin Portal Test Email',
             html_content=html_content,
             cc=None,  # Don't CC ourselves for test email
+            email_type='test',
         )
 
         return {
             'status': 'ok' if result.get('success') else 'error',
-            'azure_resource': resource_name,
-            'from_address': sender,
             'sent_to': 'admin@mmrunners.org',
             'subject': '🧪 MMR Admin Portal Test Email',
+            'email_id': result.get('email_id'),
             'message': result.get('message'),
             'error': result.get('error'),
             'timestamp': result.get('timestamp'),
-            'debug': {
-                'connection_string_endpoint': connection_string.split(';')[0] if connection_string else 'NOT SET',
-                'note': 'If azure_resource doesn\'t match your mmr-comm resource, update the env var'
-            }
+            'note': 'Email logged to Email Log sheet and sent via Gmail'
         }
     except Exception as e:
         return {
@@ -480,7 +448,7 @@ FUNCTIONS = {
     'check_transaction_nulls': check_transaction_nulls,
     'get_sample_transactions': get_sample_transactions,
     'test_db_connection': test_db_connection,
-    'check_azure_email_config': check_azure_email_config,
+    'check_webhook_email_config': check_webhook_email_config,
     'send_test_email': send_test_email,
 }
 

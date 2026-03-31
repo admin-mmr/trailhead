@@ -33,7 +33,7 @@ from sheets_sync import (  # noqa: F401
     sync_event_to_sheets,
     sync_payment_to_sheets,
 )
-from email_client import (  # noqa: F401
+from webhook_client import (  # noqa: F401
     send_payment_approved_email,
     send_payment_rejected_email,
     send_membership_activated_email,

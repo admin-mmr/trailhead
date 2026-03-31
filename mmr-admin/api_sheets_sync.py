@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 from flask import Blueprint, request
 from db import query, execute, get_conn
 from helpers import json_response
-from email_client import send_email
+from webhook_client import send_generic_email
 from auth import login_required
 
 logger = logging.getLogger(__name__)
@@ -212,16 +212,17 @@ Generated: {datetime.now().isoformat()}
     email_log_lines.append(f"   Subject: {title}")
 
     try:
-        email_result = send_email(
+        email_result = send_generic_email(
             to=recipient,
             subject=title,
             html_content=body.replace('\n', '<br>'),
+            email_type='sync_notification',
         )
 
         # Log email result
-        if email_result.get('success'):
-            email_log_lines.append(f"   ✅ {email_result.get('message', 'Email sent')}")
-            email_log_lines.append(f"   Status: {email_result.get('status')}")
+        if email_result:
+            email_log_lines.append(f"   ✅ Email sent to {recipient}")
+            email_log_lines.append(f"   Status: sent")
             logger.info(f"✅ Sync report email sent to {recipient}: {operation}")
             return {
                 'email_sent': True,

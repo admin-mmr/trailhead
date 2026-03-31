@@ -18,7 +18,7 @@
 //   Edit existing → New version → Deploy.
 //   URL goes in MySQL config table (SheetsWebhookUrl).
 //
-// Depends on: config.ts, sheets.ts, types.ts
+// Depends on: config.ts, sheets.ts, types.ts, email_hook.ts
 // ============================================================
 
 /**
@@ -58,6 +58,9 @@ function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.Tex
     const action = payload.action;
 
     switch (action) {
+      // Email sending
+      case 'email_send':
+        return handleEmailSend(payload);
       // Single-row operations
       case 'member_updated':
         return handleMemberUpdated(payload);
