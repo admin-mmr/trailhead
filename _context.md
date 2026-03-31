@@ -21,6 +21,12 @@ Last commit: (pending)
 
 ## Session log
 
+### 2026-03-31 01:47 ET — Add Data Query tab to mmr-admin
+Changed: New `api_query.py` with `/query` route + `query.html` UI. Super-admins get full SQL, regular admins get SELECT-only. Dual table/JSON output, quick ref sidebar. Updated `app.py` blueprint + nav link. Status: Ready for testing. Next: Deploy and verify queries work from admin portal.
+
+### 2026-03-31 01:38 ET — Fix Payments CC email + Sheets sync
+Changed: Fixed `send_email()` dict-spread bug causing `TypeError` when CC was set; improved `_post_to_sheets` error logging to surface missing `SheetsWebhookUrl` or GAS HTTP errors. Status: Code fixed; verify `SheetsWebhookUrl` is set in MySQL config table. Next: Check nyrr logs after next approval to confirm Sheets sync fires.
+
 ### 2026-03-30 21:14 ET — cancel button + suppress not_found modal
 Changed: Added POST /api/load/<event_code>/cancel endpoint; worker checks cancel_requested flag after each page batch and raises InterruptedError → sets status=cancelled. Modal now shows Cancel button while running, 🛑 Cancelled state + Close on done. Suppressed not_found flash between polls. Status: Done. Next: Test cancel on stuck H2026 load; monitor log splitting path via nyrr-logs.
 

@@ -1908,6 +1908,9 @@ const App = () => {
           <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => setView('tables')}>Data Browser</button>
           <button className={`tab ${view === 'log' ? 'active' : ''}`} onClick={() => setView('log')}>Sync Log</button>
           {(userRole === 'super_admin' || userRole === 'admin') && (
+            <button className={`tab ${view === 'query' ? 'active' : ''}`} onClick={() => window.location.href = '/query'}>Data Query</button>
+          )}
+          {(userRole === 'super_admin' || userRole === 'admin') && (
             <button className={`tab ${view === 'admins' ? 'active' : ''}`} onClick={() => setView('admins')}>Admins</button>
           )}
         </div>

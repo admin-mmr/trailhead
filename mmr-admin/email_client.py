@@ -50,13 +50,15 @@ def send_email(
             cc_list = [e.strip() for e in cc.split(',')]
             cc_recipients = [{'address': e} for e in cc_list]
 
+        # Build recipients (Azure SDK requires 'cc' only if non-empty)
+        recipients: Dict[str, Any] = {'to': [{'address': to}]}
+        if cc_recipients:
+            recipients['cc'] = cc_recipients
+
         # Build message
         message = {
             'senderAddress': sender,
-            'recipients': {
-                'to': [{'address': to}],
-                **(cc_recipients and {'cc': cc_recipients}),
-            },
+            'recipients': recipients,
             'content': {
                 'subject': subject,
                 'html': html_content,

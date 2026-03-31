@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Query | MMR Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen p-6">
+        <div class="max-w-7xl mx-auto">
+            <!-- Header -->
+            <div class="mb-6">
+                <h1 class="text-3xl font-bold text-gray-900">Data Query</h1>
+                <p class="text-gray-600 mt-2">
+                    Run SQL queries directly against MySQL.
+                    {% if is_super_admin %}
+                    <span class="text-green-700 font-semibold">Full access enabled (super-admin)</span>
+                    {% else %}
+                    <span class="text-blue-700">SELECT-only mode</span>
+                    {% endif %}
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Query Input Panel -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <label class="block text-sm font-semibold text-gray-700 mb-3">SQL Query</label>
+                        <textarea
+                            id="sqlInput"
+                            class="w-full h-48 p-4 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="SELECT * FROM config LIMIT 10;&#10;&#10;-- Or try:&#10;-- SELECT ConfigKey, ConfigValue FROM config WHERE ConfigKey = 'SheetsWebhookUrl';"
+                        ></textarea>
+
+                        <!-- Action buttons -->
+                        <div class="mt-4 flex gap-3">
+                            <button
+                                onclick="executeQuery()"
+                                class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition"
+                            >
+                                ▶ Run Query
+                            </button>
+                            <button
+                                onclick="clearQuery()"
+                                class="px-6 py-2 bg-gray-400 text-white font-semibold rounded-md hover:bg-gray-500 transition"
+                            >
+                                Clear
+                            </button>
+                            <button
+                                onclick="loadExamples()"
+                                class="px-6 py-2 bg-gray-200 text-gray-800 font-semibold rounded-md hover:bg-gray-300 transition"
+                            >
+                                📋 Examples
+                            </button>
+                        </div>
+
+                        <!-- Status & Loading -->
+                        <div id="status" class="mt-4 text-sm text-gray-600 hidden">
+                            <span id="statusText"></span>
+                        </div>
+                        <div id="loading" class="mt-4 text-sm text-blue-600 hidden">
+                            ⏳ Executing query...
+                        </div>
+                        <div id="error" class="mt-4 p-3 bg-red-100 text-red-800 rounded-md hidden">
+                            <strong>Error:</strong> <span id="errorText"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Reference Sidebar -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-4">Quick Reference</h3>
+
+                        <!-- Config Keys -->
+                        <div class="mb-6">
+                            <h4 class="text-xs font-semibold text-gray-600 mb-2 uppercase">Config Keys</h4>
+                            <div class="space-y-2">
+                                <button
+                                    onclick="insertQuery('SELECT ConfigKey, ConfigValue FROM config;')"
+                                    class="block w-full text-left px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition text-gray-700 font-mono"
+                                >
+                                    All config
+                                </button>
+                                <button
+                                    onclick="insertQuery(\"SELECT ConfigValue FROM config WHERE ConfigKey = 'SheetsWebhookUrl';\")"
+                                    class="block w-full text-left px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition text-gray-700 font-mono"
+                                >
+                                    SheetsWebhookUrl
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Quick Stats -->
+                        <div class="mb-6">
+                            <h4 class="text-xs font-semibold text-gray-600 mb-2 uppercase">Quick Stats</h4>
+                            <div class="space-y-2">
+                                <button
+                                    onclick="insertQuery('SELECT COUNT(*) as cnt FROM members;')"
+                                    class="block w-full text-left px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition text-gray-700 font-mono"
+                                >
+                                    Count members
+                                </button>
+                                <button
+                                    onclick="insertQuery('SELECT COUNT(*) as cnt FROM payments;')"
+                                    class="block w-full text-left px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition text-gray-700 font-mono"
+                                >
+                                    Count payments
+                                </button>
+                                <button
+                                    onclick="insertQuery('SELECT Status, COUNT(*) FROM members GROUP BY Status;')"
+                                    class="block w-full text-left px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition text-gray-700 font-mono"
+                                >
+                                    Members by status
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Recent Payments -->
+                        <div>
+                            <h4 class="text-xs font-semibold text-gray-600 mb-2 uppercase">Recent Payments</h4>
+                            <button
+                                onclick="insertQuery('SELECT * FROM payments ORDER BY PaymentDate DESC LIMIT 10;')"
+                                class="block w-full text-left px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition text-gray-700 font-mono"
+                            >
+                                Last 10 payments
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div id="resultsPanel" class="mt-6 hidden">
+                <!-- Tabs: Table / JSON -->
+                <div class="bg-white rounded-lg shadow-md">
+                    <div class="border-b border-gray-200 flex">
+                        <button
+                            onclick="showTab('table')"
+                            id="tabTable"
+                            class="px-6 py-3 font-semibold text-gray-700 border-b-2 border-blue-600 active"
+                        >
+                            📊 Table View
+                        </button>
+                        <button
+                            onclick="showTab('json')"
+                            id="tabJson"
+                            class="px-6 py-3 font-semibold text-gray-600 border-b-2 border-transparent hover:text-gray-900"
+                        >
+                            { } JSON
+                        </button>
+                    </div>
+
+                    <!-- Table View -->
+                    <div id="tableView" class="p-6">
+                        <div id="tableContainer" class="overflow-x-auto"></div>
+                        <div id="tableInfo" class="mt-4 text-sm text-gray-600"></div>
+                    </div>
+
+                    <!-- JSON View -->
+                    <div id="jsonView" class="p-6 hidden">
+                        <pre id="jsonOutput" class="bg-gray-100 p-4 rounded-md text-xs font-mono overflow-x-auto max-h-96"></pre>
+                        <button
+                            onclick="copyJsonToClipboard()"
+                            class="mt-4 px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition"
+                        >
+                            📋 Copy JSON
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Execute the SQL query from the textarea.
+         */
+        async function executeQuery() {
+            const sql = document.getElementById('sqlInput').value.trim();
+            if (!sql) {
+                showError('Please enter a SQL query.');
+                return;
+            }
+
+            // Hide previous results and show loading
+            document.getElementById('resultsPanel').classList.add('hidden');
+            document.getElementById('error').classList.add('hidden');
+            document.getElementById('loading').classList.remove('hidden');
+
+            try {
+                const response = await fetch('/api/query/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sql }),
+                });
+
+                const data = await response.json();
+                document.getElementById('loading').classList.add('hidden');
+
+                if (!data.ok) {
+                    showError(data.error || 'Unknown error');
+                    return;
+                }
+
+                // Display results
+                displayResults(data);
+                document.getElementById('resultsPanel').classList.remove('hidden');
+
+            } catch (err) {
+                document.getElementById('loading').classList.add('hidden');
+                showError(`Network error: ${err.message}`);
+            }
+        }
+
+        /**
+         * Display results in both table and JSON format.
+         */
+        function displayResults(data) {
+            if (data.rows !== undefined) {
+                // SELECT query
+                const rows = data.rows;
+                const columns = data.columns;
+
+                // Table view
+                let tableHtml = '<table class="w-full border-collapse text-sm">';
+                tableHtml += '<thead><tr class="bg-gray-100">';
+                for (const col of columns) {
+                    tableHtml += `<th class="border px-3 py-2 text-left font-semibold text-gray-700">${escapeHtml(col)}</th>`;
+                }
+                tableHtml += '</tr></thead><tbody>';
+
+                for (const row of rows) {
+                    tableHtml += '<tr class="hover:bg-gray-50">';
+                    for (const col of columns) {
+                        const val = row[col];
+                        const display = val === null ? '<span class="text-gray-400 italic">NULL</span>' : escapeHtml(String(val));
+                        tableHtml += `<td class="border px-3 py-2 text-gray-700">${display}</td>`;
+                    }
+                    tableHtml += '</tr>';
+                }
+                tableHtml += '</tbody></table>';
+
+                document.getElementById('tableContainer').innerHTML = tableHtml;
+                document.getElementById('tableInfo').innerHTML =
+                    `<strong>${rows.length}</strong> row(s) returned`;
+
+                // JSON view
+                document.getElementById('jsonOutput').textContent = JSON.stringify(data.rows, null, 2);
+
+            } else {
+                // INSERT/UPDATE/DELETE query
+                document.getElementById('tableContainer').innerHTML =
+                    `<div class="p-4 bg-green-50 text-green-800 rounded-md">
+                        <strong>${data.affected} row(s) affected</strong><br>
+                        <span class="text-sm text-gray-600">${data.message || ''}</span>
+                    </div>`;
+                document.getElementById('tableInfo').innerHTML = '';
+                document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+            }
+
+            // Show status
+            document.getElementById('statusText').textContent = `Query completed successfully`;
+            document.getElementById('status').classList.remove('hidden');
+        }
+
+        /**
+         * Show error message.
+         */
+        function showError(msg) {
+            document.getElementById('errorText').textContent = msg;
+            document.getElementById('error').classList.remove('hidden');
+        }
+
+        /**
+         * Clear the query input.
+         */
+        function clearQuery() {
+            document.getElementById('sqlInput').value = '';
+            document.getElementById('sqlInput').focus();
+        }
+
+        /**
+         * Insert a query template into the textarea.
+         */
+        function insertQuery(sql) {
+            document.getElementById('sqlInput').value = sql;
+            document.getElementById('sqlInput').focus();
+        }
+
+        /**
+         * Load example queries.
+         */
+        function loadExamples() {
+            const examples = [
+                'SELECT ConfigKey, ConfigValue FROM config;',
+                "SELECT ConfigValue FROM config WHERE ConfigKey = 'SheetsWebhookUrl';",
+                'SELECT COUNT(*) as cnt FROM members;',
+                'SELECT Status, COUNT(*) FROM members GROUP BY Status;',
+                'SELECT * FROM payments ORDER BY PaymentDate DESC LIMIT 10;',
+            ];
+            const html = examples
+                .map(ex => `<div class="p-2 bg-gray-100 rounded mb-2 text-xs font-mono cursor-pointer hover:bg-gray-200" onclick="insertQuery(\`${ex.replace(/`/g, '\\`')}\`)">${escapeHtml(ex)}</div>`)
+                .join('');
+            alert('Click on a quick reference button or paste one of these:\n\n' + examples.join('\n\n'));
+        }
+
+        /**
+         * Switch between table and JSON views.
+         */
+        function showTab(tab) {
+            const tableView = document.getElementById('tableView');
+            const jsonView = document.getElementById('jsonView');
+            const tabTable = document.getElementById('tabTable');
+            const tabJson = document.getElementById('tabJson');
+
+            if (tab === 'table') {
+                tableView.classList.remove('hidden');
+                jsonView.classList.add('hidden');
+                tabTable.classList.add('border-blue-600');
+                tabTable.classList.remove('border-transparent');
+                tabJson.classList.remove('border-blue-600');
+                tabJson.classList.add('border-transparent');
+            } else {
+                tableView.classList.add('hidden');
+                jsonView.classList.remove('hidden');
+                tabJson.classList.add('border-blue-600');
+                tabJson.classList.remove('border-transparent');
+                tabTable.classList.remove('border-blue-600');
+                tabTable.classList.add('border-transparent');
+            }
+        }
+
+        /**
+         * Copy JSON to clipboard.
+         */
+        function copyJsonToClipboard() {
+            const json = document.getElementById('jsonOutput').textContent;
+            navigator.clipboard.writeText(json).then(() => {
+                alert('✓ JSON copied to clipboard');
+            }).catch(err => {
+                alert('Failed to copy: ' + err.message);
+            });
+        }
+
+        /**
+         * HTML escape.
+         */
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;',
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Focus on load
+        window.addEventListener('load', () => {
+            document.getElementById('sqlInput').focus();
+        });
+    </script>
+</body>
+</html>

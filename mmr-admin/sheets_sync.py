@@ -42,17 +42,32 @@ def _post_to_sheets(payload: Dict) -> None:
     """
     webhook_url = _get_webhook_url()
     if not webhook_url:
-        print(f'  [sheets-sync] No webhook configured. Payload: {payload.get("action")} '
-              f'member={payload.get("memberId", "?")}')
+        print(f'  [sheets-sync] ERROR: SheetsWebhookUrl not set in config table. '
+              f'action={payload.get("action")} member={payload.get("memberId", "?")}')
         return
+
+    action = payload.get('action', '?')
+    member = payload.get('memberId', '?')
 
     def _do_post():
         try:
             import requests
             resp = requests.post(webhook_url, json=payload, timeout=15)
-            print(f'  [sheets-sync] {payload["action"]} → {resp.status_code}')
+            if resp.status_code == 200:
+                try:
+                    body = resp.json()
+                    if not body.get('ok'):
+                        print(f'  [sheets-sync] WARN: {action} member={member} → '
+                              f'HTTP 200 but ok=false: {body.get("error", body)}')
+                    else:
+                        print(f'  [sheets-sync] OK: {action} member={member} → 200')
+                except Exception:
+                    print(f'  [sheets-sync] OK: {action} member={member} → 200 (non-JSON response)')
+            else:
+                print(f'  [sheets-sync] ERROR: {action} member={member} → '
+                      f'HTTP {resp.status_code}: {resp.text[:200]}')
         except Exception as e:
-            print(f'  [sheets-sync] Error: {e}')
+            print(f'  [sheets-sync] ERROR: {action} member={member} → {e}')
 
     t = threading.Thread(target=_do_post, daemon=True)
     t.start()
