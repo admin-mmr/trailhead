@@ -82,6 +82,29 @@ def _call_gas_webhook(payload: Dict) -> Dict:
         raise
 
 
+def _serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert datetime and other non-JSON-serializable objects to strings.
+    Needed before sending rows to GAS webhook.
+    """
+    result = {}
+    for key, value in row.items():
+        if isinstance(value, datetime):
+            result[key] = value.isoformat()
+        elif hasattr(value, 'isoformat'):  # Handle date, time, timedelta, etc.
+            result[key] = value.isoformat()
+        elif value is None:
+            result[key] = ''  # GAS prefers empty string over null
+        else:
+            result[key] = value
+    return result
+
+
+def _serialize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Serialize all rows in a list."""
+    return [_serialize_row(row) for row in rows]
+
+
 def _send_sync_report(
     recipient: str,
     operation: str,
@@ -192,8 +215,6 @@ def _sync_members_to_sheets(job_id: str):
                         rows_to_update.append(member)
                         log_lines.append(f"🔄 {member_id}: {member.get('FirstName', '')} {member.get('LastName', '')} (MySQL newer)")
                         updated.append(f"{member_id} (updated)")
-                    else:
-                        log_lines.append(f"⊘ {member_id}: skipped (Sheets newer or same)")
                 elif mysql_updated:
                     # MySQL has timestamp, Sheets doesn't — update
                     rows_to_update.append(member)
@@ -210,7 +231,7 @@ def _sync_members_to_sheets(job_id: str):
         # Push changes to Sheets
         if rows_to_append:
             try:
-                _call_gas_webhook({'action': 'append_members', 'rows': rows_to_append})
+                _call_gas_webhook({'action': 'append_members', 'rows': _serialize_rows(rows_to_append)})
                 log_lines.append(f"📤 Appended {len(rows_to_append)} new members to Sheets")
             except Exception as e:
                 log_lines.append(f"❌ Failed to append members: {e}")
@@ -218,7 +239,7 @@ def _sync_members_to_sheets(job_id: str):
 
         if rows_to_update:
             try:
-                _call_gas_webhook({'action': 'update_members', 'rows': rows_to_update})
+                _call_gas_webhook({'action': 'update_members', 'rows': _serialize_rows(rows_to_update)})
                 log_lines.append(f"📤 Updated {len(rows_to_update)} members in Sheets")
             except Exception as e:
                 log_lines.append(f"❌ Failed to update members: {e}")
@@ -321,8 +342,6 @@ def _sync_events_to_sheets(job_id: str):
                         rows_to_update.append(event)
                         log_lines.append(f"🔄 {event_id}: updated")
                         updated.append(event_id)
-                    else:
-                        log_lines.append(f"⊘ {event_id}: skipped (Sheets newer)")
                 elif mysql_updated:
                     rows_to_update.append(event)
                     log_lines.append(f"🔄 {event_id}: updated (Sheets missing date)")
@@ -336,7 +355,7 @@ def _sync_events_to_sheets(job_id: str):
         # Push to Sheets
         if rows_to_append:
             try:
-                _call_gas_webhook({'action': 'append_events', 'rows': rows_to_append})
+                _call_gas_webhook({'action': 'append_events', 'rows': _serialize_rows(rows_to_append)})
                 log_lines.append(f"📤 Appended {len(rows_to_append)} new events")
             except Exception as e:
                 log_lines.append(f"❌ Failed to append events: {e}")
@@ -344,7 +363,7 @@ def _sync_events_to_sheets(job_id: str):
 
         if rows_to_update:
             try:
-                _call_gas_webhook({'action': 'update_events', 'rows': rows_to_update})
+                _call_gas_webhook({'action': 'update_events', 'rows': _serialize_rows(rows_to_update)})
                 log_lines.append(f"📤 Updated {len(rows_to_update)} events")
             except Exception as e:
                 log_lines.append(f"❌ Failed to update events: {e}")
@@ -439,8 +458,6 @@ def _sync_payments_to_sheets(job_id: str):
                         rows_to_update.append(payment)
                         log_lines.append(f"🔄 {payment_id}: ${amount} (MySQL newer)")
                         updated.append(payment_id)
-                    else:
-                        log_lines.append(f"⊘ {payment_id}: skipped (Sheets newer)")
                 elif mysql_updated:
                     rows_to_update.append(payment)
                     log_lines.append(f"🔄 {payment_id}: ${amount} (Sheets missing date)")
@@ -454,7 +471,7 @@ def _sync_payments_to_sheets(job_id: str):
         # Push to Sheets
         if rows_to_append:
             try:
-                _call_gas_webhook({'action': 'append_payments', 'rows': rows_to_append})
+                _call_gas_webhook({'action': 'append_payments', 'rows': _serialize_rows(rows_to_append)})
                 log_lines.append(f"📤 Appended {len(rows_to_append)} new payments")
             except Exception as e:
                 log_lines.append(f"❌ Failed to append payments: {e}")
@@ -462,7 +479,7 @@ def _sync_payments_to_sheets(job_id: str):
 
         if rows_to_update:
             try:
-                _call_gas_webhook({'action': 'update_payments', 'rows': rows_to_update})
+                _call_gas_webhook({'action': 'update_payments', 'rows': _serialize_rows(rows_to_update)})
                 log_lines.append(f"📤 Updated {len(rows_to_update)} payments")
             except Exception as e:
                 log_lines.append(f"❌ Failed to update payments: {e}")
