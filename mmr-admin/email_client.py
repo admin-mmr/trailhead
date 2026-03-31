@@ -20,6 +20,29 @@ def get_email_client() -> EmailClient:
     return EmailClient.from_connection_string(connection_string)
 
 
+def _get_sender_from_connection_string(connection_string: str) -> str:
+    """
+    Extract sender email from Azure Communication Services connection string.
+
+    Connection string format: endpoint=https://<resource-name>.communication.azure.com/;access_key=...
+    Sender format (Azure default): DoNotReply@<resource-name>.communication.azure.com
+    """
+    try:
+        # Extract endpoint URL
+        for part in connection_string.split(';'):
+            if part.startswith('endpoint='):
+                endpoint = part.replace('endpoint=', '').strip()
+                # Extract resource name from https://resource-name.communication.azure.com/
+                if 'https://' in endpoint:
+                    domain = endpoint.split('https://')[1].split('/')[0]  # e.g., "resource-name.communication.azure.com"
+                    return f'DoNotReply@{domain}'
+    except Exception as e:
+        logger.warning(f'Failed to extract sender from connection string: {e}')
+
+    # Fallback to hardcoded domain
+    return 'DoNotReply@mmr-comm.communication.azure.com'
+
+
 def send_email(
     to: str,
     subject: str,
@@ -65,7 +88,11 @@ def send_email(
             return result_data
 
         client = get_email_client()
-        sender = 'DoNotReply@mmr-comm.notification.azure.com'
+
+        # Extract sender from connection string
+        # Format: endpoint=https://<resource-name>.communication.azure.com/;access_key=...
+        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
+        sender = _get_sender_from_connection_string(connection_string)
 
         # Build CC list
         cc_recipients = []
