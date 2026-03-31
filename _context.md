@@ -7,6 +7,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-03-31 16:35 UTC — Fix schema mismatch in Python Exec diagnostic functions
+Fixed 5 diagnostic functions referencing non-existent tables: (1) `transactions` → `gmail_transactions` (get_sheet_vs_db_counts, check_transaction_dups, check_transaction_nulls, get_sample_transactions); (2) `sync_log` → `sync_metadata` + `sync_snapshots` (get_sync_status). Updated all column references (bib_id → TransactionNumber, deleted_at → IsArchived, etc.) to match current schema. All functions import cleanly (test_imports.py ✅). Changed: mmr-admin/api_python_exec.py. Status: Complete — diagnostic endpoints now query correct tables.
+
 ### 2026-03-31 23:45 UTC — Email webhook consolidation: Azure → GAS + Gmail
 Consolidated all email sending from Azure SDK to GAS webhook + Gmail. Created: (1) email_hook.ts in GAS — handles `email_send` action, sends via Gmail, logs all emails to Email Log sheet (1G0dr2vjW-vMN0UbpxvzdBajmFSQLsiRbLd1A-36xk0I); (2) webhook_client.py in mmr-admin — replaces email_client.py, POSTs to GAS webhook instead of Azure SDK; (3) Updated payment_actions.py, api_sheets_sync.py, api_python_exec.py to use webhook_client. Removed Azure SDK dependency entirely. GAS builds cleanly. Python test_imports.py passes (webhook_client ✅). Status: Complete — ready to deploy GAS and configure webhook URL. See EMAIL_WEBHOOK_CONSOLIDATION.md for full migration guide.
 

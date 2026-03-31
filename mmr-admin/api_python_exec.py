@@ -23,7 +23,7 @@ py_exec_bp = Blueprint('py_exec', __name__, url_prefix='/api/py-exec')
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_sheet_vs_db_counts():
-    """Compare row counts: Google Sheets transactions vs MySQL."""
+    """Compare row counts: Google Sheets transactions vs MySQL gmail_transactions."""
     debug = {'queries_executed': [], 'connection_info': {}}
     try:
         # Connection info
@@ -38,23 +38,23 @@ def get_sheet_vs_db_counts():
         cursor = conn.cursor(dictionary=True)
         debug['connection_status'] = 'connected'
 
-        # Total count
-        query1 = "SELECT COUNT(*) as cnt FROM transactions"
+        # Total count of all gmail transactions (including archived)
+        query1 = "SELECT COUNT(*) as cnt FROM gmail_transactions"
         cursor.execute(query1)
         db_count = cursor.fetchone()['cnt']
         debug['queries_executed'].append(f"✓ {query1} → {db_count}")
 
-        # Active count
-        query2 = "SELECT COUNT(*) as cnt FROM transactions WHERE deleted_at IS NULL"
+        # Active (non-archived) count
+        query2 = "SELECT COUNT(*) as cnt FROM gmail_transactions WHERE IsArchived = 0"
         cursor.execute(query2)
         db_active = cursor.fetchone()['cnt']
         debug['queries_executed'].append(f"✓ {query2} → {db_active}")
 
-        # Last fetch log
-        query3 = "SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'sheet_fetch' ORDER BY created_at DESC LIMIT 1"
+        # Last sync metadata
+        query3 = "SELECT sheet_name, last_synced_at, sync_status FROM sync_metadata WHERE sheet_name LIKE '%transaction%' OR sheet_name LIKE '%gmail%' ORDER BY last_synced_at DESC LIMIT 1"
         cursor.execute(query3)
-        last_fetch = cursor.fetchone()
-        debug['queries_executed'].append(f"✓ Fetched last_fetch log entry")
+        last_sync = cursor.fetchone()
+        debug['queries_executed'].append(f"✓ Fetched last sync metadata entry")
 
         cursor.close()
         conn.close()
@@ -64,9 +64,9 @@ def get_sheet_vs_db_counts():
             'status': 'ok',
             'db_total_rows': db_count,
             'db_active_rows': db_active,
-            'deleted_rows': db_count - db_active,
-            'last_fetch_log': last_fetch,
-            'note': 'To get Google Sheets count, check the last sync log entry for "raw_row_count"',
+            'archived_rows': db_count - db_active,
+            'last_sync_metadata': last_sync,
+            'note': 'Counts from gmail_transactions table. Use sync_metadata for sync history.',
             'debug': debug
         }
     except Exception as e:
@@ -81,7 +81,7 @@ def get_sheet_vs_db_counts():
 
 
 def get_sync_status():
-    """Get status of the last 5 sync operations."""
+    """Get status of the last 5 sync operations from sync_metadata and sync_snapshots."""
     debug = {'query_executed': None, 'row_count': 0}
     try:
         conn = dbmod.get_conn()
@@ -90,16 +90,17 @@ def get_sync_status():
 
         query = """
             SELECT
-                id, action, status, inserted, updated, errors,
-                raw_row_count, started_at, completed_at,
-                error_message
-            FROM sync_log
-            ORDER BY created_at DESC
+                sm.sheet_name, sm.sync_status, sm.last_synced_at,
+                ss.row_count, ss.snapshot_hash, ss.snapshot_timestamp,
+                ss.status as snapshot_status
+            FROM sync_metadata sm
+            LEFT JOIN sync_snapshots ss ON sm.sheet_name = ss.sheet_name
+            ORDER BY sm.last_synced_at DESC
             LIMIT 5
         """
         cursor.execute(query)
         logs = cursor.fetchall()
-        debug['query_executed'] = 'SELECT from sync_log (last 5 entries)'
+        debug['query_executed'] = 'SELECT from sync_metadata + sync_snapshots (last 5 entries)'
         debug['row_count'] = len(logs)
 
         cursor.close()
@@ -124,7 +125,7 @@ def get_sync_status():
 
 
 def check_transaction_dups():
-    """Check for duplicate transactions (same bib_id, same date)."""
+    """Check for duplicate gmail transactions (same TransactionNumber, same TransactionDate)."""
     debug = {'duplicate_groups_found': 0, 'affected_transaction_ids': []}
     try:
         conn = dbmod.get_conn()
@@ -133,12 +134,12 @@ def check_transaction_dups():
 
         query = """
             SELECT
-                bib_id, transaction_date,
+                TransactionNumber, TransactionDate,
                 COUNT(*) as count,
-                GROUP_CONCAT(id) as ids
-            FROM transactions
-            WHERE deleted_at IS NULL
-            GROUP BY bib_id, transaction_date
+                GROUP_CONCAT(MessageId) as message_ids
+            FROM gmail_transactions
+            WHERE IsArchived = 0 AND TransactionNumber IS NOT NULL
+            GROUP BY TransactionNumber, TransactionDate
             HAVING count > 1
             ORDER BY count DESC
             LIMIT 20
@@ -147,11 +148,11 @@ def check_transaction_dups():
         dups = cursor.fetchall()
         debug['duplicate_groups_found'] = len(dups)
 
-        # Extract all affected IDs
+        # Extract all affected message IDs
         all_ids = []
         for dup in dups:
-            if dup.get('ids'):
-                all_ids.extend(dup['ids'].split(','))
+            if dup.get('message_ids'):
+                all_ids.extend(dup['message_ids'].split(','))
         debug['total_affected_transactions'] = len(all_ids)
 
         cursor.close()
@@ -162,7 +163,7 @@ def check_transaction_dups():
             'status': 'ok',
             'duplicate_groups': dups,
             'count': len(dups),
-            'note': 'Each row shows a group of duplicates by bib_id + date',
+            'note': 'Each row shows a group of duplicates by TransactionNumber + TransactionDate',
             'debug': debug
         }
     except Exception as e:
@@ -177,8 +178,8 @@ def check_transaction_dups():
 
 
 def check_transaction_nulls():
-    """Find transactions with critical NULL values."""
-    debug = {'union_queries': 3, 'null_fields_checked': ['bib_id', 'transaction_date', 'amount']}
+    """Find gmail_transactions with critical NULL values."""
+    debug = {'union_queries': 3, 'null_fields_checked': ['TransactionNumber', 'TransactionDate', 'Amount']}
     try:
         conn = dbmod.get_conn()
         cursor = conn.cursor(dictionary=True)
@@ -186,19 +187,19 @@ def check_transaction_nulls():
 
         query = """
             SELECT
-                'NULL bib_id' as issue, COUNT(*) as count
-            FROM transactions
-            WHERE deleted_at IS NULL AND bib_id IS NULL
+                'NULL TransactionNumber' as issue, COUNT(*) as count
+            FROM gmail_transactions
+            WHERE IsArchived = 0 AND TransactionNumber IS NULL
             UNION ALL
             SELECT
-                'NULL transaction_date' as issue, COUNT(*) as count
-            FROM transactions
-            WHERE deleted_at IS NULL AND transaction_date IS NULL
+                'NULL TransactionDate' as issue, COUNT(*) as count
+            FROM gmail_transactions
+            WHERE IsArchived = 0 AND TransactionDate IS NULL
             UNION ALL
             SELECT
-                'NULL amount' as issue, COUNT(*) as count
-            FROM transactions
-            WHERE deleted_at IS NULL AND amount IS NULL
+                'NULL Amount' as issue, COUNT(*) as count
+            FROM gmail_transactions
+            WHERE IsArchived = 0 AND Amount IS NULL
         """
         cursor.execute(query)
         issues = cursor.fetchall()
@@ -228,8 +229,8 @@ def check_transaction_nulls():
 
 
 def get_sample_transactions(limit=10):
-    """Fetch sample transaction rows for manual inspection."""
-    debug = {'limit_requested': limit, 'fields_selected': 7}
+    """Fetch sample gmail_transaction rows for manual inspection."""
+    debug = {'limit_requested': limit, 'fields_selected': 8}
     try:
         conn = dbmod.get_conn()
         cursor = conn.cursor(dictionary=True)
@@ -237,17 +238,17 @@ def get_sample_transactions(limit=10):
 
         query = """
             SELECT
-                id, bib_id, transaction_date, amount,
-                notes, created_at, updated_at
-            FROM transactions
-            WHERE deleted_at IS NULL
-            ORDER BY created_at DESC
+                MessageId, TransactionNumber, TransactionDate, Amount,
+                Sender, Memo, Source, ProcessedTime
+            FROM gmail_transactions
+            WHERE IsArchived = 0
+            ORDER BY ProcessedTime DESC
             LIMIT %s
         """
         cursor.execute(query, (limit,))
         samples = cursor.fetchall()
         debug['rows_returned'] = len(samples)
-        debug['sample_ids'] = [s['id'] for s in samples] if samples else []
+        debug['sample_ids'] = [s['MessageId'] for s in samples] if samples else []
 
         cursor.close()
         conn.close()
