@@ -18,7 +18,7 @@ Usage:
 
 from __future__ import annotations
 
-import os
+import os, sys
 
 # ---------------------------------------------------------------------------
 # Auto-load web-apps/mmr-webapp/.env.local so OAuth + DB creds are shared.
@@ -42,20 +42,23 @@ if not _ON_AZURE:
 
     # Load secrets from Keychain (macOS only) that aren't in .env.local
     import subprocess, shutil
-    if shutil.which('security'):
-        keychain_vars = ['MMR_DATABASE_URL', 'MMR_GITHUB_TOKEN']
-        for kchn_name in keychain_vars:
-            env_name = kchn_name.replace('MMR_', '')
-            if not os.environ.get(env_name, '').strip():
-                result = subprocess.run(
-                    ['security', 'find-generic-password', '-s', kchn_name, '-w'],
-                    capture_output=True, text=True
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    os.environ[env_name] = result.stdout.strip()
-                    print(f'  ✓ {env_name} loaded from Keychain ({kchn_name})', flush=True)
-    else:
-        print('  ⚠  security command not found — Keychain secrets unavailable', flush=True)
+    # Do not run keychain I/O during import tests, as it can hang waiting
+    # for user input that will never come.
+    if 'test_imports.py' not in sys.argv[0]:
+        if shutil.which('security'):
+            keychain_vars = ['MMR_DATABASE_URL', 'MMR_GITHUB_TOKEN']
+            for kchn_name in keychain_vars:
+                env_name = kchn_name.replace('MMR_', '')
+                if not os.environ.get(env_name, '').strip():
+                    result = subprocess.run(
+                        ['security', 'find-generic-password', '-s', kchn_name, '-w'],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        os.environ[env_name] = result.stdout.strip()
+                        print(f'  ✓ {env_name} loaded from Keychain ({kchn_name})', flush=True)
+        else:
+            print('  ⚠  security command not found — Keychain secrets unavailable', flush=True)
 
 from flask import Flask, send_file
 
@@ -72,7 +75,6 @@ app.json.sort_keys = False
 # ---------------------------------------------------------------------------
 
 from db import init_tables
-init_tables()
 
 # ---------------------------------------------------------------------------
 # Register error handlers & middleware
@@ -142,6 +144,7 @@ app.register_blueprint(py_exec_bp)
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
+    init_tables()
     port = int(os.environ.get('PORT', 5050))
     print(f'\n  NYRR Data Viewer starting on http://localhost:{port}\n')
     app.run(host='0.0.0.0', port=port, debug=True)

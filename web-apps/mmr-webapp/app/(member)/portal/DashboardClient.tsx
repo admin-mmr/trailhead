@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Trophy, ArrowRight, AlertCircle, Clock, Upload } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
+import { formatLocaleDate } from '@/lib/date'
 import type { Member } from '@/types'
 
 interface PendingEvent {
@@ -47,9 +48,7 @@ export default function DashboardClient({ member, payments }: Props) {
     )
   }
 
-  const expiryDate = member.expiresAt
-    ? new Date(member.expiresAt).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US')
-    : '—'
+  const expiryDate = formatLocaleDate(member.expiresAt, lang === 'zh' ? 'zh-CN' : 'en-US') || '—'
 
   const daysUntilExpiry = member.expiresAt
     ? Math.ceil((new Date(member.expiresAt).getTime() - Date.now()) / 86400000)
@@ -217,7 +216,7 @@ export default function DashboardClient({ member, payments }: Props) {
                       : (lang === 'zh' ? '家庭会员' : 'Family Membership')}
                   </p>
                   <p className="text-xs text-gray-400">
-                    {new Date(p.paid_at).toLocaleDateString()}
+                    {formatLocaleDate(p.paid_at, lang === 'zh' ? 'zh-CN' : 'en-US')}
                   </p>
                 </div>
                 <div className="text-right">

@@ -9,6 +9,8 @@ import {
 import type { Photo, PhotoDetection } from '@/types'
 import MemberSearch, { type MemberResult } from './MemberSearch'
 
+import { formatLocaleDate } from '@/lib/date'
+
 interface Props {
   photo:    Photo
   viewerId: string
@@ -146,7 +148,7 @@ export default function PhotoDetailOverlay({ photo, viewerId, lang, onClose, onU
             <p className="text-xs text-gray-400 font-mono">{photo.photoId}</p>
             {photo.takenAt && (
               <p className="text-xs text-gray-500 mt-0.5">
-                {new Date(photo.takenAt).toLocaleDateString()}
+                {formatLocaleDate(photo.takenAt, lang)}
               </p>
             )}
           </div>

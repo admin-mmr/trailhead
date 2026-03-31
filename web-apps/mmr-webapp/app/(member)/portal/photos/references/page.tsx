@@ -5,6 +5,7 @@ import { Trash2, Upload, AlertTriangle, ChevronLeft, Loader2, Camera } from 'luc
 import Link from 'next/link'
 import Image from 'next/image'
 import { useLang } from '@/lib/i18n/context'
+import { formatLocaleDate } from '@/lib/date'
 import type { MemberReferencePhoto } from '@/types'
 
 const MAX_ACTIVE = 20
@@ -270,12 +271,12 @@ export default function ReferencesPage() {
                   {ref.photoTakenAt && (
                     <p className="text-xs text-gray-500 mt-1">
                       {lang === 'zh' ? '拍摄日期：' : 'Taken: '}
-                      {new Date(ref.photoTakenAt).toLocaleDateString()}
+                      {formatLocaleDate(ref.photoTakenAt, lang)}
                     </p>
                   )}
                   <p className="text-xs text-gray-400 mt-0.5">
                     {lang === 'zh' ? '添加时间：' : 'Added: '}
-                    {new Date(ref.addedAt).toLocaleDateString()}
+                    {formatLocaleDate(ref.addedAt, lang)}
                   </p>
                 </div>
 

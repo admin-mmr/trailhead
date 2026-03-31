@@ -360,8 +360,12 @@ function getUnmatchedGmailPayments(): FetchGmailRow[] {
 }
 
 function rowToFetchGmailRow(row: any[], rowIndex: number): FetchGmailRow {
+  const rawTimestamp = row[FG_COL.TIMESTAMP];
+  const date = rawTimestamp ? new Date(rawTimestamp) : null;
+  const isoTimestamp = date && !isNaN(date.getTime()) ? date.toISOString() : '';
+
   return {
-    timestamp: String(row[FG_COL.TIMESTAMP] ?? ''),
+    timestamp: isoTimestamp,
     sender: String(row[FG_COL.SENDER] ?? ''),
     amount: Number(row[FG_COL.AMOUNT] ?? 0),
     memo: String(row[FG_COL.MEMO] ?? ''),

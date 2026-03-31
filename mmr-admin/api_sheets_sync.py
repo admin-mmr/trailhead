@@ -211,6 +211,12 @@ def _parse_datetime(value: Any) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value
     if isinstance(value, str):
+        s = value.strip()
+        # Handle ISO 8601 Zulu timezone format ('...Z') by removing the Z.
+        # datetime.strptime doesn't handle 'Z' directly.
+        if s.endswith('Z'):
+            s = s[:-1]
+        
         # Try ISO 8601 first (most common)
         for fmt in [
             '%Y-%m-%dT%H:%M:%S.%f',  # 2026-03-31T12:35:45.123456
@@ -219,7 +225,7 @@ def _parse_datetime(value: Any) -> Optional[datetime]:
             '%Y-%m-%d',               # 2026-03-31
         ]:
             try:
-                return datetime.strptime(value, fmt)
+                return datetime.strptime(s, fmt)
             except ValueError:
                 continue
     return None
@@ -231,17 +237,16 @@ def _to_iso_datetime(value: Any) -> Optional[str]:
 
     Handles:
       - Python datetime objects → ISO string
-      - ISO 8601 strings → validated and returned
-      - JavaScript Date.toString() → parsed and converted to ISO
+      - ISO 8601 strings from GAS (UTC) → validated and returned
+      - Legacy JavaScript Date.toString() → parsed and converted to ISO
       - Date strings (YYYY-MM-DD) → kept as-is
       - None → None
 
     Returns ISO 8601 format suitable for MySQL: YYYY-MM-DD HH:MM:SS
-    This is the single source of truth for datetime normalization across all tables.
+    This is the single source of truth for datetime normalization.
 
-    CRITICAL: GAS webhook returns JavaScript Date.toString() format:
-      'Tue Mar 31 2026 15:51:18 GMT-0400 (östnordamerikansk sommartid)'
-    We must convert this to ISO before MySQL INSERT/UPDATE.
+    NOTE: GAS now sends UTC ISO 8601 strings (e.g., '2026-03-31T20:27:00.000Z').
+    The 'GMT' parsing is for legacy data.
     """
     if value is None or (isinstance(value, str) and value.strip() == ''):
         return None
@@ -254,13 +259,14 @@ def _to_iso_datetime(value: Any) -> Optional[str]:
         value_str = value.strip()
 
         # Quick check: if it already looks like ISO format, validate and return
+        # This now correctly handles '...Z' from GAS thanks to _parse_datetime.
         if 'T' in value_str or (len(value_str) >= 19 and value_str[4] == '-' and value_str[7] == '-'):
             # Try to parse as ISO to validate
             dt = _parse_datetime(value_str)
             if dt:
                 return dt.strftime('%Y-%m-%d %H:%M:%S')
 
-        # Check for JavaScript Date.toString() format
+        # (LEGACY) Check for JavaScript Date.toString() format
         # Format: 'Tue Mar 31 2026 15:51:18 GMT-0400 (...)'
         # We extract the date/time part before 'GMT'
         if 'GMT' in value_str:
@@ -271,7 +277,7 @@ def _to_iso_datetime(value: Any) -> Optional[str]:
                 dt = datetime.strptime(date_part, '%a %b %d %Y %H:%M:%S')
                 return dt.strftime('%Y-%m-%d %H:%M:%S')
             except ValueError as e:
-                logger.warning(f"Failed to parse JavaScript Date.toString() format: {value_str} — {e}")
+                logger.warning(f"Failed to parse legacy JavaScript Date.toString() format: {value_str} — {e}")
                 # Fallback: return None (will be caught by caller)
                 return None
 
