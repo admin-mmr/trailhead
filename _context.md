@@ -1,9 +1,14 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-30 10:36 UTC
-Last commit: TBD
+Last updated: 2026-03-30 05:10 UTC
+Last commit: b966b9f (fix: correct GAS webhook action name and configure Azure Communication Services)
 
 ---
+
+## Session log
+
+### 2026-03-30 05:10 UTC — Fix GAS webhook & email service
+Fixed two production errors: (1) Changed `get_gmail_transactions` → `get_transactions` in api_sheets_sync.py line 820 to match GAS webhook handler. (2) Removed SendGrid, switched to Azure Communication Services for email (no account needed, integrated with Azure stack). Sender: DoNotReply@mmr-comm.notification.azure.com (auto-verified). Committed b966b9f.
 
 ## Current state
 
