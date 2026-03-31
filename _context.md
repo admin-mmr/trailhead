@@ -7,6 +7,18 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-03-31 20:45 UTC — Add Google Sheets diagnostic module (api_sheets_diags.py)
+Created new api_sheets_diags.py module (436 lines) with 8 diagnostic functions: (1) get_sheets_members()/payments/events/transactions() — read data from Google Sheets; (2) update_sheets_members/payments/events() — write updates to Sheets; (3) compare_sheets_vs_db() — sync health check comparing Sheets row counts vs MySQL. All functions use GAS webhook with rich debug output (row counts, sample columns, timestamps). Registered 8 functions in api_python_exec.py FUNCTIONS dict. Created SHEETS_DIAGS_GUIDE.md with detailed function docs, examples, and data flow. Verified: Python syntax OK, test_imports recognizes module. Status: Complete — ready for use in diagnosing sheet/DB sync issues.
+
+### 2026-03-31 20:40 UTC — Split api_python_exec.py into modular components
+Refactored code health: split api_python_exec.py (875→663 lines) by extracting 4 email diagnostic functions into new api_email_diags.py module (230 lines). Functions migrated: get_gmail_transactions_recent(), get_gas_webhook_config(), get_email_send_status(), analyze_email_flow(). Updated imports: api_python_exec.py now imports email diags from api_email_diags.py. FUNCTIONS registry updated to use imported functions. Verified: Python syntax OK, test_imports.py recognizes both modules. Status: Complete — modular architecture improves maintainability.
+
+### 2026-03-31 20:37 UTC — Add GAS email pipeline diagnostic functions
+Added 4 comprehensive diagnostic functions to trace email flow from webhook POST through GAS to database logging: (1) analyze_email_flow() — 4-point pipeline health check; (2) get_gas_webhook_config() — verify Config table has SheetsWebhookUrl; (3) get_gmail_transactions_recent() — query received emails from Gmail; (4) get_email_send_status() — check activity_log + Config table for send records. All registered in FUNCTIONS dict. Created GAS_EMAIL_DIAGNOSTICS.md (detailed guide: logging locations, data flow diagram, testing steps, troubleshooting). Changed: mmr-admin/api_python_exec.py (875 lines now, +222 lines). ⚠️ File now exceeds 400-line threshold — recommend splitting into api_email_diags.py module. Status: Complete — functions tested and deployable.
+
+### 2026-03-31 20:29 UTC — Fix Python Exec table metadata + webhook_client import
+Fixed two critical errors: (1) KeyError in api_python_exec.py line 418 — Azure MySQL returns `TABLE_NAME` in uppercase, not `table_name`. Changed list comprehension to `.get('table_name') or .get('TABLE_NAME')` for case compatibility. (2) ImportError in webhook_client.py line 39 — replaced non-existent `get_db_connection` with actual function `get_conn` from db.py. Both fixes tested. Status: Complete.
+
 ### 2026-03-31 16:35 UTC — Fix schema mismatch in Python Exec diagnostic functions
 Fixed 5 diagnostic functions referencing non-existent tables: (1) `transactions` → `gmail_transactions` (get_sheet_vs_db_counts, check_transaction_dups, check_transaction_nulls, get_sample_transactions); (2) `sync_log` → `sync_metadata` + `sync_snapshots` (get_sync_status). Updated all column references (bib_id → TransactionNumber, deleted_at → IsArchived, etc.) to match current schema. All functions import cleanly (test_imports.py ✅). Changed: mmr-admin/api_python_exec.py. Status: Complete — diagnostic endpoints now query correct tables.
 

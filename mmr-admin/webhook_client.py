@@ -36,8 +36,8 @@ def get_sheets_webhook_url() -> str:
     # Otherwise, fetch from MySQL config table
     logger.info('[webhook_client] Attempting to fetch SheetsWebhookUrl from MySQL config table')
     try:
-        from db import get_db_connection
-        conn = get_db_connection()
+        from db import get_conn
+        conn = get_conn()
         logger.debug('[webhook_client] MySQL connection established')
 
         cursor = conn.cursor(dictionary=True)

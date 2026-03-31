@@ -15,6 +15,22 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify
 from auth import login_required
 import db as dbmod
+from api_email_diags import (
+    get_gmail_transactions_recent,
+    get_gas_webhook_config,
+    get_email_send_status,
+    analyze_email_flow,
+)
+from api_sheets_diags import (
+    get_sheets_members,
+    get_sheets_payments,
+    get_sheets_events,
+    get_sheets_transactions,
+    update_sheets_members,
+    update_sheets_payments,
+    update_sheets_events,
+    compare_sheets_vs_db,
+)
 
 py_exec_bp = Blueprint('py_exec', __name__, url_prefix='/api/py-exec')
 
@@ -415,7 +431,7 @@ def test_db_connection():
         tables = cursor.fetchall()
         debug['queries'].append(f"✓ Listed {len(tables)} tables with column counts")
         debug['table_count'] = len(tables)
-        debug['table_names'] = [t['table_name'] for t in tables]
+        debug['table_names'] = [t.get('table_name') or t.get('TABLE_NAME') for t in tables]
 
         cursor.close()
         conn.close()
@@ -451,6 +467,18 @@ FUNCTIONS = {
     'test_db_connection': test_db_connection,
     'check_webhook_email_config': check_webhook_email_config,
     'send_test_email': send_test_email,
+    'get_gmail_transactions_recent': get_gmail_transactions_recent,
+    'get_gas_webhook_config': get_gas_webhook_config,
+    'get_email_send_status': get_email_send_status,
+    'analyze_email_flow': analyze_email_flow,
+    'get_sheets_members': get_sheets_members,
+    'get_sheets_payments': get_sheets_payments,
+    'get_sheets_events': get_sheets_events,
+    'get_sheets_transactions': get_sheets_transactions,
+    'update_sheets_members': update_sheets_members,
+    'update_sheets_payments': update_sheets_payments,
+    'update_sheets_events': update_sheets_events,
+    'compare_sheets_vs_db': compare_sheets_vs_db,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
