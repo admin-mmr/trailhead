@@ -7,6 +7,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-03-31 21:25 UTC — Create _to_iso_datetime() wrapper for datetime normalization
+Root cause of "Incorrect datetime value" error: GAS webhook returns JavaScript Date.toString() format ('Tue Mar 31 2026 15:51:18 GMT-0400 (...)') but MySQL expects ISO 8601 ('2026-03-31 15:51:18'). Created `_to_iso_datetime()` wrapper function as single source of truth for all datetime normalization. Handles JavaScript Date.toString(), ISO 8601, datetime objects, and date strings. Applied to transaction import: normalize timestamp_raw and processed_time_raw before INSERT. Enhanced logging shows both raw and normalized values. Reusable across all four tables. Committed cd50f80. Status: Complete.
+
 ### 2026-03-31 21:18 UTC — Add missing TimeStamp field to gmail_transactions INSERT
 Schema requires `TimeStamp DATETIME NOT NULL` with no default value. GAS webhook provides timestamp in 'timestamp' field (normalized to 'Timestamp'). Updated INSERT to: (1) extract timestamp from row; (2) validate it's not missing; (3) include TimeStamp in 6-column INSERT (was 5). Fixes "Field 'TimeStamp' doesn't have a default value" errors. Committed d82d75b. Status: Complete.
 
