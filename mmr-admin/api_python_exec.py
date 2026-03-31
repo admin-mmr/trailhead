@@ -198,6 +198,56 @@ def get_sample_transactions(limit=10):
         }
 
 
+def check_azure_email_config():
+    """Check Azure Communication Services email configuration and list available sender domains."""
+    try:
+        import os
+        from email_client import get_email_client
+
+        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
+
+        config_info = {
+            'status': 'ok',
+            'connection_string_present': bool(connection_string),
+            'extracted_resource': None,
+            'message': None,
+        }
+
+        # Extract resource from connection string
+        if 'communication.azure.com' in connection_string:
+            parts = connection_string.split('/')
+            for part in parts:
+                if 'communication.azure.com' in part:
+                    config_info['extracted_resource'] = part
+                    break
+
+        # Try to get the client (validates credentials)
+        try:
+            client = get_email_client()
+            config_info['client_initialized'] = True
+            config_info['message'] = 'Azure Communication Services client initialized successfully. However, to send emails you need a verified sender domain in your Azure resource.'
+        except Exception as e:
+            config_info['client_initialized'] = False
+            config_info['error'] = str(e)
+
+        config_info['next_steps'] = [
+            '1. Go to Azure Portal → Communication Services → mmr-comm (or your resource)',
+            '2. Navigate to "Email" → "Sender Domains"',
+            '3. Either:',
+            '   a) Verify a custom domain by adding DNS CNAME records (production)',
+            '   b) Use Azure\'s test email if available (sandbox mode)',
+            '4. Alternatively, use SendGrid or another third-party email provider'
+        ]
+
+        return config_info
+    except Exception as e:
+        return {
+            'status': 'error',
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }
+
+
 def send_test_email():
     """Send a test hello email to admin@mmrunners.org to verify email pipeline."""
     try:
@@ -324,6 +374,7 @@ FUNCTIONS = {
     'check_transaction_nulls': check_transaction_nulls,
     'get_sample_transactions': get_sample_transactions,
     'test_db_connection': test_db_connection,
+    'check_azure_email_config': check_azure_email_config,
     'send_test_email': send_test_email,
 }
 
