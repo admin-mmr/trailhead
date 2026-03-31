@@ -21,6 +21,9 @@ Last commit: (pending)
 
 ## Session log
 
+### 2026-03-30 21:14 ET — cancel button + suppress not_found modal
+Changed: Added POST /api/load/<event_code>/cancel endpoint; worker checks cancel_requested flag after each page batch and raises InterruptedError → sets status=cancelled. Modal now shows Cancel button while running, 🛑 Cancelled state + Close on done. Suppressed not_found flash between polls. Status: Done. Next: Test cancel on stuck H2026 load; monitor log splitting path via nyrr-logs.
+
 <!-- Newest session first. Format: ### YYYY-MM-DD HH:MM UTC — short title -->
 
 ### 2026-03-30 15:03 ET — Gmail quick-approve + layout overhaul

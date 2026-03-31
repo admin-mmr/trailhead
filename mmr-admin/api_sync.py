@@ -71,6 +71,21 @@ def api_load_event(event_id):
     return json_response({'ok': True, 'event_code': event_code, 'status': 'started'})
 
 
+@sync_bp.route('/api/load/<event_code>/cancel', methods=['POST'])
+@login_required
+def api_sync_cancel(event_code):
+    """Request cancellation of a running sync job."""
+    with _jobs_lock:
+        job = _jobs.get(event_code)
+        if not job:
+            return json_response({'ok': False, 'error': 'No job found'}), 404
+        if job.get('status') != 'running':
+            return json_response({'ok': False, 'error': f"Job is not running (status={job.get('status')})"}), 400
+        _jobs[event_code]['cancel_requested'] = True
+        logger.info(f"🛑 Cancel requested for {event_code}")
+    return json_response({'ok': True, 'message': 'Cancel requested'})
+
+
 @sync_bp.route('/api/load/<event_code>/status')
 @login_required
 def api_sync_status(event_code):
@@ -245,6 +260,12 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                             raise
 
                 logger.debug(f"  └─ [{label}] page {page_num}: {len(row_tuples)} rows in {batch_elapsed:.3f}s, total={rows_written}")
+
+                # Check for cancellation after each page
+                with _jobs_lock:
+                    if _jobs.get(event_code, {}).get('cancel_requested'):
+                        logger.info(f"🛑 Cancel detected mid-fetch [{label}] page {page_num}, rows_written={rows_written}")
+                        raise InterruptedError("Sync cancelled by user")
 
         def _pace_to_seconds(pace_str: str) -> int:
             """Convert MM:SS or 00:MM:SS pace to seconds."""
@@ -629,6 +650,15 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
             _jobs[event_code]['final_count'] = final_count
             _jobs[event_code]['total_backfilled'] = total_backfilled
             _jobs[event_code]['total_inserted'] = total_inserted
+
+    except InterruptedError:
+        elapsed = time.time() - start_time
+        logger.info(f"🛑 Sync cancelled for {event_code} after {elapsed:.2f}s, rows_written={rows_written}")
+        with _jobs_lock:
+            _jobs[event_code]['status'] = 'cancelled'
+            _jobs[event_code]['message'] = f'Cancelled after {rows_written} runners written ({elapsed:.0f}s)'
+            _jobs[event_code]['finished_at'] = datetime.utcnow().isoformat()
+        return
 
     except Exception as e:
         elapsed = time.time() - start_time
