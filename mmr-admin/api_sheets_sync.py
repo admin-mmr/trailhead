@@ -227,11 +227,14 @@ def _sync_members_to_sheets(job_id: str):
         - Else → skip
 
     Creates detailed sync log with all changes.
+    Verbose mode shows first 3 members from each source for debugging.
     """
     log_lines = []
     inserted = []
     updated = []
+    skipped = []
     errors = []
+    verbose_mode = True  # Set to False to reduce verbosity
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching members from MySQL...', 'progress': 0}
@@ -242,12 +245,30 @@ def _sync_members_to_sheets(job_id: str):
         members_rows = query("SELECT * FROM members ORDER BY MemberID")
         log_lines.append(f"📥 Fetched {len(members_rows)} members from MySQL")
 
+        if verbose_mode and members_rows:
+            # Show column names
+            columns = list(members_rows[0].keys())
+            log_lines.append(f"   Columns ({len(columns)}): {', '.join(columns[:10])}{'...' if len(columns) > 10 else ''}")
+            # Show first 3 rows
+            for i, member in enumerate(members_rows[:3]):
+                name = f"{member.get('FirstName', '')} {member.get('LastName', '')}".strip()
+                updated_at = member.get('LastUpdated', 'NULL')
+                log_lines.append(f"   [Row {i+1}] {member['MemberID']}: {name}, LastUpdated={updated_at}")
+
         # Fetch members from Google Sheets
         try:
             sheets_data = _call_gas_webhook({'action': 'get_members'})
             sheets_members = sheets_data if isinstance(sheets_data, list) else []
             sheets_by_id = {m['MemberID']: m for m in sheets_members if 'MemberID' in m}
             log_lines.append(f"📊 Fetched {len(sheets_by_id)} members from Google Sheets")
+
+            if verbose_mode and sheets_members:
+                columns = list(sheets_members[0].keys())
+                log_lines.append(f"   Columns ({len(columns)}): {', '.join(columns[:10])}{'...' if len(columns) > 10 else ''}")
+                for i, member in enumerate(sheets_members[:3]):
+                    name = f"{member.get('FirstName', '')} {member.get('LastName', '')}".strip()
+                    updated_at = member.get('LastUpdated', 'NULL')
+                    log_lines.append(f"   [Row {i+1}] {member.get('MemberID', 'N/A')}: {name}, LastUpdated={updated_at}")
         except Exception as e:
             log_lines.append(f"⚠️  Could not fetch from Sheets: {e}")
             sheets_by_id = {}
@@ -267,33 +288,45 @@ def _sync_members_to_sheets(job_id: str):
         for idx, member in enumerate(members_rows):
             member_id = member['MemberID']
             mysql_updated = member.get('LastUpdated')
+            member_name = f"{member.get('FirstName', '')} {member.get('LastName', '')}".strip()
 
             if member_id not in sheets_by_id:
                 # New member — append to Sheets
                 rows_to_append.append(member)
-                log_lines.append(f"✅ {member_id}: {member.get('FirstName', '')} {member.get('LastName', '')} (NEW)")
-                inserted.append(f"{member_id} ({member.get('FirstName', '')} {member.get('LastName', '')})")
+                log_lines.append(f"✅ {member_id}: {member_name} (NEW)")
+                inserted.append(member_id)
+
+                if verbose_mode and idx < 3:
+                    log_lines.append(f"   → LastUpdated={mysql_updated}")
             else:
                 # Existing member — check versioning
                 sheets_member = sheets_by_id[member_id]
                 sheets_updated = sheets_member.get('LastUpdated')
 
-                # Compare timestamps
-                if mysql_updated and sheets_updated:
-                    # Both have timestamps — compare them
-                    mysql_ts = str(mysql_updated) if mysql_updated else ''
-                    sheets_ts = str(sheets_updated) if sheets_updated else ''
-                    if mysql_ts > sheets_ts:
-                        rows_to_update.append(member)
-                        log_lines.append(f"🔄 {member_id}: {member.get('FirstName', '')} {member.get('LastName', '')} (MySQL newer)")
-                        updated.append(f"{member_id} (updated)")
-                elif mysql_updated:
-                    # MySQL has timestamp, Sheets doesn't — update
-                    rows_to_update.append(member)
-                    log_lines.append(f"🔄 {member_id}: {member.get('FirstName', '')} {member.get('LastName', '')} (Sheets missing date)")
-                    updated.append(f"{member_id} (updated)")
+                reason = None
+                should_update = False
+
+                # Compare timestamps (using proper datetime parsing)
+                mysql_dt = _parse_datetime(mysql_updated)
+                sheets_dt = _parse_datetime(sheets_updated)
+
+                if mysql_dt and sheets_dt:
+                    if mysql_dt > sheets_dt:
+                        should_update = True
+                        reason = f"MySQL newer: {mysql_dt} > {sheets_dt}"
+                elif mysql_dt and not sheets_dt:
+                    should_update = True
+                    reason = "Sheets missing LastUpdated"
                 else:
-                    log_lines.append(f"⊘ {member_id}: skipped (no MySQL LastUpdated)")
+                    reason = f"Sheets newer or equal"
+
+                if should_update:
+                    rows_to_update.append(member)
+                    log_lines.append(f"🔄 {member_id}: {member_name} ({reason})")
+                    updated.append(member_id)
+                else:
+                    skipped.append(member_id)
+                    log_lines.append(f"⊘ {member_id}: skipped ({reason})")
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(members_rows)) * 50)}
@@ -329,7 +362,7 @@ def _sync_members_to_sheets(job_id: str):
                     log_lines.append(f"❌ {error_msg}")
                     errors.append(error_msg)
 
-        summary = f"✅ Members Sync Complete: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
+        summary = f"✅ Members Sync Complete: {len(inserted)} inserted, {len(updated)} updated, {len(skipped)} skipped, {len(errors)} errors"
         log_lines.insert(0, summary)
 
         job_update = {
@@ -339,9 +372,12 @@ def _sync_members_to_sheets(job_id: str):
             'result': {
                 'operation': 'members_to_sheets',
                 'inserted': len(inserted),
-                'updated': 0,
+                'updated': len(updated),
+                'skipped': len(skipped),
                 'errors': len(errors),
+                'total_processed': len(members_rows),
                 'inserted_list': inserted[:100],
+                'updated_list': updated[:100],
                 'error_list': errors[:50],
                 'log': '\n'.join(log_lines),
             }
@@ -386,11 +422,16 @@ def _sync_members_to_sheets(job_id: str):
 
 
 def _sync_events_to_sheets(job_id: str):
-    """Compare webapp_events by EventID with smart versioning."""
+    """Compare webapp_events by EventID with smart versioning.
+
+    Verbose mode shows first 3 events from each source for debugging.
+    """
     log_lines = []
     inserted = []
     updated = []
+    skipped = []
     errors = []
+    verbose_mode = True  # Set to False to reduce verbosity
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching events...', 'progress': 0}
@@ -402,12 +443,28 @@ def _sync_events_to_sheets(job_id: str):
         )
         log_lines.append(f"📥 Fetched {len(events_rows)} events from MySQL")
 
+        if verbose_mode and events_rows:
+            columns = list(events_rows[0].keys())
+            log_lines.append(f"   Columns ({len(columns)}): {', '.join(columns[:10])}{'...' if len(columns) > 10 else ''}")
+            for i, event in enumerate(events_rows[:3]):
+                event_name = event.get('EventName', 'N/A')
+                updated_at = event.get('UpdatedAt', 'NULL')
+                log_lines.append(f"   [Row {i+1}] {event['EventID']}: {event_name}, UpdatedAt={updated_at}")
+
         # Fetch from Sheets
         try:
             sheets_data = _call_gas_webhook({'action': 'get_events'})
             sheets_events = sheets_data if isinstance(sheets_data, list) else []
             sheets_by_id = {e.get('EventID'): e for e in sheets_events if 'EventID' in e}
             log_lines.append(f"📊 Fetched {len(sheets_by_id)} events from Google Sheets")
+
+            if verbose_mode and sheets_events:
+                columns = list(sheets_events[0].keys())
+                log_lines.append(f"   Columns ({len(columns)}): {', '.join(columns[:10])}{'...' if len(columns) > 10 else ''}")
+                for i, event in enumerate(sheets_events[:3]):
+                    event_name = event.get('EventName', 'N/A')
+                    updated_at = event.get('UpdatedAt', 'NULL')
+                    log_lines.append(f"   [Row {i+1}] {event.get('EventID', 'N/A')}: {event_name}, UpdatedAt={updated_at}")
         except Exception as e:
             log_lines.append(f"⚠️  Could not fetch from Sheets: {e}")
             sheets_by_id = {}
@@ -428,6 +485,9 @@ def _sync_events_to_sheets(job_id: str):
                 rows_to_append.append(event)
                 log_lines.append(f"✅ {event_id}: {event_name} (NEW)")
                 inserted.append(event_id)
+
+                if verbose_mode and idx < 3:
+                    log_lines.append(f"   → UpdatedAt={mysql_updated}")
             else:
                 sheets_event = sheets_by_id[event_id]
                 sheets_updated = sheets_event.get('UpdatedAt')
@@ -438,6 +498,7 @@ def _sync_events_to_sheets(job_id: str):
 
                 should_update = False
                 diff_fields = []
+                reason = None
 
                 if mysql_dt and sheets_dt:
                     # Both have timestamps: compare them
@@ -445,17 +506,25 @@ def _sync_events_to_sheets(job_id: str):
                         should_update = True
                         # Get specific fields that differ
                         diff_fields = _get_field_diffs(event, sheets_event)
+                        reason = f"MySQL newer: {mysql_dt} > {sheets_dt}, fields: {', '.join(diff_fields)}"
+                    else:
+                        reason = f"Sheets newer or equal"
                 elif mysql_dt and not sheets_dt:
                     # MySQL has timestamp but Sheets doesn't
                     should_update = True
                     diff_fields = ['UpdatedAt (missing in Sheets)']
-                # else: both None or Sheets newer → don't update
+                    reason = "Sheets missing UpdatedAt"
+                else:
+                    reason = "Both missing UpdatedAt"
 
                 if should_update:
                     rows_to_update.append(event)
                     diff_str = f" ({', '.join(diff_fields)})" if diff_fields else ""
                     log_lines.append(f"🔄 {event_id}: {event_name}{diff_str}")
                     updated.append(event_id)
+                else:
+                    skipped.append(event_id)
+                    log_lines.append(f"⊘ {event_id}: skipped ({reason})")
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(events_rows)) * 50)}
@@ -491,7 +560,7 @@ def _sync_events_to_sheets(job_id: str):
                     log_lines.append(f"❌ {error_msg}")
                     errors.append(error_msg)
 
-        summary = f"✅ Events Sync: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
+        summary = f"✅ Events Sync: {len(inserted)} inserted, {len(updated)} updated, {len(skipped)} skipped, {len(errors)} errors"
 
         job_update = {
             'status': 'done',
@@ -501,7 +570,11 @@ def _sync_events_to_sheets(job_id: str):
                 'operation': 'events_to_sheets',
                 'inserted': len(inserted),
                 'updated': len(updated),
+                'skipped': len(skipped),
                 'errors': len(errors),
+                'total_processed': len(events_rows),
+                'inserted_list': inserted[:100],
+                'updated_list': updated[:100],
                 'log': '\n'.join(log_lines),
             }
         }
