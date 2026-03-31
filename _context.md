@@ -27,6 +27,9 @@ Last commit: 74dd8b7
 
 ## Session log
 
+### 2026-03-30 19:24 UTC — Always send email reports from sync operations
+Changed: Added email sending to all sync error handlers (members, events, payments, import, dry-run). Previously only sent email on success. Now always sends report with full log, even on error. Ensures admins see failures and can debug. Status: Complete. Next: Test and verify email delivery.
+
 ### 2026-03-30 19:15 UTC — Fix datetime serialization in Python sync code
 Changed: Added _serialize_row/rows helpers to convert datetime objects to ISO strings before sending to GAS. Applied to all append/update operations (members, events, payments). Removed "skipped (Sheets newer)" log lines. Status: Complete. Next: Test MySQL→Google sync with real data.
 
