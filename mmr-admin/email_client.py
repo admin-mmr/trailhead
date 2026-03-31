@@ -94,10 +94,8 @@ def send_email(
 
         client = get_email_client()
 
-        # Extract sender from connection string
-        # Format: endpoint=https://<resource-name>.communication.azure.com/;access_key=...
-        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
-        sender = _get_sender_from_connection_string(connection_string)
+        # Use Azure-provided test sender (verified by default)
+        sender = 'DoNotReply@6e248907-c5ac-4a28-8297-f9834526aecd.us1.azurecomm.net'
         logger.info(f'[email] Using sender: {sender}')
 
         # Build CC list
