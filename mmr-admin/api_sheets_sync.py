@@ -122,6 +122,61 @@ def _serialize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [_serialize_row(row) for row in rows]
 
 
+def _parse_datetime(value: Any) -> Optional[datetime]:
+    """Parse a datetime from various formats (ISO 8601, date string, or datetime object)."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        # Try ISO 8601 first (most common)
+        for fmt in [
+            '%Y-%m-%dT%H:%M:%S.%f',  # 2026-03-31T12:35:45.123456
+            '%Y-%m-%dT%H:%M:%S',      # 2026-03-31T12:35:45
+            '%Y-%m-%d %H:%M:%S',      # 2026-03-31 12:35:45
+            '%Y-%m-%d',               # 2026-03-31
+        ]:
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def _datetimes_equal(dt1: Any, dt2: Any) -> bool:
+    """Compare two datetime values (handles different formats). Allows 1-second tolerance."""
+    d1 = _parse_datetime(dt1)
+    d2 = _parse_datetime(dt2)
+    if d1 is None or d2 is None:
+        return d1 is None and d2 is None
+    return abs((d1 - d2).total_seconds()) < 1
+
+
+def _get_field_diffs(mysql_row: Dict, sheets_row: Dict, exclude_fields: Optional[List[str]] = None) -> List[str]:
+    """Compare two rows and return list of fields that differ."""
+    if exclude_fields is None:
+        exclude_fields = {'UpdatedAt', 'CreatedAt', 'id', '_sync_version'}
+
+    diffs = []
+    for field in mysql_row.keys():
+        if field in exclude_fields or field not in sheets_row:
+            continue
+
+        mysql_val = mysql_row.get(field)
+        sheets_val = sheets_row.get(field)
+
+        # For datetime fields, use special comparison (handles format differences)
+        if 'date' in field.lower() or 'time' in field.lower():
+            if not _datetimes_equal(mysql_val, sheets_val):
+                diffs.append(field)
+        else:
+            # For other fields, direct comparison (convert to string to handle types)
+            if str(mysql_val) != str(sheets_val):
+                diffs.append(field)
+
+    return diffs
+
+
 def _send_sync_report(
     recipient: str,
     operation: str,
@@ -366,26 +421,40 @@ def _sync_events_to_sheets(job_id: str):
 
         for idx, event in enumerate(events_rows):
             event_id = event['EventID']
+            event_name = event.get('EventName', '')
             mysql_updated = event.get('UpdatedAt')
 
             if event_id not in sheets_by_id:
                 rows_to_append.append(event)
-                log_lines.append(f"✅ {event_id}: {event.get('EventName', '')} (NEW)")
+                log_lines.append(f"✅ {event_id}: {event_name} (NEW)")
                 inserted.append(event_id)
             else:
                 sheets_event = sheets_by_id[event_id]
                 sheets_updated = sheets_event.get('UpdatedAt')
 
-                if mysql_updated and sheets_updated:
-                    mysql_ts = str(mysql_updated) if mysql_updated else ''
-                    sheets_ts = str(sheets_updated) if sheets_updated else ''
-                    if mysql_ts > sheets_ts:
-                        rows_to_update.append(event)
-                        log_lines.append(f"🔄 {event_id}: updated")
-                        updated.append(event_id)
-                elif mysql_updated:
+                # Use proper datetime comparison that handles different formats
+                mysql_dt = _parse_datetime(mysql_updated)
+                sheets_dt = _parse_datetime(sheets_updated)
+
+                should_update = False
+                diff_fields = []
+
+                if mysql_dt and sheets_dt:
+                    # Both have timestamps: compare them
+                    if mysql_dt > sheets_dt:
+                        should_update = True
+                        # Get specific fields that differ
+                        diff_fields = _get_field_diffs(event, sheets_event)
+                elif mysql_dt and not sheets_dt:
+                    # MySQL has timestamp but Sheets doesn't
+                    should_update = True
+                    diff_fields = ['UpdatedAt (missing in Sheets)']
+                # else: both None or Sheets newer → don't update
+
+                if should_update:
                     rows_to_update.append(event)
-                    log_lines.append(f"🔄 {event_id}: updated (Sheets missing date)")
+                    diff_str = f" ({', '.join(diff_fields)})" if diff_fields else ""
+                    log_lines.append(f"🔄 {event_id}: {event_name}{diff_str}")
                     updated.append(event_id)
 
             if (idx + 1) % 50 == 0:
