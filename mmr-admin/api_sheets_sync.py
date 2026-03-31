@@ -54,6 +54,7 @@ def _get_config_value(key: str, default: str = '') -> str:
 def _call_gas_webhook(payload: Dict) -> Dict:
     """
     Call the Google Apps Script webhook to fetch/push Sheets data.
+    Retries with exponential backoff on timeout.
 
     Args:
         payload: {action: str, ...}
@@ -67,19 +68,31 @@ def _call_gas_webhook(payload: Dict) -> Dict:
         return {}
 
     import requests
-    try:
-        resp = requests.post(webhook_url, json=payload, timeout=30)
-        if resp.status_code != 200:
-            raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
+    max_retries = 3
+    timeout = 60  # Increased from 30 to 60 seconds
 
-        body = resp.json()
-        if not body.get('ok'):
-            raise Exception(f"GAS error: {body.get('error', body)}")
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(webhook_url, json=payload, timeout=timeout)
+            if resp.status_code != 200:
+                raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
 
-        return body.get('data', {})
-    except Exception as e:
-        logger.error(f"GAS webhook failed: {e}")
-        raise
+            body = resp.json()
+            if not body.get('ok'):
+                raise Exception(f"GAS error: {body.get('error', body)}")
+
+            return body.get('data', {})
+        except requests.exceptions.Timeout as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s backoff
+                logger.warning(f"GAS webhook timeout (attempt {attempt + 1}/{max_retries}). Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"GAS webhook timed out after {max_retries} attempts: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"GAS webhook failed: {e}")
+            raise
 
 
 def _serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -134,9 +147,9 @@ Generated: {datetime.now().isoformat()}
 """
     try:
         send_email(
-            to_address=recipient,
+            to=recipient,
             subject=title,
-            html_body=body.replace('\n', '<br>'),
+            html_content=body.replace('\n', '<br>'),
         )
         return True
     except Exception as e:
@@ -232,22 +245,34 @@ def _sync_members_to_sheets(job_id: str):
                 with _sync_jobs_lock:
                     _sync_jobs[job_id].update(job_update)
 
-        # Push changes to Sheets
+        # Push changes to Sheets (batched to avoid timeout)
+        batch_size = 200
+
         if rows_to_append:
-            try:
-                _call_gas_webhook({'action': 'append_members', 'rows': _serialize_rows(rows_to_append)})
-                log_lines.append(f"📤 Appended {len(rows_to_append)} new members to Sheets")
-            except Exception as e:
-                log_lines.append(f"❌ Failed to append members: {e}")
-                errors.append(f"append_members: {e}")
+            for batch_idx in range(0, len(rows_to_append), batch_size):
+                batch = rows_to_append[batch_idx:batch_idx + batch_size]
+                batch_num = (batch_idx // batch_size) + 1
+                total_batches = (len(rows_to_append) + batch_size - 1) // batch_size
+                try:
+                    _call_gas_webhook({'action': 'append_members', 'rows': _serialize_rows(batch)})
+                    log_lines.append(f"📤 Appended batch {batch_num}/{total_batches}: {len(batch)} new members to Sheets")
+                except Exception as e:
+                    error_msg = f"append_members batch {batch_num}: {e}"
+                    log_lines.append(f"❌ {error_msg}")
+                    errors.append(error_msg)
 
         if rows_to_update:
-            try:
-                _call_gas_webhook({'action': 'update_members', 'rows': _serialize_rows(rows_to_update)})
-                log_lines.append(f"📤 Updated {len(rows_to_update)} members in Sheets")
-            except Exception as e:
-                log_lines.append(f"❌ Failed to update members: {e}")
-                errors.append(f"update_members: {e}")
+            for batch_idx in range(0, len(rows_to_update), batch_size):
+                batch = rows_to_update[batch_idx:batch_idx + batch_size]
+                batch_num = (batch_idx // batch_size) + 1
+                total_batches = (len(rows_to_update) + batch_size - 1) // batch_size
+                try:
+                    _call_gas_webhook({'action': 'update_members', 'rows': _serialize_rows(batch)})
+                    log_lines.append(f"📤 Updated batch {batch_num}/{total_batches}: {len(batch)} members in Sheets")
+                except Exception as e:
+                    error_msg = f"update_members batch {batch_num}: {e}"
+                    log_lines.append(f"❌ {error_msg}")
+                    errors.append(error_msg)
 
         summary = f"✅ Members Sync Complete: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
         log_lines.insert(0, summary)
@@ -368,22 +393,34 @@ def _sync_events_to_sheets(job_id: str):
                 with _sync_jobs_lock:
                     _sync_jobs[job_id].update(job_update)
 
-        # Push to Sheets
+        # Push to Sheets (batched to avoid timeout)
+        batch_size = 200
+
         if rows_to_append:
-            try:
-                _call_gas_webhook({'action': 'append_events', 'rows': _serialize_rows(rows_to_append)})
-                log_lines.append(f"📤 Appended {len(rows_to_append)} new events")
-            except Exception as e:
-                log_lines.append(f"❌ Failed to append events: {e}")
-                errors.append(f"append_events: {e}")
+            for batch_idx in range(0, len(rows_to_append), batch_size):
+                batch = rows_to_append[batch_idx:batch_idx + batch_size]
+                batch_num = (batch_idx // batch_size) + 1
+                total_batches = (len(rows_to_append) + batch_size - 1) // batch_size
+                try:
+                    _call_gas_webhook({'action': 'append_events', 'rows': _serialize_rows(batch)})
+                    log_lines.append(f"📤 Appended batch {batch_num}/{total_batches}: {len(batch)} new events")
+                except Exception as e:
+                    error_msg = f"append_events batch {batch_num}: {e}"
+                    log_lines.append(f"❌ {error_msg}")
+                    errors.append(error_msg)
 
         if rows_to_update:
-            try:
-                _call_gas_webhook({'action': 'update_events', 'rows': _serialize_rows(rows_to_update)})
-                log_lines.append(f"📤 Updated {len(rows_to_update)} events")
-            except Exception as e:
-                log_lines.append(f"❌ Failed to update events: {e}")
-                errors.append(f"update_events: {e}")
+            for batch_idx in range(0, len(rows_to_update), batch_size):
+                batch = rows_to_update[batch_idx:batch_idx + batch_size]
+                batch_num = (batch_idx // batch_size) + 1
+                total_batches = (len(rows_to_update) + batch_size - 1) // batch_size
+                try:
+                    _call_gas_webhook({'action': 'update_events', 'rows': _serialize_rows(batch)})
+                    log_lines.append(f"📤 Updated batch {batch_num}/{total_batches}: {len(batch)} events")
+                except Exception as e:
+                    error_msg = f"update_events batch {batch_num}: {e}"
+                    log_lines.append(f"❌ {error_msg}")
+                    errors.append(error_msg)
 
         summary = f"✅ Events Sync: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
 
@@ -507,22 +544,34 @@ def _sync_payments_to_sheets(job_id: str):
                 with _sync_jobs_lock:
                     _sync_jobs[job_id].update(job_update)
 
-        # Push to Sheets
+        # Push to Sheets (batched to avoid timeout)
+        batch_size = 200
+
         if rows_to_append:
-            try:
-                _call_gas_webhook({'action': 'append_payments', 'rows': _serialize_rows(rows_to_append)})
-                log_lines.append(f"📤 Appended {len(rows_to_append)} new payments")
-            except Exception as e:
-                log_lines.append(f"❌ Failed to append payments: {e}")
-                errors.append(f"append_payments: {e}")
+            for batch_idx in range(0, len(rows_to_append), batch_size):
+                batch = rows_to_append[batch_idx:batch_idx + batch_size]
+                batch_num = (batch_idx // batch_size) + 1
+                total_batches = (len(rows_to_append) + batch_size - 1) // batch_size
+                try:
+                    _call_gas_webhook({'action': 'append_payments', 'rows': _serialize_rows(batch)})
+                    log_lines.append(f"📤 Appended batch {batch_num}/{total_batches}: {len(batch)} new payments")
+                except Exception as e:
+                    error_msg = f"append_payments batch {batch_num}: {e}"
+                    log_lines.append(f"❌ {error_msg}")
+                    errors.append(error_msg)
 
         if rows_to_update:
-            try:
-                _call_gas_webhook({'action': 'update_payments', 'rows': _serialize_rows(rows_to_update)})
-                log_lines.append(f"📤 Updated {len(rows_to_update)} payments")
-            except Exception as e:
-                log_lines.append(f"❌ Failed to update payments: {e}")
-                errors.append(f"update_payments: {e}")
+            for batch_idx in range(0, len(rows_to_update), batch_size):
+                batch = rows_to_update[batch_idx:batch_idx + batch_size]
+                batch_num = (batch_idx // batch_size) + 1
+                total_batches = (len(rows_to_update) + batch_size - 1) // batch_size
+                try:
+                    _call_gas_webhook({'action': 'update_payments', 'rows': _serialize_rows(batch)})
+                    log_lines.append(f"📤 Updated batch {batch_num}/{total_batches}: {len(batch)} payments")
+                except Exception as e:
+                    error_msg = f"update_payments batch {batch_num}: {e}"
+                    log_lines.append(f"❌ {error_msg}")
+                    errors.append(error_msg)
 
         summary = f"✅ Payments Sync: {len(inserted)} inserted, {len(updated)} updated, {len(errors)} errors"
 
@@ -566,6 +615,176 @@ def _sync_payments_to_sheets(job_id: str):
             _send_sync_report(
                 recipient='admin@mmrunners.org',
                 operation='MySQL → Google: Payments',
+                summary=error_msg,
+                details=[],
+                log_content='\n'.join(log_lines),
+            )
+        except Exception as email_err:
+            logger.error(f"Failed to send error email: {email_err}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MySQL → Google: Gmail Transactions
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _sync_gmail_transactions_to_sheets(job_id: str):
+    """
+    Sync gmail_transactions Notes and ProcessedTime from MySQL to Google Sheets.
+
+    Logic:
+      - Fetch all gmail_transactions from MySQL
+      - Compare against Google Sheets by MessageId
+      - If MessageId not in Sheets → skip (not inserted in this sync)
+      - If exists and MySQL Notes/ProcessedTime differ → update in Sheets
+    """
+    log_lines = []
+    updated = []
+    errors = []
+
+    try:
+        job_update = {'status': 'running', 'message': 'Fetching gmail_transactions from MySQL...', 'progress': 0}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Fetch all gmail_transactions from MySQL
+        txn_rows = query("SELECT MessageId, Notes, ProcessedTime FROM gmail_transactions ORDER BY TimeStamp DESC")
+        log_lines.append(f"📥 Fetched {len(txn_rows)} gmail_transactions from MySQL")
+
+        # Fetch gmail_transactions from Google Sheets
+        try:
+            sheets_data = _call_gas_webhook({'action': 'get_gmail_transactions'})
+            sheets_txns = sheets_data if isinstance(sheets_data, list) else []
+            sheets_by_id = {t['MessageId']: t for t in sheets_txns if 'MessageId' in t}
+            log_lines.append(f"📊 Fetched {len(sheets_by_id)} gmail_transactions from Google Sheets")
+        except Exception as e:
+            log_lines.append(f"⚠️  Could not fetch from Sheets: {e}")
+            sheets_by_id = {}
+
+        job_update = {
+            'status': 'running',
+            'message': f'Syncing Notes/ProcessedTime for {len(txn_rows)} transactions...',
+            'progress': 50,
+        }
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Compare and build update list
+        rows_to_update = []
+        for txn in txn_rows:
+            msg_id = txn['MessageId']
+            if msg_id not in sheets_by_id:
+                continue  # Skip if not in Sheets
+
+            sheet_row = sheets_by_id[msg_id]
+            needs_update = False
+
+            # Check if Notes differ
+            mysql_notes = txn.get('Notes', '')
+            sheet_notes = sheet_row.get('Notes', '')
+            if mysql_notes != sheet_notes:
+                needs_update = True
+
+            # Check if ProcessedTime differs
+            mysql_processed = txn.get('ProcessedTime')
+            sheet_processed = sheet_row.get('ProcessedTime')
+            mysql_processed_str = mysql_processed.isoformat() if mysql_processed else ''
+            sheet_processed_str = sheet_processed if isinstance(sheet_processed, str) else (sheet_processed.isoformat() if sheet_processed else '')
+
+            if mysql_processed_str != sheet_processed_str:
+                needs_update = True
+
+            if needs_update:
+                rows_to_update.append({
+                    'MessageId': msg_id,
+                    'Notes': mysql_notes or '',
+                    'ProcessedTime': mysql_processed_str if mysql_processed else '',
+                })
+
+        log_lines.append(f"🔄 Found {len(rows_to_update)} transactions to update in Sheets")
+
+        # Call GAS webhook to update Sheets (batched to avoid timeout)
+        if rows_to_update:
+            batch_size = 200  # Update 200 rows per webhook call
+            total_updated = 0
+
+            for batch_idx in range(0, len(rows_to_update), batch_size):
+                batch = rows_to_update[batch_idx:batch_idx + batch_size]
+                batch_num = (batch_idx // batch_size) + 1
+                total_batches = (len(rows_to_update) + batch_size - 1) // batch_size
+
+                try:
+                    update_result = _call_gas_webhook({
+                        'action': 'update_gmail_transactions',
+                        'rows': batch,
+                    })
+                    total_updated += len(batch)
+                    log_lines.append(f"✅ Batch {batch_num}/{total_batches}: Updated {len(batch)} transactions")
+
+                    # Update progress
+                    progress = 50 + int((batch_idx / len(rows_to_update)) * 50)
+                    job_update = {
+                        'status': 'running',
+                        'message': f'Updating batch {batch_num}/{total_batches} ({total_updated}/{len(rows_to_update)})...',
+                        'progress': progress,
+                    }
+                    with _sync_jobs_lock:
+                        _sync_jobs[job_id].update(job_update)
+                except Exception as e:
+                    error_msg = f"Batch {batch_num}/{total_batches} failed: {e}"
+                    log_lines.append(f"❌ {error_msg}")
+                    errors.append(error_msg)
+                    # Continue with next batch instead of failing completely
+
+            if total_updated > 0:
+                log_lines.append(f"✅ Successfully updated {total_updated}/{len(rows_to_update)} transactions in Sheets")
+                updated = rows_to_update[:total_updated]  # Track what was sent
+            else:
+                log_lines.append(f"❌ No batches completed successfully")
+
+        # Final update
+        job_update = {
+            'status': 'completed',
+            'message': 'Sync complete',
+            'progress': 100,
+            'result': {
+                'updated': len(updated),
+                'errors': len(errors),
+                'summary': '\n'.join(log_lines),
+            },
+        }
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Send report email
+        summary = f"Updated: {len(updated)}"
+        if errors:
+            summary += f" | Errors: {len(errors)}"
+
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation='MySQL → Google: Gmail Transactions',
+            summary=summary,
+            details=updated[:10],  # Show first 10
+            log_content='\n'.join(log_lines),
+        )
+
+    except Exception as e:
+        error_msg = str(e)
+        log_lines.append(f"❌ Sync failed: {error_msg}")
+        logger.error(f"Gmail transactions sync error: {traceback.format_exc()}")
+
+        job_update = {
+            'status': 'error',
+            'message': error_msg,
+            'progress': 100,
+        }
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        try:
+            _send_sync_report(
+                recipient='admin@mmrunners.org',
+                operation='MySQL → Google: Gmail Transactions',
                 summary=error_msg,
                 details=[],
                 log_content='\n'.join(log_lines),
@@ -956,6 +1175,26 @@ def api_sync_payments():
         }
 
     thread = threading.Thread(target=_sync_payments_to_sheets, args=(job_id,), daemon=True)
+    thread.start()
+
+    return json_response({'ok': True, 'job_id': job_id})
+
+
+@sheets_sync_bp.route('/api/sync/mysql-to-google/gmail-transactions', methods=['POST'])
+@login_required
+def api_sync_gmail_transactions():
+    """Trigger gmail_transactions sync (MySQL → Google Sheets)."""
+    job_id = _gen_job_id()
+
+    with _sync_jobs_lock:
+        _sync_jobs[job_id] = {
+            'status': 'queued',
+            'message': 'Queued',
+            'progress': 0,
+            'created_at': datetime.utcnow().isoformat(),
+        }
+
+    thread = threading.Thread(target=_sync_gmail_transactions_to_sheets, args=(job_id,), daemon=True)
     thread.start()
 
     return json_response({'ok': True, 'job_id': job_id})

@@ -1,31 +1,37 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-31 02:30 UTC
-Last commit: 74dd8b7
+Last updated: 2026-03-30 10:22 UTC
+Last commit: TBD
 
 ---
 
 ## Current state
 
-- Repo: Sync tab FULLY INTEGRATED with GAS webhook calls
-- mmr-admin: api_sheets_sync.py complete (919 lines, 40KB) with all sync operations live
-- Implementations complete:
-  * MySQL→Google: members, events, payments with smart versioning
-  * Import Transactions: insert new, update Notes if Memo differs
-  * Google→MySQL dry-run: compare all tables, display diffs (no changes)
-  * GAS webhook integration: _call_gas_webhook() helper + 10 actions
-- SyncPanel UI: Three subtabs, real-time polling, progress bars, email reports
-- Bug fix: payment_actions.py — write to Notes instead of Source (3 locations)
+- Repo: Sync tab with batched webhook calls + retry logic
+- mmr-admin: api_sheets_sync.py (1253 lines) with all sync operations + batching + retries
+- Batching implemented:
+  * All MySQL→Google ops (members, events, payments, gmail_transactions) batch at 200 rows/call
+  * Retry logic: 3 attempts with exponential backoff (1s, 2s, 4s)
+  * Timeout increased 30s → 60s
+  * Partial batch failure doesn't abort entire sync
+- Bug fixes:
+  * Email parameter: to_address → to, html_body → html_content
+  * GAS webhook: timeout + retry logic
+  * Gmail transactions: added MySQL→Google sync for Notes & ProcessedTime
+- Documentation: SYNC_BATCHING_STRATEGY.md + SYNC_WEBHOOK_BATCHING.md (detailed analysis)
 - All systems functional (NYRR sync, payments, query, admin)
 
 ## Open items
 
-- Deploy to Azure and test with real GAS webhook
+- Deploy to Azure and test batching with real GAS webhook
 - Verify email reports sent to admin@mmrunners.org
-- Monitor sync performance with large datasets (500+ members/payments)
+- Monitor sync performance: verify 1000+ rows sync without timeout
 - Add rate limiting if GAS API is called too frequently
 
 ## Session log
+
+### 2026-03-30 10:22 UTC — Add webhook batching + email fix + gmail_transactions sync
+Changed: (1) Fixed email param mismatch (to_address→to, html_body→html_content); (2) Added retry logic to GAS webhook (3 retries, 1s/2s/4s backoff, 60s timeout); (3) Added _sync_gmail_transactions_to_sheets() for MySQL→Google Notes/ProcessedTime; (4) Refactored all MySQL→Google syncs to batch at 200 rows/call to prevent timeout. Status: Syntax verified, documentation complete. Next: Deploy and test with 1000+ row datasets.
 
 ### 2026-03-30 20:31 UTC — Pause all data sync workflows except schema drift check
 Changed: Disabled schedules for sync-all-sheets-ordered (every 6h), sync-nyrr-weekly (Tue 2 AM), update-member-status, auto-guess-payments. Deleted 5 legacy disabled workflows (sync-members/payments/gmail/webapp/sheets-to-mysql). Status: Complete — all manual-only, db-schema-drift still runs weekly. Next: Resume workflows when ready.
