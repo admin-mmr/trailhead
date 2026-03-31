@@ -1027,7 +1027,7 @@ def _import_transactions(job_id: str):
             raise
 
         # Get existing transactions from MySQL
-        existing_txns = query("SELECT MessageId, Memo, Notes, ProcessedTime, WebAppID, created_at, updated_at FROM gmail_transactions")
+        existing_txns = query("SELECT MessageId, Memo, Notes, ProcessedTime, WebAppID, TimeStamp, SyncedAt FROM gmail_transactions")
         existing_by_id = {t['MessageId']: t for t in existing_txns}
         log_lines.append(f"📥 Found {len(existing_by_id)} existing transactions in MySQL")
 
