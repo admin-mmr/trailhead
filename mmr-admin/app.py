@@ -130,6 +130,9 @@ app.register_blueprint(district_members_bp)
 from api_query import query_bp
 app.register_blueprint(query_bp)
 
+from api_sheets_sync import sheets_sync_bp
+app.register_blueprint(sheets_sync_bp)
+
 
 # ---------------------------------------------------------------------------
 # Main

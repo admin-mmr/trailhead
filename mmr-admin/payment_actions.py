@@ -198,7 +198,7 @@ def run_auto_match() -> Dict[str, Any]:
                 execute("""
                     UPDATE gmail_transactions SET
                         ProcessedTime = NOW(),
-                        Source = 'AutoMatch',
+                        Notes = 'AutoMatch',
                         WebAppID = %s
                     WHERE MessageId = %s
                 """, [event_id, message_id])
@@ -403,7 +403,7 @@ def manual_match(event_id: str, message_id: str, admin_email: str) -> Dict[str, 
     execute("""
         UPDATE gmail_transactions SET
             ProcessedTime = NOW(),
-            Source = 'Manual',
+            Notes = 'Manual',
             WebAppID = %s
         WHERE MessageId = %s
     """, [event_id, message_id])
@@ -497,7 +497,7 @@ def admin_create_payment(
     execute("""
         UPDATE gmail_transactions SET
             ProcessedTime = NOW(),
-            Source = 'Admin-Created',
+            Notes = 'Admin-Created',
             WebAppID = %s
         WHERE MessageId = %s
     """, [event_id, message_id])
