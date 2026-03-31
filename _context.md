@@ -1,6 +1,6 @@
 # Trailhead Project Context
 
-Last updated: 2026-03-30 10:22 UTC
+Last updated: 2026-03-30 10:36 UTC
 Last commit: TBD
 
 ---
@@ -29,6 +29,9 @@ Last commit: TBD
 - Add rate limiting if GAS API is called too frequently
 
 ## Session log
+
+### 2026-03-30 10:36 UTC — Fix gmail_transactions import + add unprocessed transactions sync UI
+Changed: (1) Fixed import bug: `get_transactions` → `get_gmail_transactions` on line 820 of api_sheets_sync.py (webhook was failing silently, 0 rows imported). (2) Added new function `_sync_unprocessed_transactions_to_sheets()` to sync only unprocessed txns (ProcessedTime IS NULL) from MySQL to Sheets. (3) Added API endpoint `/api/sync/unprocessed-transactions` + UI tab "🔄 Sync Unprocessed Txns" in Sync panel. Status: Backend ready, UI complete. Next: Restart mmr-admin and test the import fix; verify 4 rows now sync.
 
 ### 2026-03-30 10:22 UTC — Add webhook batching + email fix + gmail_transactions sync
 Changed: (1) Fixed email param mismatch (to_address→to, html_body→html_content); (2) Added retry logic to GAS webhook (3 retries, 1s/2s/4s backoff, 60s timeout); (3) Added _sync_gmail_transactions_to_sheets() for MySQL→Google Notes/ProcessedTime; (4) Refactored all MySQL→Google syncs to batch at 200 rows/call to prevent timeout. Status: Syntax verified, documentation complete. Next: Deploy and test with 1000+ row datasets.

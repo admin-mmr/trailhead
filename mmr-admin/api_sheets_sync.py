@@ -817,7 +817,7 @@ def _import_transactions(job_id: str):
 
         # Fetch transactions from Google Sheets
         try:
-            sheets_data = _call_gas_webhook({'action': 'get_transactions'})
+            sheets_data = _call_gas_webhook({'action': 'get_gmail_transactions'})
             sheets_txns = sheets_data if isinstance(sheets_data, list) else []
             log_lines.append(f"📥 Fetched {len(sheets_txns)} transactions from Google Sheets")
         except Exception as e:
@@ -1182,6 +1182,119 @@ def api_sync_payments():
 
 @sheets_sync_bp.route('/api/sync/mysql-to-google/gmail-transactions', methods=['POST'])
 @login_required
+def _sync_unprocessed_transactions_to_sheets(job_id: str):
+    """
+    Sync unprocessed transactions (ProcessedTime IS NULL) from MySQL to Google Sheets.
+
+    Updates only: Notes, ProcessedTime, WebAppID.
+    """
+    log_lines = []
+    updated = []
+    errors = []
+
+    try:
+        job_update = {'status': 'running', 'message': 'Fetching unprocessed transactions...', 'progress': 0}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Fetch unprocessed transactions from MySQL
+        unprocessed = query("""
+            SELECT MessageId, Notes, ProcessedTime, WebAppID
+            FROM gmail_transactions
+            WHERE ProcessedTime IS NULL OR ProcessedTime = ''
+            ORDER BY TimeStamp DESC
+        """)
+        log_lines.append(f"📥 Found {len(unprocessed)} unprocessed transactions in MySQL")
+
+        # Fetch gmail_transactions from Google Sheets
+        try:
+            sheets_data = _call_gas_webhook({'action': 'get_gmail_transactions'})
+            sheets_by_id = {t.get('MessageId'): t for t in (sheets_data if isinstance(sheets_data, list) else [])}
+            log_lines.append(f"📊 Fetched {len(sheets_by_id)} transactions from Google Sheets")
+        except Exception as e:
+            log_lines.append(f"❌ Failed to fetch from Sheets: {e}")
+            raise
+
+        job_update = {'status': 'running', 'message': 'Syncing unprocessed transactions...', 'progress': 25}
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Update Sheets with unprocessed transactions
+        updates = []
+        for txn in unprocessed:
+            message_id = txn['MessageId']
+            if message_id in sheets_by_id:
+                updates.append({
+                    'MessageId': message_id,
+                    'Notes': txn['Notes'] or '',
+                    'ProcessedTime': txn['ProcessedTime'] or '',
+                    'WebAppID': txn['WebAppID'] or '',
+                })
+                updated.append(message_id)
+                log_lines.append(f"🔄 {message_id}: synced to Sheets")
+
+        if updates:
+            try:
+                _call_gas_webhook({
+                    'action': 'update_gmail_transactions',
+                    'data': updates
+                })
+                log_lines.append(f"✅ Updated {len(updates)} transactions in Google Sheets")
+            except Exception as e:
+                errors.append(f"Batch update failed: {e}")
+                log_lines.append(f"❌ Batch update failed: {e}")
+                raise
+        else:
+            log_lines.append("ℹ️  No unprocessed transactions to sync")
+
+        summary = f"✅ Sync Complete: {len(updated)} synced, {len(errors)} errors"
+        job_update = {
+            'status': 'done',
+            'message': summary,
+            'progress': 100,
+            'result': {
+                'operation': 'sync_unprocessed_transactions',
+                'synced': len(updated),
+                'errors': len(errors),
+                'log': '\n'.join(log_lines),
+            }
+        }
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Send report email
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation='Sync Unprocessed Transactions to Sheets',
+            summary=summary,
+            details=updated[:50],
+            log_content='\n'.join(log_lines),
+        )
+
+    except Exception as e:
+        logger.error(f"Unprocessed transaction sync error: {e}\n{traceback.format_exc()}")
+        error_msg = f"❌ Sync failed: {e}"
+        job_update = {
+            'status': 'error',
+            'message': error_msg,
+            'result': {'error': str(e), 'log': '\n'.join(log_lines)}
+        }
+        with _sync_jobs_lock:
+            _sync_jobs[job_id].update(job_update)
+
+        # Send error report
+        try:
+            _send_sync_report(
+                recipient='admin@mmrunners.org',
+                operation='Sync Unprocessed Transactions to Sheets',
+                summary=error_msg,
+                details=[],
+                log_content='\n'.join(log_lines),
+            )
+        except Exception as e2:
+            logger.error(f"Failed to send error report: {e2}")
+
+
 def api_sync_gmail_transactions():
     """Trigger gmail_transactions sync (MySQL → Google Sheets)."""
     job_id = _gen_job_id()
@@ -1195,6 +1308,26 @@ def api_sync_gmail_transactions():
         }
 
     thread = threading.Thread(target=_sync_gmail_transactions_to_sheets, args=(job_id,), daemon=True)
+    thread.start()
+
+    return json_response({'ok': True, 'job_id': job_id})
+
+
+@sheets_sync_bp.route('/api/sync/unprocessed-transactions', methods=['POST'])
+@login_required
+def api_sync_unprocessed_transactions():
+    """Trigger unprocessed transactions sync (MySQL → Google Sheets)."""
+    job_id = _gen_job_id()
+
+    with _sync_jobs_lock:
+        _sync_jobs[job_id] = {
+            'status': 'queued',
+            'message': 'Queued',
+            'progress': 0,
+            'created_at': datetime.utcnow().isoformat(),
+        }
+
+    thread = threading.Thread(target=_sync_unprocessed_transactions_to_sheets, args=(job_id,), daemon=True)
     thread.start()
 
     return json_response({'ok': True, 'job_id': job_id})
