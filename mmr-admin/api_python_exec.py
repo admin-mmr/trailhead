@@ -201,7 +201,12 @@ def get_sample_transactions(limit=10):
 def send_test_email():
     """Send a test hello email to admin@mmrunners.org to verify email pipeline."""
     try:
-        from email_client import send_email
+        import os
+        from email_client import send_email, _get_sender_from_connection_string
+
+        # Debug: show what sender will be used
+        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
+        sender = _get_sender_from_connection_string(connection_string)
 
         # Build HTML email using same template structure as other MMR emails
         html_content = """<!DOCTYPE html>
@@ -258,6 +263,7 @@ def send_test_email():
 
         return {
             'status': 'ok' if result.get('success') else 'error',
+            'from_address': sender,
             'sent_to': 'admin@mmrunners.org',
             'subject': '🧪 MMR Admin Portal Test Email',
             'message': result.get('message'),

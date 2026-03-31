@@ -93,6 +93,7 @@ def send_email(
         # Format: endpoint=https://<resource-name>.communication.azure.com/;access_key=...
         connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
         sender = _get_sender_from_connection_string(connection_string)
+        logger.info(f'[email] Using sender: {sender}')
 
         # Build CC list
         cc_recipients = []
