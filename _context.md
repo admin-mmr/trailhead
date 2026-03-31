@@ -7,6 +7,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-03-31 21:18 UTC — Add missing TimeStamp field to gmail_transactions INSERT
+Schema requires `TimeStamp DATETIME NOT NULL` with no default value. GAS webhook provides timestamp in 'timestamp' field (normalized to 'Timestamp'). Updated INSERT to: (1) extract timestamp from row; (2) validate it's not missing; (3) include TimeStamp in 6-column INSERT (was 5). Fixes "Field 'TimeStamp' doesn't have a default value" errors. Committed d82d75b. Status: Complete.
+
 ### 2026-03-31 21:12 UTC — Fix camelCase/PascalCase mismatch in all four GAS webhook tables
 Root cause identified: GAS webhook returns TypeScript objects with **camelCase keys** (messageId, memberID, eventID, etc.), but MySQL schema uses **PascalCase** (MessageId, MemberID, EventID, etc.). This caused silent failures: "MessageId=None" in logs because Python code looked for 'MessageId' but received 'messageId'. Created `_normalize_gas_keys()` function with comprehensive CASE_MAP covering all four tables (Members, Events, Payments, Transactions). Applied normalization to all four webhook fetch operations. Next sync run will show correct PascalCase keys in logs, fixing "missing MessageId" skips. Committed 9160044. Status: Complete.
 
