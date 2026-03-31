@@ -228,7 +228,7 @@ function handleGetTransactions(payload: any): GoogleAppsScript.Content.TextOutpu
     }
 
     console.log(`[webhook] get_transactions: returning ${transactions.length} transactions`);
-    return jsonResponse({ ok: true, transactions });
+    return jsonResponse({ ok: true, data: transactions });
   } catch (err: any) {
     console.error('[webhook] Failed to fetch transactions:', err);
     return jsonResponse({ ok: false, error: err.message || String(err) });
