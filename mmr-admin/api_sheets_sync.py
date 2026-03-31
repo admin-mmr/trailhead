@@ -225,6 +225,75 @@ def _parse_datetime(value: Any) -> Optional[datetime]:
     return None
 
 
+def _to_iso_datetime(value: Any) -> Optional[str]:
+    """
+    Convert any datetime format to MySQL-safe ISO 8601 string.
+
+    Handles:
+      - Python datetime objects → ISO string
+      - ISO 8601 strings → validated and returned
+      - JavaScript Date.toString() → parsed and converted to ISO
+      - Date strings (YYYY-MM-DD) → kept as-is
+      - None → None
+
+    Returns ISO 8601 format suitable for MySQL: YYYY-MM-DD HH:MM:SS
+    This is the single source of truth for datetime normalization across all tables.
+
+    CRITICAL: GAS webhook returns JavaScript Date.toString() format:
+      'Tue Mar 31 2026 15:51:18 GMT-0400 (östnordamerikansk sommartid)'
+    We must convert this to ISO before MySQL INSERT/UPDATE.
+    """
+    if value is None or (isinstance(value, str) and value.strip() == ''):
+        return None
+
+    # If it's already a datetime object, convert to ISO
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d %H:%M:%S')
+
+    if isinstance(value, str):
+        value_str = value.strip()
+
+        # Quick check: if it already looks like ISO format, validate and return
+        if 'T' in value_str or (len(value_str) >= 19 and value_str[4] == '-' and value_str[7] == '-'):
+            # Try to parse as ISO to validate
+            dt = _parse_datetime(value_str)
+            if dt:
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Check for JavaScript Date.toString() format
+        # Format: 'Tue Mar 31 2026 15:51:18 GMT-0400 (...)'
+        # We extract the date/time part before 'GMT'
+        if 'GMT' in value_str:
+            try:
+                # Extract the date/time part: everything before ' GMT'
+                date_part = value_str.split(' GMT')[0].strip()  # 'Tue Mar 31 2026 15:51:18'
+                # Parse: 'Tue Mar 31 2026 15:51:18' with weekday and year
+                dt = datetime.strptime(date_part, '%a %b %d %Y %H:%M:%S')
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError as e:
+                logger.warning(f"Failed to parse JavaScript Date.toString() format: {value_str} — {e}")
+                # Fallback: return None (will be caught by caller)
+                return None
+
+        # Try common date formats
+        for fmt in [
+            '%Y-%m-%dT%H:%M:%S.%f',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d',
+        ]:
+            try:
+                dt = datetime.strptime(value_str, fmt)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                continue
+
+        logger.warning(f"Could not parse datetime: {value_str}")
+        return None
+
+    return None
+
+
 def _datetimes_equal(dt1: Any, dt2: Any) -> bool:
     """Compare two datetime values (handles different formats). Allows 1-second tolerance."""
     d1 = _parse_datetime(dt1)
@@ -1135,14 +1204,18 @@ def _import_transactions(job_id: str):
         # Process each transaction
         for idx, txn in enumerate(sheets_txns):
             message_id = txn.get('MessageId')
-            timestamp = txn.get('Timestamp')  # REQUIRED: TimeStamp column is NOT NULL
+            timestamp_raw = txn.get('Timestamp')  # REQUIRED: TimeStamp column is NOT NULL
             memo = txn.get('Memo', '')
-            processed_time = txn.get('ProcessedTime')
+            processed_time_raw = txn.get('ProcessedTime')
             webapp_id = txn.get('WebAppID', '')
+
+            # Normalize timestamps to MySQL-safe ISO format
+            timestamp = _to_iso_datetime(timestamp_raw)
+            processed_time = _to_iso_datetime(processed_time_raw) if processed_time_raw else None
 
             if verbose_mode and idx < 5:
                 # Log first 5 rows in detail to show what we're reading
-                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp}, Memo={repr(memo)}, ProcessedTime={processed_time}, WebAppID={webapp_id}")
+                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp} (from {repr(str(timestamp_raw)[:60])}), Memo={repr(memo)}, ProcessedTime={processed_time}")
 
             if not message_id:
                 log_lines.append(f"⚠️  Skipping row {idx}: missing MessageId")
@@ -1150,8 +1223,8 @@ def _import_transactions(job_id: str):
                 continue
 
             if not timestamp:
-                log_lines.append(f"⚠️  Skipping row {idx}: missing Timestamp (required)")
-                skipped.append((idx, "missing Timestamp"))
+                log_lines.append(f"⚠️  Skipping row {idx}: invalid/missing Timestamp (raw: {repr(str(timestamp_raw)[:60])})")
+                skipped.append((idx, "invalid Timestamp"))
                 continue
 
             if message_id not in existing_by_id:
@@ -1166,7 +1239,7 @@ def _import_transactions(job_id: str):
                     log_lines.append(f"✅ {message_id}: INSERTED (new)")
 
                     if verbose_mode:
-                        log_lines.append(f"   → TimeStamp={timestamp}, Memo={repr(memo)}, ProcessedTime={processed_time}")
+                        log_lines.append(f"   → TimeStamp={timestamp} (normalized), Memo={repr(memo)}, ProcessedTime={processed_time}")
                 except Exception as e:
                     errors.append(f"{message_id}: {e}")
                     log_lines.append(f"❌ {message_id}: INSERT failed — {e}")
