@@ -817,7 +817,7 @@ def _import_transactions(job_id: str):
 
         # Fetch transactions from Google Sheets
         try:
-            sheets_data = _call_gas_webhook({'action': 'get_gmail_transactions'})
+            sheets_data = _call_gas_webhook({'action': 'get_transactions'})
             sheets_txns = sheets_data if isinstance(sheets_data, list) else []
             log_lines.append(f"📥 Fetched {len(sheets_txns)} transactions from Google Sheets")
         except Exception as e:

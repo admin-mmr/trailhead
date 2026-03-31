@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 def get_email_client() -> EmailClient:
     """Get or create Azure Communication Services email client."""
-    connection_string = os.environ.get('AZURE_COMM_CONNECTION_STRING')
+    connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING')
     if not connection_string:
-        raise ValueError('AZURE_COMM_CONNECTION_STRING not set in environment')
+        raise ValueError('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING not set in environment')
     return EmailClient.from_connection_string(connection_string)
 
 
@@ -42,7 +42,7 @@ def send_email(
     """
     try:
         client = get_email_client()
-        sender = os.environ.get('EMAIL_SENDER_ADDRESS', 'noreply@mmrunners.org')
+        sender = 'DoNotReply@mmr-comm.notification.azure.com'
 
         # Build CC list
         cc_recipients = []
