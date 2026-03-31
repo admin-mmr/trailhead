@@ -27,6 +27,9 @@ Last commit: 74dd8b7
 
 ## Session log
 
+### 2026-03-30 19:02 UTC — Fix get_transactions response format for Python integration
+Changed: Wrapped get_transactions response under 'data' key to match _call_gas_webhook contract. GAS now returns { ok: true, data: [...] } instead of { ok: true, transactions: [...] }. Status: Ready to deploy. Next: Redeploy GAS version and retry Import Now — should now fetch all messageIds from Fetch-Gmail sheet.
+
 ### 2026-03-30 18:57 UTC — Add get_transactions GAS webhook handler
 Changed: Added `handleGetTransactions()` to webhook.ts (reads all gmail_transactions from Fetch-Gmail sheet). Status: Complete — compiles, ready to deploy. Next: Deploy new GAS version and test Import Now from mmr-admin.
 
