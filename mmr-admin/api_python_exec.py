@@ -251,12 +251,10 @@ def check_azure_email_config():
 def send_test_email():
     """Send a test hello email to admin@mmrunners.org to verify email pipeline."""
     try:
-        import os
-        from email_client import send_email, _get_sender_from_connection_string
+        from email_client import send_email
 
-        # Debug: show what sender will be used
-        connection_string = os.environ.get('AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING', '')
-        sender = _get_sender_from_connection_string(connection_string)
+        # Use the hardcoded Azure test sender (verified in Azure portal)
+        sender = 'DoNotReply@6e248907-c5ac-4a28-8297-f9834526aecd.us1.azurecomm.net'
 
         # Build HTML email using same template structure as other MMR emails
         html_content = """<!DOCTYPE html>
