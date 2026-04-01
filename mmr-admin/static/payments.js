@@ -177,6 +177,8 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [popoverPos, setPopoverPos] = useState({ left: 0, right: 'auto' });
+  const [memberData, setMemberData] = useState(null);
+  const [memberLoading, setMemberLoading] = useState(false);
   const popoverRef = useRef(null);
   const e = React.createElement;
 
@@ -190,6 +192,24 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
       }
     }
   }, []);
+
+  // Fetch member data when member ID is entered
+  useEffect(() => {
+    const mid = memberId.trim().toUpperCase();
+    if (!mid || !/^A\d{4}$/.test(mid)) {
+      setMemberData(null);
+      return;
+    }
+    setMemberLoading(true);
+    api(`/api/payments/member-quick/${mid}`).then(r => {
+      if (r.ok) setMemberData(r.data);
+      else setMemberData(null);
+      setMemberLoading(false);
+    }).catch(() => {
+      setMemberData(null);
+      setMemberLoading(false);
+    });
+  }, [memberId]);
 
   const handleApprove = async () => {
     const mid = memberId.trim().toUpperCase();
@@ -245,6 +265,17 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
         onChange: ev => setMemberId(ev.target.value),
         style: { width: '100%', marginTop: memoIds.length > 0 ? 6 : 0, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13, boxSizing: 'border-box' },
       }),
+      // Member preview card
+      memberLoading && e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 8 } }, '⏳ Loading member…'),
+      memberData && !memberLoading && e('div', {
+        style: {
+          marginTop: 8, padding: '8px 10px', background: 'var(--bg)', borderRadius: 4, borderLeft: '3px solid var(--green)', fontSize: 11, lineHeight: 1.4,
+        },
+      },
+        e('div', { style: { fontWeight: 600, color: 'var(--text)' } }, `${memberData.FirstName || ''} ${memberData.LastName || ''}`.trim() || memberId),
+        e('div', { style: { color: 'var(--text2)' } }, `Expires: ${fmtDate(memberData.Expiration) || '—'}`),
+        memberData.WeChatID && e('div', { style: { color: 'var(--text2)' } }, `WeChat: ${memberData.WeChatID}`),
+      ),
     ),
     e('div', { style: { marginBottom: 12 } },
       e('label', { style: { fontSize: 12, color: 'var(--text2)', display: 'block', marginBottom: 4 } }, 'Payment Type'),
