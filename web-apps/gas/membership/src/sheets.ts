@@ -1,7 +1,49 @@
 // ============================================================
 // Low-level sheet read/write helpers
-// Depends on: config.ts, types.ts (datetime utilities in config.ts)
+// Depends on: config.ts, types.ts
 // ============================================================
+
+// ---- Datetime utilities (ISO 8601 UTC conversions) ----
+
+/**
+ * Parse any incoming datetime/timestamp and return ISO 8601 UTC string.
+ */
+function toISO8601(value: any): string | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    return value.toISOString();
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    }
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d.toISOString();
+    const epoch = Number(trimmed);
+    if (!isNaN(epoch) && epoch > 0) return new Date(epoch).toISOString();
+    return null;
+  }
+  if (typeof value === 'number') {
+    if (value <= 0) return null;
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+  return null;
+}
+
+/**
+ * Check if a value represents an "unprocessed" / falsy state.
+ */
+function isUnprocessed(value: any): boolean {
+  if (!value || value === false) return true;
+  if (typeof value === 'string' && value.toUpperCase() === 'FALSE') return true;
+  return false;
+}
 
 // ---- ID generators ----
 
