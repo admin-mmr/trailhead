@@ -822,7 +822,8 @@ const PaymentsPanel = () => {
       // Action toolbar
       e('div', { className: 'toolbar', style: { marginBottom: 12 } },
         e('button', { className: 'btn btn-primary', onClick: handleManualMatch, disabled: loading || !singleSelectedId || !selectedMessageId, title: 'Select one event + one gmail row' }, '🔗 Manual Match'),
-        e('button', { className: 'btn btn-secondary', onClick: () => setShowManualMatch(true), disabled: loading, title: 'Popup assistant for pending events' }, '📋 Approve Pending'),
+        singleSelectedId && e('button', { className: 'btn btn-green', onClick: () => setShowManualMatch(true), disabled: loading, title: 'Approve & link selected event to transaction' }, '✓ Approve Selected'),
+        e('button', { className: 'btn btn-secondary', onClick: () => setShowManualMatch(true), disabled: loading, title: 'Popup assistant for multiple pending events' }, '📋 Approve Pending (Batch)'),
         e('button', { className: 'btn btn-orange', onClick: handleAutoMatch, disabled: loading }, '⚡ Auto-Match All'),
         e('button', { className: 'btn btn-primary', onClick: handleAutoGuessAndApprove, disabled: loading, style: { background: 'var(--purple, #7c3aed)', borderColor: 'var(--purple, #7c3aed)' }, title: 'Auto-match all then approve matched → updates expirations + sends emails' }, '🚀 Auto-Guess & Approve All'),
         matchedCount > 0 && e('button', { className: 'btn btn-green', onClick: handleApproveAllMatched, disabled: loading }, `✓ Approve All Matched (${matchedCount})`),
