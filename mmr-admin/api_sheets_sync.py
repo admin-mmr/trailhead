@@ -197,7 +197,7 @@ def _normalize_gas_keys(row: Dict[str, Any]) -> Dict[str, Any]:
         'transactionNumber': 'TransactionNumber',
         'transactionDate': 'TransactionDate',
         'originalMemo': 'OriginalMemo',
-        'webAppEventID': 'WebAppID',
+        'paymentID': 'PaymentID',
         # Common fields
         'timestamp': 'Timestamp',
         'created': 'Created',
@@ -1180,7 +1180,7 @@ def _import_transactions(job_id: str):
             raise
 
         # Get existing transactions from MySQL
-        existing_txns = query("SELECT MessageId, Memo, Notes, ProcessedTime, WebAppID, TimeStamp, SyncedAt FROM gmail_transactions")
+        existing_txns = query("SELECT MessageId, Memo, Notes, ProcessedTime, PaymentID, TimeStamp, SyncedAt FROM gmail_transactions")
         existing_by_id = {t['MessageId']: t for t in existing_txns}
         log_lines.append(f"📥 Found {len(existing_by_id)} existing transactions in MySQL")
 
@@ -1194,7 +1194,7 @@ def _import_transactions(job_id: str):
             timestamp_raw = txn.get('Timestamp')  # REQUIRED: TimeStamp column is NOT NULL
             memo = txn.get('Memo', '')
             processed_time_raw = txn.get('ProcessedTime')
-            webapp_id = txn.get('WebAppID', '')
+            payment_id = txn.get('PaymentID', '')
 
             # Normalize timestamps to MySQL-safe ISO format
             timestamp = _to_iso_datetime(timestamp_raw)
@@ -1219,9 +1219,9 @@ def _import_transactions(job_id: str):
                 try:
                     execute("""
                         INSERT INTO gmail_transactions
-                        (MessageId, TimeStamp, Memo, Notes, ProcessedTime, WebAppID)
+                        (MessageId, TimeStamp, Memo, Notes, ProcessedTime, PaymentID)
                         VALUES (%s, %s, %s, %s, %s, %s)
-                    """, [message_id, timestamp, memo, memo, processed_time, webapp_id])
+                    """, [message_id, timestamp, memo, memo, processed_time, payment_id])
                     inserted.append(message_id)
                     log_lines.append(f"✅ {message_id}: INSERTED (new)")
 
@@ -1238,7 +1238,7 @@ def _import_transactions(job_id: str):
                     'Memo':          memo,
                     'ProcessedTime': processed_time,
                     'Notes':         existing.get('Notes', ''),    # Sheets has no Notes col
-                    'WebAppID':      existing.get('WebAppID', ''), # Sheets has no WebAppID col
+                    'PaymentID':     existing.get('PaymentID', ''), # Sheets has no PaymentID col
                 }
                 action = _engine_resolve_gmail(message_id, existing, sheets_row_for_engine)
 
@@ -1922,7 +1922,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
     """
     Sync unprocessed transactions (ProcessedTime IS NULL) from MySQL to Google Sheets.
 
-    Updates only: Notes, ProcessedTime, WebAppID.
+    Updates only: Notes, ProcessedTime, PaymentID.
     """
     log_lines = []
     updated = []
@@ -1935,7 +1935,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
 
         # Fetch unprocessed transactions from MySQL
         unprocessed = query("""
-            SELECT MessageId, Notes, ProcessedTime, WebAppID
+            SELECT MessageId, Notes, ProcessedTime, PaymentID
             FROM gmail_transactions
             WHERE ProcessedTime IS NULL
             ORDER BY TimeStamp DESC
@@ -1964,7 +1964,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
                     'MessageId': message_id,
                     'Notes': txn['Notes'] or '',
                     'ProcessedTime': txn['ProcessedTime'] or '',
-                    'WebAppID': txn['WebAppID'] or '',
+                    'PaymentID': txn['PaymentID'] or '',
                 })
                 updated.append(message_id)
                 log_lines.append(f"🔄 {message_id}: synced to Sheets")

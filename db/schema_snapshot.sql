@@ -53,14 +53,14 @@ CREATE TABLE `gmail_transactions` (
   `Notes` text COLLATE utf8mb4_unicode_ci,
   `ProcessedTime` datetime DEFAULT NULL,
   `Source` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `WebAppID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PaymentID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `IsArchived` tinyint(1) NOT NULL DEFAULT '0',
   `SyncedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`MessageId`),
   KEY `idx_gmail_transactiondate` (`TransactionDate`),
   KEY `idx_gmail_transactionnumber` (`TransactionNumber`),
   KEY `idx_gmail_isarchived` (`IsArchived`),
-  KEY `idx_gmail_webappid` (`WebAppID`),
+  KEY `idx_gmail_paymentid` (`PaymentID`),
   KEY `idx_gmail_source` (`Source`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

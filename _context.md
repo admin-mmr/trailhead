@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 09:56 ET — Rebuild gmail_transactions: WebAppID → PaymentID
+Changed: Renamed `WebAppID` → `PaymentID` in gmail_transactions (schema_snapshot.sql + 6 Python files: api_sheets_sync.py, payment_actions.py, api_email_diags.py, sync_engine.py x2, auto_guess_payments.py). Status: DROP/CREATE SQL ready (see below); user runs SQL + Sheets→MySQL sync to repopulate clean data. Next: Run SQL, sync, commit all changes.
+
 ### 2026-04-01 09:15 ET — Sprint 1: bug fixes, db pooling, test suite
 Changed: (1) Fixed G→MySQL Status 1265 bug — added `_coerce_member_status()` + `_MEMBER_STATUS_MAP` mapping GAS 'inactive'→'not active', 'pending_upgrade'→'pending', case variants → lowercase; (2) Fixed G→MySQL MatchedMessageId 1452 bug — empty string `''` now nulled out (was falsy, bypassed FK guard); (3) `db.py` — replaced per-query fresh connections with `MySQLConnectionPool(pool_size=5)`, added `db_cursor()` context manager (auto commit/rollback), added `handle_mysql_error()` mapping errno→HTTP status; (4) Deleted 4 dead files (api_sync_old.py, google_workspace.py, mysql_sync.py, db/schemas/members.sql); (5) Created `tests/` with conftest.py + 62 passing unit tests (test_db.py, test_sync_status.py, test_sync_coerce.py); added pytest to requirements.txt. Status: All 62 tests pass. Next: Add pytest to pre-commit hook; commit + push.
 

@@ -691,6 +691,7 @@ def health_check():
         debug['checks']['connection_acquired'] = True
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
+        cursor.fetchall()  # must consume results before returning connection to pool
         debug['checks']['query_executed'] = True
         cursor.close()
         conn.close()

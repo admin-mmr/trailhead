@@ -19,7 +19,7 @@ def get_gmail_transactions_recent(limit=20):
         query = """
             SELECT
                 MessageId, TimeStamp, Sender, Subject, Amount, TransactionNumber,
-                Source, WebAppID, IsArchived, SyncedAt
+                Source, PaymentID, IsArchived, SyncedAt
             FROM gmail_transactions
             ORDER BY TimeStamp DESC
             LIMIT %s

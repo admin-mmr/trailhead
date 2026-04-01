@@ -10,7 +10,7 @@ Table configuration:
   Standard tables  (members, payments, webapp_events):
       Bidirectional newer-wins with Sheets tie-break.
   Specialized table (gmail_transactions):
-      Sheets→MySQL for new rows + Memo; MySQL→Sheets for ProcessedTime/Notes/WebAppID.
+      Sheets→MySQL for new rows + Memo; MySQL→Sheets for ProcessedTime/Notes/PaymentID.
 
 Timezone contract:
   All comparisons and storage use UTC, represented as naive datetime objects
@@ -80,7 +80,7 @@ IMMUTABLE_ON_UPDATE: Dict[str, Set[str]] = {
 # Sheets → MySQL (always, regardless of timestamp):
 GMAIL_SHEETS_TO_MYSQL_FIELDS: Set[str] = {'Memo'}
 # MySQL → Sheets (always, regardless of timestamp):
-GMAIL_MYSQL_TO_SHEETS_FIELDS: Set[str] = {'ProcessedTime', 'Notes', 'WebAppID'}
+GMAIL_MYSQL_TO_SHEETS_FIELDS: Set[str] = {'ProcessedTime', 'Notes', 'PaymentID'}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -430,7 +430,7 @@ def resolve_gmail_row(
 
     Rules (applied unconditionally, regardless of timestamps):
       Sheets → MySQL : Memo  (if Sheets value differs from MySQL)
-      MySQL → Sheets : ProcessedTime, Notes, WebAppID  (if MySQL differs)
+      MySQL → Sheets : ProcessedTime, Notes, PaymentID  (if MySQL differs)
 
     Note: 'ProcessedTime' is the MySQL column; the spec also refers to it as
     'ProcessedAt' in prose — same field.
@@ -443,8 +443,8 @@ def resolve_gmail_row(
     if not _values_equal(sheets_memo, mysql_memo):
         action.mysql_updates['Memo'] = sheets_memo
 
-    # ProcessedTime / Notes / WebAppID: MySQL → Sheets
-    for field in ('ProcessedTime', 'Notes', 'WebAppID'):
+    # ProcessedTime / Notes / PaymentID: MySQL → Sheets
+    for field in ('ProcessedTime', 'Notes', 'PaymentID'):
         mysql_val  = mysql_row.get(field)
         sheets_val = sheets_row.get(field)
         if not _values_equal(mysql_val, sheets_val):

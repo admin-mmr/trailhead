@@ -376,7 +376,7 @@ def run_auto_guess(
                     UPDATE gmail_transactions
                     SET ProcessedTime = %s,
                         Source = 'AutoGuess',
-                        WebAppID = %s
+                        PaymentID = %s
                     WHERE MessageId = %s
                 """, (now_str, payment_id, msg_id))
 
