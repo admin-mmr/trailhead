@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:28 UTC — Fix member-quick/all: include all statuses for payment matching
+Changed: `api_payments.py` api_member_quick_all() — removed WHERE Status IN ('active', 'pending') filter. Now returns ALL members regardless of status since payments can renew inactive/expired memberships. Fixes: A0533 was filtered out because it was inactive. Committed e77c19b. Status: Ready. Next: Redeploy Flask, test fuzzy search now shows both Samantha Zheng entries.
+
 ### 2026-04-01 19:24 UTC — Fix gmail_transactions sync: wrong GAS action name
 Changed: `api_sheets_sync.py` — fixed 3 calls using `get_gmail_transactions` → `get_transactions`. GAS webhook recognizes `get_transactions` action (handles Fetch-Gmail sheet). Error was: "Unknown action: get_gmail_transactions". Committed 2df87cd. Status: Ready. Next: Redeploy Flask, retry gmail_transactions sync.
 
