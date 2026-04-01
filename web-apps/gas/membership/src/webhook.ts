@@ -342,12 +342,35 @@ function handleAppendMembers(payload: any): GoogleAppsScript.Content.TextOutput 
   }
   try {
     const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
-    for (const row of rows) {
-      const sheetRow = memberObjectToRow(row);
-      sheet.appendRow(sheetRow);
+    const data = sheet.getDataRange().getValues();
+
+    // Safety check: detect if any rows already exist (would be duplicates)
+    const existingIds: string[] = [];
+    for (let i = 1; i < data.length; i++) {
+      existingIds.push(String(data[i][MM_COL.MEMBER_ID] || '').trim());
     }
-    console.log(`[webhook] append_members: inserted ${rows.length} members`);
-    return jsonResponse({ ok: true, data: { inserted: rows.length } });
+
+    let insertedCount = 0;
+    let duplicateCount = 0;
+
+    for (const row of rows) {
+      const memberId = String(row.MemberID || row.memberID || '').trim();
+      if (existingIds.includes(memberId)) {
+        duplicateCount++;
+        console.warn(`[webhook] DUPLICATE DETECTED: Trying to append ${memberId} but it already exists!`);
+      } else {
+        const sheetRow = memberObjectToRow(row);
+        sheet.appendRow(sheetRow);
+        insertedCount++;
+        console.log(`[webhook] Appended new member: ${memberId}`);
+      }
+    }
+
+    console.log(`[webhook] append_members: inserted=${insertedCount}, duplicates=${duplicateCount}`);
+    if (duplicateCount > 0) {
+      console.error(`[webhook] ⚠️ ALERT: Attempted to append ${duplicateCount} duplicate members!`);
+    }
+    return jsonResponse({ ok: true, data: { inserted: insertedCount, duplicates: duplicateCount } });
   } catch (err: any) {
     console.error('[webhook] Failed to append members:', err);
     return jsonResponse({ ok: false, error: err.message || String(err) });
@@ -405,23 +428,46 @@ function handleUpdateMembers(payload: any): GoogleAppsScript.Content.TextOutput 
   try {
     const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
     const data = sheet.getDataRange().getValues();
+
+    // Safety check: ensure data is valid 2D array
+    if (!Array.isArray(data) || data.length < 1) {
+      console.error('[webhook] Sheet data is invalid or empty');
+      return jsonResponse({ ok: false, error: 'Sheet data is invalid or empty', data: { updated: 0 } });
+    }
+
     let updated = 0;
+    let notFound = [];
 
     for (const row of rows) {
       const memberId = row.MemberID || row.memberID;
+      if (!memberId) {
+        console.warn('[webhook] Skipping row with missing MemberID');
+        continue;
+      }
+
+      let found = false;
       for (let i = 1; i < data.length; i++) {
-        if (String(data[i][MM_COL.MEMBER_ID]) === memberId) {
+        const sheetMemberId = String(data[i][MM_COL.MEMBER_ID] || '').trim();
+        if (sheetMemberId === String(memberId).trim()) {
           const sheetRow = memberObjectToRow(row);
           for (let j = 0; j < sheetRow.length; j++) {
             sheet.getRange(i + 1, j + 1).setValue(sheetRow[j]);
           }
+          console.log(`[webhook] Updated member: ${memberId} at row ${i + 1}`);
           updated++;
+          found = true;
           break;
         }
       }
+
+      if (!found) {
+        notFound.push(memberId);
+        console.warn(`[webhook] Member NOT FOUND in sheet (will be appended): ${memberId}`);
+      }
     }
-    console.log(`[webhook] update_members: updated ${updated} members`);
-    return jsonResponse({ ok: true, data: { updated } });
+
+    console.log(`[webhook] update_members: updated=${updated}, notFound=${notFound.length}`);
+    return jsonResponse({ ok: true, data: { updated, notFound } });
   } catch (err: any) {
     console.error('[webhook] Failed to update members:', err);
     return jsonResponse({ ok: false, error: err.message || String(err) });
