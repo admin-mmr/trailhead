@@ -16,6 +16,7 @@ test-photos/
 results/
 azurite-data/
 azurite-debug.log
+mmr-admin/nyrr_api.py
 dist/
 *.js.map
 
@@ -65,3 +66,17 @@ mmr-admin/VERSION
 *.db
 *.db-shm
 *.db-wal
+
+# Orphaned sync scripts (functionality moved to basecamp/run-sync.sh and Admin Portal)
+/sync_gmail.sh
+/sync_members.sh
+/sync_payments.sh
+/sync_webapp_events.sh
+
+# Orphaned sheets sync duplicates (use mmr-admin/api_sheets_sync.py instead)
+/api_sheets_sync.py
+/api_sheets_sync_batched.py
+
+# Legacy schema/migration folders (db/ is the source of truth)
+/basecamp/schemas/
+/basecamp/migrations/
