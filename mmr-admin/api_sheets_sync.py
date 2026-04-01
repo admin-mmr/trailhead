@@ -1018,7 +1018,7 @@ def _sync_gmail_transactions_to_sheets(job_id: str):
 
         # Fetch gmail_transactions from Google Sheets
         try:
-            sheets_data = _call_gas_webhook({'action': 'get_gmail_transactions'})
+            sheets_data = _call_gas_webhook({'action': 'get_transactions'})
             sheets_txns = sheets_data if isinstance(sheets_data, list) else []
             sheets_by_id = {t['MessageId']: t for t in sheets_txns if 'MessageId' in t}
             log_lines.append(f"📊 Fetched {len(sheets_by_id)} gmail_transactions from Google Sheets")
@@ -2031,7 +2031,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
 
         # Fetch gmail_transactions from Google Sheets
         try:
-            sheets_data = _call_gas_webhook({'action': 'get_gmail_transactions'})
+            sheets_data = _call_gas_webhook({'action': 'get_transactions'})
             sheets_by_id = {t.get('MessageId'): t for t in (sheets_data if isinstance(sheets_data, list) else [])}
             log_lines.append(f"📊 Fetched {len(sheets_by_id)} transactions from Google Sheets")
         except Exception as e:
