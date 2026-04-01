@@ -21,7 +21,7 @@ from flask import Blueprint, request
 from auth import login_required, require_role
 from db import query, execute
 from helpers import json_response, handle_api_errors
-from config_cache import get_config_value
+from config_cache import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +94,8 @@ def api_renewal_audit():
 
     # Get membership fee amounts from config
     try:
-        individual_fee = float(get_config_value('MembershipFeeIndividual', '50.00'))
-        family_fee = float(get_config_value('MembershipFeeFamily', '80.00'))
+        individual_fee = float(get_config('MembershipFeeIndividual', '50.00'))
+        family_fee = float(get_config('MembershipFeeFamily', '80.00'))
     except (ValueError, TypeError):
         individual_fee = 50.00
         family_fee = 80.00
