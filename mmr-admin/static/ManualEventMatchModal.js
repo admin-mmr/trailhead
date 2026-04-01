@@ -172,12 +172,15 @@ const ManualEventMatchModal = ({ isOpen, onClose, onMatchApproved }) => {
                   key: eventData.event.EventID,
                   onClick: () => handleSelectEvent(eventData),
                   style: {
-                    padding: 12, borderRadius: 4, border: '1px solid var(--border)',
+                    padding: 12, borderRadius: 4, border: selectedEvent?.event.EventID === eventData.event.EventID ? '2px solid #4a9eff' : '1px solid #ccc',
                     background: selectedEvent?.event.EventID === eventData.event.EventID ?
-                      'var(--accent)22' : 'transparent',
-                    cursor: 'pointer', transition: 'all 200ms',
+                      'rgba(74, 158, 255, 0.15)' : 'transparent',
+                    cursor: 'pointer', transition: 'all 150ms', boxShadow: selectedEvent?.event.EventID === eventData.event.EventID ? '0 0 0 3px rgba(74, 158, 255, 0.08)' : 'none',
                   }
                 },
+                  selectedEvent?.event.EventID === eventData.event.EventID && React.createElement('div', {
+                    style: { fontSize: 11, color: '#4a9eff', fontWeight: 600, marginBottom: 6 }
+                  }, '✓ For matching'),
                   React.createElement('div', { style: { fontWeight: 600, fontSize: 13 } }, eventData.event.EventID),
                   React.createElement('div', { style: { fontSize: 12, color: 'var(--text2)' } },
                     `${eventData.event.PayerName || eventData.event.Email}`

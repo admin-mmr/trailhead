@@ -11,6 +11,7 @@ Implements the 2-step async payment workflow:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from flask import Blueprint, request, session
 
@@ -31,6 +32,8 @@ from payment_actions import (
     _name_match,
 )
 from sync_engine import to_mysql_datetime as _engine_to_mysql_dt
+
+logger = logging.getLogger(__name__)
 
 payments_bp = Blueprint('payments', __name__)
 
