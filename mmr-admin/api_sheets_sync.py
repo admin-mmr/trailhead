@@ -659,9 +659,17 @@ def _sync_events_to_sheets(job_id: str):
                     skipped.append(event_id)
                 elif decision.direction == SyncDecision.MYSQL_WINS:
                     diff_fields = _get_field_diffs(event, sheets_event)
-                    diff_str = f" ({', '.join(diff_fields)})" if diff_fields else ""
+                    if diff_fields:
+                        diff_parts = []
+                        for f in diff_fields:
+                            s_val = str(sheets_event.get(f, ''))[:40]
+                            m_val = str(event.get(f, ''))[:40]
+                            diff_parts.append(f"{f}: {s_val!r} → {m_val!r}")
+                        diff_str = " | ".join(diff_parts)
+                    else:
+                        diff_str = "(no field diffs)"
                     rows_to_update.append(event)
-                    log_lines.append(f"🔄 {event_id}: {event_name}{diff_str} ({decision.reason})")
+                    log_lines.append(f"🔄 {event_id}: {diff_str} ({decision.reason})")
                     updated.append(event_id)
                 else:
                     # SHEETS_WINS (newer or tie) → nightly sync handles MySQL update
@@ -1460,7 +1468,9 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
     if tables is None:
         tables = ['members', 'events', 'payments']
     log_lines = []
-    inserted_members, updated_members, skipped_members = [], [], []
+    inserted_members, updated_members, skipped_members, errors_members = [], [], [], []
+    inserted_events,  updated_events,  skipped_events,  errors_events  = [], [], [], []
+    inserted_payments, updated_payments, skipped_payments, errors_payments = [], [], [], []
     errors = []
 
     try:
@@ -1515,6 +1525,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                     log_lines.append(f"✅ Member {member_id}: INSERTED")
                 except Exception as e:
                     log_lines.append(f"❌ Member {member_id}: INSERT failed: {e}")
+                    errors_members.append(f"Member {member_id} INSERT: {e}")
                     errors.append(f"Member {member_id} INSERT: {e}")
                 continue
 
@@ -1527,14 +1538,33 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                     cols_to_update = {k: v for k, v in sheet_member.items() if k in member_columns and k != 'MemberID'}
                     cols_to_update = {k: _coerce_value(v, k, member_dt_columns, member_int_columns, member_decimal_columns) for k, v in cols_to_update.items()}
 
-                    set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
-                    sql = f"UPDATE members SET {set_clauses} WHERE MemberID=%s"
-                    values = list(cols_to_update.values()) + [member_id]
-                    execute(sql, values)
-                    updated_members.append(member_id)
-                    log_lines.append(f"🔄 Member {member_id}: UPDATED (Sheets newer)")
+                    # Find fields that actually changed (skip LastUpdated — it triggered the sync)
+                    changed_fields = []
+                    for col, new_val in cols_to_update.items():
+                        if col == 'LastUpdated':
+                            continue
+                        old_val = mysql_member.get(col)
+                        if col in member_dt_columns:
+                            if not _datetimes_equal(old_val, new_val):
+                                changed_fields.append(col)
+                        else:
+                            old_coerced = _coerce_value(old_val, col, member_dt_columns, member_int_columns, member_decimal_columns)
+                            if str(old_coerced) != str(new_val):
+                                changed_fields.append(col)
+
+                    if not changed_fields:
+                        skipped_members.append(member_id)
+                        log_lines.append(f"⏭️ Member {member_id}: SKIPPED (Sheets timestamp newer but no field changes)")
+                    else:
+                        set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
+                        sql = f"UPDATE members SET {set_clauses} WHERE MemberID=%s"
+                        values = list(cols_to_update.values()) + [member_id]
+                        execute(sql, values)
+                        updated_members.append(member_id)
+                        log_lines.append(f"🔄 Member {member_id}: UPDATED — {', '.join(changed_fields)}")
                 except Exception as e:
                     log_lines.append(f"❌ Member {member_id}: UPDATE failed: {e}")
+                    errors_members.append(f"Member {member_id} UPDATE: {e}")
                     errors.append(f"Member {member_id} UPDATE: {e}")
             else:
                 skipped_members.append(member_id)
@@ -1663,12 +1693,12 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 log_lines.append(f"⚠️ Could not sync payments: {e}")
                 errors.append(f"Payment sync failed: {e}")
 
-        summary = (f"✅ Sync Google → MySQL Complete. "
-                   f"Members: {len(inserted_members)} inserted, {len(updated_members)} updated. "
-                   f"Events: {len(inserted_events)} inserted, {len(updated_events)} updated. "
-                   f"Payments: {len(inserted_payments)} inserted, {len(updated_payments)} updated.")
-        if errors:
-            summary += f" ({len(errors)} errors)"
+        summary = (
+            f"✅ Google → MySQL | "
+            f"Members: {len(inserted_members)} ins, {len(updated_members)} upd, {len(skipped_members)} skip, {len(errors_members)} err | "
+            f"Events: {len(inserted_events)} ins, {len(updated_events)} upd, {len(skipped_events)} skip, {len(errors_events)} err | "
+            f"Payments: {len(inserted_payments)} ins, {len(updated_payments)} upd, {len(skipped_payments)} skip, {len(errors_payments)} err"
+        )
 
         total_inserted = len(inserted_members) + len(inserted_events) + len(inserted_payments)
         total_updated  = len(updated_members)  + len(updated_events)  + len(updated_payments)
