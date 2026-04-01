@@ -29,6 +29,10 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ON_AZURE = bool(os.environ.get('WEBSITE_SITE_NAME'))
 
 if not _ON_AZURE:
+    # Add basecamp/python to path for local development
+    basecamp_path = os.path.abspath(os.path.join(_HERE, '..', 'basecamp', 'python'))  
+    sys.path.insert(0, basecamp_path)
+    
     _WEBAPP_ENV = os.path.join(_HERE, '..', 'web-apps', 'mmr-webapp', '.env.local')
     try:
         from dotenv import load_dotenv
