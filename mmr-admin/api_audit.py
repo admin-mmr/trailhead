@@ -28,6 +28,23 @@ logger = logging.getLogger(__name__)
 audit_bp = Blueprint('audit', __name__)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Helper: Convert date objects to ISO strings for JSON serialization
+# ─────────────────────────────────────────────────────────────────────────
+
+def _serialize_for_json(obj):
+    """Convert date objects in dict/list to ISO format strings."""
+    if isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_serialize_for_json(item) for item in obj]
+    elif isinstance(obj, date) and not isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj
+
+
 # ---------------------------------------------------------------------------
 # Renewal Audit Endpoint
 # ---------------------------------------------------------------------------
@@ -106,11 +123,14 @@ def api_renewal_audit():
         individual_fee, family_fee
     )
 
-    return json_response({
+    # Serialize dates to ISO format for JSON response
+    serialized = _serialize_for_json({
         'success': True,
         'audit_results': audit_results['entries'],
         'summary': audit_results['summary']
     })
+
+    return json_response(serialized)
 
 
 # ---------------------------------------------------------------------------
