@@ -5,6 +5,12 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 09:15 ET — Sprint 1: bug fixes, db pooling, test suite
+Changed: (1) Fixed G→MySQL Status 1265 bug — added `_coerce_member_status()` + `_MEMBER_STATUS_MAP` mapping GAS 'inactive'→'not active', 'pending_upgrade'→'pending', case variants → lowercase; (2) Fixed G→MySQL MatchedMessageId 1452 bug — empty string `''` now nulled out (was falsy, bypassed FK guard); (3) `db.py` — replaced per-query fresh connections with `MySQLConnectionPool(pool_size=5)`, added `db_cursor()` context manager (auto commit/rollback), added `handle_mysql_error()` mapping errno→HTTP status; (4) Deleted 4 dead files (api_sync_old.py, google_workspace.py, mysql_sync.py, db/schemas/members.sql); (5) Created `tests/` with conftest.py + 62 passing unit tests (test_db.py, test_sync_status.py, test_sync_coerce.py); added pytest to requirements.txt. Status: All 62 tests pass. Next: Add pytest to pre-commit hook; commit + push.
+
+### 2026-04-01 08:10 ET — Full codebase audit report
+Changed: Created `CODEBASE_AUDIT.md` (611 lines) — architecture review, MySQL pain point analysis (no pooling + inconsistent error handling + zero tests), 7 exact duplicates mapped, 13 oversized files flagged, 5-sprint reorganization roadmap, testing pyramid proposal, 8 stale docs identified. Status: Report complete. Next: Execute Sprint 1 (connection pooling, db_cursor context manager, pytest setup, delete dead files).
+
 ### 2026-04-01 07:48 ET — delete redundant sync-all-sheets-ordered workflow
 Changed: Deleted `.github/workflows/sync-all-sheets-ordered.yml` (replaced by bidirectional-sync). Status: Done. Next: Push deletion commit.
 

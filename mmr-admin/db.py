@@ -2,17 +2,24 @@
 Database connection helpers and table initialization for mmr-admin.
 
 This is a leaf module — it does NOT import from any other mmr-admin module.
+
+Changes (2026-04-01 Sprint 1):
+- Added MySQLConnectionPool (pool_size=5) — replaces per-query fresh connections
+- Added db_cursor() context manager — auto-commit on success, rollback on error
+- Added handle_mysql_error() — maps errno to HTTP status + user-friendly message
 """
 
 from __future__ import annotations
 
 import os
 import threading
-from typing import Any, Dict, List
+from contextlib import contextmanager
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import mysql.connector
 from mysql.connector import Error as MySQLError  # noqa: F401 — re-exported
+from mysql.connector.pooling import MySQLConnectionPool
 
 
 # ---------------------------------------------------------------------------
@@ -74,45 +81,110 @@ PRESETS = {
 
 
 # ---------------------------------------------------------------------------
-# Connection & query helpers
+# Connection pool
 # ---------------------------------------------------------------------------
 
-def get_conn():
-    """Return a new MySQL connection using current config."""
-    with _db_config_lock:
-        cfg = _db_config.copy()
-    return mysql.connector.connect(
-        host=cfg['host'],
-        user=cfg['user'],
-        password=cfg['password'],
-        database=cfg['database'],
-        ssl_disabled=cfg['ssl_disabled'],
-        charset='utf8mb4',
-        collation='utf8mb4_unicode_ci',
-    )
+_pool: Optional[MySQLConnectionPool] = None
+_pool_lock = threading.Lock()
 
+
+def _get_pool() -> MySQLConnectionPool:
+    """Return the shared connection pool, creating it on first call."""
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                with _db_config_lock:
+                    cfg = _db_config.copy()
+                _pool = MySQLConnectionPool(
+                    pool_name='mmr_admin',
+                    pool_size=5,
+                    pool_reset_session=True,
+                    host=cfg['host'],
+                    user=cfg['user'],
+                    password=cfg['password'],
+                    database=cfg['database'],
+                    ssl_disabled=cfg['ssl_disabled'],
+                    charset='utf8mb4',
+                    collation='utf8mb4_unicode_ci',
+                )
+    return _pool
+
+
+def _reset_pool() -> None:
+    """Destroy the pool so it is rebuilt with updated config on next call."""
+    global _pool
+    with _pool_lock:
+        _pool = None
+
+
+def get_conn():
+    """Return a connection from the pool."""
+    return _get_pool().get_connection()
+
+
+# ---------------------------------------------------------------------------
+# Context manager — recommended for multi-statement / write operations
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def db_cursor(dictionary: bool = True):
+    """
+    Context manager that yields a cursor and handles commit/rollback.
+
+    Usage:
+        with db_cursor() as cur:
+            cur.execute("INSERT INTO members ...")
+            cur.execute("UPDATE payments ...")
+        # auto-committed on exit; rolled back if an exception is raised
+
+    For read-only queries use query() directly — it's simpler.
+    """
+    conn = get_conn()
+    cur = conn.cursor(dictionary=dictionary)
+    try:
+        yield cur
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()  # returns connection to pool
+
+
+# ---------------------------------------------------------------------------
+# Simple query helpers (unchanged API, now pool-backed)
+# ---------------------------------------------------------------------------
 
 def query(sql: str, params=None, dictionary=True) -> List[Dict]:
     """Execute a SELECT and return all rows."""
     conn = get_conn()
     cur = conn.cursor(dictionary=dictionary)
-    cur.execute(sql, params or [])
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return rows
+    try:
+        cur.execute(sql, params or [])
+        rows = cur.fetchall()
+        return rows
+    finally:
+        cur.close()
+        conn.close()
 
 
 def execute(sql: str, params=None) -> int:
     """Execute an INSERT/UPDATE/DELETE and return affected row count."""
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(sql, params or [])
-    affected = cur.rowcount
-    conn.commit()
-    cur.close()
-    conn.close()
-    return affected
+    try:
+        cur.execute(sql, params or [])
+        affected = cur.rowcount
+        conn.commit()
+        return affected
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 
 def get_db_config() -> Dict[str, Any]:
@@ -122,9 +194,55 @@ def get_db_config() -> Dict[str, Any]:
 
 
 def update_db_config(new_config: Dict[str, Any]) -> None:
-    """Update the global DB config (thread-safe)."""
+    """Update the global DB config and reset pool so new connections use it."""
+    global _db_config
     with _db_config_lock:
         _db_config.update(new_config)
+    _reset_pool()  # force pool rebuild with new config
+
+
+# ---------------------------------------------------------------------------
+# Typed MySQL error handler
+# ---------------------------------------------------------------------------
+
+# Maps MySQL errno → (HTTP status code, user-friendly message)
+_MYSQL_ERROR_MAP: Dict[int, Tuple[int, str]] = {
+    1062: (409,  "Duplicate entry — record already exists"),
+    1048: (422,  "A required field is missing (NOT NULL violation)"),
+    1054: (422,  "Unknown column — check field name spelling"),
+    1146: (500,  "Table does not exist"),
+    1205: (503,  "Database busy (lock timeout) — please retry"),
+    1213: (503,  "Database deadlock — please retry"),
+    1264: (422,  "Value out of range for column"),
+    1265: (422,  "Invalid ENUM/SET value — value not in allowed list"),
+    1366: (422,  "Incorrect data type — check integer/date format"),
+    1406: (422,  "Value too long for column"),
+    1451: (409,  "Cannot delete — record is referenced by another table"),
+    1452: (422,  "Referenced record does not exist (foreign key violation)"),
+    2003: (503,  "Cannot connect to database"),
+    2006: (503,  "Database connection lost"),
+    2013: (503,  "Database connection timed out"),
+}
+
+
+def handle_mysql_error(e: MySQLError) -> Tuple[Dict[str, Any], int]:
+    """
+    Map a MySQLError to a JSON-serialisable error dict and HTTP status code.
+
+    Usage in a route:
+        except MySQLError as e:
+            body, status = handle_mysql_error(e)
+            return json_response(body, status)
+    """
+    errno = getattr(e, 'errno', None)
+    http_status, friendly_msg = _MYSQL_ERROR_MAP.get(errno, (500, "Database error"))
+    return {
+        'ok': False,
+        'error': friendly_msg,
+        'detail': str(e)[:500],
+        'errno': errno,
+        'db_error': True,
+    }, http_status
 
 
 # ---------------------------------------------------------------------------

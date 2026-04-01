@@ -1,0 +1,1 @@
+# mmr-admin test suite

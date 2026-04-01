@@ -263,6 +263,60 @@ def _coerce_value(v: Any, col: str, dt_cols: set, int_cols: set, decimal_cols: s
     return v
 
 
+# ---------------------------------------------------------------------------
+# Member Status ENUM normalizer
+# MySQL members.Status ENUM: ('active', 'not active', 'pending')
+# Sheets/GAS may send: 'Active', 'inactive', 'Inactive', 'pending_upgrade', etc.
+# ---------------------------------------------------------------------------
+_MEMBER_STATUS_ENUM = {'active', 'not active', 'pending'}
+
+_MEMBER_STATUS_MAP = {
+    # exact MySQL values (pass-through)
+    'active':         'active',
+    'not active':     'not active',
+    'pending':        'pending',
+    # case variants
+    'Active':         'active',
+    'Not Active':     'not active',
+    'Pending':        'pending',
+    'ACTIVE':         'active',
+    'NOT ACTIVE':     'not active',
+    'PENDING':        'pending',
+    # GAS / legacy labels that differ from MySQL ENUM
+    'inactive':       'not active',
+    'Inactive':       'not active',
+    'INACTIVE':       'not active',
+    'pending_upgrade': 'pending',
+    'Pending_Upgrade': 'pending',
+    'expired':        'not active',
+    'Expired':        'not active',
+    'EXPIRED':        'not active',
+}
+
+
+def _coerce_member_status(raw_value: Any) -> tuple:
+    """
+    Map a Sheets/GAS Status value to the MySQL ENUM value.
+    Returns (mysql_value, warning_message_or_None).
+    - If mappable: returns ('active'|'not active'|'pending', None)
+    - If unmappable: returns (None, warning_string) — caller should skip the column
+    """
+    if raw_value is None or raw_value == '':
+        return None, None  # caller keeps existing DB value (skip column in UPDATE)
+    s = str(raw_value).strip()
+    mapped = _MEMBER_STATUS_MAP.get(s)
+    if mapped:
+        changed = (mapped != s)
+        msg = f"Status '{s}' → '{mapped}'" if changed else None
+        return mapped, msg
+    # Last-resort: lowercase match
+    lower = s.lower()
+    if lower in _MEMBER_STATUS_ENUM:
+        return lower, f"Status '{s}' → '{lower}' (lowercased)"
+    # Unknown — do not write a bad value; skip and warn
+    return None, f"⚠️ Status '{s}' has no MySQL ENUM mapping ('active'|'not active'|'pending') — column skipped"
+
+
 def _datetimes_equal(dt1: Any, dt2: Any) -> bool:
     """Compare two datetime values (handles different formats). Allows 1-second tolerance."""
     d1 = _parse_datetime(dt1)
@@ -1517,6 +1571,15 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 try:
                     cols_to_insert = {k: v for k, v in sheet_member.items() if k in member_columns}
                     cols_to_insert = {k: _coerce_value(v, k, member_dt_columns, member_int_columns, member_decimal_columns) for k, v in cols_to_insert.items()}
+                    # Normalize Status ENUM (Sheets value may differ from MySQL ENUM)
+                    if 'Status' in cols_to_insert:
+                        mysql_status, status_warn = _coerce_member_status(cols_to_insert['Status'])
+                        if status_warn:
+                            log_lines.append(f"   {member_id}: {status_warn}")
+                        if mysql_status is not None:
+                            cols_to_insert['Status'] = mysql_status
+                        else:
+                            del cols_to_insert['Status']  # skip; let DB default apply
                     col_names = ', '.join(cols_to_insert.keys())
                     placeholders = ', '.join(['%s'] * len(cols_to_insert))
                     sql = f"INSERT INTO members ({col_names}) VALUES ({placeholders})"
@@ -1537,6 +1600,15 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 try:
                     cols_to_update = {k: v for k, v in sheet_member.items() if k in member_columns and k != 'MemberID'}
                     cols_to_update = {k: _coerce_value(v, k, member_dt_columns, member_int_columns, member_decimal_columns) for k, v in cols_to_update.items()}
+                    # Normalize Status ENUM before comparing or writing
+                    if 'Status' in cols_to_update:
+                        mysql_status, status_warn = _coerce_member_status(cols_to_update['Status'])
+                        if status_warn:
+                            log_lines.append(f"   {member_id}: {status_warn}")
+                        if mysql_status is not None:
+                            cols_to_update['Status'] = mysql_status
+                        else:
+                            del cols_to_update['Status']  # unknown value → skip column, keep current DB value
 
                     # Find fields that actually changed (skip LastUpdated — it triggered the sync)
                     changed_fields = []
@@ -1559,11 +1631,25 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                         sql = f"UPDATE members SET {set_clauses} WHERE MemberID=%s"
                         values = list(cols_to_update.values()) + [member_id]
+                        # Pre-flight: log values for changed fields to aid debugging
+                        field_summary = ', '.join(
+                            f"{f}: '{mysql_member.get(f)}' → '{cols_to_update[f]}'"
+                            for f in changed_fields if f in cols_to_update
+                        )
                         execute(sql, values)
                         updated_members.append(member_id)
-                        log_lines.append(f"🔄 Member {member_id}: UPDATED — {', '.join(changed_fields)}")
+                        log_lines.append(f"🔄 Member {member_id}: UPDATED — {field_summary}")
                 except Exception as e:
-                    log_lines.append(f"❌ Member {member_id}: UPDATE failed: {e}")
+                    # Show which Sheets/MySQL values triggered the failure
+                    sheets_status = sheet_member.get('Status', '?')
+                    mysql_status_val = cols_to_update.get('Status', '?') if 'cols_to_update' in dir() else '?'
+                    sheets_ts = sheet_member.get('LastUpdated', '?')
+                    mysql_ts = mysql_member.get('LastUpdated', '?')
+                    log_lines.append(
+                        f"❌ Member {member_id}: UPDATE failed: {e} "
+                        f"[Sheets Status='{sheets_status}' → MySQL='{mysql_status_val}', "
+                        f"Sheets LastUpdated='{sheets_ts}', MySQL LastUpdated='{mysql_ts}']"
+                    )
                     errors_members.append(f"Member {member_id} UPDATE: {e}")
                     errors.append(f"Member {member_id} UPDATE: {e}")
             else:
@@ -1596,7 +1682,12 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         try:
                             cols_to_insert = {k: v for k, v in sheet_event.items() if k in event_columns}
                             cols_to_insert = {k: _coerce_value(v, k, event_dt_columns, event_int_columns) for k, v in cols_to_insert.items()}
-                            if cols_to_insert.get('MatchedMessageId') and cols_to_insert['MatchedMessageId'] not in valid_gmail_ids:
+                            # Null out MatchedMessageId if empty string OR not in gmail_transactions
+                            # (empty string '' is falsy but still triggers FK constraint)
+                            raw_mid = cols_to_insert.get('MatchedMessageId')
+                            if not raw_mid or str(raw_mid).strip() == '' or raw_mid not in valid_gmail_ids:
+                                if raw_mid and str(raw_mid).strip():
+                                    log_lines.append(f"   Event {event_id}: MatchedMessageId '{raw_mid}' not in gmail_transactions → NULL")
                                 cols_to_insert['MatchedMessageId'] = None
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
@@ -1613,7 +1704,11 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                             try:
                                 cols_to_update = {k: v for k, v in sheet_event.items() if k in event_columns and k != 'EventID'}
                                 cols_to_update = {k: _coerce_value(v, k, event_dt_columns, event_int_columns) for k, v in cols_to_update.items()}
-                                if cols_to_update.get('MatchedMessageId') and cols_to_update['MatchedMessageId'] not in valid_gmail_ids:
+                                # Null out MatchedMessageId if empty string OR not in gmail_transactions
+                                raw_mid = cols_to_update.get('MatchedMessageId')
+                                if not raw_mid or str(raw_mid).strip() == '' or raw_mid not in valid_gmail_ids:
+                                    if raw_mid and str(raw_mid).strip():
+                                        log_lines.append(f"   Event {event_id}: MatchedMessageId '{raw_mid}' not in gmail_transactions → NULL")
                                     cols_to_update['MatchedMessageId'] = None
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE webapp_events SET {set_clauses} WHERE EventID=%s"
