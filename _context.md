@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:16 UTC — Fix GAS webhook error: parse_datetime on "payment"
+Changed: `api_payments.py` _sync_member_events_to_sheets() — added safeguard to ensure UpdatedAt always present when syncing events. Fallback to Timestamp if missing; convert to ISO format. Root cause: UpdatedAt was missing from some event rows, causing resolve_conflict() to parse EventCategory='payment' as datetime. Error: "parse_datetime: unrecognised format: payment". Committed 5556983. Status: Ready. Next: Test manual match approval now works without webhook error.
+
 ### 2026-04-01 19:02 UTC — Add fuzzy search to Quick Approve member selection
 Changed: `payments.js` GmailQuickApprovePopover — added fuzzyMatchMember() helper (matches FirstName, LastName, MemberID, WeChatID against search query); added "Find Member" input with real-time filtering; results table shows Name, MemberID, District, Type, Expiration; click-to-select populates Member ID field. Improves UX for manual member lookup in Quick Approve workflow. Committed 410a38c. Status: Ready. Next: Test on live data + consider expanding auto-sync to also update payments + gmail_transactions sheets (currently only events synced).
 
