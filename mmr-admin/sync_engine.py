@@ -443,16 +443,34 @@ def resolve_gmail_row(
     if not _values_equal(sheets_memo, mysql_memo):
         action.mysql_updates['Memo'] = sheets_memo
 
-    # ProcessedTime / Notes / PaymentID: MySQL → Sheets
-    for field in ('ProcessedTime', 'Notes', 'PaymentID'):
+    # ProcessedTime: direction depends on which side has the value.
+    # If GAS processed the row (Sheets has timestamp, MySQL is NULL) → Sheets→MySQL.
+    # If Python processed it (MySQL has timestamp) → MySQL→Sheets.
+    mysql_pt  = mysql_row.get('ProcessedTime')
+    sheets_pt = sheets_row.get('ProcessedTime')
+    if sheets_pt and not mysql_pt:
+        # GAS has marked this row processed; backfill MySQL so it disappears from
+        # "Unmatched" counts and won't be double-processed.
+        action.mysql_updates['ProcessedTime'] = to_mysql_datetime(sheets_pt) or ''
+        # Also pull Source and PaymentID from Sheets if MySQL is empty
+        sheets_source = sheets_row.get('Source', '') or ''
+        mysql_source  = mysql_row.get('Source', '') or ''
+        if sheets_source and not mysql_source:
+            action.mysql_updates['Source'] = sheets_source
+        sheets_pid = sheets_row.get('PaymentID', '') or ''
+        mysql_pid  = mysql_row.get('PaymentID', '') or ''
+        if sheets_pid and not mysql_pid:
+            action.mysql_updates['PaymentID'] = sheets_pid
+    elif mysql_pt and not _values_equal(mysql_pt, sheets_pt):
+        # MySQL has ProcessedTime that Sheets hasn't seen yet → push MySQL→Sheets
+        action.sheets_updates['ProcessedTime'] = to_mysql_datetime(mysql_pt) or ''
+
+    # Notes / PaymentID: MySQL → Sheets (Python admin portal is authoritative)
+    for field in ('Notes', 'PaymentID'):
         mysql_val  = mysql_row.get(field)
         sheets_val = sheets_row.get(field)
         if not _values_equal(mysql_val, sheets_val):
-            # Normalise datetime fields before pushing to Sheets
-            if field == 'ProcessedTime':
-                val = to_mysql_datetime(mysql_val) or ''
-            else:
-                val = '' if mysql_val is None else str(mysql_val)
+            val = '' if mysql_val is None else str(mysql_val)
             action.sheets_updates[field] = val
 
     return action

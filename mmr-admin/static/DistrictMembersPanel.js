@@ -30,9 +30,9 @@ window.DistrictMembersPanel = () => {
   }, [selectedDistrict, statusFilter, renewedFilter]);
 
   const fetchDistricts = async () => {
+    const { api } = window.mmrUtils;
     try {
-      const response = await fetch('/api/district/districts');
-      const data = await response.json();
+      const data = await api('/api/district/districts');
       if (data.success) {
         setDistricts(data.districts);
         setError('');
@@ -45,6 +45,7 @@ window.DistrictMembersPanel = () => {
   };
 
   const fetchMembers = async () => {
+    const { api } = window.mmrUtils;
     setLoading(true);
     setError('');
     try {
@@ -53,8 +54,7 @@ window.DistrictMembersPanel = () => {
       if (statusFilter) params.append('status', statusFilter);
       if (renewedFilter) params.append('renewed', renewedFilter);
 
-      const response = await fetch(`/api/district/list?${params.toString()}`);
-      const data = await response.json();
+      const data = await api(`/api/district/list?${params.toString()}`);
       if (data.success) {
         setMembers(data.members);
         setSelectedMembers(new Set());

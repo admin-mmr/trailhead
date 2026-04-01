@@ -5,6 +5,15 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 13:21 ET — Fix Bugs 2/3/4: gmail_transactions import + ProcessedTime lifecycle
+Changed: (Bug 2) `_import_transactions` INSERT now captures all 13 fields (Sender, Amount, TransactionDate, TransactionNumber, Subject, OriginalMemo, Source) + backfill UPDATE for existing NULL rows; `sheets_row_for_engine` now passes Sheets PaymentID/Source for engine use. (Bug 4) Removed `ProcessedTime=NOW()` from `run_auto_match` + `manual_match`; added it to `approve_event` after actual approval (with `AND ProcessedTime IS NULL` guard). (Bug 3) `sync_engine.py:resolve_gmail_row` now syncs ProcessedTime/Source/PaymentID Sheets→MySQL when GAS has processed a row (MySQL NULL). Status: all three fixed; 404 error on import is a stale SheetsWebhookUrl — user must redeploy GAS and update config. Next: redeploy GAS webhook, update SheetsWebhookUrl in MySQL config, re-run import.
+
+### 2026-04-01 12:56 ET — Full mmr-admin refactor: shared utilities + wiring
+Changed: Created `core.py` (gen_id, fixes collision bug), `config_cache.py` (thread-safe, replaces 5 get_config impls), `activity_logger.py` (replaces 3 duplicate INSERT blocks), `sync_jobs.py` (replaces _sync_jobs/_sync_jobs_lock/10 thread dispatches in api_sheets_sync.py), `query_builder.py` (add_search/add_date_filter), `datetime_utils.py` (to_datetime/to_date). Added `@handle_api_errors` to `helpers.py`. Wired all into payment_handlers, payment_actions, api_payments, api_sheets_sync, sheets_sync, webhook_client, api_sheets_diags. Created `static/utils.js` (fmt/fmtDate/fmtMoney/STATUS_COLORS/Badge/api). Updated DistrictMembersPanel.js to use mmrUtils.api(). Status: test_imports passes (7 pure-python modules ✅, 29 skipped for missing deps). Next: deploy + smoke test; fix Bug2 (Amount NULL in gmail_transactions import).
+
+### 2026-04-01 11:29 ET — Standardize sync log format + fix SKIPPED→MATCH
+Changed: `api_sheets_sync.py` — all 6 sync paths (Sheets→MySQL + MySQL→Sheets × members/events/payments) now emit `✅ INSERT | 🔄 UPDATE | = MATCH | ⏭️ SKIP | ❌ ERROR` per-row lines with key, MemberID, changed fields, and timestamps. SKIPPED (Sheets ts newer, no field changes) now writes MySQL `LastUpdated` to match Sheets and logs as `= MATCH` so next run is clean. Status: syntax verified. Next: deploy + run sync to confirm log output.
+
 ### 2026-04-01 09:56 ET — Rebuild gmail_transactions: WebAppID → PaymentID
 Changed: Renamed `WebAppID` → `PaymentID` in gmail_transactions (schema_snapshot.sql + 6 Python files: api_sheets_sync.py, payment_actions.py, api_email_diags.py, sync_engine.py x2, auto_guess_payments.py). Status: DROP/CREATE SQL ready (see below); user runs SQL + Sheets→MySQL sync to repopulate clean data. Next: Run SQL, sync, commit all changes.
 

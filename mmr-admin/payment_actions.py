@@ -15,15 +15,17 @@ Imports: db, payment_handlers, sheets_sync.
 from __future__ import annotations
 
 import re
-import time
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from db import query, execute
+from core import gen_id
+from config_cache import get_config
+from activity_logger import log_activity
+from datetime_utils import to_datetime
 
 # Re-export commonly used functions so api_payments.py can import from here
 from payment_handlers import (  # noqa: F401
-    get_config,
     get_member,
     get_family_member_ids,
     dispatch_fulfillment,
@@ -38,17 +40,6 @@ from webhook_client import (  # noqa: F401
     send_payment_rejected_email,
     send_membership_activated_email,
 )
-
-
-# ---------------------------------------------------------------------------
-# ID generation
-# ---------------------------------------------------------------------------
-
-def _gen_id(prefix: str) -> str:
-    """Generate a unique ID like EV-1711234567890-1234."""
-    ts = int(time.time() * 1000)
-    rand = int(time.time() * 10000) % 10000
-    return f'{prefix}-{ts}-{rand:04d}'
 
 
 # ---------------------------------------------------------------------------
@@ -88,18 +79,11 @@ def find_gmail_match(
          c) Payer name fuzzy match
     """
     event_amount = float(event.get('Amount') or 0)
-    event_ts = event.get('Timestamp')
-    if isinstance(event_ts, str):
-        try:
-            event_ts = datetime.fromisoformat(event_ts)
-        except ValueError:
-            event_ts = None
-    elif not isinstance(event_ts, datetime):
-        event_ts = None
+    event_ts     = to_datetime(event.get('Timestamp'))
 
-    event_last4 = (event.get('Last4Digits') or '').strip()
+    event_last4     = (event.get('Last4Digits') or '').strip()
     event_member_id = (event.get('MemberID') or '').strip().upper()
-    event_payer = (event.get('PayerName') or '').strip()
+    event_payer     = (event.get('PayerName') or '').strip()
 
     for gmail in unmatched_gmail:
         # Rule 1: amount match
@@ -108,15 +92,8 @@ def find_gmail_match(
             continue
 
         # Rule 2: date within ±7 days
-        gmail_date = gmail.get('TransactionDate')
-        if event_ts and gmail_date:
-            if isinstance(gmail_date, date) and not isinstance(gmail_date, datetime):
-                gmail_dt = datetime.combine(gmail_date, datetime.min.time())
-            elif isinstance(gmail_date, datetime):
-                gmail_dt = gmail_date
-            else:
-                gmail_dt = None
-
+        if event_ts:
+            gmail_dt = to_datetime(gmail.get('TransactionDate'))
             if gmail_dt:
                 delta = abs((gmail_dt - event_ts).days)
                 if delta > 7:
@@ -197,7 +174,6 @@ def run_auto_match() -> Dict[str, Any]:
 
                 execute("""
                     UPDATE gmail_transactions SET
-                        ProcessedTime = NOW(),
                         Notes = 'AutoMatch',
                         PaymentID = %s
                     WHERE MessageId = %s
@@ -266,19 +242,24 @@ def approve_event(event_id: str, admin_email: str, notes: str = '') -> Dict[str,
         WHERE EventID = %s
     """, [admin_email, notes[:500] if notes else None, event_id])
 
+    # Mark the linked gmail transaction as processed (now, at actual approval time).
+    # Guard: only set if not already stamped (e.g. GAS may have set it first).
+    matched_message_id = event.get('MatchedMessageId')
+    if matched_message_id:
+        execute("""
+            UPDATE gmail_transactions SET
+                ProcessedTime = NOW()
+            WHERE MessageId = %s AND ProcessedTime IS NULL
+        """, [matched_message_id])
+
     # Log activity
-    log_id = _gen_id('AL')
-    execute("""
-        INSERT INTO activity_log (LogID, Timestamp, MemberID, Email, EventID, Action, State)
-        VALUES (%s, NOW(), %s, %s, %s, %s, %s)
-    """, [
-        log_id,
-        event.get('MemberID'),
-        admin_email,
-        event_id,
+    log_activity(
         'PAYMENT_APPROVED',
-        f'intent={event.get("PaymentIntent")}, amount={event.get("Amount")}',
-    ])
+        member_id=event.get('MemberID', ''),
+        admin_email=admin_email,
+        event_id=event_id,
+        state=f'intent={event.get("PaymentIntent")}, amount={event.get("Amount")}',
+    )
 
     # Fire-and-forget sheets sync: event status + payment record
     # (Member sync already happened inside update_member_expiration)
@@ -334,18 +315,13 @@ def reject_event(event_id: str, admin_email: str, notes: str = '') -> Dict[str, 
     """, [admin_email, notes[:500] if notes else None, event_id])
 
     # Log activity
-    log_id = _gen_id('AL')
-    execute("""
-        INSERT INTO activity_log (LogID, Timestamp, MemberID, Email, EventID, Action, State)
-        VALUES (%s, NOW(), %s, %s, %s, %s, %s)
-    """, [
-        log_id,
-        event.get('MemberID'),
-        admin_email,
-        event_id,
+    log_activity(
         'PAYMENT_REJECTED',
-        f'notes={notes[:100]}',
-    ])
+        member_id=event.get('MemberID', ''),
+        admin_email=admin_email,
+        event_id=event_id,
+        state=f'notes={notes[:100]}',
+    )
 
     sync_event_to_sheets(event_id, 'rejected', admin_email)
 
@@ -402,20 +378,18 @@ def manual_match(event_id: str, message_id: str, admin_email: str) -> Dict[str, 
 
     execute("""
         UPDATE gmail_transactions SET
-            ProcessedTime = NOW(),
             Notes = 'Manual',
             PaymentID = %s
         WHERE MessageId = %s
     """, [event_id, message_id])
 
-    log_id = _gen_id('AL')
-    execute("""
-        INSERT INTO activity_log (LogID, Timestamp, MemberID, Email, EventID, Action, State)
-        VALUES (%s, NOW(), %s, %s, %s, %s, %s)
-    """, [
-        log_id, event.get('MemberID'), admin_email, event_id,
-        'MANUAL_MATCH', f'gmail={message_id}',
-    ])
+    log_activity(
+        'MANUAL_MATCH',
+        member_id=event.get('MemberID', ''),
+        admin_email=admin_email,
+        event_id=event_id,
+        state=f'gmail={message_id}',
+    )
 
     return {
         'ok': True,
@@ -453,7 +427,7 @@ def admin_create_payment(
     if gmail.get('ProcessedTime'):
         return {'ok': False, 'error': 'Gmail transaction already processed'}
 
-    event_id = _gen_id('EV')
+    event_id = gen_id('EV')
     execute("""
         INSERT INTO webapp_events
             (EventID, EventType, EventCategory, Timestamp, MemberID, Email,

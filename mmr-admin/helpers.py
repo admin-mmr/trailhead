@@ -1,11 +1,13 @@
 """
-Shared helpers for mmr-admin: JSON encoding, response builder, error handlers.
+Shared helpers for mmr-admin: JSON encoding, response builder, error handlers,
+and the @handle_api_errors route decorator.
 
 This is a leaf module — it does NOT import from any other mmr-admin module.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 from datetime import date, datetime
 
@@ -30,6 +32,38 @@ def json_response(data, status=200):
         status=status,
         mimetype='application/json',
     )
+
+
+def handle_api_errors(fn):
+    """
+    Route decorator that wraps a Flask view in a try/except and returns
+    a JSON error response instead of an HTML 500 page.
+
+    Usage:
+        @payments_bp.route('/api/payments/...')
+        @login_required
+        @require_role('admin')
+        @handle_api_errors
+        def my_route():
+            # raises → clean JSON error
+            ...
+
+    DB errors (MySQLError) get status 503; all others get 500.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            # Import here to avoid circular imports (db → helpers would be a cycle)
+            try:
+                from db import MySQLError
+                if isinstance(e, MySQLError):
+                    return json_response({'ok': False, 'error': str(e)[:300], 'db_error': True}, 503)
+            except ImportError:
+                pass
+            return json_response({'ok': False, 'error': str(e)[:300]}, 500)
+    return wrapper
 
 
 def register_error_handlers(app: Flask) -> None:

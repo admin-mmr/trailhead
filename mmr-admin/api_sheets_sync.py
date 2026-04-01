@@ -24,6 +24,8 @@ from db import query, execute, get_conn
 from helpers import json_response
 from webhook_client import send_generic_email
 from auth import login_required
+from config_cache import get_config as _get_config_cached
+from sync_jobs import launch_job, update_job, get_job, list_jobs as list_sync_jobs
 
 # ── Shared bidirectional sync engine (spec-compliant) ────────────────────────
 from sync_engine import (
@@ -44,25 +46,14 @@ logger.setLevel(logging.DEBUG)
 
 sheets_sync_bp = Blueprint('sheets_sync', __name__)
 
-# In-flight sync jobs: job_id -> {status, message, progress, result}
-_sync_jobs: Dict[str, Dict[str, Any]] = {}
-_sync_jobs_lock = threading.Lock()
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _gen_job_id() -> str:
-    """Generate a unique job ID."""
-    import uuid
-    return f"sync_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-
-
 def _get_config_value(key: str, default: str = '') -> str:
-    """Get a single config value."""
-    rows = query("SELECT ConfigValue FROM config WHERE ConfigKey = %s", [key])
-    return rows[0]['ConfigValue'] if rows else default
+    """Thin wrapper over config_cache.get_config for backward compat."""
+    return _get_config_cached(key, default)
 
 
 def _call_gas_webhook(payload: Dict) -> Dict:
@@ -454,8 +445,7 @@ def _sync_members_to_sheets(job_id: str):
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching members from MySQL...', 'progress': 0}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Fetch all members from MySQL
         members_rows = query("SELECT * FROM members ORDER BY MemberID")
@@ -496,8 +486,7 @@ def _sync_members_to_sheets(job_id: str):
             'message': f'Syncing {len(members_rows)} members to Google Sheets...',
             'progress': 25,
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Separate rows for appending vs updating
         rows_to_append = []
@@ -511,11 +500,11 @@ def _sync_members_to_sheets(job_id: str):
             if member_id not in sheets_by_id:
                 # New member — append to Sheets
                 rows_to_append.append(member)
-                log_lines.append(f"✅ {member_id}: {member_name} (NEW)")
+                log_lines.append(
+                    f"✅ INSERT | {member_id} | {member_name} | "
+                    f"LastUpdated={mysql_updated!r}"
+                )
                 inserted.append(member_id)
-
-                if verbose_mode and idx < 3:
-                    log_lines.append(f"   → LastUpdated={mysql_updated}")
             else:
                 # Existing member — spec §2.2 bidirectional newer-wins conflict resolution
                 sheets_member = sheets_by_id[member_id]
@@ -523,25 +512,29 @@ def _sync_members_to_sheets(job_id: str):
 
                 if decision.direction == SyncDecision.NO_CHANGE:
                     skipped.append(member_id)
+                    log_lines.append(f"= MATCH | {member_id}")
                 elif decision.direction == SyncDecision.MYSQL_WINS:
-                    # MySQL newer → push to Sheets
+                    # MySQL newer → push to Sheets; compute field diff for log
+                    diff_fields = _get_field_diffs(member, sheets_member)
+                    field_detail = ', '.join(
+                        f"{f}: {sheets_member.get(f)!r} → {member.get(f)!r}"
+                        for f in diff_fields if f != 'LastUpdated'
+                    ) or '(timestamp only)'
                     rows_to_update.append(member)
-                    log_lines.append(f"🔄 {member_id}: {member_name} ({decision.reason})")
+                    log_lines.append(
+                        f"🔄 UPDATE | {member_id} | {field_detail} | {decision.reason}"
+                    )
                     updated.append(member_id)
                 else:
-                    # SHEETS_WINS (newer or tie) → Sheets should overwrite MySQL;
-                    # the Sheets→MySQL nightly job handles this direction.
-                    # Log it so the admin has visibility.
+                    # SHEETS_WINS (newer or tie) → nightly sync applies MySQL update
                     log_lines.append(
-                        f"⬅  {member_id}: {member_name} Sheets wins ({decision.reason}) "
-                        f"— will be applied by nightly sync"
+                        f"⏭️ SKIP | {member_id} | Sheets wins ({decision.reason}) — nightly sync will apply"
                     )
                     skipped.append(member_id)
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(members_rows)) * 50)}
-                with _sync_jobs_lock:
-                    _sync_jobs[job_id].update(job_update)
+                update_job(job_id, **job_update)
 
         # Push changes to Sheets (batched to avoid timeout)
         batch_size = 200
@@ -592,8 +585,7 @@ def _sync_members_to_sheets(job_id: str):
                 'log': '\n'.join(log_lines),
             }
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send report email
         email_result = _send_sync_report(
@@ -619,8 +611,7 @@ def _sync_members_to_sheets(job_id: str):
             'progress': 100,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send error report email
         try:
@@ -654,8 +645,7 @@ def _sync_events_to_sheets(job_id: str):
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching events...', 'progress': 0}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         events_rows = query(
             "SELECT * FROM webapp_events ORDER BY EventID"
@@ -691,8 +681,7 @@ def _sync_events_to_sheets(job_id: str):
             sheets_by_id = {}
 
         job_update = {'status': 'running', 'message': 'Syncing events...', 'progress': 25}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         rows_to_append = []
         rows_to_update = []
@@ -704,11 +693,11 @@ def _sync_events_to_sheets(job_id: str):
 
             if event_id not in sheets_by_id:
                 rows_to_append.append(event)
-                log_lines.append(f"✅ {event_id}: {event_name} (NEW)")
+                log_lines.append(
+                    f"✅ INSERT | {event_id} | {event_name} | "
+                    f"UpdatedAt={mysql_updated!r}"
+                )
                 inserted.append(event_id)
-
-                if verbose_mode and idx < 3:
-                    log_lines.append(f"   → UpdatedAt={mysql_updated}")
             else:
                 # Spec §2.2 bidirectional conflict resolution for webapp_events
                 sheets_event = sheets_by_id[event_id]
@@ -716,32 +705,28 @@ def _sync_events_to_sheets(job_id: str):
 
                 if decision.direction == SyncDecision.NO_CHANGE:
                     skipped.append(event_id)
+                    log_lines.append(f"= MATCH | {event_id}")
                 elif decision.direction == SyncDecision.MYSQL_WINS:
                     diff_fields = _get_field_diffs(event, sheets_event)
-                    if diff_fields:
-                        diff_parts = []
-                        for f in diff_fields:
-                            s_val = str(sheets_event.get(f, ''))[:40]
-                            m_val = str(event.get(f, ''))[:40]
-                            diff_parts.append(f"{f}: {s_val!r} → {m_val!r}")
-                        diff_str = " | ".join(diff_parts)
-                    else:
-                        diff_str = "(no field diffs)"
+                    field_detail = ' | '.join(
+                        f"{f}: {str(sheets_event.get(f, ''))[:40]!r} → {str(event.get(f, ''))[:40]!r}"
+                        for f in diff_fields if f != 'UpdatedAt'
+                    ) or '(timestamp only)'
                     rows_to_update.append(event)
-                    log_lines.append(f"🔄 {event_id}: {diff_str} ({decision.reason})")
+                    log_lines.append(
+                        f"🔄 UPDATE | {event_id} | {field_detail} | {decision.reason}"
+                    )
                     updated.append(event_id)
                 else:
                     # SHEETS_WINS (newer or tie) → nightly sync handles MySQL update
                     log_lines.append(
-                        f"⬅  {event_id}: {event_name} Sheets wins ({decision.reason}) "
-                        f"— will be applied by nightly sync"
+                        f"⏭️ SKIP | {event_id} | Sheets wins ({decision.reason}) — nightly sync will apply"
                     )
                     skipped.append(event_id)
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(events_rows)) * 50)}
-                with _sync_jobs_lock:
-                    _sync_jobs[job_id].update(job_update)
+                update_job(job_id, **job_update)
 
         # Push to Sheets (batched to avoid timeout)
         batch_size = 200
@@ -790,8 +775,7 @@ def _sync_events_to_sheets(job_id: str):
                 'log': '\n'.join(log_lines),
             }
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send report email
         _send_sync_report(
@@ -810,8 +794,7 @@ def _sync_events_to_sheets(job_id: str):
             'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send error report email
         try:
@@ -835,8 +818,7 @@ def _sync_payments_to_sheets(job_id: str):
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching payments...', 'progress': 0}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         payments_rows = query("SELECT * FROM payments ORDER BY PaymentID DESC LIMIT 500")
         log_lines.append(f"📥 Fetched {len(payments_rows)} recent payments from MySQL")
@@ -854,8 +836,7 @@ def _sync_payments_to_sheets(job_id: str):
             sheets_by_id = {}
 
         job_update = {'status': 'running', 'message': 'Syncing payments...', 'progress': 25}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         rows_to_append = []
         rows_to_update = []
@@ -877,7 +858,10 @@ def _sync_payments_to_sheets(job_id: str):
 
             if payment_id not in sheets_by_id:
                 rows_to_append.append(payment)
-                log_lines.append(f"✅ {payment_id}: ${amount}, {member_id}, {member_name} (NEW)")
+                log_lines.append(
+                    f"✅ INSERT | {payment_id} | MemberID={member_id} | "
+                    f"ProcessedDate={payment.get('ProcessedDate', '?')!r}"
+                )
                 inserted.append(f"{payment_id}: ${amount}, {member_id}, {member_name}")
             else:
                 # Spec §2.2 bidirectional conflict resolution for payments
@@ -885,18 +869,30 @@ def _sync_payments_to_sheets(job_id: str):
                 decision = _engine_resolve_conflict('payments', payment_id, payment, sheets_payment)
 
                 if decision.direction == SyncDecision.MYSQL_WINS:
+                    diff_fields = _get_field_diffs(payment, sheets_payment)
+                    field_detail = ', '.join(
+                        f"{f}: {sheets_payment.get(f)!r} → {payment.get(f)!r}"
+                        for f in diff_fields if f != 'ProcessedDate'
+                    ) or '(timestamp only)'
                     rows_to_update.append(payment)
-                    log_lines.append(f"🔄 {payment_id}: ${amount}, {member_id}, {member_name} ({decision.reason})")
+                    log_lines.append(
+                        f"🔄 UPDATE | {payment_id} | MemberID={member_id} | "
+                        f"{field_detail} | {decision.reason}"
+                    )
                     updated.append(payment_id)
                 elif decision.direction == SyncDecision.SHEETS_WINS:
-                    # Nightly sync handles MySQL update; just count as skipped
-                    pass
-                # NO_CHANGE: skip silently
+                    # Nightly sync handles MySQL update
+                    log_lines.append(
+                        f"⏭️ SKIP | {payment_id} | MemberID={member_id} | "
+                        f"Sheets wins ({decision.reason}) — nightly sync will apply"
+                    )
+                else:
+                    # NO_CHANGE
+                    log_lines.append(f"= MATCH | {payment_id} | MemberID={member_id}")
 
             if (idx + 1) % 100 == 0:
                 job_update = {'progress': 25 + int((idx / len(payments_rows)) * 50)}
-                with _sync_jobs_lock:
-                    _sync_jobs[job_id].update(job_update)
+                update_job(job_id, **job_update)
 
         # Push to Sheets (batched to avoid timeout)
         batch_size = 200
@@ -941,8 +937,7 @@ def _sync_payments_to_sheets(job_id: str):
                 'log': '\n'.join(log_lines),
             }
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send report email
         _send_sync_report(
@@ -961,8 +956,7 @@ def _sync_payments_to_sheets(job_id: str):
             'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send error report email
         try:
@@ -997,8 +991,7 @@ def _sync_gmail_transactions_to_sheets(job_id: str):
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching gmail_transactions from MySQL...', 'progress': 0}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Fetch all gmail_transactions from MySQL
         txn_rows = query("SELECT MessageId, Notes, ProcessedTime FROM gmail_transactions ORDER BY TimeStamp DESC")
@@ -1019,8 +1012,7 @@ def _sync_gmail_transactions_to_sheets(job_id: str):
             'message': f'Syncing Notes/ProcessedTime for {len(txn_rows)} transactions...',
             'progress': 50,
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Compare and build update list (spec §3.2 field-level rules via engine)
         rows_to_update = []
@@ -1064,8 +1056,7 @@ def _sync_gmail_transactions_to_sheets(job_id: str):
                         'message': f'Updating batch {batch_num}/{total_batches} ({total_updated}/{len(rows_to_update)})...',
                         'progress': progress,
                     }
-                    with _sync_jobs_lock:
-                        _sync_jobs[job_id].update(job_update)
+                    update_job(job_id, **job_update)
                 except Exception as e:
                     error_msg = f"Batch {batch_num}/{total_batches} failed: {e}"
                     log_lines.append(f"❌ {error_msg}")
@@ -1089,8 +1080,7 @@ def _sync_gmail_transactions_to_sheets(job_id: str):
                 'summary': '\n'.join(log_lines),
             },
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send report email
         summary = f"Updated: {len(updated)}"
@@ -1115,8 +1105,7 @@ def _sync_gmail_transactions_to_sheets(job_id: str):
             'message': error_msg,
             'progress': 100,
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         try:
             _send_sync_report(
@@ -1158,8 +1147,7 @@ def _import_transactions(job_id: str):
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching transactions from Google...', 'progress': 0}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Fetch transactions from Google Sheets
         try:
@@ -1190,8 +1178,7 @@ def _import_transactions(job_id: str):
         log_lines.append(f"📥 Found {len(existing_by_id)} existing transactions in MySQL")
 
         job_update = {'status': 'running', 'message': 'Processing transactions...', 'progress': 25}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Process each transaction
         for idx, txn in enumerate(sheets_txns):
@@ -1200,6 +1187,22 @@ def _import_transactions(job_id: str):
             memo = txn.get('Memo', '')
             processed_time_raw = txn.get('ProcessedTime')
             payment_id = txn.get('PaymentID', '')
+            sender = txn.get('Sender', '') or ''
+            transaction_number = txn.get('TransactionNumber', '') or ''
+            subject = txn.get('Subject', '') or ''
+            original_memo = txn.get('OriginalMemo', '') or ''
+            source = txn.get('Source', '') or ''
+
+            # Coerce Amount to float or None
+            amount_raw = txn.get('Amount', '')
+            try:
+                amount = float(amount_raw) if amount_raw not in ('', None) else None
+            except (ValueError, TypeError):
+                amount = None
+
+            # Normalize TransactionDate to a plain date string (YYYY-MM-DD)
+            transaction_date_raw = txn.get('TransactionDate', '')
+            transaction_date = str(transaction_date_raw)[:10] if transaction_date_raw else None
 
             # Normalize timestamps to MySQL-safe ISO format
             timestamp = _to_iso_datetime(timestamp_raw)
@@ -1207,7 +1210,7 @@ def _import_transactions(job_id: str):
 
             if verbose_mode and idx < 5:
                 # Log first 5 rows in detail to show what we're reading
-                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp} (from {repr(str(timestamp_raw)[:60])}), Memo={repr(memo)}, ProcessedTime={processed_time}")
+                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp} (from {repr(str(timestamp_raw)[:60])}), Sender={repr(sender)}, Amount={amount}, Memo={repr(memo)}, ProcessedTime={processed_time}")
 
             if not message_id:
                 log_lines.append(f"⚠️  Skipping row {idx}: missing MessageId")
@@ -1220,35 +1223,62 @@ def _import_transactions(job_id: str):
                 continue
 
             if message_id not in existing_by_id:
-                # New transaction — insert. Notes=Memo so re-imports skip correctly.
+                # New transaction — insert all fields from Sheets.
+                # Notes=Memo so re-imports detect no change on the next run.
                 try:
                     execute("""
                         INSERT INTO gmail_transactions
-                        (MessageId, TimeStamp, Memo, Notes, ProcessedTime, PaymentID)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, [message_id, timestamp, memo, memo, processed_time, payment_id])
+                        (MessageId, TimeStamp, Sender, Amount, Memo, TransactionDate,
+                         TransactionNumber, Subject, OriginalMemo, Notes,
+                         ProcessedTime, Source, PaymentID)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, [
+                        message_id, timestamp, sender, amount, memo, transaction_date,
+                        transaction_number, subject, original_memo, memo,
+                        processed_time, source, payment_id,
+                    ])
                     inserted.append(message_id)
                     log_lines.append(f"✅ {message_id}: INSERTED (new)")
 
                     if verbose_mode:
-                        log_lines.append(f"   → TimeStamp={timestamp} (normalized), Memo={repr(memo)}, ProcessedTime={processed_time}")
+                        log_lines.append(f"   → Sender={repr(sender)}, Amount={amount}, TransactionDate={transaction_date}, ProcessedTime={processed_time}")
                 except Exception as e:
                     errors.append(f"{message_id}: {e}")
                     log_lines.append(f"❌ {message_id}: INSERT failed — {e}")
             else:
                 # Existing transaction — spec §3.2 field-level rules via engine.
-                # sheets_row uses 'Memo' key; existing row uses 'Memo' and 'Notes'.
                 existing = existing_by_id[message_id]
                 sheets_row_for_engine = {
                     'Memo':          memo,
                     'ProcessedTime': processed_time,
-                    'Notes':         existing.get('Notes', ''),    # Sheets has no Notes col
-                    'PaymentID':     existing.get('PaymentID', ''), # Sheets has no PaymentID col
+                    'Notes':         existing.get('Notes', ''),
+                    # Pass Sheets' PaymentID/Source so engine can sync them Sheets→MySQL
+                    # when GAS has processed the row (Bug 3 fix).
+                    'PaymentID':     payment_id or existing.get('PaymentID', ''),
+                    'Source':        source or existing.get('Source', ''),
                 }
                 action = _engine_resolve_gmail(message_id, existing, sheets_row_for_engine)
 
+                # Backfill: for rows inserted before this fix that are missing Amount/Sender/etc.
+                backfill = {}
+                if existing.get('Amount') in (None, '') and amount is not None:
+                    backfill['Amount'] = amount
+                if not existing.get('Sender') and sender:
+                    backfill['Sender'] = sender
+                if not existing.get('TransactionDate') and transaction_date:
+                    backfill['TransactionDate'] = transaction_date
+                if not existing.get('TransactionNumber') and transaction_number:
+                    backfill['TransactionNumber'] = transaction_number
+                if not existing.get('Subject') and subject:
+                    backfill['Subject'] = subject
+                if not existing.get('OriginalMemo') and original_memo:
+                    backfill['OriginalMemo'] = original_memo
+                if not existing.get('Source') and source:
+                    backfill['Source'] = source
+                if backfill:
+                    action.mysql_updates.update(backfill)
+
                 if action.has_mysql_updates:
-                    # Apply Memo → MySQL (the only Sheets→MySQL field per spec)
                     set_clauses = ', '.join(f"{k} = %s" for k in action.mysql_updates)
                     params = list(action.mysql_updates.values()) + [message_id]
                     try:
@@ -1269,8 +1299,7 @@ def _import_transactions(job_id: str):
 
             if (idx + 1) % 100 == 0:
                 job_update = {'progress': 25 + int((idx / len(sheets_txns)) * 50)}
-                with _sync_jobs_lock:
-                    _sync_jobs[job_id].update(job_update)
+                update_job(job_id, **job_update)
 
         summary = f"✅ Import Complete: {len(inserted)} inserted, {len(updated)} updated, {len(skipped)} skipped, {len(errors)} errors"
 
@@ -1290,8 +1319,7 @@ def _import_transactions(job_id: str):
                 'updated_ids': updated[:100],
             }
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send report email
         _send_sync_report(
@@ -1310,8 +1338,7 @@ def _import_transactions(job_id: str):
             'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send error report email
         try:
@@ -1343,8 +1370,7 @@ def _dry_run_google_to_mysql(job_id: str, tables: list = None):
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching data for comparison...', 'progress': 0}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         log_lines.append("🔍 Dry-run: Google → MySQL (no changes made)")
 
@@ -1377,8 +1403,7 @@ def _dry_run_google_to_mysql(job_id: str, tables: list = None):
             sheets_payment_ids = set()
 
         job_update = {'status': 'running', 'message': 'Comparing with MySQL...', 'progress': 40}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Fetch from MySQL
         mysql_members = query("SELECT MemberID FROM members")
@@ -1394,8 +1419,7 @@ def _dry_run_google_to_mysql(job_id: str, tables: list = None):
         log_lines.append(f"💾 MySQL: {len(mysql_payment_ids)} payments")
 
         job_update = {'status': 'running', 'message': 'Analyzing differences...', 'progress': 70}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         log_lines.append("\n--- MEMBER DIFFERENCES ---")
         only_in_sheets_m = sheets_member_ids - mysql_member_ids
@@ -1480,8 +1504,7 @@ def _dry_run_google_to_mysql(job_id: str, tables: list = None):
                 'log': '\n'.join(log_lines),
             }
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send report email
         _send_sync_report(
@@ -1500,8 +1523,7 @@ def _dry_run_google_to_mysql(job_id: str, tables: list = None):
             'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send error report email
         try:
@@ -1534,8 +1556,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching data from Google Sheets...', 'progress': 0}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         log_lines.append(f"🚀 Live Sync: Google → MySQL ({', '.join(tables)})")
 
@@ -1565,8 +1586,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 
             job_update['message'] = 'Syncing members...'
             job_update['progress'] = 20
-            with _sync_jobs_lock:
-                _sync_jobs[job_id].update(job_update)
+            update_job(job_id, **job_update)
 
         for member_id, sheet_member in sheets_members_by_id.items():
             mysql_member = mysql_members_by_id.get(member_id)
@@ -1590,7 +1610,10 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                     sql = f"INSERT INTO members ({col_names}) VALUES ({placeholders})"
                     execute(sql, list(cols_to_insert.values()))
                     inserted_members.append(member_id)
-                    log_lines.append(f"✅ Member {member_id}: INSERTED")
+                    log_lines.append(
+                        f"✅ INSERT | Member {member_id} | "
+                        f"LastUpdated={cols_to_insert.get('LastUpdated', '?')!r}"
+                    )
                 except Exception as e:
                     log_lines.append(f"❌ Member {member_id}: INSERT failed: {e}")
                     errors_members.append(f"Member {member_id} INSERT: {e}")
@@ -1630,20 +1653,37 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                                 changed_fields.append(col)
 
                     if not changed_fields:
-                        skipped_members.append(member_id)
-                        log_lines.append(f"⏭️ Member {member_id}: SKIPPED (Sheets timestamp newer but no field changes)")
+                        # Sheets LastUpdated is newer but no data fields changed —
+                        # sync the timestamp so next run shows MATCH instead of SKIP.
+                        sheets_ts_str = sheet_member.get('LastUpdated', '')
+                        mysql_ts_str  = str(mysql_updated_at) if mysql_updated_at else ''
+                        coerced_ts = _coerce_value(sheets_ts_str, 'LastUpdated', member_dt_columns, member_int_columns, member_decimal_columns)
+                        try:
+                            execute("UPDATE members SET LastUpdated=%s WHERE MemberID=%s", [coerced_ts, member_id])
+                            updated_members.append(member_id)
+                            log_lines.append(
+                                f"= MATCH | Member {member_id} | "
+                                f"LastUpdated synced: {mysql_ts_str!r} → {sheets_ts_str!r} (no other changes)"
+                            )
+                        except Exception as ts_err:
+                            skipped_members.append(member_id)
+                            log_lines.append(f"⏭️ SKIP | Member {member_id} | LastUpdated sync failed: {ts_err}")
                     else:
                         set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                         sql = f"UPDATE members SET {set_clauses} WHERE MemberID=%s"
                         values = list(cols_to_update.values()) + [member_id]
-                        # Pre-flight: log values for changed fields to aid debugging
-                        field_summary = ', '.join(
-                            f"{f}: '{mysql_member.get(f)}' → '{cols_to_update[f]}'"
+                        mysql_ts_str  = str(mysql_updated_at) if mysql_updated_at else ''
+                        sheets_ts_str = sheet_member.get('LastUpdated', '')
+                        field_detail = ', '.join(
+                            f"{f}: {mysql_member.get(f)!r} → {cols_to_update[f]!r}"
                             for f in changed_fields if f in cols_to_update
                         )
                         execute(sql, values)
                         updated_members.append(member_id)
-                        log_lines.append(f"🔄 Member {member_id}: UPDATED — {field_summary}")
+                        log_lines.append(
+                            f"🔄 UPDATE | Member {member_id} | {field_detail} | "
+                            f"LastUpdated: {mysql_ts_str!r} → {sheets_ts_str!r}"
+                        )
                 except Exception as e:
                     # Show which Sheets/MySQL values triggered the failure
                     sheets_status = sheet_member.get('Status', '?')
@@ -1658,8 +1698,15 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                     errors_members.append(f"Member {member_id} UPDATE: {e}")
                     errors.append(f"Member {member_id} UPDATE: {e}")
             else:
+                # MySQL timestamp is same or newer — Sheets data is stale, skip
                 skipped_members.append(member_id)
-        
+                mysql_ts_disp   = str(mysql_updated_at) if mysql_updated_at else 'None'
+                sheets_ts_disp  = sheet_member.get('LastUpdated', 'None')
+                log_lines.append(
+                    f"⏭️ SKIP | Member {member_id} | "
+                    f"MySQL LastUpdated={mysql_ts_disp!r} ≥ Sheets LastUpdated={sheets_ts_disp!r}"
+                )
+
         # 2. Fetch Events
         log_lines.append("\n--- Syncing Events ---")
         inserted_events, updated_events, skipped_events, errors_events = [], [], [], []
@@ -1699,8 +1746,12 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                             sql = f"INSERT INTO webapp_events ({col_names}) VALUES ({placeholders})"
                             execute(sql, list(cols_to_insert.values()))
                             inserted_events.append(event_id)
+                            log_lines.append(
+                                f"✅ INSERT | Event {event_id} | "
+                                f"UpdatedAt={cols_to_insert.get('UpdatedAt', cols_to_insert.get('Timestamp', '?'))!r}"
+                            )
                         except Exception as e:
-                            log_lines.append(f"❌ Event {event_id}: INSERT failed: {e}")
+                            log_lines.append(f"❌ ERROR | Event {event_id} | INSERT failed: {e}")
                             errors_events.append(f"Event {event_id} INSERT: {e}")
                     else:
                         sheet_updated_at = _parse_datetime(sheet_event.get('Timestamp'))
@@ -1715,16 +1766,33 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                                     if raw_mid and str(raw_mid).strip():
                                         log_lines.append(f"   Event {event_id}: MatchedMessageId '{raw_mid}' not in gmail_transactions → NULL")
                                     cols_to_update['MatchedMessageId'] = None
+                                # Compute field-level diff for the log
+                                event_changed = [
+                                    f"{k}: {mysql_event.get(k)!r} → {v!r}"
+                                    for k, v in cols_to_update.items()
+                                    if k != 'Timestamp' and str(mysql_event.get(k, '')) != str(v or '')
+                                ]
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE webapp_events SET {set_clauses} WHERE EventID=%s"
                                 values = list(cols_to_update.values()) + [event_id]
                                 execute(sql, values)
                                 updated_events.append(event_id)
+                                field_detail = ', '.join(event_changed) if event_changed else '(timestamp only)'
+                                log_lines.append(
+                                    f"🔄 UPDATE | Event {event_id} | {field_detail} | "
+                                    f"UpdatedAt: {str(mysql_updated_at)!r} → {sheet_event.get('Timestamp', '?')!r}"
+                                )
                             except Exception as e:
-                                log_lines.append(f"❌ Event {event_id}: UPDATE failed: {e}")
+                                log_lines.append(f"❌ ERROR | Event {event_id} | UPDATE failed: {e}")
                                 errors_events.append(f"Event {event_id} UPDATE: {e}")
                         else:
                             skipped_events.append(event_id)
+                            mysql_ts_disp  = str(mysql_updated_at) if mysql_updated_at else 'None'
+                            sheets_ts_disp = sheet_event.get('Timestamp', 'None')
+                            log_lines.append(
+                                f"⏭️ SKIP | Event {event_id} | "
+                                f"MySQL UpdatedAt={mysql_ts_disp!r} ≥ Sheets Timestamp={sheets_ts_disp!r}"
+                            )
                 log_lines.append(f"Events Sync Finished: Inserted {len(inserted_events)}, Updated {len(updated_events)}, Skipped {len(skipped_events)}, Errors {len(errors_events)}")
                 errors.extend(errors_events)
             except Exception as e:
@@ -1765,8 +1833,13 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                             sql = f"INSERT INTO payments ({col_names}) VALUES ({placeholders})"
                             execute(sql, list(cols_to_insert.values()))
                             inserted_payments.append(payment_id)
+                            log_lines.append(
+                                f"✅ INSERT | Payment {payment_id} | "
+                                f"MemberID={cols_to_insert.get('MemberID', '?')} | "
+                                f"ProcessedDate={cols_to_insert.get('ProcessedDate', '?')!r}"
+                            )
                         except Exception as e:
-                            log_lines.append(f"❌ Payment {payment_id}: INSERT failed: {e}")
+                            log_lines.append(f"❌ ERROR | Payment {payment_id} | INSERT failed: {e}")
                             errors_payments.append(f"Payment {payment_id} INSERT: {e}")
                     else:
                         sheet_updated_at = _parse_datetime(sheet_payment.get('ProcessedDate'))
@@ -1777,16 +1850,36 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                                 cols_to_update = {k: _coerce_value(v, k, payment_dt_columns, payment_int_columns) for k, v in cols_to_update.items()}
                                 if cols_to_update.get('EventID') and cols_to_update['EventID'] not in valid_event_ids:
                                     cols_to_update['EventID'] = None
+                                # Compute field-level diff for the log
+                                pay_changed = [
+                                    f"{k}: {mysql_payment.get(k)!r} → {v!r}"
+                                    for k, v in cols_to_update.items()
+                                    if k != 'ProcessedDate' and str(mysql_payment.get(k, '')) != str(v or '')
+                                ]
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE payments SET {set_clauses} WHERE PaymentID=%s"
                                 values = list(cols_to_update.values()) + [payment_id]
                                 execute(sql, values)
                                 updated_payments.append(payment_id)
+                                field_detail = ', '.join(pay_changed) if pay_changed else '(timestamp only)'
+                                log_lines.append(
+                                    f"🔄 UPDATE | Payment {payment_id} | "
+                                    f"MemberID={mysql_payment.get('MemberID', '?')} | "
+                                    f"{field_detail} | "
+                                    f"ProcessedDate: {str(mysql_updated_at)!r} → {sheet_payment.get('ProcessedDate', '?')!r}"
+                                )
                             except Exception as e:
-                                log_lines.append(f"❌ Payment {payment_id}: UPDATE failed: {e}")
+                                log_lines.append(f"❌ ERROR | Payment {payment_id} | UPDATE failed: {e}")
                                 errors_payments.append(f"Payment {payment_id} UPDATE: {e}")
                         else:
                             skipped_payments.append(payment_id)
+                            mysql_ts_disp  = str(mysql_updated_at) if mysql_updated_at else 'None'
+                            sheets_ts_disp = sheet_payment.get('ProcessedDate', 'None')
+                            log_lines.append(
+                                f"⏭️ SKIP | Payment {payment_id} | "
+                                f"MemberID={mysql_payment.get('MemberID', '?')} | "
+                                f"MySQL ProcessedDate={mysql_ts_disp!r} ≥ Sheets ProcessedDate={sheets_ts_disp!r}"
+                            )
                 log_lines.append(f"Payments Sync Finished: Inserted {len(inserted_payments)}, Updated {len(updated_payments)}, Skipped {len(skipped_payments)}, Errors {len(errors_payments)}")
                 errors.extend(errors_payments)
             except Exception as e:
@@ -1825,8 +1918,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 'log': '\n'.join(log_lines),
             }
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send report email
         _send_sync_report(
@@ -1847,8 +1939,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
             'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         _send_sync_report(
             recipient='admin@mmrunners.org',
@@ -1867,18 +1958,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 @login_required
 def api_sync_members():
     """Trigger members sync (MySQL → Google Sheets)."""
-    job_id = _gen_job_id()
-
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued',
-            'message': 'Queued',
-            'progress': 0,
-            'created_at': datetime.utcnow().isoformat(),
-        }
-
-    thread = threading.Thread(target=_sync_members_to_sheets, args=(job_id,), daemon=True)
-    thread.start()
+    job_id = launch_job(_sync_members_to_sheets)
 
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -1887,18 +1967,7 @@ def api_sync_members():
 @login_required
 def api_sync_events():
     """Trigger events sync (MySQL → Google Sheets)."""
-    job_id = _gen_job_id()
-
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued',
-            'message': 'Queued',
-            'progress': 0,
-            'created_at': datetime.utcnow().isoformat(),
-        }
-
-    thread = threading.Thread(target=_sync_events_to_sheets, args=(job_id,), daemon=True)
-    thread.start()
+    job_id = launch_job(_sync_events_to_sheets)
 
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -1907,18 +1976,7 @@ def api_sync_events():
 @login_required
 def api_sync_payments():
     """Trigger payments sync (MySQL → Google Sheets)."""
-    job_id = _gen_job_id()
-
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued',
-            'message': 'Queued',
-            'progress': 0,
-            'created_at': datetime.utcnow().isoformat(),
-        }
-
-    thread = threading.Thread(target=_sync_payments_to_sheets, args=(job_id,), daemon=True)
-    thread.start()
+    job_id = launch_job(_sync_payments_to_sheets)
 
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -1935,8 +1993,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching unprocessed transactions...', 'progress': 0}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Fetch unprocessed transactions from MySQL
         unprocessed = query("""
@@ -1957,8 +2014,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
             raise
 
         job_update = {'status': 'running', 'message': 'Syncing unprocessed transactions...', 'progress': 25}
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Update Sheets with unprocessed transactions
         updates = []
@@ -2000,8 +2056,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
                 'log': '\n'.join(log_lines),
             }
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send report email
         _send_sync_report(
@@ -2020,8 +2075,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
             'message': error_msg,
             'result': {'error': str(e), 'log': '\n'.join(log_lines)}
         }
-        with _sync_jobs_lock:
-            _sync_jobs[job_id].update(job_update)
+        update_job(job_id, **job_update)
 
         # Send error report
         try:
@@ -2038,18 +2092,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
 
 def api_sync_gmail_transactions():
     """Trigger gmail_transactions sync (MySQL → Google Sheets)."""
-    job_id = _gen_job_id()
-
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued',
-            'message': 'Queued',
-            'progress': 0,
-            'created_at': datetime.utcnow().isoformat(),
-        }
-
-    thread = threading.Thread(target=_sync_gmail_transactions_to_sheets, args=(job_id,), daemon=True)
-    thread.start()
+    job_id = launch_job(_sync_gmail_transactions_to_sheets)
 
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -2058,18 +2101,7 @@ def api_sync_gmail_transactions():
 @login_required
 def api_sync_unprocessed_transactions():
     """Trigger unprocessed transactions sync (MySQL → Google Sheets)."""
-    job_id = _gen_job_id()
-
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued',
-            'message': 'Queued',
-            'progress': 0,
-            'created_at': datetime.utcnow().isoformat(),
-        }
-
-    thread = threading.Thread(target=_sync_unprocessed_transactions_to_sheets, args=(job_id,), daemon=True)
-    thread.start()
+    job_id = launch_job(_sync_unprocessed_transactions_to_sheets)
 
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -2078,18 +2110,7 @@ def api_sync_unprocessed_transactions():
 @login_required
 def api_import_transactions():
     """Trigger transaction import (Google Sheets → MySQL)."""
-    job_id = _gen_job_id()
-
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued',
-            'message': 'Queued',
-            'progress': 0,
-            'created_at': datetime.utcnow().isoformat(),
-        }
-
-    thread = threading.Thread(target=_import_transactions, args=(job_id,), daemon=True)
-    thread.start()
+    job_id = launch_job(_import_transactions)
 
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -2098,18 +2119,7 @@ def api_import_transactions():
 @login_required
 def api_sync_google_to_mysql():
     """Trigger sync (Google Sheets → MySQL)."""
-    job_id = _gen_job_id()
-
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued',
-            'message': 'Queued',
-            'progress': 0,
-            'created_at': datetime.utcnow().isoformat(),
-        }
-
-    thread = threading.Thread(target=_sync_google_to_mysql, args=(job_id,), daemon=True)
-    thread.start()
+    job_id = launch_job(_sync_google_to_mysql)
 
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -2118,18 +2128,7 @@ def api_sync_google_to_mysql():
 @login_required
 def api_dry_run():
     """Trigger dry-run (Google → MySQL, no changes)."""
-    job_id = _gen_job_id()
-
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued',
-            'message': 'Queued',
-            'progress': 0,
-            'created_at': datetime.utcnow().isoformat(),
-        }
-
-    thread = threading.Thread(target=_dry_run_google_to_mysql, args=(job_id,), daemon=True)
-    thread.start()
+    job_id = launch_job(_dry_run_google_to_mysql)
 
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -2137,15 +2136,8 @@ def api_dry_run():
 def _make_g2m_route(table: str, live: bool):
     """Factory for per-table Google → MySQL live/dry-run route handlers."""
     def handler():
-        job_id = _gen_job_id()
-        with _sync_jobs_lock:
-            _sync_jobs[job_id] = {
-                'status': 'queued', 'message': 'Queued', 'progress': 0,
-                'created_at': datetime.utcnow().isoformat(),
-            }
         fn = _sync_google_to_mysql if live else _dry_run_google_to_mysql
-        thread = threading.Thread(target=fn, args=(job_id,), kwargs={'tables': [table]}, daemon=True)
-        thread.start()
+        job_id = launch_job(fn, tables=[table])
         return json_response({'ok': True, 'job_id': job_id})
     handler.__name__ = f'api_g2m_{"live" if live else "dry"}_{table}'
     return handler
@@ -2164,10 +2156,8 @@ for _table in ('members', 'events', 'payments'):
 @login_required
 def api_sync_jobs():
     """Return all known sync jobs (newest first) so the UI can restore state on mount."""
-    with _sync_jobs_lock:
-        snapshot = dict(_sync_jobs)
-    # Sort descending by job_id (UUID v4 with timestamp prefix keeps chronological order)
-    ordered = dict(sorted(snapshot.items(), key=lambda x: x[0], reverse=True))
+    jobs = list_sync_jobs()
+    ordered = {j['jobId']: j for j in jobs}
     return json_response({'ok': True, 'jobs': ordered})
 
 
@@ -2175,12 +2165,9 @@ def api_sync_jobs():
 @login_required
 def api_sync_status(job_id):
     """Get status of a sync job."""
-    with _sync_jobs_lock:
-        job = _sync_jobs.get(job_id, {})
-
+    job = get_job(job_id)
     if not job:
         return json_response({'ok': False, 'error': 'Job not found'}, 404)
-
     return json_response({'ok': True, 'data': job})
 
 
@@ -2234,33 +2221,26 @@ def _run_full_bidirectional_sync(job_id: str):
     results = []
     overall_log = []
 
-    with _sync_jobs_lock:
-        _sync_jobs[job_id].update({
-            'status': 'running',
-            'message': f'Starting full sync ({n} phases)…',
-            'progress': 0,
-        })
+    update_job(job_id, status='running', message=f'Starting full sync ({n} phases)…', progress=0)
 
     for i, (label, fn, kwargs) in enumerate(_FULL_SYNC_PHASES):
         sub_id = f'{job_id}-p{i + 1}'
-        with _sync_jobs_lock:
-            _sync_jobs[sub_id] = {
-                'status': 'running', 'message': f'Running {label}…',
-                'jobName': label, 'actionType': 'Full Sync',
-            }
-            _sync_jobs[job_id].update({
-                'message': f'Phase {i + 1}/{n}: {label}',
-                'progress': int(i / n * 100),
-            })
+        # Register sub-job directly in the shared registry
+        from sync_jobs import _jobs as _sj, _lock as _sl
+        with _sl:
+            _sj[sub_id] = {'jobId': sub_id, 'status': 'running',
+                           'message': f'Running {label}…', 'jobName': label,
+                           'actionType': 'Full Sync', 'progress': 0,
+                           'startedAt': time.time(), 'updatedAt': time.time(), 'result': None}
+        update_job(job_id, message=f'Phase {i + 1}/{n}: {label}', progress=int(i / n * 100))
 
         try:
             fn(sub_id, **kwargs)
         except Exception as exc:
             logger.error('Full sync phase %s error: %s', label, exc)
-            with _sync_jobs_lock:
-                _sync_jobs[sub_id].update({'status': 'error', 'message': str(exc)})
+            update_job(sub_id, status='error', message=str(exc))
 
-        phase = _sync_jobs.get(sub_id, {})
+        phase = get_job(sub_id) or {}
         phase_status = phase.get('status', 'unknown')
         phase_log    = (phase.get('result') or {}).get('log', '')
         results.append({'phase': label, 'status': phase_status, 'message': phase.get('message', '')})
@@ -2284,18 +2264,17 @@ def _run_full_bidirectional_sync(job_id: str):
         failed = [r['phase'] for r in results if r['status'] != 'done']
         summary += f' Failed: {", ".join(failed)}.'
 
-    with _sync_jobs_lock:
-        _sync_jobs[job_id].update({
-            'status': 'done' if all_ok else 'error',
-            'message': summary,
-            'progress': 100,
-            'result': {
-                'inserted': sum(r.get('inserted', 0) for r in results if isinstance(r, dict)),
-                'updated':  sum(r.get('updated',  0) for r in results if isinstance(r, dict)),
-                'phases': results,
-                'log': '\n'.join(overall_log),
-            },
-        })
+    update_job(job_id,
+        status='done' if all_ok else 'error',
+        message=summary,
+        progress=100,
+        result={
+            'inserted': sum(r.get('inserted', 0) for r in results if isinstance(r, dict)),
+            'updated':  sum(r.get('updated',  0) for r in results if isinstance(r, dict)),
+            'phases': results,
+            'log': '\n'.join(overall_log),
+        },
+    )
 
     # Final summary email
     _send_sync_report(
@@ -2314,11 +2293,5 @@ def api_full_bidirectional_sync():
     Trigger a full 8-phase bidirectional sync.
     Accessible via admin session OR X-Cron-Token header (for GitHub Actions).
     """
-    job_id = f'full-{datetime.utcnow().strftime("%Y%m%d%H%M%S")}-{id(threading.current_thread()) % 10000:04d}'
-    with _sync_jobs_lock:
-        _sync_jobs[job_id] = {
-            'status': 'queued', 'message': 'Queued…', 'progress': 0,
-            'jobName': 'Full Sync', 'actionType': 'All Tables',
-        }
-    threading.Thread(target=_run_full_bidirectional_sync, args=(job_id,), daemon=True).start()
+    job_id = launch_job(_run_full_bidirectional_sync, initial_message='Queued…')
     return json_response({'ok': True, 'job_id': job_id})

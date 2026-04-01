@@ -15,7 +15,8 @@ from flask import Blueprint, request, session
 
 from auth import login_required, require_role
 from db import query, execute
-from helpers import json_response
+from helpers import json_response, handle_api_errors
+from query_builder import add_search
 from payment_actions import (
     approve_event,
     reject_event,
@@ -25,6 +26,8 @@ from payment_actions import (
     get_member,
     get_family_member_ids,
     get_config,
+    _extract_member_id,
+    _name_match,
 )
 
 payments_bp = Blueprint('payments', __name__)
@@ -37,46 +40,44 @@ payments_bp = Blueprint('payments', __name__)
 @payments_bp.route('/api/payments/dashboard')
 @login_required
 @require_role('admin')
+@handle_api_errors
 def api_payments_dashboard():
     """Return counts for the payments dashboard cards."""
-    try:
-        pending = query("""
-            SELECT COUNT(*) as cnt FROM webapp_events
-            WHERE Status = 'pending' AND EventCategory = 'payment'
-        """)
-        matched = query("""
-            SELECT COUNT(*) as cnt FROM webapp_events
-            WHERE Status = 'matched' AND EventCategory = 'payment'
-        """)
-        unmatched_gmail = query("""
-            SELECT COUNT(*) as cnt FROM gmail_transactions
-            WHERE ProcessedTime IS NULL AND IsArchived = FALSE
-        """)
-        recent_approved = query("""
-            SELECT COUNT(*) as cnt FROM webapp_events
-            WHERE Status = 'approved' AND EventCategory = 'payment'
-              AND ApprovalDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-        """)
-        recent_rejected = query("""
-            SELECT COUNT(*) as cnt FROM webapp_events
-            WHERE Status = 'rejected' AND EventCategory = 'payment'
-              AND ApprovalDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-        """)
-        error_count = query("""
-            SELECT COUNT(*) as cnt FROM webapp_events
-            WHERE Status = 'error' AND EventCategory = 'payment'
-        """)
+    pending = query("""
+        SELECT COUNT(*) as cnt FROM webapp_events
+        WHERE Status = 'pending' AND EventCategory = 'payment'
+    """)
+    matched = query("""
+        SELECT COUNT(*) as cnt FROM webapp_events
+        WHERE Status = 'matched' AND EventCategory = 'payment'
+    """)
+    unmatched_gmail = query("""
+        SELECT COUNT(*) as cnt FROM gmail_transactions
+        WHERE ProcessedTime IS NULL AND IsArchived = FALSE
+    """)
+    recent_approved = query("""
+        SELECT COUNT(*) as cnt FROM webapp_events
+        WHERE Status = 'approved' AND EventCategory = 'payment'
+          AND ApprovalDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    """)
+    recent_rejected = query("""
+        SELECT COUNT(*) as cnt FROM webapp_events
+        WHERE Status = 'rejected' AND EventCategory = 'payment'
+          AND ApprovalDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    """)
+    error_count = query("""
+        SELECT COUNT(*) as cnt FROM webapp_events
+        WHERE Status = 'error' AND EventCategory = 'payment'
+    """)
 
-        return json_response({'ok': True, 'data': {
-            'pending':          pending[0]['cnt'],
-            'matched':          matched[0]['cnt'],
-            'unmatched_gmail':  unmatched_gmail[0]['cnt'],
-            'approved_30d':     recent_approved[0]['cnt'],
-            'rejected_30d':     recent_rejected[0]['cnt'],
-            'errors':           error_count[0]['cnt'],
-        }})
-    except Exception as e:
-        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
+    return json_response({'ok': True, 'data': {
+        'pending':          pending[0]['cnt'],
+        'matched':          matched[0]['cnt'],
+        'unmatched_gmail':  unmatched_gmail[0]['cnt'],
+        'approved_30d':     recent_approved[0]['cnt'],
+        'rejected_30d':     recent_rejected[0]['cnt'],
+        'errors':           error_count[0]['cnt'],
+    }})
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +87,7 @@ def api_payments_dashboard():
 @payments_bp.route('/api/payments/pending-events')
 @login_required
 @require_role('admin')
+@handle_api_errors
 def api_pending_events():
     """
     List all pending/matched webapp_events with member info.
@@ -110,22 +112,14 @@ def api_pending_events():
         sql += " AND we.Status = %s"
         params.append(status_filter)
 
-    if search:
-        sql += """ AND (
-            we.MemberID LIKE %s OR we.Email LIKE %s
-            OR we.PayerName LIKE %s OR we.EventID LIKE %s
-            OR m.FirstName LIKE %s OR m.LastName LIKE %s
-        )"""
-        like = f'%{search}%'
-        params.extend([like] * 6)
-
+    sql, params = add_search(sql, params, search, [
+        'we.MemberID', 'we.Email', 'we.PayerName', 'we.EventID',
+        'm.FirstName', 'm.LastName',
+    ])
     sql += " ORDER BY we.Timestamp DESC LIMIT 200"
 
-    try:
-        rows = query(sql, params)
-        return json_response({'ok': True, 'data': rows})
-    except Exception as e:
-        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
+    rows = query(sql, params)
+    return json_response({'ok': True, 'data': rows})
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +129,7 @@ def api_pending_events():
 @payments_bp.route('/api/payments/unmatched-gmail')
 @login_required
 @require_role('admin')
+@handle_api_errors
 def api_unmatched_gmail():
     """
     List all unprocessed gmail_transactions (potential payment sources).
@@ -142,28 +137,16 @@ def api_unmatched_gmail():
     """
     search = request.args.get('q', '').strip()
 
-    sql = """
-        SELECT * FROM gmail_transactions
-        WHERE ProcessedTime IS NULL AND IsArchived = FALSE
-    """
+    sql    = "SELECT * FROM gmail_transactions WHERE ProcessedTime IS NULL AND IsArchived = FALSE"
     params = []
 
-    if search:
-        sql += """ AND (
-            Sender LIKE %s OR Memo LIKE %s
-            OR TransactionNumber LIKE %s OR Subject LIKE %s
-            OR CAST(Amount AS CHAR) LIKE %s
-        )"""
-        like = f'%{search}%'
-        params.extend([like] * 5)
-
+    sql, params = add_search(sql, params, search, [
+        'Sender', 'Memo', 'TransactionNumber', 'Subject', 'CAST(Amount AS CHAR)',
+    ])
     sql += " ORDER BY TransactionDate DESC LIMIT 200"
 
-    try:
-        rows = query(sql, params)
-        return json_response({'ok': True, 'data': rows})
-    except Exception as e:
-        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
+    rows = query(sql, params)
+    return json_response({'ok': True, 'data': rows})
 
 
 # ---------------------------------------------------------------------------
@@ -199,17 +182,14 @@ def api_manual_match():
 @payments_bp.route('/api/payments/auto-match', methods=['POST'])
 @login_required
 @require_role('admin')
+@handle_api_errors
 def api_auto_match():
     """
     Run the auto-match heuristic on all pending events.
     Returns stats: { matched, skipped, errors, details }.
     """
-    try:
-        admin_email = session.get('user', {}).get('email', 'unknown')
-        stats = run_auto_match()
-        return json_response({'ok': True, 'data': stats})
-    except Exception as e:
-        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
+    stats = run_auto_match()
+    return json_response({'ok': True, 'data': stats})
 
 
 # ---------------------------------------------------------------------------
@@ -289,14 +269,15 @@ def api_admin_create():
 @payments_bp.route('/api/payments/history')
 @login_required
 @require_role('admin')
+@handle_api_errors
 def api_payment_history():
     """
     Recent payment history with optional filters.
     Supports ?days=30, ?memberId=, ?search=
     """
-    days = request.args.get('days', 90, type=int)
+    days      = request.args.get('days', 90, type=int)
     member_id = request.args.get('memberId', '').strip()
-    search = request.args.get('q', '').strip()
+    search    = request.args.get('q', '').strip()
 
     sql = """
         SELECT p.*,
@@ -312,22 +293,111 @@ def api_payment_history():
         sql += " AND p.MemberID = %s"
         params.append(member_id)
 
-    if search:
-        sql += """ AND (
-            p.MemberID LIKE %s OR p.PayerName LIKE %s
-            OR p.PaymentIntent LIKE %s OR p.PaymentID LIKE %s
-            OR m.FirstName LIKE %s OR m.LastName LIKE %s
-        )"""
-        like = f'%{search}%'
-        params.extend([like] * 6)
-
+    sql, params = add_search(sql, params, search, [
+        'p.MemberID', 'p.PayerName', 'p.PaymentIntent', 'p.PaymentID',
+        'm.FirstName', 'm.LastName',
+    ])
     sql += " ORDER BY p.PaymentDate DESC LIMIT 200"
 
-    try:
-        rows = query(sql, params)
-        return json_response({'ok': True, 'data': rows})
-    except Exception as e:
-        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
+    rows = query(sql, params)
+    return json_response({'ok': True, 'data': rows})
+
+
+# ---------------------------------------------------------------------------
+# Member summary (for admin review before approval)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Gmail candidates for a given event (matched + fuzzy candidates, incl. processed)
+# ---------------------------------------------------------------------------
+
+@payments_bp.route('/api/payments/gmail-candidates/<event_id>')
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_gmail_candidates(event_id):
+    """
+    Return the already-matched gmail row (if any) plus all fuzzy-match candidates
+    for a given webapp_event, including already-processed rows.
+    Used by the side-by-side reconcile view when an event row is focused.
+
+    MatchContext field on each row:
+      'matched'   — this is the row linked via MatchedMessageId
+      'candidate' — amount+date+identifier match, not yet linked
+    """
+    events = query("SELECT * FROM webapp_events WHERE EventID = %s", [event_id])
+    if not events:
+        return json_response({'ok': False, 'error': 'Event not found'}, 404)
+    event = events[0]
+
+    amount        = float(event.get('Amount') or 0)
+    ts            = event.get('Timestamp')
+    member_id     = (event.get('MemberID') or '').strip().upper()
+    payer         = (event.get('PayerName') or '').strip()
+    last4         = (event.get('Last4Digits') or '').strip()
+    matched_msg_id = (event.get('MatchedMessageId') or '').strip()
+
+    # Fetch all gmail rows within ±7 days and amount match (including processed)
+    rows = query("""
+        SELECT *,
+          CASE WHEN MessageId = %s THEN 'matched' ELSE 'candidate' END AS MatchContext
+        FROM gmail_transactions
+        WHERE
+          MessageId = %s
+          OR (
+            ABS(COALESCE(Amount, -9999) - %s) < 0.01
+            AND (TransactionDate IS NULL
+                 OR ABS(DATEDIFF(TransactionDate, DATE(%s))) <= 7)
+          )
+        ORDER BY
+          CASE WHEN MessageId = %s THEN 0 ELSE 1 END,
+          ProcessedTime IS NOT NULL,
+          TransactionDate DESC
+        LIMIT 100
+    """, [matched_msg_id, matched_msg_id, amount, ts, matched_msg_id])
+
+    # Post-filter candidates: require at least one identifier signal
+    result = []
+    for row in rows:
+        if row.get('MatchContext') == 'matched':
+            result.append(row)
+            continue
+        gmail_tx_num = (row.get('TransactionNumber') or '').strip()
+        memo         = (row.get('Memo') or '') + ' ' + (row.get('OriginalMemo') or '')
+        sender       = (row.get('Sender') or '').strip()
+
+        id_match = (
+            (last4 and gmail_tx_num.endswith(last4))
+            or (member_id and _extract_member_id(memo) == member_id)
+            or (payer and _name_match(payer, sender))
+        )
+        if id_match:
+            result.append(row)
+
+    return json_response({'ok': True, 'data': result})
+
+
+# ---------------------------------------------------------------------------
+# Lightweight member lookup for hover tooltip
+# ---------------------------------------------------------------------------
+
+@payments_bp.route('/api/payments/member-quick/<member_id>')
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_member_quick(member_id):
+    """
+    Lightweight member data for the hover tooltip.
+    Returns name, expiration, type, gender, district only.
+    """
+    rows = query(
+        "SELECT MemberID, FirstName, LastName, Expiration, Type, Gender, District "
+        "FROM members WHERE MemberID = %s",
+        [member_id]
+    )
+    if not rows:
+        return json_response({'ok': False, 'error': 'Not found'}, 404)
+    return json_response({'ok': True, 'data': rows[0]})
 
 
 # ---------------------------------------------------------------------------
@@ -337,47 +407,45 @@ def api_payment_history():
 @payments_bp.route('/api/payments/member/<member_id>')
 @login_required
 @require_role('admin')
+@handle_api_errors
 def api_member_summary(member_id):
     """
     Get member details + family members + recent payment history.
     Used by admin before approving a payment.
     """
-    try:
-        member = get_member(member_id)
-        if not member:
-            return json_response({'ok': False, 'error': f'Member {member_id} not found'}, 404)
+    member = get_member(member_id)
+    if not member:
+        return json_response({'ok': False, 'error': f'Member {member_id} not found'}, 404)
 
-        # Family members
-        family_members = []
-        if member.get('FamilyID'):
-            family_ids = get_family_member_ids(member['FamilyID'])
-            if family_ids:
-                placeholders = ','.join(['%s'] * len(family_ids))
-                family_members = query(
-                    f"SELECT MemberID, FirstName, LastName, Email, Type, Expiration, Status "
-                    f"FROM members WHERE MemberID IN ({placeholders})",
-                    family_ids,
-                )
+    # Family members
+    family_members = []
+    if member.get('FamilyID'):
+        family_ids = get_family_member_ids(member['FamilyID'])
+        if family_ids:
+            placeholders = ','.join(['%s'] * len(family_ids))
+            family_members = query(
+                f"SELECT MemberID, FirstName, LastName, Email, Type, Expiration, Status "
+                f"FROM members WHERE MemberID IN ({placeholders})",
+                family_ids,
+            )
 
-        # Recent payments for this member
-        recent_payments = query("""
-            SELECT PaymentID, PaymentDate, Amount, PaymentIntent, Source, ProcessedBy
-            FROM payments WHERE MemberID = %s
-            ORDER BY PaymentDate DESC LIMIT 10
-        """, [member_id])
+    # Recent payments for this member
+    recent_payments = query("""
+        SELECT PaymentID, PaymentDate, Amount, PaymentIntent, Source, ProcessedBy
+        FROM payments WHERE MemberID = %s
+        ORDER BY PaymentDate DESC LIMIT 10
+    """, [member_id])
 
-        # Pending events for this member
-        pending_events = query("""
-            SELECT EventID, EventType, Status, Timestamp, Amount, PaymentIntent, PaymentMethod
-            FROM webapp_events WHERE MemberID = %s AND Status IN ('pending', 'matched')
-            ORDER BY Timestamp DESC
-        """, [member_id])
+    # Pending events for this member
+    pending_events = query("""
+        SELECT EventID, EventType, Status, Timestamp, Amount, PaymentIntent, PaymentMethod
+        FROM webapp_events WHERE MemberID = %s AND Status IN ('pending', 'matched')
+        ORDER BY Timestamp DESC
+    """, [member_id])
 
-        return json_response({'ok': True, 'data': {
-            'member': member,
-            'family_members': family_members,
-            'recent_payments': recent_payments,
-            'pending_events': pending_events,
-        }})
-    except Exception as e:
-        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
+    return json_response({'ok': True, 'data': {
+        'member': member,
+        'family_members': family_members,
+        'recent_payments': recent_payments,
+        'pending_events': pending_events,
+    }})

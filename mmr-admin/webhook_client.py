@@ -20,62 +20,23 @@ logger = logging.getLogger(__name__)
 
 def get_sheets_webhook_url() -> str:
     """
-    Get the GAS webhook URL from MySQL config table.
+    Get the GAS webhook URL.
 
-    This should be set via:
-      INSERT INTO Config (Key, Value) VALUES ('SheetsWebhookUrl', 'https://script.google.com/...')
-
-    Falls back to env var for testing.
+    Priority: SHEETS_WEBHOOK_URL env var (for testing), then MySQL config table.
     """
-    # Try env first (for testing)
     env_url = os.environ.get('SHEETS_WEBHOOK_URL')
     if env_url:
-        logger.info(f'[webhook_client] Using SHEETS_WEBHOOK_URL from environment: {env_url[:60]}...')
+        logger.info(f'[webhook_client] Using SHEETS_WEBHOOK_URL from env: {env_url[:60]}...')
         return env_url
 
-    # Otherwise, fetch from MySQL config table
-    logger.info('[webhook_client] Attempting to fetch SheetsWebhookUrl from MySQL config table')
     try:
-        from db import get_conn
-        conn = get_conn()
-        logger.debug('[webhook_client] MySQL connection established')
-
-        cursor = conn.cursor(dictionary=True)
-        logger.debug('[webhook_client] Cursor created with dictionary=True')
-
-        # Build and execute query
-        query = 'SELECT ConfigValue FROM Config WHERE ConfigKey = %s'
-        key = 'SheetsWebhookUrl'
-        logger.debug(f'[webhook_client] Executing query: {query} with key={key}')
-
-        cursor.execute(query, (key,))
-        logger.debug('[webhook_client] Query executed successfully')
-
-        row = cursor.fetchone()
-        logger.debug(f'[webhook_client] fetchone() returned: {row}')
-        logger.debug(f'[webhook_client] Row type: {type(row)}')
-
-        if row is None:
-            logger.warning('[webhook_client] fetchone() returned None — no matching config found')
-        else:
-            logger.debug(f'[webhook_client] Row keys: {list(row.keys()) if hasattr(row, "keys") else "N/A"}')
-            logger.debug(f'[webhook_client] Full row object: {row}')
-
-        cursor.close()
-        logger.debug('[webhook_client] Cursor closed')
-
-        conn.close()
-        logger.debug('[webhook_client] Connection closed')
-
-        if row and row.get('ConfigValue'):
-            webhook_url = row['ConfigValue']
-            logger.info(f'[webhook_client] Found SheetsWebhookUrl in config: {webhook_url[:60]}...')
-            return webhook_url
-        else:
-            logger.warning(f'[webhook_client] Row exists but ConfigValue is empty or missing. Row: {row}')
-
+        from config_cache import get_config
+        url = get_config('SheetsWebhookUrl', '').strip()
+        if url:
+            logger.info(f'[webhook_client] Found SheetsWebhookUrl in config: {url[:60]}...')
+            return url
     except Exception as e:
-        logger.error(f'[webhook_client] Failed to fetch webhook URL from MySQL: {type(e).__name__}: {e}', exc_info=True)
+        logger.error(f'[webhook_client] Failed to fetch webhook URL: {type(e).__name__}: {e}', exc_info=True)
 
     raise ValueError('SHEETS_WEBHOOK_URL not found in MySQL config or environment')
 

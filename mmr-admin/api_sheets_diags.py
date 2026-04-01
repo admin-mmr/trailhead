@@ -12,15 +12,7 @@ import traceback
 from datetime import datetime
 from typing import Dict, List, Any
 import db as dbmod
-
-
-def _get_config_value(key: str, default: str = '') -> str:
-    """Get a single config value from MySQL Config table."""
-    try:
-        rows = dbmod.query("SELECT ConfigValue FROM Config WHERE ConfigKey = %s", [key])
-        return rows[0]['ConfigValue'] if rows else default
-    except Exception:
-        return default
+from config_cache import get_config
 
 
 def _call_gas_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -36,7 +28,7 @@ def _call_gas_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         import requests
 
-        webhook_url = _get_config_value('SheetsWebhookUrl', '')
+        webhook_url = get_config('SheetsWebhookUrl', '').strip()
         if not webhook_url:
             raise ValueError("SheetsWebhookUrl not configured in Config table")
 

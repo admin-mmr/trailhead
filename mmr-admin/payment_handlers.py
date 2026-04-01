@@ -9,33 +9,14 @@ This module imports from: db, sheets_sync.
 
 from __future__ import annotations
 
-import time
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from db import query, execute
 from sheets_sync import sync_member_to_sheets
-
-
-# ---------------------------------------------------------------------------
-# ID generation
-# ---------------------------------------------------------------------------
-
-def _gen_id(prefix: str) -> str:
-    """Generate a unique ID like PY-1711234567890-1234."""
-    ts = int(time.time() * 1000)
-    rand = int(time.time() * 10000) % 10000
-    return f'{prefix}-{ts}-{rand:04d}'
-
-
-# ---------------------------------------------------------------------------
-# Config helpers
-# ---------------------------------------------------------------------------
-
-def get_config() -> Dict[str, str]:
-    """Load payment-related config from the config table."""
-    rows = query("SELECT ConfigKey, ConfigValue FROM config")
-    return {r['ConfigKey']: r['ConfigValue'] for r in rows}
+from core import gen_id
+from config_cache import get_config
+from datetime_utils import to_date, to_datetime
 
 
 # ---------------------------------------------------------------------------
@@ -66,12 +47,7 @@ def compute_membership_expiration(
     tx_date = transaction_date or today
 
     # Normalise current_expiration to date
-    if isinstance(current_expiration, datetime):
-        cur_exp = current_expiration.date()
-    elif isinstance(current_expiration, date):
-        cur_exp = current_expiration
-    else:
-        cur_exp = None
+    cur_exp = to_date(current_expiration)
 
     if year_end_str:
         # Fixed year-end mode
@@ -200,7 +176,7 @@ def create_payment_record(
     """
     Insert a row into the payments table. Returns the PaymentID.
     """
-    payment_id = _gen_id('PY')
+    payment_id = gen_id('PY')
     execute("""
         INSERT INTO payments
             (PaymentID, EventID, MemberID, PaymentDate, Amount,
@@ -272,10 +248,7 @@ def handle_membership_payment(
     tx_ref = event.get('MatchedTransactionNumber', '')
 
     # Compute new expiration
-    tx_date = None
-    if event.get('PaymentDate'):
-        if isinstance(event['PaymentDate'], (date, datetime)):
-            tx_date = event['PaymentDate'] if isinstance(event['PaymentDate'], date) else event['PaymentDate'].date()
+    tx_date = to_date(event.get('PaymentDate'))
     new_exp = compute_membership_expiration(
         member.get('Expiration'), tx_date, config,
     )
@@ -320,11 +293,7 @@ def handle_family_upgrade(
         return {'ok': False, 'error': f'Member {member_id} not found'}
 
     # Create payment record (no period change)
-    current_exp = member.get('Expiration')
-    if isinstance(current_exp, datetime):
-        current_exp = current_exp.date()
-    elif not isinstance(current_exp, date):
-        current_exp = date.today()
+    current_exp = to_date(member.get('Expiration')) or date.today()
 
     payment_id = create_payment_record(
         event, admin_email,

@@ -14,16 +14,7 @@ from datetime import date, datetime
 from typing import Any, Dict, Optional
 
 from db import query
-
-
-# ---------------------------------------------------------------------------
-# Config helpers
-# ---------------------------------------------------------------------------
-
-def get_config_value(key: str, default: str = '') -> str:
-    """Get a single config value."""
-    rows = query("SELECT ConfigValue FROM config WHERE ConfigKey = %s", [key])
-    return rows[0]['ConfigValue'] if rows else default
+from config_cache import get_config
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +23,7 @@ def get_config_value(key: str, default: str = '') -> str:
 
 def _get_webhook_url() -> str:
     """Get the Sheets webhook URL from config."""
-    return get_config_value('SheetsWebhookUrl', '').strip()
+    return get_config('SheetsWebhookUrl', '').strip()
 
 
 def _post_to_sheets(payload: Dict) -> None:
