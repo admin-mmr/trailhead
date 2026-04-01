@@ -87,8 +87,26 @@ const _memberCache = {};
  */
 const MemberTooltip = ({ memberId, anchorRect, data }) => {
   if (!memberId || !anchorRect) return null;
-  const left = Math.min(anchorRect.left, window.innerWidth - 240);
-  const top  = anchorRect.bottom + 6;
+
+  const TOOLTIP_WIDTH = 270;
+  const TOOLTIP_HEIGHT = 160; // approximate
+  const MARGIN = 6;
+  const EDGE_PADDING = 8;
+
+  // Horizontal: center-ish with bounds
+  let left = anchorRect.left - TOOLTIP_WIDTH / 2 + anchorRect.width / 2;
+  left = Math.max(EDGE_PADDING, Math.min(left, window.innerWidth - TOOLTIP_WIDTH - EDGE_PADDING));
+
+  // Vertical: show below by default, above if not enough room
+  let top = anchorRect.bottom + MARGIN;
+  const spaceBelow = window.innerHeight - anchorRect.bottom;
+  const spaceAbove = anchorRect.top;
+
+  if (spaceBelow < TOOLTIP_HEIGHT + MARGIN && spaceAbove > TOOLTIP_HEIGHT + MARGIN) {
+    // Show above
+    top = anchorRect.top - TOOLTIP_HEIGHT - MARGIN;
+  }
+
   return React.createElement('div', {
     style: {
       position: 'fixed', top, left, zIndex: 1000,
