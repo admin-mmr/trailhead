@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 01:32 ET — add pre-deploy import validation to CI
+Changed: Added Python 3.11 setup + `pip install -r requirements.txt && python3 test_imports.py` step to `deploy-mmr-admin.yml` before deploy. Status: Done — next push will validate all imports with full deps before reaching Azure. Next: monitor first CI run.
+
 ### 2026-04-01 01:29 ET — fix sync_engine ModuleNotFoundError on Azure
 Changed: Copied `basecamp/python/sync_engine.py` → `mmr-admin/sync_engine.py`; removed `sys.path.insert` hack in `api_sheets_sync.py`. Status: Fixed — `test_imports.py` passes. Next: Commit both files; monitor Azure restart.
 

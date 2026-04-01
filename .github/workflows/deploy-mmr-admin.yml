@@ -20,6 +20,17 @@ jobs:
       - name: Copy shared nyrr_api module into deploy package
         run: cp basecamp/python/nyrr_api.py mmr-admin/nyrr_api.py
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies and validate imports
+        run: |
+          cd mmr-admin
+          pip install -r requirements.txt --quiet
+          python3 test_imports.py
+
       - name: Write VERSION file with git SHA and deploy timestamp
         run: |
           echo "{\"commit\": \"$(git rev-parse --short HEAD)\", \"deployed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > mmr-admin/VERSION
