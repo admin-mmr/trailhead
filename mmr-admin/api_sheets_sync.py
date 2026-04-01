@@ -87,9 +87,14 @@ def _call_gas_webhook(payload: Dict) -> Dict:
 
     for attempt in range(max_retries):
         try:
+            logger.info(f"GAS webhook POST action={payload.get('action')} url={webhook_url[:60]}...")
             resp = requests.post(webhook_url, json=payload, timeout=timeout)
+            logger.info(f"GAS webhook response: status={resp.status_code} len={len(resp.text)} content_type={resp.headers.get('Content-Type','?')}")
+            logger.debug(f"GAS webhook body[:500]: {resp.text[:500]!r}")
             if resp.status_code != 200:
                 raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
+            if not resp.text.strip():
+                raise Exception(f"GAS returned empty body (status 200) for action={payload.get('action')}")
 
             body = resp.json()
             if not body.get('ok'):

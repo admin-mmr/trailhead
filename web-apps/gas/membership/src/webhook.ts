@@ -53,9 +53,17 @@ const FIELD_TO_COL: Record<string, number> = {
 // ---------------------------------------------------------------------------
 
 function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.TextOutput {
+  console.log('[doPost] request received');
+  console.log('[doPost] postData type:', e?.postData?.type ?? 'MISSING');
+  console.log('[doPost] postData contents:', e?.postData?.contents?.substring(0, 300) ?? 'MISSING');
   try {
+    if (!e?.postData?.contents) {
+      console.error('[doPost] Empty or missing postData');
+      return jsonResponse({ ok: false, error: 'Empty request body' });
+    }
     const payload = JSON.parse(e.postData.contents);
     const action = payload.action;
+    console.log('[doPost] action:', action);
 
     switch (action) {
       // Email sending
