@@ -352,14 +352,6 @@
         ? ' &bull; <a href="https://drive.google.com/file/d/' + esc(p.screenshotFileId) + '/view" target="_blank">' + t('viewScreenshot') + '</a>'
         : '';
 
-      // Deep-link into admin approval queue
-      var isPending = p.status === 'Pending Review' || p.status === 'Pending';
-      var approvalLink = isPending
-        ? ' &bull; <a href="' + appBaseUrl + '?page=admin" target="_top" '
-          + 'onclick="sessionStorage.setItem(\'adminFocusProof\',\'' + esc(p.eventID) + '\');return true;"'
-          + '>' + t('viewAdminQueue') + '</a>'
-        : '';
-
       html += '<div class="row-card">';
       html += '<div class="row-top">';
       html += '<span class="row-intent">' + esc(p.eventName) + '</span>';
@@ -370,7 +362,7 @@
       html += '<span>' + fmt(p.paymentDate) + '</span>';
       html += '<span>' + esc(p.payerName) + '</span>';
       html += '<span><span class="' + badgeCls(p.status) + '">' + esc(p.status) + '</span></span>';
-      html += screenshotLink + approvalLink;
+      html += screenshotLink;
       html += '</div>';
       if (p.notes) {
         html += '<div class="row-meta" style="margin-top:4px;color:#555">'

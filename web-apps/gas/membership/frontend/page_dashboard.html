@@ -141,7 +141,6 @@
     <div class="card" id="toolsCard">
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
         <a href="#" id="paymentHistoryBtn" class="btn btn-primary" data-i18n="paymentHistory">Payment History</a>
-        <a href="?page=admin" class="btn btn-admin" id="adminBtn" style="display:none;" data-i18n="adminPanel">Admin Panel</a>
       </div>
     </div>
 
@@ -725,11 +724,6 @@
 
     renderProfileCard(member);
     renderActionButtons(member, events);
-
-    // Admin button — use isAdmin from composite response (no extra API call!)
-    if (isAdmin) {
-      document.getElementById('adminBtn').style.display = 'inline-block';
-    }
 
     // Hide loading overlay and show content
     document.getElementById('loading').classList.add('hidden');

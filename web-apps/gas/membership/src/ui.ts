@@ -19,7 +19,7 @@ function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutp
       // 'family' added — family member management page.
       const allowedPages = [
         'login', 'dashboard', 'profile', 'family',
-        'admin', 'newmember', 'payment_proof', 'payment', 'image', 'payment_history',
+        'newmember', 'payment_proof', 'payment', 'image', 'payment_history',
       ];
       const safePage = allowedPages.includes(page) ? page : 'login';
       const fileName = `page_${safePage}`;
