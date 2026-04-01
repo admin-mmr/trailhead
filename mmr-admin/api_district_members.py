@@ -16,6 +16,61 @@ from auth import login_required
 district_members_bp = Blueprint('district_members', __name__, url_prefix='/api/district')
 
 
+def _build_member_export_query(district=None, status=None, type_filter=None, expired_only=False, active_only=False):
+    """
+    Build a parameterized SQL query to export members with flexible filtering.
+
+    Args:
+        district (str): Filter by specific district (e.g., 'Manhattan')
+        status (str): Filter by status ('active', 'not active', 'pending')
+        type_filter (str): Filter by membership type ('Individual', 'Family')
+        expired_only (bool): If True, only return members with Expiration < today
+        active_only (bool): If True, only return members with Expiration >= today
+
+    Returns:
+        tuple: (sql_query, params_list) for use with query(sql, params)
+    """
+    sql = """
+        SELECT
+            District,
+            MemberID,
+            CONCAT(FirstName, ' ', LastName) as Name,
+            Expiration,
+            Gender,
+            WeChatID,
+            Email,
+            Type,
+            FamilyID,
+            PaymentDate,
+            MembershipFeePaid,
+            PaymentTransaction
+        FROM members
+        WHERE 1=1
+    """
+    params = []
+
+    if district:
+        sql += " AND District = %s"
+        params.append(district)
+
+    if status:
+        sql += " AND Status = %s"
+        params.append(status)
+
+    if type_filter:
+        sql += " AND Type = %s"
+        params.append(type_filter)
+
+    if expired_only:
+        sql += " AND Expiration < CURDATE()"
+    elif active_only:
+        sql += " AND Expiration >= CURDATE()"
+
+    sql += " ORDER BY District, LastName, FirstName"
+
+    return sql, params
+
+
 def require_admin(f):
     """Decorator to check if user is admin."""
     @wraps(f)
