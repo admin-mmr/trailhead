@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:18 UTC — Fix logger error + improve event selection highlight
+Changed: `api_payments.py` — added missing `import logging` + `logger = logging.getLogger(__name__)` (was undefined in approve-event-match endpoint). `ManualEventMatchModal.js` — improved left panel event highlighting: blue border, glow effect, "✓ For matching" label when selected. Committed 95921bf. Status: Ready. Next: Redeploy Flask to Azure and test manual match flow end-to-end.
+
 ### 2026-04-01 19:16 UTC — Fix GAS webhook error: parse_datetime on "payment"
 Changed: `api_payments.py` _sync_member_events_to_sheets() — added safeguard to ensure UpdatedAt always present when syncing events. Fallback to Timestamp if missing; convert to ISO format. Root cause: UpdatedAt was missing from some event rows, causing resolve_conflict() to parse EventCategory='payment' as datetime. Error: "parse_datetime: unrecognised format: payment". Committed 5556983. Status: Ready. Next: Test manual match approval now works without webhook error.
 
