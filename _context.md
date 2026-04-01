@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:40 ET — Add 10-second buffer to Sheets timestamps (async propagation delay)
+Changed: `sync_engine.py` (both copies) — resolve_conflict() now subtracts 10 seconds from Sheets timestamp before comparing with MySQL. Accounts for GAS→Sheets API delay (~2-10s). Ties within 10s → MySQL wins (fresher data). Applied in ONE place only as single source of truth. Example: Sheets=T18:14:58, MySQL=T18:14:56 → adjusted Sheets=T18:14:48 → MySQL wins. Fixes: incomplete Sheets records blocking MySQL updates. Committed d3f07fc. Status: Import ✅. Next: Test that incomplete payments now get overwritten with complete MySQL records.
+
 ### 2026-04-01 14:37 ET — Reduce logging noise: skip tie-timestamp MATCH entries
 Changed: `api_sheets_sync.py` MySQL→Sheets sync (members/events/payments): tie-timestamp entries with NO field diffs now silent (no log); only log SKIP when there ARE actual field differences. Shows which fields differ in log message. Removes noise from tie-only entries. Committed 3e11bbb. Status: Import ✅. Next: Expand approve & link to sync all 4 sheets (members, payments, events, gmail_transactions) not just events.
 
