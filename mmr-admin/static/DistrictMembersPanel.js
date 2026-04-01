@@ -265,14 +265,6 @@ window.DistrictMembersPanel = () => {
   const exportCSV = async (includeAll = false) => {
     setExportLoading(true);
     try {
-      // Map keys to CSV headers
-      const columnLabels = availableColumns.reduce((acc, col) => {
-        acc[col.key] = col.label;
-        return acc;
-      }, {});
-
-      const csvColumns = selectedColumns.map(key => columnLabels[key] || key);
-
       const response = await fetch('/api/district/export-csv', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -280,7 +272,7 @@ window.DistrictMembersPanel = () => {
           memberIds: Array.from(selectedMembers),
           includeAll,
           district: selectedDistrict,
-          columns: csvColumns,
+          columns: selectedColumns,
           filters: { status: statusFilter, renewed: renewedFilter },
         }),
       });
@@ -309,21 +301,13 @@ window.DistrictMembersPanel = () => {
   const exportAllDistricts = async () => {
     setExportLoading(true);
     try {
-      // Map keys to CSV headers
-      const columnLabels = availableColumns.reduce((acc, col) => {
-        acc[col.key] = col.label;
-        return acc;
-      }, {});
-
-      const csvColumns = selectedColumns.map(key => columnLabels[key] || key);
-
       const response = await fetch('/api/district/export-all-districts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: statusFilter,
           renewed: renewedFilter,
-          columns: csvColumns,
+          columns: selectedColumns,
         }),
       });
 

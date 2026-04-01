@@ -227,7 +227,7 @@ def export_csv():
         "memberIds": ["M001", "M002", ...],
         "includeAll": false,
         "district": "Manhattan",
-        "columns": ["District", "MemberID", "Name", "Email", ...],
+        "columns": ["District", "MemberID", "Name", "Email", ...],  // column KEYS, not labels
         "filters": {"status": "active", "renewed": "yes"}
     }
     """
@@ -239,30 +239,31 @@ def export_csv():
         selected_columns = data.get('columns', [])
         filters = data.get('filters', {})
 
-        # Map display column names to DB columns
-        column_mapping = {
+        # Map column keys to display labels for CSV headers
+        column_labels = {
             'District': 'District',
-            'Member ID': 'MemberID',
-            'Name': 'CONCAT(FirstName, \' \', LastName)',
-            'First Name': 'FirstName',
-            'Last Name': 'LastName',
+            'MemberID': 'Member ID',
+            'FirstName': 'First Name',
+            'LastName': 'Last Name',
+            'Name': 'Full Name',
             'Expiration': 'Expiration',
             'Gender': 'Gender',
-            'WeChat ID': 'WeChatID',
+            'WeChatID': 'WeChat ID',
             'Email': 'Email',
             'Type': 'Type',
-            'Family ID': 'FamilyID',
-            'Payment Date': 'PaymentDate',
-            'Membership Fee Paid': 'MembershipFeePaid',
-            'Payment Transaction': 'PaymentTransaction',
+            'FamilyID': 'Family ID',
+            'PaymentDate': 'Payment Date',
+            'MembershipFeePaid': 'Membership Fee Paid',
+            'PaymentTransaction': 'Payment Transaction',
             'Status': 'Status',
-            'Last Login': 'LastLoginDate',
+            'LastLoginDate': 'Last Login',
+            'LastModified': 'Last Modified',
         }
 
         # Validate columns
-        valid_columns = list(column_mapping.keys())
+        valid_columns = list(column_labels.keys())
         if not selected_columns:
-            selected_columns = ['District', 'Member ID', 'Name', 'Expiration', 'Email', 'Type']
+            selected_columns = ['District', 'MemberID', 'Name', 'Expiration', 'Email', 'Type']
 
         # Build select clause with all columns (for export, we need all data)
         sql = """
@@ -271,7 +272,6 @@ def export_csv():
                 MemberID,
                 FirstName,
                 LastName,
-                CONCAT(FirstName, ' ', LastName) as Name,
                 Expiration,
                 Gender,
                 WeChatID,
@@ -282,7 +282,8 @@ def export_csv():
                 MembershipFeePaid,
                 PaymentTransaction,
                 Status,
-                LastLoginDate
+                LastLoginDate,
+                LastUpdated as LastModified
             FROM members
             WHERE 1=1
         """
@@ -322,35 +323,40 @@ def export_csv():
         sql += " ORDER BY District, LastName, FirstName"
         rows = query(sql, params)
 
-        # Generate CSV
+        # Generate CSV with column labels as headers
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=selected_columns)
+        csv_headers = [column_labels.get(col, col) for col in selected_columns]
+        writer = csv.DictWriter(output, fieldnames=csv_headers)
 
         writer.writeheader()
         for row in rows:
             row_data = {}
-            for col in selected_columns:
-                if col == 'Member ID':
-                    row_data[col] = row['MemberID']
-                elif col == 'First Name':
-                    row_data[col] = row['FirstName'] or ''
-                elif col == 'Last Name':
-                    row_data[col] = row['LastName'] or ''
-                elif col == 'Name':
-                    row_data[col] = row['Name'] or ''
-                elif col == 'Expiration':
-                    row_data[col] = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else ''
-                elif col == 'Payment Date':
-                    row_data[col] = row['PaymentDate'].strftime('%Y-%m-%d') if row['PaymentDate'] else ''
-                elif col == 'Last Login':
-                    row_data[col] = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else ''
-                elif col == 'WeChat ID':
-                    row_data[col] = row['WeChatID'] or ''
-                elif col == 'Family ID':
-                    row_data[col] = row['FamilyID'] or ''
+            for col_key, col_label in zip(selected_columns, csv_headers):
+                if col_key == 'MemberID':
+                    row_data[col_label] = row['MemberID']
+                elif col_key == 'FirstName':
+                    row_data[col_label] = row['FirstName'] or ''
+                elif col_key == 'LastName':
+                    row_data[col_label] = row['LastName'] or ''
+                elif col_key == 'Name':
+                    # Compute Full Name from FirstName + LastName
+                    full_name = f"{row['FirstName'] or ''} {row['LastName'] or ''}".strip()
+                    row_data[col_label] = full_name
+                elif col_key == 'Expiration':
+                    row_data[col_label] = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else ''
+                elif col_key == 'PaymentDate':
+                    row_data[col_label] = row['PaymentDate'].strftime('%Y-%m-%d') if row['PaymentDate'] else ''
+                elif col_key == 'LastLoginDate':
+                    row_data[col_label] = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else ''
+                elif col_key == 'LastModified':
+                    row_data[col_label] = row['LastModified'].strftime('%Y-%m-%d %H:%M') if row['LastModified'] else ''
+                elif col_key == 'WeChatID':
+                    row_data[col_label] = row['WeChatID'] or ''
+                elif col_key == 'FamilyID':
+                    row_data[col_label] = row['FamilyID'] or ''
                 else:
-                    # Direct column name
-                    row_data[col] = row.get(col, '') or ''
+                    # Direct column key
+                    row_data[col_label] = row.get(col_key, '') or ''
 
             writer.writerow(row_data)
 
@@ -374,7 +380,7 @@ def export_all_districts():
     Body: {
         "status": "active/not active/pending/empty" (optional),
         "renewed": "yes/no/empty" (optional),
-        "columns": ["District", "Member ID", "Name", ...] (optional - uses selected columns)
+        "columns": ["District", "MemberID", "Name", ...] (optional, column KEYS not labels)
     }
     Returns ZIP file with one CSV per district.
     """
@@ -383,6 +389,27 @@ def export_all_districts():
         status_filter = data.get('status', '').strip()
         renewed_filter = data.get('renewed', '').strip().lower()
         selected_columns = data.get('columns', [])
+
+        # Map column keys to display labels for CSV headers
+        column_labels = {
+            'District': 'District',
+            'MemberID': 'Member ID',
+            'FirstName': 'First Name',
+            'LastName': 'Last Name',
+            'Name': 'Full Name',
+            'Expiration': 'Expiration',
+            'Gender': 'Gender',
+            'WeChatID': 'WeChat ID',
+            'Email': 'Email',
+            'Type': 'Type',
+            'FamilyID': 'Family ID',
+            'PaymentDate': 'Payment Date',
+            'MembershipFeePaid': 'Membership Fee Paid',
+            'PaymentTransaction': 'Payment Transaction',
+            'Status': 'Status',
+            'LastLoginDate': 'Last Login',
+            'LastModified': 'Last Modified',
+        }
 
         # Get membership year end from env
         year_end_str = os.environ.get('MEMBERSHIP_YEAR_END', '')
@@ -406,11 +433,11 @@ def export_all_districts():
         if not districts:
             return jsonify({'success': False, 'error': 'No districts found'}), 400
 
-        # Default columns if none selected
+        # Default columns if none selected (using column KEYS not labels)
         if not selected_columns:
             selected_columns = [
-                'Member ID', 'Name', 'Email', 'WeChat ID', 'Phone',
-                'District', 'Status', 'Last Login', 'Last Modified', 'Expiration'
+                'District', 'MemberID', 'Name', 'Email', 'Status',
+                'LastLoginDate', 'LastModified', 'Expiration'
             ]
 
         # Create ZIP file in memory
@@ -459,37 +486,38 @@ def export_all_districts():
 
                 # Create CSV for this district with selected columns
                 csv_buffer = io.StringIO()
-                writer = csv.DictWriter(csv_buffer, fieldnames=selected_columns)
+                csv_headers = [column_labels.get(col, col) for col in selected_columns]
+                writer = csv.DictWriter(csv_buffer, fieldnames=csv_headers)
 
                 writer.writeheader()
                 for row in members:
                     row_data = {}
-                    for col in selected_columns:
-                        if col == 'Member ID':
-                            row_data[col] = row['MemberID']
-                        elif col == 'First Name':
-                            row_data[col] = row['FirstName'] or ''
-                        elif col == 'Last Name':
-                            row_data[col] = row['LastName'] or ''
-                        elif col == 'Name':
-                            row_data[col] = row['Name'] or ''
-                        elif col == 'Expiration':
-                            row_data[col] = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else ''
-                        elif col == 'Payment Date':
-                            row_data[col] = row['PaymentDate'].strftime('%Y-%m-%d') if row['PaymentDate'] else ''
-                        elif col == 'Last Login':
-                            row_data[col] = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else ''
-                        elif col == 'Last Modified':
-                            row_data[col] = row['LastModified'].strftime('%Y-%m-%d %H:%M') if row['LastModified'] else ''
-                        elif col == 'WeChat ID':
-                            row_data[col] = row['WeChatID'] or ''
-                        elif col == 'Family ID':
-                            row_data[col] = row['FamilyID'] or ''
-                        elif col == 'Phone':
-                            row_data[col] = row.get('PhoneNumber', '') or ''
+                    for col_key, col_label in zip(selected_columns, csv_headers):
+                        if col_key == 'MemberID':
+                            row_data[col_label] = row['MemberID']
+                        elif col_key == 'FirstName':
+                            row_data[col_label] = row['FirstName'] or ''
+                        elif col_key == 'LastName':
+                            row_data[col_label] = row['LastName'] or ''
+                        elif col_key == 'Name':
+                            # Compute Full Name from FirstName + LastName
+                            full_name = f"{row['FirstName'] or ''} {row['LastName'] or ''}".strip()
+                            row_data[col_label] = full_name
+                        elif col_key == 'Expiration':
+                            row_data[col_label] = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else ''
+                        elif col_key == 'PaymentDate':
+                            row_data[col_label] = row['PaymentDate'].strftime('%Y-%m-%d') if row['PaymentDate'] else ''
+                        elif col_key == 'LastLoginDate':
+                            row_data[col_label] = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else ''
+                        elif col_key == 'LastModified':
+                            row_data[col_label] = row['LastModified'].strftime('%Y-%m-%d %H:%M') if row['LastModified'] else ''
+                        elif col_key == 'WeChatID':
+                            row_data[col_label] = row['WeChatID'] or ''
+                        elif col_key == 'FamilyID':
+                            row_data[col_label] = row['FamilyID'] or ''
                         else:
-                            # Direct column name
-                            row_data[col] = row.get(col, '') or ''
+                            # Direct column key
+                            row_data[col_label] = row.get(col_key, '') or ''
 
                     writer.writerow(row_data)
 
