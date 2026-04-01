@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:30 UTC — Fix sync job status 404 errors: add database fallback
+Changed: `api_sheets_sync.py` api_sync_status() — endpoint now checks both in-memory jobs and database fallback. Root cause: sync jobs stored only in memory; when job completed or Flask restarted, status lookup returned 404. Fixes: persists job status across Flask restarts, better error messages. Committed 1f1a1b5. Status: Ready. Next: Redeploy Flask, sync errors should show proper status instead of 404.
+
 ### 2026-04-01 19:28 UTC — Fix member-quick/all: include all statuses for payment matching
 Changed: `api_payments.py` api_member_quick_all() — removed WHERE Status IN ('active', 'pending') filter. Now returns ALL members regardless of status since payments can renew inactive/expired memberships. Fixes: A0533 was filtered out because it was inactive. Committed e77c19b. Status: Ready. Next: Redeploy Flask, test fuzzy search now shows both Samantha Zheng entries.
 
