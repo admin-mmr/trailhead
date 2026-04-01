@@ -153,16 +153,17 @@ def export_csv():
             # Export all members in this district
             sql = """
                 SELECT
+                    District,
                     MemberID,
                     CONCAT(FirstName, ' ', LastName) as Name,
-                    Email,
+                    Expiration,
                     WeChatID,
-                    PhoneNumber,
-                    District,
-                    Status,
-                    LastLoginDate,
-                    LastUpdated as ModifiedAt,
-                    Expiration
+                    Email,
+                    MembershipType as Type,
+                    FamilyID,
+                    PaymentDate,
+                    MembershipFeePaid,
+                    PaymentTransaction
                 FROM members
                 WHERE District = %s
                 ORDER BY LastName, FirstName
@@ -173,16 +174,17 @@ def export_csv():
             placeholders = ','.join(['%s'] * len(member_ids))
             sql = f"""
                 SELECT
+                    District,
                     MemberID,
                     CONCAT(FirstName, ' ', LastName) as Name,
-                    Email,
+                    Expiration,
                     WeChatID,
-                    PhoneNumber,
-                    District,
-                    Status,
-                    LastLoginDate,
-                    LastUpdated as ModifiedAt,
-                    Expiration
+                    Email,
+                    MembershipType as Type,
+                    FamilyID,
+                    PaymentDate,
+                    MembershipFeePaid,
+                    PaymentTransaction
                 FROM members
                 WHERE MemberID IN ({placeholders})
                 ORDER BY District, LastName, FirstName
@@ -196,36 +198,37 @@ def export_csv():
         writer = csv.DictWriter(
             output,
             fieldnames=[
+                'District',
                 'Member ID',
                 'Name',
-                'Email',
+                'Expiration',
                 'WeChat ID',
-                'Phone',
-                'District',
-                'Status',
-                'Last Login',
-                'Last Modified',
-                'Expiration'
+                'Email',
+                'Type',
+                'Family ID',
+                'Payment Date',
+                'Membership Fee Paid',
+                'Payment Transaction'
             ]
         )
 
         writer.writeheader()
         for row in rows:
-            last_login = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else 'Never'
-            modified = row['ModifiedAt'].strftime('%Y-%m-%d %H:%M') if row['ModifiedAt'] else 'N/A'
-            expiration = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else 'N/A'
+            expiration = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else ''
+            payment_date = row['PaymentDate'].strftime('%Y-%m-%d') if row['PaymentDate'] else ''
 
             writer.writerow({
+                'District': row['District'] or '',
                 'Member ID': row['MemberID'],
                 'Name': row['Name'],
-                'Email': row['Email'],
+                'Expiration': expiration,
                 'WeChat ID': row['WeChatID'] or '',
-                'Phone': row['PhoneNumber'] or '',
-                'District': row['District'],
-                'Status': row['Status'],
-                'Last Login': last_login,
-                'Last Modified': modified,
-                'Expiration': expiration
+                'Email': row['Email'] or '',
+                'Type': row['Type'] or '',
+                'Family ID': row['FamilyID'] or '',
+                'Payment Date': payment_date,
+                'Membership Fee Paid': row['MembershipFeePaid'] or '',
+                'Payment Transaction': row['PaymentTransaction'] or ''
             })
 
         # Encode with UTF-8-sig for Excel to recognize Unicode characters properly
