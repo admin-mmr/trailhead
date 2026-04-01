@@ -255,8 +255,8 @@ function manualMatch(jsonRequest: string): string {
     eventsSheet.getRange(eventRowIndex + 1, 1, 1, eventRow.length).setValues([eventRow]);
 
     // Update Fetch-Gmail row: mark processed and link EventID
-    gmailRow[FG_COL.PROCESSED]    = true;
-    gmailRow[FG_COL.WEBAPP_EVENT_ID] = eventID;
+    gmailRow[FG_COL.PROCESSED]  = new Date();
+    gmailRow[FG_COL.PAYMENT_ID] = eventID;
     gmailSheet.getRange(gmailRowIndex + 1, 1, 1, gmailRow.length).setValues([gmailRow]);
 
     auditLog('MANUALMATCH', {

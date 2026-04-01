@@ -352,7 +352,7 @@ function getUnmatchedGmailPayments(): FetchGmailRow[] {
   const results: FetchGmailRow[] = [];
   for (let i = 1; i < data.length; i++) {
     const processed = data[i][FG_COL.PROCESSED];
-    if (!processed || String(processed).toUpperCase() === 'FALSE') {
+    if (!processed || !(processed instanceof Date)) {
       results.push(rowToFetchGmailRow(data[i], i + 1));
     }
   }
@@ -375,17 +375,17 @@ function rowToFetchGmailRow(row: any[], rowIndex: number): FetchGmailRow {
     subject: String(row[FG_COL.SUBJECT] ?? ''),
     originalMemo: String(row[FG_COL.ORIGINAL_MEMO] ?? ''),
     notes: String(row[FG_COL.NOTES] ?? ''),
-    processed: Boolean(row[FG_COL.PROCESSED]),
+    processedTime: row[FG_COL.PROCESSED] instanceof Date ? (row[FG_COL.PROCESSED] as Date).toISOString() : null,
     source: String(row[FG_COL.SOURCE] ?? ''),
-    webAppEventID: String(row[FG_COL.WEBAPP_EVENT_ID] ?? ''),
+    paymentID: String(row[FG_COL.PAYMENT_ID] ?? ''),
     rowIndex,
   };
 }
 
 function markGmailPaymentProcessed(rowIndex: number, eventID: string): void {
   const sheet = getSheet(SHEET_NAMES.FETCH_GMAIL);
-  sheet.getRange(rowIndex, FG_COL.PROCESSED + 1).setValue(new Date().toISOString());
-  sheet.getRange(rowIndex, FG_COL.WEBAPP_EVENT_ID + 1).setValue(eventID);
+  sheet.getRange(rowIndex, FG_COL.PROCESSED + 1).setValue(new Date());
+  sheet.getRange(rowIndex, FG_COL.PAYMENT_ID + 1).setValue(eventID);
 }
 
 

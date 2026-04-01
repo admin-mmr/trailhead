@@ -170,7 +170,7 @@ const FG_COL = {
   NOTES: 9,
   PROCESSED: 10,
   SOURCE: 11,
-  WEBAPP_EVENT_ID: 12,
+  PAYMENT_ID: 12,
 };
 
 // Config sheet column indices (0-based)

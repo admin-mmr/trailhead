@@ -278,7 +278,7 @@ function autoMatchUnmatchedPayments(): { matched: number; skipped: number; error
       // Use the PaymentID as the reference since there is no EventID
       const gmailSheet = getSheet(SHEET_NAMES.FETCH_GMAIL);
       gmailSheet.getRange(gmailRow.rowIndex, FG_COL.PROCESSED + 1).setValue(now);
-      gmailSheet.getRange(gmailRow.rowIndex, FG_COL.WEBAPP_EVENT_ID + 1).setValue(paymentID);
+      gmailSheet.getRange(gmailRow.rowIndex, FG_COL.PAYMENT_ID + 1).setValue(paymentID);
       gmailSheet.getRange(gmailRow.rowIndex, FG_COL.SOURCE + 1).setValue('AutoGuess');
 
       // ── 11. Audit log ──

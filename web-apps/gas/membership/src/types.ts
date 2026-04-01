@@ -163,9 +163,9 @@ interface FetchGmailRow {
   subject: string;
   originalMemo: string;
   notes: string;
-  processed: boolean;
+  processedTime: string | null;
   source: string;
-  webAppEventID: string;
+  paymentID: string;
   rowIndex: number;
 }
 
