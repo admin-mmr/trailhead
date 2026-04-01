@@ -101,7 +101,7 @@ def get_email_send_status():
         # Check activity_log for email send actions
         query_activity = """
             SELECT
-                LogID, MemberID, Email, Action, Timestamp, Details
+                LogID, MemberID, Email, Action, Timestamp, State, ErrorCode, ErrorMessage
             FROM activity_log
             WHERE Action LIKE '%email%' OR Action LIKE '%webhook%'
             ORDER BY Timestamp DESC

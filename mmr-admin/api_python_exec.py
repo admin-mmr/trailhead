@@ -457,6 +457,40 @@ def test_db_connection():
         }
 
 
+def dump_schema():
+    """Dump CREATE TABLE DDL for all tables in mmrdb (schema snapshot via app DB connection)."""
+    try:
+        conn = dbmod.get_conn()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT TABLE_NAME FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+            ORDER BY TABLE_NAME
+        """)
+        tables = [row[0] for row in cursor.fetchall()]
+
+        ddl_parts = [f"-- MMR Schema Snapshot -- generated via dump_schema()\n-- {datetime.utcnow().isoformat()}Z\n"]
+        for table in tables:
+            cursor.execute(f"SHOW CREATE TABLE `{table}`")
+            row = cursor.fetchone()
+            ddl_parts.append(f"\n-- ---\n{row[1]};\n")
+
+        cursor.close()
+        full_ddl = "\n".join(ddl_parts)
+        return {
+            'status': 'ok',
+            'tables': tables,
+            'table_count': len(tables),
+            'ddl': full_ddl,
+        }
+    except Exception:
+        return {
+            'status': 'error',
+            'error': traceback.format_exc(),
+        }
+
+
 # Function registry: maps function name to callable
 FUNCTIONS = {
     'get_sheet_vs_db_counts': get_sheet_vs_db_counts,
@@ -479,6 +513,7 @@ FUNCTIONS = {
     'update_sheets_payments': update_sheets_payments,
     'update_sheets_events': update_sheets_events,
     'compare_sheets_vs_db': compare_sheets_vs_db,
+    'dump_schema': dump_schema,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

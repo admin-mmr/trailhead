@@ -1,0 +1,30 @@
+{
+  "Members": [
+    "members",
+    "families",
+    "member_log",
+    "otp_tokens",
+    "password_reset_tokens"
+  ],
+  "Payments": [
+    "payments",
+    "gmail_transactions"
+  ],
+  "Events & NYRR": [
+    "webapp_events",
+    "nyrr_events",
+    "nyrr_event_runners",
+    "nyrr_processing_log"
+  ],
+  "Sync": [
+    "sync_metadata",
+    "sync_changes",
+    "sync_conflicts",
+    "sync_snapshots"
+  ],
+  "System": [
+    "activity_log",
+    "config",
+    "schema_migrations"
+  ]
+}

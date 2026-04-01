@@ -27,6 +27,9 @@ PORTAL LAUNCH PREP (Carryover):
 
 ## Session log
 
+### 2026-03-31 23:05 ET — SQL consolidation, schema tools, Email Log headers
+Changed: Deleted duplicate SQL files (web-apps/mmr-webapp/db/mmr_db_inspector.sql, basecamp/ops/mmr_migration_consolidated.sql); moved v1–v10 archive + check_event_data.sql into db/; added table_groups.json to mmr-admin; added dump_schema() to api_python_exec.py; fixed activity_log query in api_email_diags.py (Details → State/ErrorCode/ErrorMessage); updated db/README.md with schema tools and corrected layout. Status: Done. Next: Run dump_schema() in Python Exec tab to regenerate db/schema_snapshot.sql from live DB, then prune db/schemas/.
+
 ### 2026-03-31 22:35 UTC — Repo cleanup: remove orphaned sync scripts & duplicate schemas
 Removed 6 orphaned root-level sync scripts (sync_*.sh) and 2 sheets sync duplicates (api_sheets_sync*.py) via `git rm`. Deleted basecamp/schemas/ and basecamp/migrations/ (db/ is canonical). Updated .gitignore to prevent re-commit. Verified mmr-admin/app.py has nyrr_api.py path setup for local dev. Status: Complete — clean single-source-of-truth for schemas, migrations, and sync logic.
 

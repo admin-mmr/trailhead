@@ -164,17 +164,39 @@ def api_log():
 # Generic table browser
 # ---------------------------------------------------------------------------
 
+def _load_table_groups() -> dict:
+    """Load table_groups.json from same directory as this file."""
+    path = os.path.join(os.path.dirname(__file__), 'table_groups.json')
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 @data_bp.route('/api/tables')
 @login_required
 def api_tables():
-    """List all tables in the database."""
+    """List all tables in the database, annotated with group membership."""
     rows = query("""
         SELECT TABLE_NAME, TABLE_ROWS, DATA_LENGTH, CREATE_TIME, UPDATE_TIME
         FROM INFORMATION_SCHEMA.TABLES
         WHERE TABLE_SCHEMA = DATABASE()
         ORDER BY TABLE_NAME
     """)
-    return json_response({'ok': True, 'data': rows})
+
+    groups = _load_table_groups()
+    # Build reverse lookup: table_name -> group
+    table_to_group = {
+        tbl: grp
+        for grp, tables in groups.items()
+        for tbl in tables
+    }
+
+    for row in rows:
+        row['group'] = table_to_group.get(row['TABLE_NAME'], 'Ungrouped')
+
+    return json_response({'ok': True, 'data': rows, 'groups': groups})
 
 
 @data_bp.route('/api/tables/<table_name>')
