@@ -46,6 +46,26 @@ def _serialize_for_json(obj):
 
 
 # ---------------------------------------------------------------------------
+# Config Endpoint
+# ---------------------------------------------------------------------------
+
+@audit_bp.route('/api/config/get')
+@handle_api_errors
+def api_get_config():
+    """Get a config value by key."""
+    key = request.args.get('key', '')
+    if not key:
+        return json_response({'error': 'Missing key parameter'}, 400)
+
+    value = get_config(key, None)
+    return json_response({
+        'success': True,
+        'key': key,
+        'value': value
+    })
+
+
+# ---------------------------------------------------------------------------
 # Renewal Audit Endpoint
 # ---------------------------------------------------------------------------
 
@@ -214,11 +234,29 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
 
     Returns audit entry with trace route and red flags.
     """
-    message_id = txn['MessageId']
-    amount = float(txn['Amount']) if txn['Amount'] else None
-    txn_date = txn['TransactionDate']
-    txn_number = txn['TransactionNumber']
-    payment_id = txn['PaymentID']
+    # Safely extract transaction fields with defaults
+    try:
+        message_id = txn.get('MessageId', '')
+        amount = float(txn.get('Amount', 0)) if txn.get('Amount') else None
+        txn_date = txn.get('TransactionDate')
+        txn_number = txn.get('TransactionNumber', '')
+        payment_id = txn.get('PaymentID', '')
+    except (KeyError, ValueError, TypeError) as e:
+        logger.error(f"Error extracting transaction fields: {e}")
+        return {
+            'transaction_id': 'unknown',
+            'amount': None,
+            'transaction_date': None,
+            'member_id': None,
+            'member_name': None,
+            'membership_type': None,
+            'trace_route': 'ERROR',
+            'expiration_date': None,
+            'target_expiration': target_expiration.isoformat(),
+            'match_status': '❌ ERROR',
+            'family_check': None,
+            'red_flags': [f'Failed to parse transaction: {str(e)}']
+        }
 
     # Prepare result structure
     result = {

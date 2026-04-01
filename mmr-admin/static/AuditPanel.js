@@ -18,19 +18,32 @@ window.AuditPanel = () => {
   const [auditResults, setAuditResults] = React.useState(null);
   const [expandedRows, setExpandedRows] = React.useState(new Set());
 
-  // Get default dates (current month)
+  // Get default dates and membership year end from config
   React.useEffect(() => {
     const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
 
-    setStartDate(`${year}-${month}-01`);
+    // Default start date: 10/01/2025
+    setStartDate('2025-10-01');
+
+    // Default end date: today
     setEndDate(today.toISOString().split('T')[0]);
 
-    // Default target: 1 year from today
-    const nextYear = new Date(today);
-    nextYear.setFullYear(nextYear.getFullYear() + 1);
-    setTargetExpiration(nextYear.toISOString().split('T')[0]);
+    // Load MembershipYearEnd from config via API
+    fetch('/api/config/get?key=MembershipYearEnd')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.value) {
+          // Format is MM-DD, e.g., "12-31"
+          const [month, day] = data.value.split('-');
+          if (month && day) {
+            setTargetExpiration(`${today.getFullYear()}-${month}-${day}`);
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback: use 12-31 of current year
+        setTargetExpiration(`${today.getFullYear()}-12-31`);
+      });
   }, []);
 
   const runAudit = async () => {
