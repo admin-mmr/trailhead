@@ -290,22 +290,27 @@ def resolve_conflict(
         return SyncDecision(SyncDecision.NO_CHANGE, 'rows identical')
 
     # Both timestamps present
+    # NOTE: Apply 10-second buffer to Sheets timestamps to account for async propagation delays
+    #       (GAS → Sheets API takes ~2-10 seconds; don't penalize MySQL updates that race)
     if mysql_ts is not None and sheets_ts is not None:
-        diff = (mysql_ts - sheets_ts).total_seconds()
+        from datetime import timedelta
+        sheets_ts_adjusted = sheets_ts - timedelta(seconds=10)
+        diff = (mysql_ts - sheets_ts_adjusted).total_seconds()
+
         if diff > 1:
             return SyncDecision(
                 SyncDecision.MYSQL_WINS,
-                f'MySQL newer: {mysql_ts.isoformat()} > {sheets_ts.isoformat()}',
+                f'MySQL newer: {mysql_ts.isoformat()} > {sheets_ts.isoformat()} (adjusted -10s)',
             )
         if diff < -1:
             return SyncDecision(
                 SyncDecision.SHEETS_WINS,
-                f'Sheets newer: {sheets_ts.isoformat()} > {mysql_ts.isoformat()}',
+                f'Sheets newer: {sheets_ts.isoformat()} > {mysql_ts.isoformat()} (adjusted -10s)',
             )
-        # Tie (within 1 second) → Sheets wins per spec §2.2.3
+        # Tie (within 1 second after adjustment) → MySQL wins (fresher data)
         return SyncDecision(
-            SyncDecision.SHEETS_WINS,
-            f'Tie ({sheets_ts.isoformat()}): Sheets wins by spec',
+            SyncDecision.MYSQL_WINS,
+            f'Tie within 10s buffer ({sheets_ts.isoformat()}): MySQL wins (fresher data)',
         )
 
     # Missing timestamp on one or both sides → Sheets wins
