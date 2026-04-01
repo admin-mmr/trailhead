@@ -530,12 +530,12 @@ def _sync_members_to_sheets(job_id: str):
                     # SHEETS_WINS (newer or tie) → check if there are actual field diffs
                     diff_fields = _get_field_diffs(member, sheets_member, exclude_fields=['LastUpdated'])
                     if not diff_fields:
-                        # Tie with no field differences → treat as match
-                        log_lines.append(f"= MATCH | {member_id} | (tie: {decision.reason})")
+                        # Tie with no field differences → silent match (don't log noise)
+                        pass
                     else:
-                        # Tie or Sheets newer with field diffs → nightly sync applies MySQL update
+                        # Tie or Sheets newer with field diffs → log the conflict
                         log_lines.append(
-                            f"⏭️ SKIP | {member_id} | Sheets wins ({decision.reason}) — nightly sync will apply"
+                            f"⏭️ SKIP | {member_id} | Sheets wins ({decision.reason}) — has field diffs: {', '.join(diff_fields)}"
                         )
                     skipped.append(member_id)
 
@@ -728,12 +728,12 @@ def _sync_events_to_sheets(job_id: str):
                     # SHEETS_WINS (newer or tie) → check if there are actual field diffs
                     diff_fields = _get_field_diffs(event, sheets_event, exclude_fields=['UpdatedAt'])
                     if not diff_fields:
-                        # Tie with no field differences → treat as match
-                        log_lines.append(f"= MATCH | {event_id} | (tie: {decision.reason})")
+                        # Tie with no field differences → silent match (don't log noise)
+                        pass
                     else:
-                        # Tie or Sheets newer with field diffs → nightly sync handles MySQL update
+                        # Tie or Sheets newer with field diffs → log the conflict
                         log_lines.append(
-                            f"⏭️ SKIP | {event_id} | Sheets wins ({decision.reason}) — nightly sync will apply"
+                            f"⏭️ SKIP | {event_id} | Sheets wins ({decision.reason}) — has field diffs: {', '.join(diff_fields)}"
                         )
                     skipped.append(event_id)
 
@@ -897,13 +897,13 @@ def _sync_payments_to_sheets(job_id: str):
                     # Check if there are actual field diffs
                     diff_fields = _get_field_diffs(payment, sheets_payment, exclude_fields=['ProcessedDate'])
                     if not diff_fields:
-                        # Tie with no field differences → treat as match
-                        log_lines.append(f"= MATCH | {payment_id} | MemberID={member_id} | (tie: {decision.reason})")
+                        # Tie with no field differences → silent match (don't log noise)
+                        pass
                     else:
-                        # Tie or Sheets newer with field diffs → nightly sync handles MySQL update
+                        # Tie or Sheets newer with field diffs → log the conflict
                         log_lines.append(
                             f"⏭️ SKIP | {payment_id} | MemberID={member_id} | "
-                            f"Sheets wins ({decision.reason}) — nightly sync will apply"
+                            f"Sheets wins ({decision.reason}) — has field diffs: {', '.join(diff_fields)}"
                         )
                 else:
                     # NO_CHANGE
