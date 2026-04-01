@@ -383,8 +383,27 @@ def api_gmail_candidates(event_id):
 
 
 # ---------------------------------------------------------------------------
-# Lightweight member lookup for hover tooltip
+# Lightweight member lookup for hover tooltip + fuzzy search
 # ---------------------------------------------------------------------------
+
+@payments_bp.route('/api/payments/member-quick/all', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_member_quick_all():
+    """
+    Fetch all members for fuzzy search in Quick Approve popover.
+    Returns: MemberID, FirstName, LastName, Expiration, District, Type, WeChatID
+    Used for real-time filtering as user types.
+    """
+    rows = query(
+        "SELECT MemberID, FirstName, LastName, Expiration, District, Type, WeChatID "
+        "FROM members "
+        "WHERE Status IN ('active', 'pending') "
+        "ORDER BY LastName, FirstName"
+    )
+    return json_response({'ok': True, 'data': rows or []})
+
 
 @payments_bp.route('/api/payments/member-quick/<member_id>')
 @login_required
