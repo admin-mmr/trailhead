@@ -393,14 +393,14 @@ def api_gmail_candidates(event_id):
 def api_member_quick_all():
     """
     Fetch all members for fuzzy search in Quick Approve popover.
+    Includes all statuses (active, inactive, pending) since payments can renew expired memberships.
     Returns: MemberID, FirstName, LastName, Expiration, District, Type, WeChatID
     Used for real-time filtering as user types.
     """
-    # Fetch all active/pending members
+    # Fetch ALL members (no status filter) — payments can renew inactive members
     rows = query(
         "SELECT MemberID, FirstName, LastName, Expiration, District, Type, WeChatID "
         "FROM members "
-        "WHERE Status IN ('active', 'pending') "
         "ORDER BY LastName, FirstName, MemberID"
     )
 
