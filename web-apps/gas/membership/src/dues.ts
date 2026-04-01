@@ -123,7 +123,7 @@ function findGmailMatch(event: WebAppEvent, gmailRows: FetchGmailRow[]): FetchGm
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
   for (const row of gmailRows) {
-    if (row.processed) continue;
+    if (row.processedTime) continue;
     if (row.amount !== event.amount) continue;
 
     const rowDate = new Date(row.transactionDate || row.timestamp);
