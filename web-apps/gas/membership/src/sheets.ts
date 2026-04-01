@@ -1,6 +1,6 @@
 // ============================================================
 // Low-level sheet read/write helpers
-// Depends on: config.ts, types.ts
+// Depends on: config.ts, types.ts (datetime utilities in config.ts)
 // ============================================================
 
 // ---- ID generators ----
@@ -48,7 +48,7 @@ function rowToMember(row: any[]): Member {
   return {
     memberID: String(row[MM_COL.MEMBER_ID] ?? ''),
     status,
-    created: String(row[MM_COL.CREATED] ?? ''),
+    created: toISO8601(row[MM_COL.CREATED]) || '',
     expiration,
     email: String(row[MM_COL.EMAIL] ?? ''),
     firstName: String(row[MM_COL.FIRST_NAME] ?? ''),
@@ -61,14 +61,14 @@ function rowToMember(row: any[]): Member {
     webApp: String(row[MM_COL.WEBAPP] ?? ''),
     paymentCheck: String(row[MM_COL.PAYMENT_CHECK] ?? ''),
     info: String(row[MM_COL.INFO] ?? ''),
-    lastUpdated: String(row[MM_COL.LAST_UPDATED] ?? ''),
+    lastUpdated: toISO8601(row[MM_COL.LAST_UPDATED]) || '',
     membershipFeePaid: String(row[MM_COL.MEMBERSHIP_FEE_PAID] ?? ''),
-    paymentDate: String(row[MM_COL.PAYMENT_DATE] ?? ''),
+    paymentDate: toISO8601(row[MM_COL.PAYMENT_DATE]) || '',
     paymentTransaction: String(row[MM_COL.PAYMENT_TRANSACTION] ?? ''),
     joinYear: String(row[MM_COL.JOIN_YEAR] ?? ''),
     phoneNumber: String(row[MM_COL.PHONE_NUMBER] ?? ''),
-    lastLoginDate: String(row[MM_COL.LAST_LOGIN_DATE] ?? ''),
-    profileLastUpdated: String(row[MM_COL.PROFILE_LAST_UPDATED] ?? ''),
+    lastLoginDate: toISO8601(row[MM_COL.LAST_LOGIN_DATE]) || '',
+    profileLastUpdated: toISO8601(row[MM_COL.PROFILE_LAST_UPDATED]) || '',
     notes: String(row[MM_COL.NOTES] ?? ''),
   };
 }
@@ -209,8 +209,8 @@ function rowToWebAppEvent(row: any[]): WebAppEvent {
   return {
     eventID:                  String(row[WE_COL.EVENT_ID]                  ?? ''),
     eventType:                String(row[WE_COL.EVENT_TYPE]                ?? '') as WebAppEvent['eventType'],
-    timestamp:                String(row[WE_COL.TIMESTAMP]                 ?? ''),
-    expiresAt:                String(row[WE_COL.EXPIRES_AT]                ?? ''),
+    timestamp:                toISO8601(row[WE_COL.TIMESTAMP])             || '',
+    expiresAt:                toISO8601(row[WE_COL.EXPIRES_AT])            || '',
     memberID:                 String(row[WE_COL.MEMBER_ID]                 ?? ''),
     email:                    String(row[WE_COL.EMAIL]                     ?? ''),
     paymentIntent:            String(row[WE_COL.PAYMENT_INTENT]            ?? '') as WebAppEvent['paymentIntent'],
@@ -218,19 +218,19 @@ function rowToWebAppEvent(row: any[]): WebAppEvent {
     paymentMethod:            String(row[WE_COL.PAYMENT_METHOD]            ?? ''),
     payerName:                String(row[WE_COL.PAYER_NAME]                ?? ''),
     memoField:                String(row[WE_COL.MEMO_FIELD]                ?? ''),
-    last4Digits:              String(row[WE_COL.LAST_4_DIGITS]             ?? ''),
+    last4Digits:             String(row[WE_COL.LAST_4_DIGITS]             ?? ''),
     familyMemberEmails:       String(row[WE_COL.FAMILY_MEMBER_EMAILS]      ?? ''),
     status:                   String(row[WE_COL.STATUS]                    ?? '') as WebAppEvent['status'],
     matchedMessageId:         String(row[WE_COL.MATCHED_MESSAGE_ID]        ?? ''),
     matchedTransactionNumber: String(row[WE_COL.MATCHED_TRANSACTION_NUMBER]?? ''),
     adminApprover:            String(row[WE_COL.ADMIN_APPROVER]            ?? ''),
-    approvalDate:             String(row[WE_COL.APPROVAL_DATE]             ?? ''),
+    approvalDate:             toISO8601(row[WE_COL.APPROVAL_DATE])         || '',
     notes:                    String(row[WE_COL.NOTES]                     ?? ''),
-    paymentDate:              String(row[WE_COL.PAYMENT_DATE]              ?? ''),
+    paymentDate:              toISO8601(row[WE_COL.PAYMENT_DATE])          || '',
     screenshotFileId:         String(row[WE_COL.SCREENSHOT_FILE_ID]        ?? ''),
     gdriveFilePath:           String(row[WE_COL.GDRIVE_FILE_PATH]          ?? ''),
     ocrText:                  String(row[WE_COL.OCR_TEXT]                  ?? ''),
-    ocrTimestamp:             String(row[WE_COL.OCR_TIMESTAMP]             ?? ''),
+    ocrTimestamp:             toISO8601(row[WE_COL.OCR_TIMESTAMP])         || '',
   };
 }
 
@@ -361,8 +361,13 @@ function getUnmatchedGmailPayments(): FetchGmailRow[] {
 
 function rowToFetchGmailRow(row: any[], rowIndex: number): FetchGmailRow {
   const rawTimestamp = row[FG_COL.TIMESTAMP];
-  const date = rawTimestamp ? new Date(rawTimestamp) : null;
-  const isoTimestamp = date && !isNaN(date.getTime()) ? date.toISOString() : '';
+  const isoTimestamp = toISO8601(rawTimestamp) || '';
+
+  const rawProcessed = row[FG_COL.PROCESSED];
+  let processedTime: string | null = null;
+  if (!isUnprocessed(rawProcessed)) {
+    processedTime = toISO8601(rawProcessed);
+  }
 
   return {
     timestamp: isoTimestamp,
@@ -375,13 +380,7 @@ function rowToFetchGmailRow(row: any[], rowIndex: number): FetchGmailRow {
     subject: String(row[FG_COL.SUBJECT] ?? ''),
     originalMemo: String(row[FG_COL.ORIGINAL_MEMO] ?? ''),
     notes: String(row[FG_COL.NOTES] ?? ''),
-    processedTime: (() => {
-      const v = row[FG_COL.PROCESSED];
-      if (!v || v === false || String(v).toUpperCase() === 'FALSE') return null;
-      if (v instanceof Date) return v.toISOString();
-      const d = new Date(String(v));
-      return isNaN(d.getTime()) ? String(v) : d.toISOString();
-    })(),
+    processedTime,
     source: String(row[FG_COL.SOURCE] ?? ''),
     paymentID: String(row[FG_COL.PAYMENT_ID] ?? ''),
     rowIndex,

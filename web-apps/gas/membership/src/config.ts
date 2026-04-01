@@ -406,6 +406,123 @@ function getDistrictsFromConfig(jsonRequest: string): string {
 (globalThis as any).EMAIL_LOG_SHEET_ID        = EMAIL_LOG_SHEET_ID;
 (globalThis as any).EMAIL_LOG_SHEET_NAME      = EMAIL_LOG_SHEET_NAME;
 
+// ============================================================
+// Datetime utility functions — ISO 8601 UTC conversions
+// ============================================================
+
+/**
+ * Parse any incoming datetime/timestamp and return ISO 8601 UTC string.
+ * Handles: ISO strings, Date objects, epoch ms, partial dates, Google Sheets dates.
+ *
+ * @param value - Input: string (ISO/partial/custom), Date, number (epoch ms), null/undefined
+ * @returns ISO 8601 UTC string or null if invalid/falsy
+ */
+function toISO8601(value: any): string | null {
+  if (!value) return null;
+
+  // Already a Date object
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    return value.toISOString();
+  }
+
+  // String input: try ISO first, then epoch ms, then heuristic parse
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    // Already ISO 8601? (contains T and Z, or ends with +/-HH:MM)
+    if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    }
+
+    // Try parsing as-is
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d.toISOString();
+
+    // Could be epoch ms as string
+    const epoch = Number(trimmed);
+    if (!isNaN(epoch) && epoch > 0) {
+      return new Date(epoch).toISOString();
+    }
+
+    return null;
+  }
+
+  // Number: assume epoch milliseconds
+  if (typeof value === 'number') {
+    if (value <= 0) return null;
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+
+  return null;
+}
+
+/**
+ * Ensure a value is a Date object, or return null.
+ * Useful for Google Sheets setValue() which preserves Date type natively.
+ *
+ * @param value - Input: ISO string, Date, number (epoch ms), null/undefined
+ * @returns Date object or null
+ */
+function toDate(value: any): Date | null {
+  const iso = toISO8601(value);
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Check if a value represents an "unprocessed" / falsy state.
+ * Handles: null, undefined, false, empty string, "false"/"FALSE".
+ *
+ * @param value - Any value
+ * @returns true if unprocessed, false if processed
+ */
+function isUnprocessed(value: any): boolean {
+  if (!value || value === false) return true;
+  if (typeof value === 'string' && value.toUpperCase() === 'FALSE') return true;
+  return false;
+}
+
+/**
+ * Serialize a value for JSON response (webhook/API).
+ * Converts Date/timestamp to ISO 8601 UTC string; preserves other types.
+ *
+ * @param value - Input: Date, string, number, other types
+ * @returns ISO 8601 string if date-like, otherwise original value
+ */
+function serializeForJSON(value: any): any {
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    return value.toISOString();
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const iso = toISO8601(value);
+    return iso || value;
+  }
+  return value;
+}
+
+/**
+ * Create an ISO 8601 UTC timestamp for "now".
+ * @returns ISO 8601 string
+ */
+function now(): string {
+  return new Date().toISOString();
+}
+
+/**
+ * Create a Date object for "now" (useful for Google Sheets setValue).
+ * @returns Date object
+ */
+function nowDate(): Date {
+  return new Date();
+}
+
 // CONFIG object for cross-module access
 const CONFIG = {
   EMAIL_LOG_SHEET_ID,
