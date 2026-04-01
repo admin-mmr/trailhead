@@ -236,11 +236,12 @@ def _to_iso_datetime(value: Any) -> Optional[str]:
     return _engine_to_mysql_dt(value)
 
 
-def _coerce_value(v: Any, col: str, dt_cols: set, int_cols: set) -> Any:
+def _coerce_value(v: Any, col: str, dt_cols: set, int_cols: set, decimal_cols: set = set()) -> Any:
     """
     Coerce a Google Sheets value to the correct MySQL type.
     - datetime/timestamp/date cols: delegate to _to_iso_datetime; '' → None
     - integer cols: '' or None → None; numeric strings → int
+    - decimal/float cols: '' or None → None; numeric strings → float
     - everything else: pass through unchanged
     """
     if col in dt_cols:
@@ -250,6 +251,13 @@ def _coerce_value(v: Any, col: str, dt_cols: set, int_cols: set) -> Any:
             return None
         try:
             return int(float(str(v)))   # handles '2015', '2015.0'
+        except (ValueError, TypeError):
+            return None
+    if col in decimal_cols:
+        if v is None or v == '':
+            return None
+        try:
+            return float(str(v))
         except (ValueError, TypeError):
             return None
     return v
@@ -1484,6 +1492,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
             member_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'")]
             member_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND DATA_TYPE IN ('datetime','timestamp','date')")}
             member_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
+            member_decimal_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND DATA_TYPE IN ('decimal','numeric','float','double')")}
 
             job_update['message'] = 'Syncing members...'
             job_update['progress'] = 20
@@ -1497,7 +1506,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 # INSERT new member
                 try:
                     cols_to_insert = {k: v for k, v in sheet_member.items() if k in member_columns}
-                    cols_to_insert = {k: _coerce_value(v, k, member_dt_columns, member_int_columns) for k, v in cols_to_insert.items()}
+                    cols_to_insert = {k: _coerce_value(v, k, member_dt_columns, member_int_columns, member_decimal_columns) for k, v in cols_to_insert.items()}
                     col_names = ', '.join(cols_to_insert.keys())
                     placeholders = ', '.join(['%s'] * len(cols_to_insert))
                     sql = f"INSERT INTO members ({col_names}) VALUES ({placeholders})"
@@ -1516,7 +1525,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
             if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
                 try:
                     cols_to_update = {k: v for k, v in sheet_member.items() if k in member_columns and k != 'MemberID'}
-                    cols_to_update = {k: _coerce_value(v, k, member_dt_columns, member_int_columns) for k, v in cols_to_update.items()}
+                    cols_to_update = {k: _coerce_value(v, k, member_dt_columns, member_int_columns, member_decimal_columns) for k, v in cols_to_update.items()}
 
                     set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                     sql = f"UPDATE members SET {set_clauses} WHERE MemberID=%s"
@@ -1549,6 +1558,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 event_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events'")]
                 event_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events' AND DATA_TYPE IN ('datetime','timestamp','date')")}
                 event_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
+                valid_gmail_ids = {r['MessageId'] for r in query("SELECT MessageId FROM gmail_transactions")}
 
                 for event_id, sheet_event in sheets_events_by_id.items():
                     mysql_event = mysql_events_by_id.get(event_id)
@@ -1556,6 +1566,8 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         try:
                             cols_to_insert = {k: v for k, v in sheet_event.items() if k in event_columns}
                             cols_to_insert = {k: _coerce_value(v, k, event_dt_columns, event_int_columns) for k, v in cols_to_insert.items()}
+                            if cols_to_insert.get('MatchedMessageId') and cols_to_insert['MatchedMessageId'] not in valid_gmail_ids:
+                                cols_to_insert['MatchedMessageId'] = None
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
                             sql = f"INSERT INTO webapp_events ({col_names}) VALUES ({placeholders})"
@@ -1571,6 +1583,8 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                             try:
                                 cols_to_update = {k: v for k, v in sheet_event.items() if k in event_columns and k != 'EventID'}
                                 cols_to_update = {k: _coerce_value(v, k, event_dt_columns, event_int_columns) for k, v in cols_to_update.items()}
+                                if cols_to_update.get('MatchedMessageId') and cols_to_update['MatchedMessageId'] not in valid_gmail_ids:
+                                    cols_to_update['MatchedMessageId'] = None
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE webapp_events SET {set_clauses} WHERE EventID=%s"
                                 values = list(cols_to_update.values()) + [event_id]
@@ -1606,6 +1620,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 payment_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments'")]
                 payment_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND DATA_TYPE IN ('datetime','timestamp','date')")}
                 payment_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
+                valid_event_ids = {r['EventID'] for r in query("SELECT EventID FROM webapp_events")}
 
                 for payment_id, sheet_payment in sheets_payments_by_id.items():
                     mysql_payment = mysql_payments_by_id.get(payment_id)
@@ -1613,6 +1628,8 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         try:
                             cols_to_insert = {k: v for k, v in sheet_payment.items() if k in payment_columns}
                             cols_to_insert = {k: _coerce_value(v, k, payment_dt_columns, payment_int_columns) for k, v in cols_to_insert.items()}
+                            if cols_to_insert.get('EventID') and cols_to_insert['EventID'] not in valid_event_ids:
+                                cols_to_insert['EventID'] = None
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
                             sql = f"INSERT INTO payments ({col_names}) VALUES ({placeholders})"
@@ -1628,6 +1645,8 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                             try:
                                 cols_to_update = {k: v for k, v in sheet_payment.items() if k in payment_columns and k != 'PaymentID'}
                                 cols_to_update = {k: _coerce_value(v, k, payment_dt_columns, payment_int_columns) for k, v in cols_to_update.items()}
+                                if cols_to_update.get('EventID') and cols_to_update['EventID'] not in valid_event_ids:
+                                    cols_to_update['EventID'] = None
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE payments SET {set_clauses} WHERE PaymentID=%s"
                                 values = list(cols_to_update.values()) + [payment_id]

@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 01:50 ET — fix 3 Google→MySQL sync errors (decimal, FK events, FK payments)
+Changed: `_coerce_value` now handles decimal/float cols (`''`→None); members block fetches decimal cols from schema; events block NULLs orphan `MatchedMessageId` vs `gmail_transactions`; payments block NULLs orphan `EventID` vs `webapp_events`. Status: Done. Next: Deploy and re-run sync to verify.
+
 ### 2026-04-01 01:32 ET — add pre-deploy import validation to CI
 Changed: Added Python 3.11 setup + `pip install -r requirements.txt && python3 test_imports.py` step to `deploy-mmr-admin.yml` before deploy. Status: Done — next push will validate all imports with full deps before reaching Azure. Next: monitor first CI run.
 
