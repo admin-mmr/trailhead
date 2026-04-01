@@ -26,8 +26,6 @@ from webhook_client import send_generic_email
 from auth import login_required
 
 # ── Shared bidirectional sync engine (spec-compliant) ────────────────────────
-import sys, os as _os
-sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', 'basecamp', 'python'))
 from sync_engine import (
     parse_datetime      as _engine_parse_dt,
     to_mysql_datetime   as _engine_to_mysql_dt,

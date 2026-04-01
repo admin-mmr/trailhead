@@ -3,6 +3,11 @@
 Last updated: 2026-03-31 16:20 UTC
 Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py_exec functions)
 
+## Session log
+
+### 2026-04-01 01:29 ET — fix sync_engine ModuleNotFoundError on Azure
+Changed: Copied `basecamp/python/sync_engine.py` → `mmr-admin/sync_engine.py`; removed `sys.path.insert` hack in `api_sheets_sync.py`. Status: Fixed — `test_imports.py` passes. Next: Commit both files; monitor Azure restart.
+
 ## ⏭️ Next Session — Pending Tasks
 
 DEDUPLICATION & TECH DEBT TARGETS:
