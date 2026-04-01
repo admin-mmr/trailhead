@@ -87,70 +87,75 @@ def api_renewal_audit():
     Returns:
       {
         "success": true,
-        "audit_results": [
-          {
-            "transaction_id": "msg-123",
-            "amount": 50.00,
-            "transaction_date": "2026-03-15",
-            "member_id": "A0001",
-            "member_name": "John Doe",
-            "membership_type": "Individual",
-            "trace_route": "gmail_transactions → payments → members",
-            "expiration_date": "2027-03-31",
-            "target_expiration": "2027-03-31",
-            "match_status": "✓ MATCH",
-            "family_check": null,  // only for family members
-            "red_flags": []
-          }
-        ],
-        "summary": {
-          "total_transactions": 15,
-          "traced_members": 12,
-          "expirations_matched": 11,
-          "expirations_mismatched": 1,
-          "not_traced": 2
-        }
+        "audit_results": [...],
+        "summary": {...}
       }
     """
-    data = request.get_json()
-
-    start_date = data.get('start_date')
-    end_date = data.get('end_date')
-    target_expiration = data.get('target_expiration')
-
-    # Validate inputs
-    if not all([start_date, end_date, target_expiration]):
-        return json_response({'error': 'Missing required fields'}, 400)
+    logger.info("=== Audit: Start renewal audit ===")
 
     try:
-        start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-        end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        target_expiration = datetime.strptime(target_expiration, '%Y-%m-%d').date()
-    except ValueError:
-        return json_response({'error': 'Invalid date format (use YYYY-MM-DD)'}, 400)
+        data = request.get_json()
+        logger.info(f"Request data: {data}")
 
-    # Get membership fee amounts from config
-    try:
-        individual_fee = float(get_config('MembershipFeeIndividual', '50.00'))
-        family_fee = float(get_config('MembershipFeeFamily', '80.00'))
-    except (ValueError, TypeError):
-        individual_fee = 50.00
-        family_fee = 80.00
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        target_expiration = data.get('target_expiration')
 
-    # Run the audit
-    audit_results = _run_renewal_audit(
-        start_date, end_date, target_expiration,
-        individual_fee, family_fee
-    )
+        # Validate inputs
+        if not all([start_date, end_date, target_expiration]):
+            msg = f"Missing required fields: start_date={start_date}, end_date={end_date}, target_expiration={target_expiration}"
+            logger.warning(msg)
+            return json_response({'error': msg}, 400)
 
-    # Serialize dates to ISO format for JSON response
-    serialized = _serialize_for_json({
-        'success': True,
-        'audit_results': audit_results['entries'],
-        'summary': audit_results['summary']
-    })
+        logger.info(f"Audit parameters: start={start_date}, end={end_date}, target_exp={target_expiration}")
 
-    return json_response(serialized)
+        # Parse dates
+        try:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            target_expiration = datetime.strptime(target_expiration, '%Y-%m-%d').date()
+            logger.info(f"Parsed dates: start={start_date}, end={end_date}, target_exp={target_expiration}")
+        except ValueError as e:
+            msg = f"Invalid date format (use YYYY-MM-DD): {e}"
+            logger.error(msg)
+            return json_response({'error': msg}, 400)
+
+        # Get membership fee amounts from config
+        try:
+            individual_fee_str = get_config('MembershipFeeIndividual', '50.00')
+            family_fee_str = get_config('MembershipFeeFamily', '80.00')
+            logger.info(f"Config fees: individual={individual_fee_str}, family={family_fee_str}")
+
+            individual_fee = float(individual_fee_str) if individual_fee_str else 50.00
+            family_fee = float(family_fee_str) if family_fee_str else 80.00
+            logger.info(f"Parsed fees: individual={individual_fee}, family={family_fee}")
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Error parsing config fees, using defaults: {e}")
+            individual_fee = 50.00
+            family_fee = 80.00
+
+        # Run the audit
+        logger.info("Running audit...")
+        audit_results = _run_renewal_audit(
+            start_date, end_date, target_expiration,
+            individual_fee, family_fee
+        )
+
+        logger.info(f"Audit complete: {audit_results['summary']['total_transactions']} transactions found")
+
+        # Serialize dates to ISO format for JSON response
+        serialized = _serialize_for_json({
+            'success': True,
+            'audit_results': audit_results['entries'],
+            'summary': audit_results['summary']
+        })
+
+        logger.info("=== Audit: Success ===")
+        return json_response(serialized)
+
+    except Exception as e:
+        logger.error(f"Audit error: {type(e).__name__}: {e}", exc_info=True)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +229,21 @@ def _get_matching_transactions(start_date: date, end_date: date,
         ORDER BY TransactionDate DESC, MessageId
     """
 
-    rows = query(sql, [start_date, end_date, individual_fee, family_fee])
-    return rows if rows else []
+    try:
+        rows = query(sql, [start_date, end_date, individual_fee, family_fee])
+        logger.info(f"Found {len(rows) if rows else 0} matching transactions")
+
+        # Validate that rows are dictionaries
+        if rows:
+            for row in rows:
+                if not isinstance(row, dict):
+                    logger.error(f"Query returned non-dict row: {type(row)} = {row}")
+                    raise TypeError(f"Expected dict, got {type(row)}: {row}")
+
+        return rows if rows else []
+    except Exception as e:
+        logger.error(f"Error querying matching transactions: {e}")
+        raise
 
 
 def _audit_transaction(txn: dict, target_expiration: date) -> dict:

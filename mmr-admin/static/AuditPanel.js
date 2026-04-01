@@ -29,21 +29,40 @@ window.AuditPanel = () => {
     setEndDate(today.toISOString().split('T')[0]);
 
     // Load MembershipYearEnd from config via API
-    fetch('/api/config/get?key=MembershipYearEnd')
-      .then(r => r.json())
-      .then(data => {
+    const loadConfig = async () => {
+      try {
+        console.log('Loading MembershipYearEnd from config...');
+        const response = await fetch('/api/config/get?key=MembershipYearEnd');
+        const data = await response.json();
+
+        console.log('Config response:', data);
+
         if (data.success && data.value) {
           // Format is MM-DD, e.g., "12-31"
-          const [month, day] = data.value.split('-');
+          console.log('Config value:', data.value);
+          const parts = String(data.value).split('-');
+          const [month, day] = parts;
+
           if (month && day) {
-            setTargetExpiration(`${today.getFullYear()}-${month}-${day}`);
+            const targetDate = `${today.getFullYear()}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            console.log('Calculated target expiration:', targetDate);
+            setTargetExpiration(targetDate);
+          } else {
+            console.log('Invalid config format, using fallback');
+            setTargetExpiration(`${today.getFullYear()}-12-31`);
           }
+        } else {
+          console.log('No config value returned, using fallback');
+          setTargetExpiration(`${today.getFullYear()}-12-31`);
         }
-      })
-      .catch(() => {
+      } catch (err) {
+        console.error('Error loading config:', err);
         // Fallback: use 12-31 of current year
         setTargetExpiration(`${today.getFullYear()}-12-31`);
-      });
+      }
+    };
+
+    loadConfig();
   }, []);
 
   const runAudit = async () => {
@@ -52,23 +71,34 @@ window.AuditPanel = () => {
     setAuditResults(null);
 
     try {
+      const payload = {
+        start_date: startDate,
+        end_date: endDate,
+        target_expiration: targetExpiration
+      };
+
+      console.log('Sending audit request with payload:', payload);
+
       const response = await mmrUtils.api('/api/audit/renewal', {
         method: 'POST',
-        body: JSON.stringify({
-          start_date: startDate,
-          end_date: endDate,
-          target_expiration: targetExpiration
-        })
+        body: JSON.stringify(payload)
       });
 
+      console.log('Audit response:', response);
+
       if (!response.success) {
-        setError(response.error || 'Audit failed');
+        const errorMsg = response.error || 'Audit failed';
+        console.error('Audit error:', errorMsg);
+        setError(errorMsg);
         return;
       }
 
+      console.log(`Audit complete: ${response.summary.total_transactions} transactions found`);
       setAuditResults(response);
     } catch (err) {
-      setError(`Error: ${err.message}`);
+      const errorMsg = `Error: ${err.message}`;
+      console.error('Audit exception:', err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
