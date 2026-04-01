@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:37 ET — Reduce logging noise: skip tie-timestamp MATCH entries
+Changed: `api_sheets_sync.py` MySQL→Sheets sync (members/events/payments): tie-timestamp entries with NO field diffs now silent (no log); only log SKIP when there ARE actual field differences. Shows which fields differ in log message. Removes noise from tie-only entries. Committed 3e11bbb. Status: Import ✅. Next: Expand approve & link to sync all 4 sheets (members, payments, events, gmail_transactions) not just events.
+
 ### 2026-04-01 14:35 ET — Auto-sync member events to Sheets after manual match
 Changed: `api_payments.py` — added _sync_member_events_to_sheets() helper (fetches member's events, filters sync-eligible columns, posts GAS webhook 'update_events'); integrated into approve_event_match (non-blocking auto-sync after approval); added POST /api/payments/sync-member-to-sheets/{member_id} endpoint for manual sync. Uses filter_sync_columns + requests to match Sheets schema. Committed 042af9a. Status: Import check ✅. Next: Deploy + test manual match approval triggers Sheets update.
 
