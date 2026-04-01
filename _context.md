@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:32 UTC — Fix date format: use ISO date-only (YYYY-MM-DD) for 3 columns
+Changed: `sheets.ts` rowToEventObject() — changed PaymentDate from toISO8601() to toISODateString(). Now all 3 date-only columns consistently use ISO date format (no time/timezone): Expiration, PaymentDate, TransactionDate. Fixes: Google Sheets showing "2027-03-31 4:00:00" instead of "2027-03-31". Committed 5367b6e. Status: Ready for GAS deploy. Next: Push GAS changes, verify dates sync cleanly to Sheets.
+
 ### 2026-04-01 19:30 UTC — Fix sync job status 404 errors: add database fallback
 Changed: `api_sheets_sync.py` api_sync_status() — endpoint now checks both in-memory jobs and database fallback. Root cause: sync jobs stored only in memory; when job completed or Flask restarted, status lookup returned 404. Fixes: persists job status across Flask restarts, better error messages. Committed 1f1a1b5. Status: Ready. Next: Redeploy Flask, sync errors should show proper status instead of 404.
 
