@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:44 ET — Fix tooltip positioning at viewport boundaries
+Changed: `payments.js` MemberTooltip component — now centers horizontally, constrains left/right edges (8px padding), detects insufficient space below (~160px), auto-repositions above anchor if needed. Prevents tooltips from overlapping screen boundaries. Committed 19b1ec9. Status: Ready.
+
 ### 2026-04-01 14:42 ET — Add 'Approve Selected' button for quick single-event approval
 Changed: `payments.js` — added green "✓ Approve Selected" button (visible when single event selected). Clicking it opens manual match modal for that event, allowing user to select transaction + approve in one action. Renamed old batch button to "📋 Approve Pending (Batch)" for clarity. Improves UX for single-event manual approval workflows. Committed e13ee9e. Status: Ready. Next: Deploy + test button flow.
 
