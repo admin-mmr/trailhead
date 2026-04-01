@@ -135,15 +135,23 @@ const ManualEventMatchModal = ({ isOpen, onClose, onMatchApproved }) => {
           onClick: onClose,
           style: {
             background: 'none', border: 'none', fontSize: 24, cursor: 'pointer',
-            color: 'var(--text2)', lineHeight: 1,
+            color: '#999', lineHeight: 1,
           }
         }, '×')
       ),
 
+      // Instructions
+      React.createElement('div', {
+        style: {
+          background: '#f0f8ff', color: '#333', padding: 12, borderRadius: 4,
+          marginBottom: 16, fontSize: 13, lineHeight: 1.5, borderLeft: '3px solid #4a9eff'
+        }
+      }, '1. Click an event on the left  2. Click the best matching transaction on the right  3. Click "✓ Approve & Link" at the bottom'),
+
       // Error message
       error && React.createElement('div', {
         style: {
-          background: 'var(--red)22', color: 'var(--red)', padding: 12, borderRadius: 4,
+          background: '#fee', color: '#c33', padding: 12, borderRadius: 4,
           marginBottom: 16, fontSize: 14,
         }
       }, error),
@@ -287,11 +295,14 @@ const TransactionRows = ({ transactions, selected, onSelect }) => {
         key: txn.MessageId,
         onClick: () => onSelect(txn),
         style: {
-          padding: 10, borderRadius: 4, border: '1px solid var(--border)',
-          background: selected?.MessageId === txn.MessageId ? 'var(--accent)22' : 'transparent',
-          cursor: 'pointer', transition: 'all 200ms', fontSize: 12,
+          padding: 10, borderRadius: 4, border: selected?.MessageId === txn.MessageId ? '2px solid #4a9eff' : '1px solid #ccc',
+          background: selected?.MessageId === txn.MessageId ? 'rgba(74, 158, 255, 0.15)' : 'transparent',
+          cursor: 'pointer', transition: 'all 150ms', fontSize: 12,
         }
       },
+        selected?.MessageId === txn.MessageId && React.createElement('div', {
+          style: { fontSize: 11, color: '#4a9eff', fontWeight: 600, marginBottom: 6 }
+        }, '✓ Selected'),
         React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontWeight: 500 } },
           React.createElement('span', null, fmtMoney(txn.Amount)),
           React.createElement('span', { style: { color: 'var(--text2)' } }, fmtDate(txn.TimeStamp))
