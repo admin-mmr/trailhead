@@ -396,12 +396,21 @@ def api_member_quick_all():
     Returns: MemberID, FirstName, LastName, Expiration, District, Type, WeChatID
     Used for real-time filtering as user types.
     """
+    # Fetch all active/pending members
     rows = query(
         "SELECT MemberID, FirstName, LastName, Expiration, District, Type, WeChatID "
         "FROM members "
         "WHERE Status IN ('active', 'pending') "
-        "ORDER BY LastName, FirstName"
+        "ORDER BY LastName, FirstName, MemberID"
     )
+
+    # Debug: log fetch count
+    if rows:
+        logger.info(f'member-quick/all: returning {len(rows)} members')
+        # Log first few for debugging
+        for i, r in enumerate(rows[:5]):
+            logger.debug(f'  [{i+1}] {r.get("MemberID")} {r.get("FirstName")} {r.get("LastName")}')
+
     return json_response({'ok': True, 'data': rows or []})
 
 
