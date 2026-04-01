@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Trophy, ArrowRight, AlertCircle, Clock, Upload } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
-import { formatLocaleDate } from '@/lib/date'
+import { formatLocaleDate, daysUntilExpiryNY } from '@/lib/date'
 import type { Member } from '@/types'
 
 interface PendingEvent {
@@ -50,9 +50,9 @@ export default function DashboardClient({ member, payments }: Props) {
 
   const expiryDate = formatLocaleDate(member.expiresAt, lang === 'zh' ? 'zh-CN' : 'en-US') || '—'
 
-  const daysUntilExpiry = member.expiresAt
-    ? Math.ceil((new Date(member.expiresAt).getTime() - Date.now()) / 86400000)
-    : null
+  // daysUntilExpiryNY() compares in America/New_York so the count is correct
+  // for NY members (avoids off-by-one from UTC-midnight vs local-midnight).
+  const daysUntilExpiry = daysUntilExpiryNY(member.expiresAt)
 
   return (
     <div className="space-y-6">

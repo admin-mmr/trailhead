@@ -3,10 +3,24 @@
 // Depends on: config.ts, types.ts
 // ============================================================
 
-// ---- Datetime utilities (ISO 8601 UTC conversions) ----
+// ---- Datetime utilities ----
+//
+// Two functions — use the right one for the right column type:
+//
+//   toISO8601()       → full UTC ISO 8601 string ("2026-03-31T04:00:00.000Z")
+//                       Use for DATETIME/TIMESTAMP fields: Timestamp, ProcessedTime,
+//                       Created, LastUpdated, LastLoginDate, ProfileLastUpdated.
+//
+//   toISODateString() → local calendar date ("2026-03-31")
+//                       Use for DATE-only fields: Expiration, TransactionDate, PaymentDate.
+//                       Uses getFullYear/getMonth/getDate to avoid the UTC-midnight shift
+//                       that would corrupt dates for users in negative UTC offsets (e.g. NYC).
+//                       Safe to pass a Date object, a "Tue Mar 31 2026 ..." string, or
+//                       an already-formatted "YYYY-MM-DD" string.
 
 /**
  * Parse any incoming datetime/timestamp and return ISO 8601 UTC string.
+ * For DATE-only columns, use toISODateString() instead.
  */
 function toISO8601(value: any): string | null {
   if (!value) return null;
@@ -34,6 +48,37 @@ function toISO8601(value: any): string | null {
     return d.toISOString();
   }
   return null;
+}
+
+/**
+ * Extract a local calendar date (YYYY-MM-DD) from any date representation.
+ *
+ * Handles:
+ *   - JS Date object      → uses getFullYear/getMonth/getDate (local, no UTC shift)
+ *   - "YYYY-MM-DD" string → returned as-is
+ *   - JS Date.toString()  → "Tue Mar 31 2026 00:00:00 GMT-0400 (...)" → local date
+ *   - empty / invalid     → ''
+ *
+ * This is the canonical date-only serializer for GAS → Python transit.
+ * It replaces the old pattern of toISO8601()[...].split('T')[0] which
+ * would produce the wrong date for scripts running in UTC-offset timezones.
+ */
+function toISODateString(value: any): string {
+  if (!value) return '';
+  let d: Date;
+  if (value instanceof Date) {
+    d = value;
+  } else {
+    const s = String(value).trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;           // already correct
+    d = new Date(s);
+  }
+  if (isNaN(d.getTime())) return '';
+  const y  = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dy = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${dy}`;
 }
 
 /**
@@ -69,15 +114,18 @@ function generateMasterLogID(): string {
 // 'pending_upgrade' is STORED in the Status column and read directly by rowToMember — not derived.
 function deriveStatus(expirationStr: string): 'active' | 'inactive' {
   if (!expirationStr || expirationStr.trim() === '') return 'inactive';
-  const exp = new Date(expirationStr);
-  if (isNaN(exp.getTime())) return 'inactive';
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return exp >= today ? 'active' : 'inactive';
+  // toISODateString() extracts the local calendar date, avoiding the UTC-midnight
+  // shift that new Date("YYYY-MM-DD") would apply (could flag members expired early).
+  const expISO = toISODateString(expirationStr);
+  if (!expISO) return 'inactive';
+  const todayISO = toISODateString(new Date());
+  return expISO >= todayISO ? 'active' : 'inactive';
 }
 
 function rowToMember(row: any[]): Member {
-  const expiration = String(row[MM_COL.EXPIRATION] ?? '');
+  // Use toISODateString (local date extraction) so Sheets date cells don't get
+  // UTC-shifted — a cell storing "2026-03-31" must arrive as "2026-03-31", not "2026-03-30".
+  const expiration = toISODateString(row[MM_COL.EXPIRATION]) || '';
   const storedStatus = String(row[MM_COL.STATUS] ?? '').trim().toLowerCase();
 
   // 'pending_upgrade' is stored explicitly. For all other values (including legacy
@@ -105,7 +153,7 @@ function rowToMember(row: any[]): Member {
     info: String(row[MM_COL.INFO] ?? ''),
     lastUpdated: toISO8601(row[MM_COL.LAST_UPDATED]) || '',
     membershipFeePaid: String(row[MM_COL.MEMBERSHIP_FEE_PAID] ?? ''),
-    paymentDate: toISO8601(row[MM_COL.PAYMENT_DATE]) || '',
+    paymentDate: toISODateString(row[MM_COL.PAYMENT_DATE]) || '',
     paymentTransaction: String(row[MM_COL.PAYMENT_TRANSACTION] ?? ''),
     joinYear: String(row[MM_COL.JOIN_YEAR] ?? ''),
     phoneNumber: String(row[MM_COL.PHONE_NUMBER] ?? ''),
@@ -416,7 +464,7 @@ function rowToFetchGmailRow(row: any[], rowIndex: number): FetchGmailRow {
     sender: String(row[FG_COL.SENDER] ?? ''),
     amount: Number(row[FG_COL.AMOUNT] ?? 0),
     memo: String(row[FG_COL.MEMO] ?? ''),
-    transactionDate: String(row[FG_COL.TRANSACTION_DATE] ?? ''),
+    transactionDate: toISODateString(row[FG_COL.TRANSACTION_DATE]) || '',
     transactionNumber: String(row[FG_COL.TRANSACTION_NUMBER] ?? ''),
     messageId: String(row[FG_COL.MESSAGE_ID] ?? ''),
     subject: String(row[FG_COL.SUBJECT] ?? ''),

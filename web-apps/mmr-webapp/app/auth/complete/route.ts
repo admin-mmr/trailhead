@@ -24,6 +24,7 @@ import { auth }                                   from '@/auth'
 import { findMemberByEmail, createNewMember,
          updateMemberOAuthSub }                   from '@/lib/db/members'
 import { createSession, setSessionCookie }        from '@/lib/auth/session'
+import { isExpiredNY }                            from '@/lib/date'
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
@@ -73,10 +74,13 @@ export const GET = auth(async function handler(req) {
   // If the DB says 'active' but ExpiresAt has passed, use 'expired' in the JWT
   // so the middleware can route the member to a limited-access view rather than
   // redirecting them straight to /login as if they were never a member.
+  //
+  // isExpiredNY() compares dates in America/New_York so a member who expires
+  // on March 31 is still 'active' until midnight NY time — not UTC midnight
+  // (which would flag them expired 4-5 hours early on the evening of March 30).
   const isExpiredActive =
     member.status === 'active' &&
-    !!member.expiresAt &&
-    new Date(member.expiresAt) < new Date()
+    isExpiredNY(member.expiresAt)
   const effectiveStatus = isExpiredActive ? ('expired' as const) : member.status
 
   // ── Create our custom session cookie ──────────────────────────────────────

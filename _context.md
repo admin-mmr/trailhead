@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 13:49 ET — Date/time refactor across all three layers
+Changed: (GAS) `sheets.ts` — added canonical `toISODateString()` (local date extraction, no UTC shift); fixed `deriveStatus`, `rowToMember.expiration+paymentDate`, `rowToFetchGmailRow.transactionDate`; removed buggy UTC-shifted version from `jobs.ts`; fixed `rowToMemberObject` + `rowToEventObject` in `webhook.ts` to use `toISO8601`/`toISODateString` correctly. (Python) `datetime_utils.py` — `to_datetime` now strips tzinfo (UTC normalize); `to_date` handles ISO strings directly. (webapp) `lib/date.ts` — added `parseLocalDate`, `isExpiredNY`, `daysUntilExpiryNY`, fixed `formatLocaleDate` for YYYY-MM-DD inputs; `auth/complete/route.ts` + `DashboardClient.tsx` use NY-aware helpers. Status: import check passes; GAS needs clasp deploy + redeploy; webapp needs `npm run build` verify. Next: deploy GAS, fix stale SheetsWebhookUrl, re-run import.
+
 ### 2026-04-01 13:21 ET — Fix Bugs 2/3/4: gmail_transactions import + ProcessedTime lifecycle
 Changed: (Bug 2) `_import_transactions` INSERT now captures all 13 fields (Sender, Amount, TransactionDate, TransactionNumber, Subject, OriginalMemo, Source) + backfill UPDATE for existing NULL rows; `sheets_row_for_engine` now passes Sheets PaymentID/Source for engine use. (Bug 4) Removed `ProcessedTime=NOW()` from `run_auto_match` + `manual_match`; added it to `approve_event` after actual approval (with `AND ProcessedTime IS NULL` guard). (Bug 3) `sync_engine.py:resolve_gmail_row` now syncs ProcessedTime/Source/PaymentID Sheets→MySQL when GAS has processed a row (MySQL NULL). Status: all three fixed; 404 error on import is a stale SheetsWebhookUrl — user must redeploy GAS and update config. Next: redeploy GAS webhook, update SheetsWebhookUrl in MySQL config, re-run import.
 

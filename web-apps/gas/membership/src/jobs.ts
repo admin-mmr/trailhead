@@ -10,15 +10,7 @@
 // ============================================================
 
 
-// ── toISODateString ───────────────────────────────────────
-// Normalise any date representation (including GAS's "Mon Jan 11 2027 00:00:00
-// GMT-0500" toString output) to YYYY-MM-DD.  Returns '' for empty/invalid input.
-function toISODateString(dateStr: string): string {
-  if (!dateStr || !dateStr.trim()) return '';
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
-}
-
+// toISODateString() is defined in sheets.ts (canonical, local-date extraction).
 
 // ── computeMembershipExpiration ───────────────────────────
 // Shared helper: given a base date, the member's current expiration string,
