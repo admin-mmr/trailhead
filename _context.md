@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:42 ET — Add 'Approve Selected' button for quick single-event approval
+Changed: `payments.js` — added green "✓ Approve Selected" button (visible when single event selected). Clicking it opens manual match modal for that event, allowing user to select transaction + approve in one action. Renamed old batch button to "📋 Approve Pending (Batch)" for clarity. Improves UX for single-event manual approval workflows. Committed e13ee9e. Status: Ready. Next: Deploy + test button flow.
+
 ### 2026-04-01 14:40 ET — Add 10-second buffer to Sheets timestamps (async propagation delay)
 Changed: `sync_engine.py` (both copies) — resolve_conflict() now subtracts 10 seconds from Sheets timestamp before comparing with MySQL. Accounts for GAS→Sheets API delay (~2-10s). Ties within 10s → MySQL wins (fresher data). Applied in ONE place only as single source of truth. Example: Sheets=T18:14:58, MySQL=T18:14:56 → adjusted Sheets=T18:14:48 → MySQL wins. Fixes: incomplete Sheets records blocking MySQL updates. Committed d3f07fc. Status: Import ✅. Next: Test that incomplete payments now get overwritten with complete MySQL records.
 
