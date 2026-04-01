@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:48 ET — Add member preview card to Quick Approve popover
+Changed: `payments.js` GmailQuickApprovePopover — added memberData state + useEffect to fetch member details when valid ID entered; displays floating preview card with Name, Expiration, WeChatID. Shows loading state while fetching, updates real-time. Green left border card for visual clarity. Improves UX for validation + quick member reference. Committed b492410. Status: Ready.
+
 ### 2026-04-01 14:46 ET — Fix Quick Approve popover cutoff at screen edge
 Changed: `payments.js` GmailQuickApprovePopover — added ref + useEffect to measure width after render; if extends beyond right edge (8px margin), switches from left-aligned to right-aligned. Added maxWidth (360px) constraint. Prevents popover cutoff on narrow/mobile screens. Committed 5ce5e92. Status: Ready.
 
