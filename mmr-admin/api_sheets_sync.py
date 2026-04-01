@@ -2189,11 +2189,32 @@ def api_sync_jobs():
 @sheets_sync_bp.route('/api/sync/status/<job_id>')
 @login_required
 def api_sync_status(job_id):
-    """Get status of a sync job."""
+    """Get status of a sync job (from memory or database)."""
+    # First check in-memory jobs
     job = get_job(job_id)
-    if not job:
-        return json_response({'ok': False, 'error': 'Job not found'}, 404)
-    return json_response({'ok': True, 'data': job})
+    if job:
+        return json_response({'ok': True, 'data': job})
+
+    # Fallback: check database for completed/archived jobs
+    try:
+        db_job = query(
+            "SELECT JobID, Operation, Status, Message, Progress, Result, StartedAt, UpdatedAt, CompletedAt "
+            "FROM sync_jobs WHERE JobID = %s",
+            [job_id]
+        )
+        if db_job:
+            logger.info(f'api_sync_status: job {job_id} found in database (status={db_job[0].get("Status")})')
+            return json_response({'ok': True, 'data': db_job[0]})
+    except Exception as e:
+        logger.warning(f'Failed to check database for job {job_id}: {e}')
+
+    # Job not found anywhere
+    logger.warning(f'api_sync_status: job {job_id} not found (may have completed/expired)')
+    return json_response({
+        'ok': False,
+        'error': f'Job {job_id} not found (may have completed or expired)',
+        'hint': 'Check completed jobs list or try restarting the sync'
+    }, 404)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
