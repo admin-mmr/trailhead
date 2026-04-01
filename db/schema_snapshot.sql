@@ -1,361 +1,394 @@
-section
-=== 1. TABLES ===
-table	engine	collation	comment
-activity_log	InnoDB	utf8mb4_unicode_ci	
-admins	InnoDB	utf8mb4_unicode_ci	
-config	InnoDB	utf8mb4_unicode_ci	
-gmail_transactions	InnoDB	utf8mb4_unicode_ci	
-member_log	InnoDB	utf8mb4_unicode_ci	
-members	InnoDB	utf8mb4_unicode_ci	
-nyrr_event_runners	InnoDB	utf8mb4_unicode_ci	
-nyrr_events	InnoDB	utf8mb4_unicode_ci	
-nyrr_processing_log	InnoDB	utf8mb4_unicode_ci	
-password_reset_tokens	InnoDB	utf8mb4_unicode_ci	
-payments	InnoDB	utf8mb4_unicode_ci	
-schema_migrations	InnoDB	utf8mb4_unicode_ci	
-sync_changes	InnoDB	utf8mb4_unicode_ci	
-sync_metadata	InnoDB	utf8mb4_unicode_ci	
-sync_snapshots	InnoDB	utf8mb4_unicode_ci	
-viewer_admins	InnoDB	utf8mb4_unicode_ci	
-viewer_user_settings	InnoDB	utf8mb4_unicode_ci	
-webapp_events	InnoDB	utf8mb4_unicode_ci	
-section
-=== 2. COLUMNS ===
-table	#	column_name	col_type	nullable	default	extra	key	comment
-activity_log	1	LogID	varchar(50)	NO	NULL		PRI	
-activity_log	2	Timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
-activity_log	3	SessionID	varchar(50)	YES	NULL		MUL	
-activity_log	4	MemberID	varchar(10)	YES	NULL		MUL	
-activity_log	5	Email	varchar(255)	YES	NULL			
-activity_log	6	EventID	varchar(50)	YES	NULL			
-activity_log	7	Action	varchar(100)	NO	NULL		MUL	
-activity_log	8	State	varchar(50)	YES	NULL			
-activity_log	9	ErrorCode	varchar(50)	YES	NULL			
-activity_log	10	ErrorMessage	text	YES	NULL			
-admins	1	id	int	NO	NULL	auto_increment	PRI	
-admins	2	email	varchar(255)	NO	NULL		UNI	
-admins	3	added_by	varchar(255)	NO	system			
-admins	4	added_at	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-config	1	ConfigKey	varchar(100)	NO	NULL		PRI	
-config	2	ConfigValue	varchar(500)	NO	NULL			
-config	3	Description	varchar(500)	YES	NULL			
-config	4	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
-gmail_transactions	1	MessageId	varchar(100)	NO	NULL		PRI	
-gmail_transactions	2	TimeStamp	datetime	NO	NULL			
-gmail_transactions	3	Sender	varchar(255)	YES	NULL			
-gmail_transactions	4	Amount	decimal(10,2)	YES	NULL			
-gmail_transactions	5	Memo	text	YES	NULL			
-gmail_transactions	6	TransactionDate	date	YES	NULL		MUL	
-gmail_transactions	7	TransactionNumber	varchar(100)	YES	NULL		MUL	
-gmail_transactions	8	Subject	varchar(500)	YES	NULL			
-gmail_transactions	9	OriginalMemo	text	YES	NULL			
-gmail_transactions	10	Notes	text	YES	NULL			
-gmail_transactions	11	ProcessedTime	datetime	YES	NULL			
-gmail_transactions	12	Source	varchar(50)	YES	NULL		MUL	
-gmail_transactions	13	WebAppID	varchar(50)	YES	NULL		MUL	
-gmail_transactions	14	IsArchived	tinyint(1)	NO	0		MUL	
-gmail_transactions	15	SyncedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
-member_log	1	LogID	varchar(50)	NO	NULL		PRI	
-member_log	2	LoggingTime	datetime	NO	NULL		MUL	
-member_log	3	MemberID	varchar(10)	NO	NULL		MUL	
-member_log	4	ChangeType	varchar(20)	YES	NULL			
-member_log	5	Status	varchar(50)	YES	NULL			
-member_log	6	Created	datetime	YES	NULL			
-member_log	7	Expiration	datetime	YES	NULL			
-member_log	8	Email	varchar(255)	YES	NULL			
-member_log	9	FirstName	varchar(100)	YES	NULL			
-member_log	10	LastName	varchar(100)	YES	NULL			
-member_log	11	Type	varchar(50)	YES	NULL			
-member_log	12	FamilyID	varchar(10)	YES	NULL			
-member_log	13	Gender	varchar(20)	YES	NULL			
-member_log	14	WeChatID	varchar(100)	YES	NULL			
-member_log	15	District	varchar(100)	YES	NULL			
-member_log	16	WebApp	varchar(50)	YES	NULL			
-member_log	17	PaymentCheck	varchar(50)	YES	NULL			
-member_log	18	Info	text	YES	NULL			
-member_log	19	LastUpdated	datetime	YES	NULL			
-member_log	20	MembershipFeePaid	decimal(10,2)	YES	NULL			
-member_log	21	PaymentDate	datetime	YES	NULL			
-member_log	22	PaymentTransaction	varchar(100)	YES	NULL			
-member_log	23	JoinYear	smallint	YES	NULL			
-member_log	24	PhoneNumber	varchar(30)	YES	NULL			
-member_log	25	LastLoginDate	datetime	YES	NULL			
-member_log	26	Notes	text	YES	NULL			
-member_log	27	NYRRRunnerName	varchar(100)	YES	NULL			
-member_log	28	YearBorn	smallint	YES	NULL			
-members	1	MemberID	varchar(10)	NO	NULL		PRI	
-members	2	Status	enum('active','not active','pending')	NO	pending		MUL	
-members	3	Created	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-members	4	Expiration	datetime	YES	NULL		MUL	
-members	5	Email	varchar(255)	NO	NULL		UNI	
-members	6	FirstName	varchar(100)	NO	NULL			
-members	7	LastName	varchar(100)	NO	NULL			
-members	8	Type	enum('Individual','Family')	NO	Individual			
-members	9	FamilyID	varchar(10)	YES	NULL		MUL	
-members	10	Gender	varchar(20)	YES	NULL			
-members	11	WeChatID	varchar(100)	YES	NULL			
-members	12	District	varchar(100)	YES	NULL			
-members	13	WebApp	varchar(50)	YES	NULL			
-members	14	PaymentCheck	varchar(50)	YES	NULL			
-members	15	Info	text	YES	NULL			
-members	16	LastUpdated	datetime	YES	NULL			
-members	17	MembershipFeePaid	decimal(10,2)	YES	NULL			
-members	18	PaymentDate	datetime	YES	NULL			
-members	19	PaymentTransaction	varchar(100)	YES	NULL			
-members	20	JoinYear	smallint	YES	NULL		MUL	
-members	21	PhoneNumber	varchar(30)	YES	NULL			
-members	22	LastLoginDate	datetime	YES	NULL			
-members	23	ProfileLastUpdated	datetime	YES	NULL			When member profile was last updated (from Google Sheets)
-members	24	Notes	text	YES	NULL			
-members	25	NYRRRunnerName	varchar(100)	YES	NULL			
-members	26	YearBorn	smallint	YES	NULL			
-members	27	YearBornGuess	smallint	YES	NULL			System-inferred birth year from NYRR age data
-members	28	password_hash	varchar(255)	YES	NULL			
-members	29	google_sub	varchar(255)	YES	NULL		UNI	
-members	30	microsoft_sub	varchar(255)	YES	NULL		UNI	
-members	31	apple_sub	varchar(255)	YES	NULL		UNI	
-members	32	yahoo_sub	varchar(255)	YES	NULL		UNI	
-members	33	facebook_sub	varchar(255)	YES	NULL		UNI	Facebook user ID (sub) for Sign in with Facebook
-members	34	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-members	35	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
-nyrr_event_runners	1	id	int	NO	NULL	auto_increment	PRI	
-nyrr_event_runners	2	nyrr_event_id	int	NO	NULL		MUL	
-nyrr_event_runners	3	nyrr_runner_id	varchar(20)	NO	NULL		MUL	
-nyrr_event_runners	4	runner_name	varchar(200)	NO	NULL		MUL	
-nyrr_event_runners	5	first_name	varchar(100)	YES	NULL			
-nyrr_event_runners	6	last_name	varchar(100)	YES	NULL		MUL	
-nyrr_event_runners	7	age	smallint	YES	NULL			
-nyrr_event_runners	8	gender	varchar(10)	YES	NULL			
-nyrr_event_runners	9	state_province	varchar(50)	YES	NULL			
-nyrr_event_runners	10	bib_number	varchar(20)	YES	NULL			
-nyrr_event_runners	11	finish_time	varchar(20)	YES	NULL			
-nyrr_event_runners	12	pace	varchar(20)	YES	NULL			
-nyrr_event_runners	13	overall_place	int	YES	NULL			
-nyrr_event_runners	14	gender_place	int	YES	NULL			
-nyrr_event_runners	15	team_code	varchar(20)	YES	NULL		MUL	
-nyrr_event_runners	16	is_registered_only	tinyint(1)	NO	0			
-nyrr_event_runners	17	mmr_member_id	varchar(10)	YES	NULL		MUL	
-nyrr_event_runners	18	match_method	enum('auto_name','auto_lastname','auto_firstlast','manual','not_member','unmatched')	YES	NULL		MUL	
-nyrr_event_runners	19	matched_by	varchar(100)	YES	NULL			
-nyrr_event_runners	20	matched_at	datetime	YES	NULL			
-nyrr_event_runners	21	scan_timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-nyrr_event_runners	22	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-nyrr_event_runners	23	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
-nyrr_events	1	id	int	NO	NULL	auto_increment	PRI	
-nyrr_events	2	event_code	varchar(255)	YES	NULL		UNI	
-nyrr_events	3	event_name	varchar(255)	NO	NULL			
-nyrr_events	4	event_url	varchar(500)	YES	NULL			
-nyrr_events	5	location	varchar(255)	YES	NULL			
-nyrr_events	6	distance	varchar(50)	YES	NULL			
-nyrr_events	7	event_date	date	YES	NULL		MUL	
-nyrr_events	8	event_year	smallint	YES	NULL		MUL	
-nyrr_events	9	is_upcoming	tinyint(1)	NO	0		MUL	
-nyrr_events	10	is_virtual	tinyint(1)	NO	0			
-nyrr_events	11	processing_status	enum('Pending','InProgress','Completed','Error')	NO	Pending		MUL	
-nyrr_events	12	processed_at	datetime	YES	NULL			
-nyrr_events	13	processed_by	varchar(100)	YES	NULL			
-nyrr_events	14	result_count	int	NO	0			
-nyrr_events	15	mmr_runner_count	int	NO	0			
-nyrr_events	16	mmr_matched_count	int	NO	0			
-nyrr_events	17	notes	text	YES	NULL			
-nyrr_events	18	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-nyrr_events	19	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
-nyrr_processing_log	1	id	int	NO	NULL	auto_increment	PRI	
-nyrr_processing_log	2	run_timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
-nyrr_processing_log	3	triggered_by	varchar(100)	YES	NULL			
-nyrr_processing_log	4	nyrr_event_id	int	YES	NULL		MUL	
-nyrr_processing_log	5	run_status	enum('Success','PartialSuccess','Failed')	NO	NULL		MUL	
-nyrr_processing_log	6	rows_written	int	NO	0			
-nyrr_processing_log	7	error_details	text	YES	NULL			
-nyrr_processing_log	8	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-password_reset_tokens	1	TokenID	varchar(50)	NO	NULL		PRI	
-password_reset_tokens	2	Email	varchar(255)	NO	NULL		MUL	
-password_reset_tokens	3	TokenHash	varchar(255)	NO	NULL			
-password_reset_tokens	4	ExpiresAt	datetime	NO	NULL		MUL	
-password_reset_tokens	5	Used	tinyint(1)	NO	0			
-password_reset_tokens	6	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-payments	1	PaymentID	varchar(50)	NO	NULL		PRI	
-payments	2	EventID	varchar(50)	YES	NULL		MUL	
-payments	3	MemberID	varchar(10)	YES	NULL		MUL	
-payments	4	PaymentDate	datetime	YES	NULL		MUL	
-payments	5	Amount	decimal(10,2)	NO	NULL			
-payments	6	PaymentIntent	varchar(100)	YES	NULL			Payment intent ID (from webapp_events)
-payments	7	MembershipType	varchar(100)	YES	NULL			
-payments	8	PaymentMethod	varchar(50)	YES	NULL			
-payments	9	PayerName	varchar(100)	YES	NULL			
-payments	10	MemoField	text	YES	NULL			
-payments	11	Last4Digits	varchar(10)	YES	NULL			
-payments	12	TransactionReference	varchar(100)	YES	NULL			
-payments	13	PeriodStart	date	YES	NULL			
-payments	14	PeriodEnd	date	YES	NULL		MUL	
-payments	15	ProcessedBy	varchar(255)	YES	NULL			
-payments	16	ProcessedDate	datetime	YES	NULL			
-payments	17	Source	varchar(50)	YES	NULL			
-payments	18	Notes	text	YES	NULL			
-payments	19	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-schema_migrations	1	version	varchar(50)	NO	NULL		PRI	
-schema_migrations	2	description	varchar(255)	YES	NULL			
-schema_migrations	3	executed_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-sync_changes	1	change_id	int	NO	NULL	auto_increment	PRI	
-sync_changes	2	sheet_name	varchar(255)	YES	NULL		MUL	
-sync_changes	3	snapshot_id	int	YES	NULL		MUL	
-sync_changes	4	change_type	varchar(20)	YES	NULL			
-sync_changes	5	row_key	varchar(255)	YES	NULL			
-sync_changes	6	old_values	json	YES	NULL			
-sync_changes	7	new_values	json	YES	NULL			
-sync_changes	8	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-sync_metadata	1	sheet_name	varchar(255)	NO	NULL		PRI	
-sync_metadata	2	spreadsheet_id	varchar(255)	YES	NULL			
-sync_metadata	3	sync_status	varchar(50)	YES	NULL			
-sync_metadata	4	last_synced_at	datetime	YES	NULL			
-sync_metadata	5	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-sync_metadata	6	updated_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
-sync_snapshots	1	snapshot_id	int	NO	NULL	auto_increment	PRI	
-sync_snapshots	2	sheet_name	varchar(255)	YES	NULL		MUL	
-sync_snapshots	3	snapshot_hash	varchar(255)	YES	NULL			
-sync_snapshots	4	row_count	int	YES	NULL			
-sync_snapshots	5	snapshot_timestamp	datetime	YES	NULL		MUL	
-sync_snapshots	6	google_modified_at	datetime	YES	NULL			
-sync_snapshots	7	snapshot_data_url	longtext	YES	NULL			
-sync_snapshots	8	status	varchar(50)	YES	pending			
-sync_snapshots	9	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-v_family_members	1	FamilyID	varchar(10)	YES	NULL			
-v_family_members	2	primary_member_id	varchar(10)	YES	NULL			
-v_family_members	3	member_id	varchar(10)	NO	NULL			
-v_family_members	4	FirstName	varchar(100)	NO	NULL			
-v_family_members	5	LastName	varchar(100)	NO	NULL			
-v_family_members	6	Email	varchar(255)	NO	NULL			
-v_family_members	7	Status	enum('active','not active','pending')	NO	pending			
-v_family_members	8	Expiration	datetime	YES	NULL			
-v_family_members	9	Type	enum('Individual','Family')	NO	Individual			
-viewer_admins	1	id	int	NO	NULL	auto_increment	PRI	
-viewer_admins	2	email	varchar(255)	NO	NULL		UNI	
-viewer_admins	3	role	enum('admin','super_admin')	NO	admin			
-viewer_admins	4	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-viewer_user_settings	1	id	int	NO	NULL	auto_increment	PRI	
-viewer_user_settings	2	email	varchar(255)	NO	NULL		MUL	
-viewer_user_settings	3	table_name	varchar(255)	NO	NULL			
-viewer_user_settings	4	visible_columns	json	YES	NULL			
-viewer_user_settings	5	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-viewer_user_settings	6	updated_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
-webapp_events	1	EventID	varchar(50)	NO	NULL		PRI	
-webapp_events	2	EventType	varchar(50)	NO	NULL			
-webapp_events	3	EventCategory	varchar(50)	YES	payment			
-webapp_events	4	Timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
-webapp_events	5	ExpiresAt	datetime	YES	NULL			
-webapp_events	6	MemberID	varchar(10)	YES	NULL		MUL	
-webapp_events	7	Email	varchar(255)	NO	NULL		MUL	
-webapp_events	8	PaymentIntent	varchar(100)	YES	NULL			
-webapp_events	9	Amount	decimal(10,2)	YES	NULL			
-webapp_events	10	PaymentMethod	varchar(50)	YES	NULL			
-webapp_events	11	PayerName	varchar(100)	YES	NULL			
-webapp_events	12	MemoField	text	YES	NULL			
-webapp_events	13	Last4Digits	varchar(10)	YES	NULL			
-webapp_events	14	FamilyMemberEmails	text	YES	NULL			
-webapp_events	15	Status	enum('pending','matched','approved','rejected','expired','error')	NO	pending		MUL	
-webapp_events	16	MatchedMessageId	varchar(100)	YES	NULL		MUL	
-webapp_events	17	MatchedTransactionNumber	varchar(100)	YES	NULL			
-webapp_events	18	AdminApprover	varchar(255)	YES	NULL			
-webapp_events	19	ApprovalDate	datetime	YES	NULL			
-webapp_events	20	Notes	text	YES	NULL			
-webapp_events	21	PaymentDate	datetime	YES	NULL			
-webapp_events	22	ScreenshotFileId	varchar(255)	YES	NULL			
-webapp_events	23	GDriveFilePath	varchar(500)	YES	NULL			
-webapp_events	24	OCRText	text	YES	NULL			
-webapp_events	25	OCRTimestamp	datetime	YES	NULL			
-webapp_events	26	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-webapp_events	27	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
-section
-=== 3. INDEXES ===
-table	index_name	non_unique	seq	column_name	index_type	nullable
-activity_log	idx_actlog_action	1	1	Action	BTREE	
-activity_log	idx_actlog_memberid	1	1	MemberID	BTREE	YES
-activity_log	idx_actlog_sessionid	1	1	SessionID	BTREE	YES
-activity_log	idx_actlog_timestamp	1	1	Timestamp	BTREE	
-activity_log	PRIMARY	0	1	LogID	BTREE	
-admins	email	0	1	email	BTREE	
-admins	PRIMARY	0	1	id	BTREE	
-config	PRIMARY	0	1	ConfigKey	BTREE	
-gmail_transactions	idx_gmail_isarchived	1	1	IsArchived	BTREE	
-gmail_transactions	idx_gmail_source	1	1	Source	BTREE	YES
-gmail_transactions	idx_gmail_transactiondate	1	1	TransactionDate	BTREE	YES
-gmail_transactions	idx_gmail_transactionnumber	1	1	TransactionNumber	BTREE	YES
-gmail_transactions	idx_gmail_webappid	1	1	WebAppID	BTREE	YES
-gmail_transactions	PRIMARY	0	1	MessageId	BTREE	
-member_log	idx_loggingtime	1	1	LoggingTime	BTREE	
-member_log	idx_memberid	1	1	MemberID	BTREE	
-member_log	PRIMARY	0	1	LogID	BTREE	
-members	apple_sub	0	1	apple_sub	BTREE	YES
-members	google_sub	0	1	google_sub	BTREE	YES
-members	idx_expiration	1	1	Expiration	BTREE	YES
-members	idx_family	1	1	FamilyID	BTREE	YES
-members	idx_joinyear	1	1	JoinYear	BTREE	YES
-members	idx_status	1	1	Status	BTREE	
-members	microsoft_sub	0	1	microsoft_sub	BTREE	YES
-members	PRIMARY	0	1	MemberID	BTREE	
-members	uq_members_email	0	1	Email	BTREE	
-members	uq_members_facebook	0	1	facebook_sub	BTREE	YES
-members	yahoo_sub	0	1	yahoo_sub	BTREE	YES
-nyrr_event_runners	idx_match_method	1	1	match_method	BTREE	YES
-nyrr_event_runners	idx_mmr_member_id	1	1	mmr_member_id	BTREE	YES
-nyrr_event_runners	idx_nyrr_runner_id	1	1	nyrr_runner_id	BTREE	
-nyrr_event_runners	idx_runner_last_name	1	1	last_name	BTREE	YES
-nyrr_event_runners	idx_runner_name	1	1	runner_name	BTREE	
-nyrr_event_runners	idx_team_code	1	1	team_code	BTREE	YES
-nyrr_event_runners	PRIMARY	0	1	id	BTREE	
-nyrr_event_runners	uq_event_runner	0	1	nyrr_event_id	BTREE	
-nyrr_event_runners	uq_event_runner	0	2	nyrr_runner_id	BTREE	
-nyrr_events	idx_event_date	1	1	event_date	BTREE	YES
-nyrr_events	idx_event_year	1	1	event_year	BTREE	YES
-nyrr_events	idx_is_upcoming	1	1	is_upcoming	BTREE	
-nyrr_events	idx_processing_status	1	1	processing_status	BTREE	
-nyrr_events	PRIMARY	0	1	id	BTREE	
-nyrr_events	uq_event_code	0	1	event_code	BTREE	YES
-nyrr_processing_log	idx_log_event_id	1	1	nyrr_event_id	BTREE	YES
-nyrr_processing_log	idx_log_run_status	1	1	run_status	BTREE	
-nyrr_processing_log	idx_log_run_timestamp	1	1	run_timestamp	BTREE	
-nyrr_processing_log	PRIMARY	0	1	id	BTREE	
-password_reset_tokens	idx_prt_email	1	1	Email	BTREE	
-password_reset_tokens	idx_prt_expiresat	1	1	ExpiresAt	BTREE	
-password_reset_tokens	PRIMARY	0	1	TokenID	BTREE	
-payments	idx_payments_eventid	1	1	EventID	BTREE	YES
-payments	idx_payments_memberid	1	1	MemberID	BTREE	YES
-payments	idx_payments_paymentdate	1	1	PaymentDate	BTREE	YES
-payments	idx_payments_periodend	1	1	PeriodEnd	BTREE	YES
-payments	PRIMARY	0	1	PaymentID	BTREE	
-schema_migrations	PRIMARY	0	1	version	BTREE	
-sync_changes	idx_sheet	1	1	sheet_name	BTREE	YES
-sync_changes	idx_snapshot	1	1	snapshot_id	BTREE	YES
-sync_changes	PRIMARY	0	1	change_id	BTREE	
-sync_metadata	PRIMARY	0	1	sheet_name	BTREE	
-sync_snapshots	idx_sheet	1	1	sheet_name	BTREE	YES
-sync_snapshots	idx_timestamp	1	1	snapshot_timestamp	BTREE	YES
-sync_snapshots	PRIMARY	0	1	snapshot_id	BTREE	
-viewer_admins	email	0	1	email	BTREE	
-viewer_admins	PRIMARY	0	1	id	BTREE	
-viewer_user_settings	PRIMARY	0	1	id	BTREE	
-viewer_user_settings	uq_user_table	0	1	email	BTREE	
-viewer_user_settings	uq_user_table	0	2	table_name	BTREE	
-webapp_events	idx_pe_email	1	1	Email	BTREE	
-webapp_events	idx_pe_matchedmessageid	1	1	MatchedMessageId	BTREE	YES
-webapp_events	idx_pe_memberid	1	1	MemberID	BTREE	YES
-webapp_events	idx_pe_status	1	1	Status	BTREE	
-webapp_events	idx_pe_timestamp	1	1	Timestamp	BTREE	
-webapp_events	PRIMARY	0	1	EventID	BTREE	
-section
-=== 4. FOREIGN KEYS ===
-table	column_name	constraint_name	ref_table	ref_column	UPDATE_RULE	DELETE_RULE
-nyrr_event_runners	nyrr_event_id	fk_event_runners_event	nyrr_events	id	NO ACTION	CASCADE
-nyrr_processing_log	nyrr_event_id	fk_processing_log_event	nyrr_events	id	NO ACTION	SET NULL
-payments	EventID	fk_payments_event	webapp_events	EventID	NO ACTION	SET NULL
-payments	MemberID	fk_payments_member	members	MemberID	NO ACTION	SET NULL
-webapp_events	MatchedMessageId	fk_pe_gmail	gmail_transactions	MessageId	NO ACTION	SET NULL
-webapp_events	MemberID	fk_pe_member	members	MemberID	NO ACTION	SET NULL
-section
-=== 5. VIEWS ===
-view_name	VIEW_DEFINITION
-v_family_members	select `m`.`FamilyID` AS `FamilyID`,min(`m`.`MemberID`) OVER (PARTITION BY `m`.`FamilyID` )  AS `primary_member_id`,`m`.`MemberID` AS `member_id`,`m`.`FirstName` AS `FirstName`,`m`.`LastName` AS `LastName`,`m`.`Email` AS `Email`,`m`.`Status` AS `Status`,`m`.`Expiration` AS `Expiration`,`m`.`Type` AS `Type` from `mmrdb`.`members` `m` where (`m`.`FamilyID` is not null)
-section
-=== 6. ROUTINES ===
-type	name	return_type	body
-PROCEDURE	generate_member_id		BEGIN\n    DECLARE max_num INT DEFAULT 0;\n    START TRANSACTION;\n        SELECT COALESCE(MAX(CAST(SUBSTRING(MemberID, 2) AS UNSIGNED)), 0) INTO max_num FROM members FOR UPDATE;\n        SET new_id = CONCAT('A', LPAD(max_num + 1, 4, '0'));\n    COMMIT;\nEND
+-- MMR Schema Snapshot -- generated via dump_schema()
+-- 2026-04-01T03:10:05.776301Z
+
+-- ---
+CREATE TABLE `activity_log` (
+  `LogID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `SessionID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `EventID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Action` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `State` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ErrorCode` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ErrorMessage` text COLLATE utf8mb4_unicode_ci,
+  PRIMARY KEY (`LogID`),
+  KEY `idx_actlog_memberid` (`MemberID`),
+  KEY `idx_actlog_timestamp` (`Timestamp`),
+  KEY `idx_actlog_action` (`Action`),
+  KEY `idx_actlog_sessionid` (`SessionID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `admins` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `added_by` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'system',
+  `added_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `config` (
+  `ConfigKey` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ConfigValue` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Description` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ConfigKey`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `gmail_transactions` (
+  `MessageId` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `TimeStamp` datetime NOT NULL,
+  `Sender` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Amount` decimal(10,2) DEFAULT NULL,
+  `Memo` text COLLATE utf8mb4_unicode_ci,
+  `TransactionDate` date DEFAULT NULL,
+  `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Subject` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `OriginalMemo` text COLLATE utf8mb4_unicode_ci,
+  `Notes` text COLLATE utf8mb4_unicode_ci,
+  `ProcessedTime` datetime DEFAULT NULL,
+  `Source` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `WebAppID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `IsArchived` tinyint(1) NOT NULL DEFAULT '0',
+  `SyncedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`MessageId`),
+  KEY `idx_gmail_transactiondate` (`TransactionDate`),
+  KEY `idx_gmail_transactionnumber` (`TransactionNumber`),
+  KEY `idx_gmail_isarchived` (`IsArchived`),
+  KEY `idx_gmail_webappid` (`WebAppID`),
+  KEY `idx_gmail_source` (`Source`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `member_log` (
+  `LogID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `LoggingTime` datetime NOT NULL,
+  `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ChangeType` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Status` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Created` datetime DEFAULT NULL,
+  `Expiration` datetime DEFAULT NULL,
+  `Email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `FirstName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `LastName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `FamilyID` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Gender` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `WeChatID` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `District` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `WebApp` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PaymentCheck` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Info` text COLLATE utf8mb4_unicode_ci,
+  `LastUpdated` datetime DEFAULT NULL,
+  `MembershipFeePaid` decimal(10,2) DEFAULT NULL,
+  `PaymentDate` datetime DEFAULT NULL,
+  `PaymentTransaction` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `JoinYear` smallint DEFAULT NULL,
+  `PhoneNumber` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `LastLoginDate` datetime DEFAULT NULL,
+  `Notes` text COLLATE utf8mb4_unicode_ci,
+  `NYRRRunnerName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `YearBorn` smallint DEFAULT NULL,
+  PRIMARY KEY (`LogID`),
+  KEY `idx_memberid` (`MemberID`),
+  KEY `idx_loggingtime` (`LoggingTime`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `members` (
+  `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Status` enum('active','not active','pending') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `Created` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `Expiration` datetime DEFAULT NULL,
+  `Email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `FirstName` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `LastName` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Type` enum('Individual','Family') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Individual',
+  `FamilyID` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Gender` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `WeChatID` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `District` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `WebApp` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PaymentCheck` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Info` text COLLATE utf8mb4_unicode_ci,
+  `LastUpdated` datetime DEFAULT NULL,
+  `MembershipFeePaid` decimal(10,2) DEFAULT NULL,
+  `PaymentDate` datetime DEFAULT NULL,
+  `PaymentTransaction` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `JoinYear` smallint DEFAULT NULL,
+  `PhoneNumber` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `LastLoginDate` datetime DEFAULT NULL,
+  `ProfileLastUpdated` datetime DEFAULT NULL COMMENT 'When member profile was last updated (from Google Sheets)',
+  `Notes` text COLLATE utf8mb4_unicode_ci,
+  `NYRRRunnerName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `YearBorn` smallint DEFAULT NULL,
+  `YearBornGuess` smallint DEFAULT NULL COMMENT 'System-inferred birth year from NYRR age data',
+  `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `google_sub` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `microsoft_sub` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `apple_sub` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `yahoo_sub` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `facebook_sub` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Facebook user ID (sub) for Sign in with Facebook',
+  `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`MemberID`),
+  UNIQUE KEY `uq_members_email` (`Email`),
+  UNIQUE KEY `google_sub` (`google_sub`),
+  UNIQUE KEY `microsoft_sub` (`microsoft_sub`),
+  UNIQUE KEY `apple_sub` (`apple_sub`),
+  UNIQUE KEY `yahoo_sub` (`yahoo_sub`),
+  UNIQUE KEY `uq_members_facebook` (`facebook_sub`),
+  KEY `idx_status` (`Status`),
+  KEY `idx_expiration` (`Expiration`),
+  KEY `idx_family` (`FamilyID`),
+  KEY `idx_joinyear` (`JoinYear`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `nyrr_event_runners` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `nyrr_event_id` int NOT NULL,
+  `nyrr_runner_id` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `runner_name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `first_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `last_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `age` smallint DEFAULT NULL,
+  `gender` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `state_province` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `city` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `bib_number` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `finish_time` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `pace` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `overall_place` int DEFAULT NULL,
+  `gender_place` int DEFAULT NULL,
+  `age_grade_time` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `age_grade_place` int DEFAULT NULL,
+  `age_grade_percent` decimal(5,2) DEFAULT NULL,
+  `team_code` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sync_source` enum('finishers','mmr_team','both') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `is_registered_only` tinyint(1) NOT NULL DEFAULT '0',
+  `mmr_member_id` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `match_method` enum('auto_name','auto_lastname','auto_firstlast','auto_partial_name','manual','not_member','unmatched') COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `matched_by` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `matched_at` datetime DEFAULT NULL,
+  `scan_timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_event_bib` (`nyrr_event_id`,`bib_number`),
+  KEY `idx_runner_id` (`nyrr_runner_id`),
+  KEY `idx_last_name` (`last_name`),
+  KEY `idx_runner_name` (`runner_name`),
+  KEY `idx_mmr_member` (`mmr_member_id`),
+  KEY `idx_match_method` (`match_method`),
+  KEY `idx_team_code` (`team_code`),
+  CONSTRAINT `fk_event_runners_event` FOREIGN KEY (`nyrr_event_id`) REFERENCES `nyrr_events` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=353202 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `nyrr_events` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `event_code` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `event_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `event_url` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `location` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `distance` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `event_date` date DEFAULT NULL,
+  `event_year` smallint DEFAULT NULL,
+  `is_upcoming` tinyint(1) NOT NULL DEFAULT '0',
+  `is_virtual` tinyint(1) NOT NULL DEFAULT '0',
+  `processing_status` enum('Pending','InProgress','Completed','Error') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending',
+  `processed_at` datetime DEFAULT NULL,
+  `processed_by` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `result_count` int NOT NULL DEFAULT '0',
+  `nyrr_finisher_count` int DEFAULT NULL,
+  `mmr_runner_count` int NOT NULL DEFAULT '0',
+  `mmr_matched_count` int NOT NULL DEFAULT '0',
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_event_code` (`event_code`),
+  KEY `idx_event_date` (`event_date`),
+  KEY `idx_event_year` (`event_year`),
+  KEY `idx_processing_status` (`processing_status`),
+  KEY `idx_is_upcoming` (`is_upcoming`),
+  KEY `idx_finisher_count` (`nyrr_finisher_count`),
+  KEY `idx_finisher_gap` (`event_date`,`nyrr_finisher_count`,`result_count`)
+) ENGINE=InnoDB AUTO_INCREMENT=88 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `nyrr_processing_log` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `run_timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `triggered_by` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `nyrr_event_id` int DEFAULT NULL,
+  `run_status` enum('Success','PartialSuccess','Failed') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rows_written` int NOT NULL DEFAULT '0',
+  `error_details` text COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_log_run_timestamp` (`run_timestamp`),
+  KEY `idx_log_run_status` (`run_status`),
+  KEY `idx_log_event_id` (`nyrr_event_id`),
+  CONSTRAINT `fk_processing_log_event` FOREIGN KEY (`nyrr_event_id`) REFERENCES `nyrr_events` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=95 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `password_reset_tokens` (
+  `TokenID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `TokenHash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ExpiresAt` datetime NOT NULL,
+  `Used` tinyint(1) NOT NULL DEFAULT '0',
+  `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`TokenID`),
+  KEY `idx_prt_email` (`Email`),
+  KEY `idx_prt_expiresat` (`ExpiresAt`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `payments` (
+  `PaymentID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `EventID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PaymentDate` datetime DEFAULT NULL,
+  `Amount` decimal(10,2) NOT NULL,
+  `PaymentIntent` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Payment intent ID (from webapp_events)',
+  `MembershipType` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PaymentMethod` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PayerName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MemoField` text COLLATE utf8mb4_unicode_ci,
+  `Last4Digits` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TransactionReference` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PeriodStart` date DEFAULT NULL,
+  `PeriodEnd` date DEFAULT NULL,
+  `ProcessedBy` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ProcessedDate` datetime DEFAULT NULL,
+  `Source` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Notes` text COLLATE utf8mb4_unicode_ci,
+  `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`PaymentID`),
+  KEY `idx_payments_memberid` (`MemberID`),
+  KEY `idx_payments_eventid` (`EventID`),
+  KEY `idx_payments_paymentdate` (`PaymentDate`),
+  KEY `idx_payments_periodend` (`PeriodEnd`),
+  CONSTRAINT `fk_payments_event` FOREIGN KEY (`EventID`) REFERENCES `webapp_events` (`EventID`) ON DELETE SET NULL,
+  CONSTRAINT `fk_payments_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `schema_migrations` (
+  `version` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `executed_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `sync_changes` (
+  `change_id` int NOT NULL AUTO_INCREMENT,
+  `sheet_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `snapshot_id` int DEFAULT NULL,
+  `change_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `row_key` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `old_values` json DEFAULT NULL,
+  `new_values` json DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`change_id`),
+  KEY `idx_snapshot` (`snapshot_id`),
+  KEY `idx_sheet` (`sheet_name`)
+) ENGINE=InnoDB AUTO_INCREMENT=26714 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `sync_metadata` (
+  `sheet_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `spreadsheet_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sync_status` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `last_synced_at` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`sheet_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `sync_snapshots` (
+  `snapshot_id` int NOT NULL AUTO_INCREMENT,
+  `sheet_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `snapshot_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `row_count` int DEFAULT NULL,
+  `snapshot_timestamp` datetime DEFAULT NULL,
+  `google_modified_at` datetime DEFAULT NULL,
+  `snapshot_data_url` longtext COLLATE utf8mb4_unicode_ci,
+  `status` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`snapshot_id`),
+  KEY `idx_sheet` (`sheet_name`),
+  KEY `idx_timestamp` (`snapshot_timestamp`)
+) ENGINE=InnoDB AUTO_INCREMENT=108 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `viewer_admins` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `role` enum('admin','super_admin') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'admin',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `viewer_user_settings` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `table_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `visible_columns` json DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_user_table` (`email`,`table_name`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---
+CREATE TABLE `webapp_events` (
+  `EventID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `EventType` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `EventCategory` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'payment',
+  `Timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `ExpiresAt` datetime DEFAULT NULL,
+  `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `PaymentIntent` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Amount` decimal(10,2) DEFAULT NULL,
+  `PaymentMethod` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PayerName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MemoField` text COLLATE utf8mb4_unicode_ci,
+  `Last4Digits` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `FamilyMemberEmails` text COLLATE utf8mb4_unicode_ci,
+  `Status` enum('pending','matched','approved','rejected','expired','error') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `MatchedMessageId` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MatchedTransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `AdminApprover` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ApprovalDate` datetime DEFAULT NULL,
+  `Notes` text COLLATE utf8mb4_unicode_ci,
+  `PaymentDate` datetime DEFAULT NULL,
+  `ScreenshotFileId` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `GDriveFilePath` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `OCRText` text COLLATE utf8mb4_unicode_ci,
+  `OCRTimestamp` datetime DEFAULT NULL,
+  `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`EventID`),
+  KEY `idx_pe_memberid` (`MemberID`),
+  KEY `idx_pe_email` (`Email`),
+  KEY `idx_pe_status` (`Status`),
+  KEY `idx_pe_timestamp` (`Timestamp`),
+  KEY `idx_pe_matchedmessageid` (`MatchedMessageId`),
+  CONSTRAINT `fk_pe_gmail` FOREIGN KEY (`MatchedMessageId`) REFERENCES `gmail_transactions` (`MessageId`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pe_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

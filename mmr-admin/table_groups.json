@@ -25,6 +25,9 @@
   "System": [
     "activity_log",
     "config",
-    "schema_migrations"
+    "schema_migrations",
+    "admins",
+    "viewer_admins",
+    "viewer_user_settings"
   ]
 }
