@@ -626,6 +626,7 @@ const PaymentsPanel = () => {
   const [rejectNotes,      setRejectNotes]      = useState('');
   const [showRejectInput,  setShowRejectInput]  = useState(false);
   const [showEvents,       setShowEvents]       = useState(true); // side-by-side toggle
+  const [showManualMatch,  setShowManualMatch]  = useState(false); // manual match modal toggle
 
   // ── Tooltip ───────────────────────────────────────────────
   const [tooltip, setTooltip] = useState({ memberId: null, rect: null, data: null });
@@ -821,6 +822,7 @@ const PaymentsPanel = () => {
       // Action toolbar
       e('div', { className: 'toolbar', style: { marginBottom: 12 } },
         e('button', { className: 'btn btn-primary', onClick: handleManualMatch, disabled: loading || !singleSelectedId || !selectedMessageId, title: 'Select one event + one gmail row' }, '🔗 Manual Match'),
+        e('button', { className: 'btn btn-secondary', onClick: () => setShowManualMatch(true), disabled: loading, title: 'Popup assistant for pending events' }, '📋 Approve Pending'),
         e('button', { className: 'btn btn-orange', onClick: handleAutoMatch, disabled: loading }, '⚡ Auto-Match All'),
         e('button', { className: 'btn btn-primary', onClick: handleAutoGuessAndApprove, disabled: loading, style: { background: 'var(--purple, #7c3aed)', borderColor: 'var(--purple, #7c3aed)' }, title: 'Auto-match all then approve matched → updates expirations + sends emails' }, '🚀 Auto-Guess & Approve All'),
         matchedCount > 0 && e('button', { className: 'btn btn-green', onClick: handleApproveAllMatched, disabled: loading }, `✓ Approve All Matched (${matchedCount})`),
@@ -950,6 +952,17 @@ const PaymentsPanel = () => {
       e('h3', { style: { fontSize: 14, marginBottom: 12 } }, 'Payment History (Last 90 Days)'),
       e(PaymentHistoryTable, { payments: history, tooltipHandlers, onViewMember: setMemberPopup }),
     ),
+
+    // ── Manual Match Modal ──────────────────────────────────
+    window.ManualEventMatchModal && e(window.ManualEventMatchModal, {
+      isOpen: showManualMatch,
+      onClose: () => setShowManualMatch(false),
+      onMatchApproved: (eventId) => {
+        showToast(`✓ Approved & linked ${eventId.slice(0, 12)}`);
+        setShowManualMatch(false);
+        loadAll();
+      }
+    }),
   );
 };
 

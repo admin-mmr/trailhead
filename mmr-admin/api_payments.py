@@ -11,6 +11,7 @@ Implements the 2-step async payment workflow:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from flask import Blueprint, request, session
 
 from auth import login_required, require_role
@@ -29,6 +30,7 @@ from payment_actions import (
     _extract_member_id,
     _name_match,
 )
+from sync_engine import to_mysql_datetime as _engine_to_mysql_dt
 
 payments_bp = Blueprint('payments', __name__)
 
@@ -449,3 +451,158 @@ def api_member_summary(member_id):
         'recent_payments': recent_payments,
         'pending_events': pending_events,
     }})
+
+
+# ---------------------------------------------------------------------------
+# Manual event-to-transaction matching (admin approval workflow)
+# ---------------------------------------------------------------------------
+
+@payments_bp.route('/api/payments/pending-events-with-matches', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_pending_events_with_matches():
+    """
+    Get pending events (MatchedMessageId IS NULL) with suggested gmail_transaction matches.
+
+    Match suggestions grouped by likelihood:
+      1. Most likely: amount match + memberID in memo
+      2. More likely: name match (no memberID in memo)
+      3. Recently matched: payment date ±2 days, already matched, amount match
+    """
+    # Fetch all pending events that need matching
+    pending = query("""
+        SELECT EventID, MemberID, PayerName, Email, Amount, MemoField,
+               Timestamp, PaymentIntent, Status
+        FROM webapp_events
+        WHERE MatchedMessageId IS NULL
+          AND Status IN ('pending', 'matched')
+          AND EventCategory = 'payment'
+        ORDER BY Timestamp DESC
+    """)
+
+    result = []
+    for event in pending:
+        event_id = event['EventID']
+        member_id = event['MemberID']
+        amount = event['Amount']
+        payer_name = event['PayerName'] or ''
+        timestamp = event['Timestamp']
+
+        # Find matching gmail transactions
+        most_likely = []
+        more_likely = []
+        recently_matched = []
+
+        # Most likely: amount match + memberID in memo
+        if member_id and amount:
+            most_likely = query("""
+                SELECT MessageId, TransactionNumber, TimeStamp, Sender, Amount,
+                       Memo, TransactionDate, Subject
+                FROM gmail_transactions
+                WHERE Amount = %s
+                  AND (Memo LIKE %s OR OriginalMemo LIKE %s)
+                  AND IsArchived = 0
+                ORDER BY TimeStamp DESC
+                LIMIT 5
+            """, [amount, f'%{member_id}%', f'%{member_id}%'])
+
+        # More likely: name match (no memberID requirement)
+        if amount and payer_name:
+            more_likely = query("""
+                SELECT MessageId, TransactionNumber, TimeStamp, Sender, Amount,
+                       Memo, TransactionDate, Subject
+                FROM gmail_transactions
+                WHERE Amount = %s
+                  AND (Sender LIKE %s OR Memo LIKE %s)
+                  AND MessageId NOT IN (SELECT MessageId FROM gmail_transactions
+                                        WHERE Memo LIKE %s OR OriginalMemo LIKE %s)
+                  AND IsArchived = 0
+                ORDER BY TimeStamp DESC
+                LIMIT 5
+            """, [amount, f'%{payer_name}%', f'%{payer_name}%',
+                   f'%{member_id}%', f'%{member_id}%'])
+
+        # Recently matched: payment date ±2 days, already matched, amount match
+        if timestamp and amount:
+            date_min = timestamp - timedelta(days=2)
+            date_max = timestamp + timedelta(days=2)
+            recently_matched = query("""
+                SELECT MessageId, TransactionNumber, TimeStamp, Sender, Amount,
+                       Memo, TransactionDate, Subject
+                FROM gmail_transactions
+                WHERE Amount = %s
+                  AND TimeStamp BETWEEN %s AND %s
+                  AND ProcessedTime IS NOT NULL
+                  AND IsArchived = 0
+                ORDER BY TimeStamp DESC
+                LIMIT 5
+            """, [amount, date_min, date_max])
+
+        result.append({
+            'event': event,
+            'most_likely': most_likely,
+            'more_likely': more_likely,
+            'recently_matched': recently_matched,
+        })
+
+    return json_response({'ok': True, 'data': result})
+
+
+@payments_bp.route('/api/payments/approve-event-match', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_approve_event_match():
+    """
+    Admin selects a gmail_transaction to match with an event.
+    Updates webapp_events with: MatchedMessageId, MatchedTransactionNumber, AdminApprover,
+    ApprovalDate, PaymentDate, and sets Status='approved'.
+    """
+    body = request.get_json() or {}
+    event_id = body.get('eventId')
+    message_id = body.get('messageId')
+    transaction_number = body.get('transactionNumber')
+    notes = body.get('notes', '')
+
+    if not event_id or not message_id:
+        return json_response({'ok': False, 'error': 'Missing eventId or messageId'}, status=400)
+
+    # Fetch event and gmail transaction details
+    event = query("""
+        SELECT * FROM webapp_events WHERE EventID = %s
+    """, [event_id])
+    if not event:
+        return json_response({'ok': False, 'error': f'Event {event_id} not found'}, status=404)
+    event = event[0]
+
+    gmail = query("""
+        SELECT * FROM gmail_transactions WHERE MessageId = %s
+    """, [message_id])
+    if not gmail:
+        return json_response({'ok': False, 'error': f'Gmail transaction {message_id} not found'}, status=404)
+    gmail = gmail[0]
+
+    # Update webapp_events
+    admin_email = session.get('user_email', 'unknown')
+    approval_date = _engine_to_mysql_dt(datetime.utcnow())
+    payment_date = gmail.get('TransactionDate')
+
+    try:
+        execute("""
+            UPDATE webapp_events
+            SET MatchedMessageId = %s,
+                MatchedTransactionNumber = %s,
+                AdminApprover = %s,
+                ApprovalDate = %s,
+                PaymentDate = %s,
+                Notes = IF(%s = '', Notes, %s),
+                Status = 'approved'
+            WHERE EventID = %s
+        """, [message_id, transaction_number, admin_email, approval_date,
+              payment_date, notes, notes, event_id])
+
+        return json_response({'ok': True, 'message': f'Event {event_id} approved and linked to {message_id}'})
+    except Exception as e:
+        logger.error(f'Error approving event match: {e}')
+        return json_response({'ok': False, 'error': str(e)}, status=500)
