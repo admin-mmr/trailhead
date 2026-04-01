@@ -606,6 +606,8 @@ def _sync_members_to_sheets(job_id: str):
                     serialized = _serialize_rows(batch)
                     # Convert Expiration and PaymentDate to ISO date-only format (YYYY-MM-DD)
                     serialized = _convert_date_fields_to_iso_date(serialized)
+                    # Filter to standard member fields only to prevent parse_datetime errors
+                    serialized = _filter_member_fields(serialized)
                     _call_gas_webhook({'action': 'append_members', 'rows': serialized})
                     log_lines.append(f"📤 Appended batch {batch_num}/{total_batches}: {len(batch)} new members to Sheets")
                 except Exception as e:
@@ -622,6 +624,8 @@ def _sync_members_to_sheets(job_id: str):
                     serialized = _serialize_rows(batch)
                     # Convert Expiration and PaymentDate to ISO date-only format (YYYY-MM-DD)
                     serialized = _convert_date_fields_to_iso_date(serialized)
+                    # Filter to standard member fields only to prevent parse_datetime errors
+                    serialized = _filter_member_fields(serialized)
                     _call_gas_webhook({'action': 'update_members', 'rows': serialized})
                     log_lines.append(f"📤 Updated batch {batch_num}/{total_batches}: {len(batch)} members in Sheets")
                 except Exception as e:
@@ -693,6 +697,53 @@ def _sync_members_to_sheets(job_id: str):
             logger.error(f"Failed to send error email: {email_err}")
         except Exception as email_err:
             logger.error(f"Failed to send error email: {email_err}")
+
+
+def _filter_member_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Filter member rows to include only standard members columns.
+    Prevents parse_datetime errors when unexpected fields are present.
+
+    Standard fields: MemberID, FirstName, LastName, FamilyID, WeChatID, PhoneNumber, Email,
+    District, MembershipType, Expiration, Status, WebApp, PaymentCheck, JoinYear, LastLoginDate,
+    ProfileLastUpdated, PaymentDate, PaymentTransaction, MembershipFeePaid, LastUpdated, etc.
+    """
+    VALID_MEMBER_FIELDS = {
+        'MemberID', 'FirstName', 'LastName', 'FamilyID', 'WeChatID', 'PhoneNumber', 'Email',
+        'District', 'MembershipType', 'Expiration', 'Status', 'WebApp', 'PaymentCheck',
+        'JoinYear', 'LastLoginDate', 'ProfileLastUpdated', 'PaymentDate', 'PaymentTransaction',
+        'MembershipFeePaid', 'LastUpdated', 'CreatedAt', 'UpdatedAt'
+    }
+    result = []
+    for row in rows:
+        filtered_row = {k: v for k, v in row.items() if k in VALID_MEMBER_FIELDS}
+        result.append(filtered_row)
+    return result
+
+
+def _filter_event_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Filter event rows to include only standard webapp_events columns.
+    Prevents parse_datetime errors when unexpected fields (e.g., MembershipType from joins)
+    are present.
+
+    Standard fields: EventID, EventType, EventCategory, Timestamp, ExpiresAt, MemberID, Email,
+    PaymentIntent, Amount, PaymentMethod, PayerName, MemoField, Last4Digits, FamilyMemberEmails,
+    Status, MatchedMessageId, MatchedTransactionNumber, AdminApprover, ApprovalDate, Notes,
+    PaymentDate, ScreenshotFileId, GDriveFilePath, OCRText, OCRTimestamp, CreatedAt, UpdatedAt
+    """
+    VALID_EVENT_FIELDS = {
+        'EventID', 'EventType', 'EventCategory', 'Timestamp', 'ExpiresAt', 'MemberID', 'Email',
+        'PaymentIntent', 'Amount', 'PaymentMethod', 'PayerName', 'MemoField', 'Last4Digits',
+        'FamilyMemberEmails', 'Status', 'MatchedMessageId', 'MatchedTransactionNumber',
+        'AdminApprover', 'ApprovalDate', 'Notes', 'PaymentDate', 'ScreenshotFileId',
+        'GDriveFilePath', 'OCRText', 'OCRTimestamp', 'CreatedAt', 'UpdatedAt'
+    }
+    result = []
+    for row in rows:
+        filtered_row = {k: v for k, v in row.items() if k in VALID_EVENT_FIELDS}
+        result.append(filtered_row)
+    return result
 
 
 def _sync_events_to_sheets(job_id: str):
@@ -807,7 +858,10 @@ def _sync_events_to_sheets(job_id: str):
                 batch_num = (batch_idx // batch_size) + 1
                 total_batches = (len(rows_to_append) + batch_size - 1) // batch_size
                 try:
-                    _call_gas_webhook({'action': 'append_events', 'rows': _serialize_rows(batch)})
+                    serialized = _serialize_rows(batch)
+                    # Filter to standard event fields only to prevent parse_datetime errors on unexpected columns
+                    serialized = _filter_event_fields(serialized)
+                    _call_gas_webhook({'action': 'append_events', 'rows': serialized})
                     log_lines.append(f"📤 Appended batch {batch_num}/{total_batches}: {len(batch)} new events")
                 except Exception as e:
                     error_msg = f"append_events batch {batch_num}: {e}"
@@ -820,7 +874,10 @@ def _sync_events_to_sheets(job_id: str):
                 batch_num = (batch_idx // batch_size) + 1
                 total_batches = (len(rows_to_update) + batch_size - 1) // batch_size
                 try:
-                    _call_gas_webhook({'action': 'update_events', 'rows': _serialize_rows(batch)})
+                    serialized = _serialize_rows(batch)
+                    # Filter to standard event fields only to prevent parse_datetime errors on unexpected columns
+                    serialized = _filter_event_fields(serialized)
+                    _call_gas_webhook({'action': 'update_events', 'rows': serialized})
                     log_lines.append(f"📤 Updated batch {batch_num}/{total_batches}: {len(batch)} events")
                 except Exception as e:
                     error_msg = f"update_events batch {batch_num}: {e}"
@@ -877,6 +934,26 @@ def _sync_events_to_sheets(job_id: str):
             )
         except Exception as email_err:
             logger.error(f"Failed to send error email: {email_err}")
+
+
+def _filter_payment_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Filter payment rows to include only standard payments columns.
+    Prevents parse_datetime errors when unexpected fields are present.
+
+    Standard fields: PaymentID, MemberID, Amount, PaymentDate, PaymentMethod, TransactionReference,
+    PayerName, MemoField, PeriodStart, EventID, ProcessedDate, ProcessedTime, Notes, Status, etc.
+    """
+    VALID_PAYMENT_FIELDS = {
+        'PaymentID', 'MemberID', 'Amount', 'PaymentDate', 'PaymentMethod', 'TransactionReference',
+        'PayerName', 'MemoField', 'PeriodStart', 'EventID', 'ProcessedDate', 'ProcessedTime',
+        'Notes', 'Status', 'CreatedAt', 'UpdatedAt'
+    }
+    result = []
+    for row in rows:
+        filtered_row = {k: v for k, v in row.items() if k in VALID_PAYMENT_FIELDS}
+        result.append(filtered_row)
+    return result
 
 
 def _sync_payments_to_sheets(job_id: str):
@@ -979,7 +1056,10 @@ def _sync_payments_to_sheets(job_id: str):
                 batch_num = (batch_idx // batch_size) + 1
                 total_batches = (len(rows_to_append) + batch_size - 1) // batch_size
                 try:
-                    _call_gas_webhook({'action': 'append_payments', 'rows': _serialize_rows(batch)})
+                    serialized = _serialize_rows(batch)
+                    # Filter to standard payment fields only to prevent parse_datetime errors
+                    serialized = _filter_payment_fields(serialized)
+                    _call_gas_webhook({'action': 'append_payments', 'rows': serialized})
                     log_lines.append(f"📤 Appended batch {batch_num}/{total_batches}: {len(batch)} new payments")
                 except Exception as e:
                     error_msg = f"append_payments batch {batch_num}: {e}"
@@ -992,7 +1072,10 @@ def _sync_payments_to_sheets(job_id: str):
                 batch_num = (batch_idx // batch_size) + 1
                 total_batches = (len(rows_to_update) + batch_size - 1) // batch_size
                 try:
-                    _call_gas_webhook({'action': 'update_payments', 'rows': _serialize_rows(batch)})
+                    serialized = _serialize_rows(batch)
+                    # Filter to standard payment fields only to prevent parse_datetime errors
+                    serialized = _filter_payment_fields(serialized)
+                    _call_gas_webhook({'action': 'update_payments', 'rows': serialized})
                     log_lines.append(f"📤 Updated batch {batch_num}/{total_batches}: {len(batch)} payments")
                 except Exception as e:
                     error_msg = f"update_payments batch {batch_num}: {e}"
