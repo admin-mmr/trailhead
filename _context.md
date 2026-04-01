@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 21:08 UTC — Fix parse_datetime errors: add field filtering for GAS webhook
+Changed: `api_sheets_sync.py` — added `_filter_member_fields()`, `_filter_event_fields()`, `_filter_payment_fields()` helpers to strip non-standard columns before sending to GAS webhook. Root cause: GAS resolve_conflict was trying to parse unexpected fields (e.g., MembershipType="Family Membership") as datetimes, causing "parse_datetime: unrecognised format" warnings. Filters run after serialization, before webhook POST; follow schema definitions. Applied to _sync_members/events/payments_to_sheets() for both append/update batches. Committed 2e5cee7. Status: Ready. Next: Deploy Flask to Azure, rerun syncs to verify parse errors are eliminated.
+
 ### 2026-04-01 20:52 UTC — Create _convert_date_fields_to_iso_date() helper for MySQL→Google members sync
 Changed: `api_sheets_sync.py` — added `_convert_date_fields_to_iso_date()` helper function (lines 135–183) to convert Expiration and PaymentDate from ISO8601 datetime format (YYYY-MM-DDTHH:MM:SS) to ISO date-only (YYYY-MM-DD). Handles both formats, logs warnings on parse errors. Called in _sync_members_to_sheets() at lines 557, 573 for both append/update batches. Ensures GAS receives clean date-only strings without time component. Syntax verified. Status: Ready. Next: Deploy Flask and test MySQL→Google member sync with proper date formatting.
 
