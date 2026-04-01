@@ -153,16 +153,21 @@ window.DistrictMembersPanel = () => {
     }
   };
 
-  const formatDate = (dateStr) => {
+  // Format date with optional time (for datetime fields)
+  const formatDate = (dateStr, dateOnly = false) => {
     if (!dateStr) return 'Never';
     const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
+    const options = {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    };
+    // Only add time if not dateOnly (for Expiration, PaymentDate, TransactionDate)
+    if (!dateOnly) {
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+    }
+    return date.toLocaleDateString('en-US', options);
   };
 
   return (
@@ -599,7 +604,7 @@ window.DistrictMembersPanel = () => {
                     {formatDate(member.LastModified)}
                   </td>
                   <td style={{ padding: '12px 16px', color: 'var(--text2)', fontSize: '12px' }}>
-                    {formatDate(member.Expiration)}
+                    {formatDate(member.Expiration, true)}
                   </td>
                 </tr>
               ))}
