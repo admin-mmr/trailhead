@@ -27,6 +27,9 @@ PORTAL LAUNCH PREP (Carryover):
 
 ## Session log
 
+### 2026-03-31 23:33 ET — Sync tab bug fixes (4 issues)
+Changed: Unified JobCard component with job name + action type header + View Log toggle across all Sync sub-tabs. Fixed Import Transactions Notes='' on INSERT (now Notes=Memo, preventing double-update on re-run). Fixed `RuntimeError: Working outside of request context` in `_sync_unprocessed_transactions_to_sheets` (removed erroneous `@route`/`@login_required` from thread-target function). Added per-table Google→MySQL routes + sub-tabs (Members/Events/Payments); `_sync_google_to_mysql` and `_dry_run_google_to_mysql` now accept `tables` filter param. Status: deployed to repo, needs Azure push. Next: push to Azure, verify per-table G2M routes work end-to-end.
+
 ### 2026-03-31 23:15 ET — Regenerate schema_snapshot.sql from live DB
 Changed: Overwrote db/schema_snapshot.sql with live DDL from dump_schema() (18 tables); updated table_groups.json to add admins, viewer_admins, viewer_user_settings. Status: Done. Next: Prune db/schemas/ deprecated reference files.
 

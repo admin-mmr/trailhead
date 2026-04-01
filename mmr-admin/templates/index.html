@@ -1808,22 +1808,66 @@ const Settings = ({ onClose }) => {
 // Sync Panel — MySQL ↔ Google Sheets sync
 // ═══════════════════════════════════════════════════
 
+// Shared job card component used by all sync sub-tabs
+const JobCard = ({ jobId, job }) => (
+  <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', fontSize: 13 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+      <span style={{ fontWeight: 600 }}>
+        {job.jobName || '—'}
+        {job.actionType ? <span style={{ color: 'var(--text2)', fontWeight: 400, marginLeft: 6 }}>· {job.actionType}</span> : null}
+      </span>
+      <span className={`badge ${
+        job.status === 'done' ? 'badge-green' :
+        job.status === 'error' ? 'badge-red' :
+        job.status === 'running' ? 'badge-blue' :
+        'badge-yellow'
+      }`}>
+        {job.status}
+      </span>
+    </div>
+    <div style={{ color: 'var(--text2)', fontSize: 12, marginBottom: 6, fontFamily: 'monospace' }}>{jobId.slice(0, 12)}…</div>
+    <div style={{ marginBottom: 6 }}>{job.message}</div>
+    {job.progress !== undefined && (
+      <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+        <div style={{ height: '100%', background: 'var(--accent)', width: `${job.progress}%`, transition: 'width 0.3s' }} />
+      </div>
+    )}
+    {job.result && (
+      <details style={{ marginTop: 6, color: 'var(--text2)', fontSize: 12 }}>
+        <summary style={{ cursor: 'pointer' }}>View Log</summary>
+        <pre style={{
+          background: 'var(--bg)',
+          padding: 8,
+          borderRadius: 4,
+          marginTop: 6,
+          overflow: 'auto',
+          maxHeight: 240,
+          fontSize: 11,
+          whiteSpace: 'pre-wrap',
+        }}>
+          {job.result.log}
+        </pre>
+      </details>
+    )}
+  </div>
+);
+
 const SyncPanel = () => {
-  const [subTab, setSubTab] = useState('mysql-to-google'); // mysql-to-google | import-txns | google-to-mysql
+  const [subTab, setSubTab] = useState('mysql-to-google');
   const [jobs, setJobs] = useState({});
   const [toast, setToast] = useState('');
 
-  const triggerSync = async (operation, endpoint) => {
-    setToast(`Starting ${operation}...`);
+  const triggerSync = async (jobName, actionType, endpoint) => {
+    setToast(`Starting ${jobName}…`);
     try {
       const r = await api(endpoint, { method: 'POST' });
       if (r.ok) {
         const jobId = r.job_id;
-        setJobs(j => ({ ...j, [jobId]: { status: 'running', message: 'Running...', progress: 0 } }));
+        setJobs(j => ({ ...j, [jobId]: { status: 'running', message: 'Running…', progress: 0, jobName, actionType } }));
         pollJobStatus(jobId);
-        setToast(`${operation} started (Job: ${jobId.slice(0, 8)}...)`);
+        setToast(`${jobName} started (Job: ${jobId.slice(0, 8)}…)`);
       } else {
-        setToast(`❌ Failed to start ${operation}: ${r.error || 'Unknown error'}`);
+        setToast(`❌ Failed to start ${jobName}: ${r.error || 'Unknown error'}`);
       }
     } catch (e) {
       setToast(`❌ Error: ${e.message}`);
@@ -1836,53 +1880,37 @@ const SyncPanel = () => {
         const r = await api(`/api/sync/status/${jobId}`);
         if (r.ok && r.data) {
           const job = r.data;
-          setJobs(j => ({ ...j, [jobId]: job }));
-
+          setJobs(j => ({ ...j, [jobId]: { ...j[jobId], ...job } }));
           if (job.status === 'done' || job.status === 'error') {
             clearInterval(poll);
-            if (job.status === 'done') {
-              setToast(`✅ Sync complete: ${job.message}`);
-            } else {
-              setToast(`❌ Sync failed: ${job.message}`);
-            }
+            setToast(job.status === 'done' ? `✅ ${job.message}` : `❌ ${job.message}`);
           }
         }
       } catch (e) {
         console.error('Poll error:', e);
       }
-    }, 1000); // Poll every second
+    }, 1000);
   };
 
-  const jobsList = Object.entries(jobs).sort((a, b) => b[0].localeCompare(a[0])); // newest first
+  const jobsList = Object.entries(jobs).sort((a, b) => b[0].localeCompare(a[0]));
+
+  const RecentJobs = ({ label = 'Recent Jobs' }) => jobsList.length === 0 ? null : (
+    <div style={{ marginTop: 20 }}>
+      <h3 style={{ fontSize: 14, marginBottom: 12 }}>{label}</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {jobsList.map(([jobId, job]) => <JobCard key={jobId} jobId={jobId} job={job} />)}
+      </div>
+    </div>
+  );
 
   return (
     <div>
       {/* Sub-tabs */}
       <div className="tabs" style={{ marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-        <button
-          className={`tab ${subTab === 'mysql-to-google' ? 'active' : ''}`}
-          onClick={() => setSubTab('mysql-to-google')}
-        >
-          📤 MySQL → Google
-        </button>
-        <button
-          className={`tab ${subTab === 'import-txns' ? 'active' : ''}`}
-          onClick={() => setSubTab('import-txns')}
-        >
-          📥 Import Transactions
-        </button>
-        <button
-          className={`tab ${subTab === 'sync-unprocessed-txns' ? 'active' : ''}`}
-          onClick={() => setSubTab('sync-unprocessed-txns')}
-        >
-          🔄 Sync Unprocessed Txns
-        </button>
-        <button
-          className={`tab ${subTab === 'google-to-mysql' ? 'active' : ''}`}
-          onClick={() => setSubTab('google-to-mysql')}
-        >
-          📥 Google → MySQL
-        </button>
+        <button className={`tab ${subTab === 'mysql-to-google' ? 'active' : ''}`} onClick={() => setSubTab('mysql-to-google')}>📤 MySQL → Google</button>
+        <button className={`tab ${subTab === 'import-txns' ? 'active' : ''}`} onClick={() => setSubTab('import-txns')}>📥 Import Transactions</button>
+        <button className={`tab ${subTab === 'sync-unprocessed-txns' ? 'active' : ''}`} onClick={() => setSubTab('sync-unprocessed-txns')}>🔄 Sync Unprocessed Txns</button>
+        <button className={`tab ${subTab === 'google-to-mysql' ? 'active' : ''}`} onClick={() => setSubTab('google-to-mysql')}>📥 Google → MySQL</button>
       </div>
 
       {/* MySQL → Google */}
@@ -1892,203 +1920,110 @@ const SyncPanel = () => {
           <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
             Sync MySQL data to Google Sheets. New records are appended; existing records are updated if MySQL is newer.
           </p>
-
-          <div className="stats-grid" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                className="btn btn-primary"
-                onClick={() => triggerSync('Members Sync', '/api/sync/mysql-to-google/members')}
-              >
-                👥 Sync Members
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => triggerSync('Events Sync', '/api/sync/mysql-to-google/events')}
-              >
-                📋 Sync Events
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => triggerSync('Payments Sync', '/api/sync/mysql-to-google/payments')}
-              >
-                💳 Sync Payments
-              </button>
-            </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+            <button className="btn btn-primary" onClick={() => triggerSync('MySQL → Google', 'Members', '/api/sync/mysql-to-google/members')}>👥 Sync Members</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('MySQL → Google', 'Events', '/api/sync/mysql-to-google/events')}>📋 Sync Events</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('MySQL → Google', 'Payments', '/api/sync/mysql-to-google/payments')}>💳 Sync Payments</button>
           </div>
-
-          {jobsList.length > 0 && (
-            <div>
-              <h3 style={{ fontSize: 14, marginBottom: 12 }}>Recent Jobs</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {jobsList.map(([jobId, job]) => (
-                  <div key={jobId} style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', fontSize: 13 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontFamily: 'monospace', color: 'var(--text2)' }}>{jobId.slice(0, 12)}...</span>
-                      <span className={`badge ${
-                        job.status === 'done' ? 'badge-green' :
-                        job.status === 'error' ? 'badge-red' :
-                        job.status === 'running' ? 'badge-blue' :
-                        'badge-yellow'
-                      }`}>
-                        {job.status}
-                      </span>
-                    </div>
-                    <div style={{ marginBottom: 6 }}>{job.message}</div>
-                    {job.progress !== undefined && (
-                      <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', background: 'var(--accent)', width: `${job.progress}%`, transition: 'width 0.3s' }} />
-                      </div>
-                    )}
-                    {job.result && (
-                      <details style={{ marginTop: 8, color: 'var(--text2)', fontSize: 12 }}>
-                        <summary style={{ cursor: 'pointer' }}>View Log</summary>
-                        <pre style={{
-                          background: 'var(--bg)',
-                          padding: 8,
-                          borderRadius: 4,
-                          marginTop: 6,
-                          overflow: 'auto',
-                          maxHeight: 200,
-                          fontSize: 11,
-                        }}>
-                          {job.result.log}
-                        </pre>
-                      </details>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <RecentJobs />
         </div>
       )}
 
-      {/* Import Transactions */}
+      {/* Import Transactions (Google Sheets → MySQL) */}
       {subTab === 'import-txns' && (
         <div>
           <h2 style={{ fontSize: 18, marginBottom: 16 }}>Import Transactions from Google Sheets</h2>
           <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-            Fetch gmail_transactions from Google Sheets. New MessageIds are inserted; existing records are updated if Memo differs from Notes.
+            Fetch gmail_transactions from Google Sheets. New MessageIds are inserted; existing records are updated if the Sheets Memo differs from MySQL Notes.
           </p>
-
-          <button
-            className="btn btn-primary"
-            onClick={() => triggerSync('Transaction Import', '/api/sync/import-transactions')}
-          >
-            📥 Import Now
-          </button>
-
-          {jobsList.length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <h3 style={{ fontSize: 14, marginBottom: 12 }}>Recent Imports</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {jobsList.map(([jobId, job]) => (
-                  <div key={jobId} style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', fontSize: 13 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontFamily: 'monospace', color: 'var(--text2)' }}>{jobId.slice(0, 12)}...</span>
-                      <span className={`badge ${job.status === 'done' ? 'badge-green' : 'badge-red'}`}>
-                        {job.status}
-                      </span>
-                    </div>
-                    <div>{job.message}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <button className="btn btn-primary" onClick={() => triggerSync('Import Transactions', 'Google → MySQL', '/api/sync/import-transactions')}>📥 Import Now</button>
+          <RecentJobs label="Recent Imports" />
         </div>
       )}
 
-      {/* Sync Unprocessed Transactions */}
+      {/* Sync Unprocessed Transactions (MySQL → Google Sheets) */}
       {subTab === 'sync-unprocessed-txns' && (
         <div>
-          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Sync Unprocessed Transactions to Google Sheets</h2>
+          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Sync Unprocessed Transactions → Google Sheets</h2>
           <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-            Sync unprocessed transactions (ProcessedTime = NULL) from MySQL to Google Sheets. Updates Notes, ProcessedTime, and WebAppID.
+            Sync transactions with ProcessedTime = NULL from MySQL to Google Sheets. Updates Notes, ProcessedTime, and WebAppID.
           </p>
-
-          <button
-            className="btn btn-primary"
-            onClick={() => triggerSync('Sync Unprocessed Transactions', '/api/sync/unprocessed-transactions')}
-          >
-            🔄 Sync Unprocessed
-          </button>
-
-          {jobsList.length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <h3 style={{ fontSize: 14, marginBottom: 12 }}>Recent Syncs</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {jobsList.map(([jobId, job]) => (
-                  <div key={jobId} style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', fontSize: 13 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontFamily: 'monospace', color: 'var(--text2)' }}>{jobId.slice(0, 12)}...</span>
-                      <span className={`badge ${
-                        job.status === 'done' ? 'badge-green' :
-                        job.status === 'error' ? 'badge-red' :
-                        job.status === 'running' ? 'badge-blue' :
-                        'badge-yellow'
-                      }`}>
-                        {job.status}
-                      </span>
-                    </div>
-                    <div style={{ marginBottom: 6 }}>{job.message}</div>
-                    {job.progress !== undefined && (
-                      <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', background: 'var(--accent)', width: `${job.progress}%`, transition: 'width 0.3s' }} />
-                      </div>
-                    )}
-                    {job.result && (
-                      <details style={{ marginTop: 8, color: 'var(--text2)', fontSize: 12 }}>
-                        <summary style={{ cursor: 'pointer' }}>View Log</summary>
-                        <pre style={{
-                          background: 'var(--bg)',
-                          padding: 8,
-                          borderRadius: 4,
-                          marginTop: 6,
-                          overflow: 'auto',
-                          maxHeight: 200,
-                          fontSize: 11,
-                        }}>
-                          {job.result.log}
-                        </pre>
-                      </details>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <button className="btn btn-primary" onClick={() => triggerSync('Sync Unprocessed Txns', 'MySQL → Google', '/api/sync/unprocessed-transactions')}>🔄 Sync Unprocessed</button>
+          <RecentJobs label="Recent Syncs" />
         </div>
       )}
 
-      {/* Google → MySQL */}
+      {/* Google → MySQL (3 sub-tabs: Members / Events / Payments) */}
       {subTab === 'google-to-mysql' && (
-        <div>
-          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Google Sheets → MySQL Sync</h2>
-          <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-            Sync data from Google Sheets to the MySQL database. This will insert new records and update existing records if the Sheets version is newer.
-          </p>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              className="btn btn-primary"
-              onClick={() => triggerSync('Google to MySQL Sync', '/api/sync/google-to-mysql')}
-            >
-              🚀 Sync to MySQL (Live)
-            </button>
-            <button
-              className="btn btn-outline"
-              onClick={() => triggerSync('Dry Run', '/api/sync/dry-run')}
-            >
-              🔍 Run Dry Run
-            </button>
-          </div>
-          <p style={{ color: 'var(--text2)', marginTop: 12, fontSize: 12 }}>
-            <strong>Warning:</strong> The live sync will directly modify the MySQL database.
-          </p>
-        </div>
+        <GoogleToMySQLPanel triggerSync={triggerSync} jobsList={jobsList} />
       )}
 
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+};
+
+const GoogleToMySQLPanel = ({ triggerSync, jobsList }) => {
+  const [g2mTab, setG2mTab] = useState('members');
+
+  const RecentJobs = ({ label = 'Recent Jobs' }) => jobsList.length === 0 ? null : (
+    <div style={{ marginTop: 20 }}>
+      <h3 style={{ fontSize: 14, marginBottom: 12 }}>{label}</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {jobsList.map(([jobId, job]) => <JobCard key={jobId} jobId={jobId} job={job} />)}
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 18, marginBottom: 12 }}>Google Sheets → MySQL</h2>
+      <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+        <button className={`tab ${g2mTab === 'members' ? 'active' : ''}`} onClick={() => setG2mTab('members')}>👥 Members</button>
+        <button className={`tab ${g2mTab === 'events' ? 'active' : ''}`} onClick={() => setG2mTab('events')}>📋 Events</button>
+        <button className={`tab ${g2mTab === 'payments' ? 'active' : ''}`} onClick={() => setG2mTab('payments')}>💳 Payments</button>
+      </div>
+
+      {g2mTab === 'members' && (
+        <div>
+          <p style={{ color: 'var(--text2)', marginBottom: 16, fontSize: 14 }}>
+            Sync Members from Google Sheets to MySQL. Inserts new records; updates existing if Sheets data is newer.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button className="btn btn-primary" onClick={() => triggerSync('Google → MySQL', 'Members (Live)', '/api/sync/google-to-mysql/members')}>🚀 Sync Members (Live)</button>
+            <button className="btn btn-outline" onClick={() => triggerSync('Google → MySQL', 'Members (Dry Run)', '/api/sync/dry-run/members')}>🔍 Dry Run</button>
+          </div>
+          <p style={{ color: 'var(--text2)', fontSize: 12 }}>⚠️ Live sync writes directly to MySQL.</p>
+        </div>
+      )}
+
+      {g2mTab === 'events' && (
+        <div>
+          <p style={{ color: 'var(--text2)', marginBottom: 16, fontSize: 14 }}>
+            Sync Events from Google Sheets to MySQL. Inserts new records; updates existing if Sheets data is newer.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button className="btn btn-primary" onClick={() => triggerSync('Google → MySQL', 'Events (Live)', '/api/sync/google-to-mysql/events')}>🚀 Sync Events (Live)</button>
+            <button className="btn btn-outline" onClick={() => triggerSync('Google → MySQL', 'Events (Dry Run)', '/api/sync/dry-run/events')}>🔍 Dry Run</button>
+          </div>
+          <p style={{ color: 'var(--text2)', fontSize: 12 }}>⚠️ Live sync writes directly to MySQL.</p>
+        </div>
+      )}
+
+      {g2mTab === 'payments' && (
+        <div>
+          <p style={{ color: 'var(--text2)', marginBottom: 16, fontSize: 14 }}>
+            Sync Payments from Google Sheets to MySQL. Inserts new records; updates existing if Sheets data is newer.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button className="btn btn-primary" onClick={() => triggerSync('Google → MySQL', 'Payments (Live)', '/api/sync/google-to-mysql/payments')}>🚀 Sync Payments (Live)</button>
+            <button className="btn btn-outline" onClick={() => triggerSync('Google → MySQL', 'Payments (Dry Run)', '/api/sync/dry-run/payments')}>🔍 Dry Run</button>
+          </div>
+          <p style={{ color: 'var(--text2)', fontSize: 12 }}>⚠️ Live sync writes directly to MySQL.</p>
+        </div>
+      )}
+
+      <RecentJobs />
     </div>
   );
 };
