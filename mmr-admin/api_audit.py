@@ -95,7 +95,12 @@ def api_renewal_audit():
 
     try:
         data = request.get_json()
-        logger.info(f"Request data: {data}")
+        logger.info(f"Request data type: {type(data)}, value: {data}")
+
+        # Handle case where get_json() returns string or None
+        if not isinstance(data, dict):
+            logger.error(f"Expected dict from get_json(), got {type(data)}: {data}")
+            return json_response({'error': f'Invalid JSON payload (expected object, got {type(data).__name__})'}, 400)
 
         start_date = data.get('start_date')
         end_date = data.get('end_date')

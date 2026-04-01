@@ -38,17 +38,24 @@ window.AuditPanel = () => {
         console.log('Config response:', data);
 
         if (data.success && data.value) {
-          // Format is MM-DD, e.g., "12-31"
           console.log('Config value:', data.value);
-          const parts = String(data.value).split('-');
-          const [month, day] = parts;
+          const valueStr = String(data.value).trim();
 
-          if (month && day) {
+          // Check if it's already a full date (YYYY-MM-DD)
+          if (valueStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            console.log('Config value is full date:', valueStr);
+            setTargetExpiration(valueStr);
+          }
+          // Check if it's MM-DD format
+          else if (valueStr.match(/^\d{1,2}-\d{1,2}$/)) {
+            const [month, day] = valueStr.split('-');
             const targetDate = `${today.getFullYear()}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-            console.log('Calculated target expiration:', targetDate);
+            console.log('Calculated target expiration from MM-DD:', targetDate);
             setTargetExpiration(targetDate);
-          } else {
-            console.log('Invalid config format, using fallback');
+          }
+          // Invalid format
+          else {
+            console.log('Invalid config format:', valueStr, '- using fallback');
             setTargetExpiration(`${today.getFullYear()}-12-31`);
           }
         } else {
