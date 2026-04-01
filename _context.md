@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:24 ET — Commit date/time refactor; plan GAS deploy + webhook fix
+Changed: Committed `a494acb` — all 8 date/time refactor files (GAS sheets.ts/jobs.ts/webhook.ts, Python datetime_utils.py, webapp lib/date.ts/auth/complete/DashboardClient.tsx). Import check ✅ passed. Status: Ready for GAS clasp deploy + webapp build verify. Next: (1) Deploy GAS (clasp push + redeploy); (2) Re-set SheetsWebhookUrl in MySQL config (was stale 404); (3) Run webapp `npm run build`; (4) Re-run import transaction batch to verify end-to-end flow.
+
 ### 2026-04-01 13:49 ET — Date/time refactor across all three layers
 Changed: (GAS) `sheets.ts` — added canonical `toISODateString()` (local date extraction, no UTC shift); fixed `deriveStatus`, `rowToMember.expiration+paymentDate`, `rowToFetchGmailRow.transactionDate`; removed buggy UTC-shifted version from `jobs.ts`; fixed `rowToMemberObject` + `rowToEventObject` in `webhook.ts` to use `toISO8601`/`toISODateString` correctly. (Python) `datetime_utils.py` — `to_datetime` now strips tzinfo (UTC normalize); `to_date` handles ISO strings directly. (webapp) `lib/date.ts` — added `parseLocalDate`, `isExpiredNY`, `daysUntilExpiryNY`, fixed `formatLocaleDate` for YYYY-MM-DD inputs; `auth/complete/route.ts` + `DashboardClient.tsx` use NY-aware helpers. Status: import check passes; GAS needs clasp deploy + redeploy; webapp needs `npm run build` verify. Next: deploy GAS, fix stale SheetsWebhookUrl, re-run import.
 
