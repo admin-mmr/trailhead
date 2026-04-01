@@ -1,6 +1,7 @@
 /**
- * District Members Panel
- * Allows group leaders to view members by district and export selections as CSV.
+ * District Members Panel with Column Selector and Sorting
+ * Allows viewing, filtering, sorting, and exporting members by district.
+ * Column selection is persisted to localStorage.
  */
 
 window.DistrictMembersPanel = () => {
@@ -13,6 +14,84 @@ window.DistrictMembersPanel = () => {
   const [renewedFilter, setRenewedFilter] = React.useState('');
   const [error, setError] = React.useState('');
   const [exportLoading, setExportLoading] = React.useState(false);
+  const [sortBy, setSortBy] = React.useState('District');
+  const [sortOrder, setSortOrder] = React.useState('asc');
+  const [showColumnSelector, setShowColumnSelector] = React.useState(false);
+
+  // Available columns with labels
+  const availableColumns = [
+    { key: 'District', label: 'District' },
+    { key: 'MemberID', label: 'Member ID' },
+    { key: 'FirstName', label: 'First Name' },
+    { key: 'LastName', label: 'Last Name' },
+    { key: 'Name', label: 'Full Name' },
+    { key: 'Expiration', label: 'Expiration' },
+    { key: 'Gender', label: 'Gender' },
+    { key: 'WeChatID', label: 'WeChat ID' },
+    { key: 'Email', label: 'Email' },
+    { key: 'Type', label: 'Type' },
+    { key: 'FamilyID', label: 'Family ID' },
+    { key: 'PaymentDate', label: 'Payment Date' },
+    { key: 'MembershipFeePaid', label: 'Membership Fee Paid' },
+    { key: 'PaymentTransaction', label: 'Payment Transaction' },
+    { key: 'Status', label: 'Status' },
+    { key: 'LastLoginDate', label: 'Last Login' },
+    { key: 'LastModified', label: 'Last Modified' },
+  ];
+
+  // Default columns
+  const defaultColumns = [
+    'District', 'MemberID', 'Name', 'Expiration', 'Gender',
+    'WeChatID', 'Email', 'Type', 'FamilyID', 'PaymentDate',
+    'MembershipFeePaid', 'PaymentTransaction'
+  ];
+
+  // Load selected columns from localStorage
+  const [selectedColumns, setSelectedColumns] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem('mmr_selected_columns');
+      return saved ? JSON.parse(saved) : defaultColumns;
+    } catch {
+      return defaultColumns;
+    }
+  });
+
+  // Save selected columns to localStorage
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('mmr_selected_columns', JSON.stringify(selectedColumns));
+    } catch {
+      // Silently fail if localStorage unavailable
+    }
+  }, [selectedColumns]);
+
+  // Load sort preferences from localStorage
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem('mmr_sort_preferences');
+      if (saved) {
+        const prefs = JSON.parse(saved);
+        setSortBy(prefs.sortBy || 'District');
+        setSortOrder(prefs.sortOrder || 'asc');
+      }
+    } catch {
+      // Silently fail
+    }
+  }, []);
+
+  // Save sort preferences to localStorage
+  const updateSort = (newSortBy, newSortOrder) => {
+    setSortBy(newSortBy);
+    setSortOrder(newSortOrder);
+    try {
+      localStorage.setItem('mmr_sort_preferences', JSON.stringify({
+        sortBy: newSortBy,
+        sortOrder: newSortOrder
+      }));
+    } catch {
+      // Silently fail
+    }
+  };
 
   // Fetch districts on mount
   React.useEffect(() => {
@@ -27,7 +106,7 @@ window.DistrictMembersPanel = () => {
       setMembers([]);
       setSelectedMembers(new Set());
     }
-  }, [selectedDistrict, statusFilter, renewedFilter]);
+  }, [selectedDistrict, statusFilter, renewedFilter, sortBy, sortOrder]);
 
   const fetchDistricts = async () => {
     const { api } = window.mmrUtils;
@@ -53,6 +132,8 @@ window.DistrictMembersPanel = () => {
       if (selectedDistrict) params.append('district', selectedDistrict);
       if (statusFilter) params.append('status', statusFilter);
       if (renewedFilter) params.append('renewed', renewedFilter);
+      params.append('sortBy', sortBy);
+      params.append('sortOrder', sortOrder);
 
       const data = await api(`/api/district/list?${params.toString()}`);
       if (data.success) {
@@ -86,9 +167,38 @@ window.DistrictMembersPanel = () => {
     }
   };
 
+  const toggleColumn = (columnKey) => {
+    const newColumns = selectedColumns.includes(columnKey)
+      ? selectedColumns.filter(c => c !== columnKey)
+      : [...selectedColumns, columnKey];
+    setSelectedColumns(newColumns);
+  };
+
+  const resetColumns = () => {
+    setSelectedColumns(defaultColumns);
+  };
+
+  const handleSort = (columnKey) => {
+    if (sortBy === columnKey) {
+      // Toggle order if clicking same column
+      updateSort(columnKey, sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column, default to ascending
+      updateSort(columnKey, 'asc');
+    }
+  };
+
   const exportCSV = async (includeAll = false) => {
     setExportLoading(true);
     try {
+      // Map keys to CSV headers
+      const columnLabels = availableColumns.reduce((acc, col) => {
+        acc[col.key] = col.label;
+        return acc;
+      }, {});
+
+      const csvColumns = selectedColumns.map(key => columnLabels[key] || key);
+
       const response = await fetch('/api/district/export-csv', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -96,6 +206,8 @@ window.DistrictMembersPanel = () => {
           memberIds: Array.from(selectedMembers),
           includeAll,
           district: selectedDistrict,
+          columns: csvColumns,
+          filters: { status: statusFilter, renewed: renewedFilter },
         }),
       });
 
@@ -153,16 +265,15 @@ window.DistrictMembersPanel = () => {
     }
   };
 
-  // Format date with optional time (for datetime fields)
+  // Format date with optional time
   const formatDate = (dateStr, dateOnly = false) => {
-    if (!dateStr) return 'Never';
+    if (!dateStr) return '—';
     const date = new Date(dateStr);
     const options = {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
     };
-    // Only add time if not dateOnly (for Expiration, PaymentDate, TransactionDate)
     if (!dateOnly) {
       options.hour = '2-digit';
       options.minute = '2-digit';
@@ -170,14 +281,35 @@ window.DistrictMembersPanel = () => {
     return date.toLocaleDateString('en-US', options);
   };
 
+  // Get column label
+  const getColumnLabel = (key) => {
+    const col = availableColumns.find(c => c.key === key);
+    return col ? col.label : key;
+  };
+
+  // Get cell value
+  const getCellValue = (member, key) => {
+    if (key === 'Name') {
+      return `${member.FirstName || ''} ${member.LastName || ''}`.trim();
+    }
+    const value = member[key];
+    if (key === 'Expiration' || key === 'PaymentDate') {
+      return formatDate(value, true);
+    }
+    if (key === 'LastLoginDate' || key === 'LastModified') {
+      return formatDate(value, false);
+    }
+    return value || '—';
+  };
+
   return (
-    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ padding: '20px', maxWidth: '1600px', margin: '0 auto' }}>
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ margin: '0 0 16px 0', fontSize: '24px', fontWeight: '600' }}>
           Members by District
         </h2>
         <p style={{ color: 'var(--text2)', margin: '0', fontSize: '14px' }}>
-          Select a district to view members. Check boxes to select for export.
+          Select a district, customize columns, and export data.
         </p>
       </div>
 
@@ -197,7 +329,7 @@ window.DistrictMembersPanel = () => {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filters Row */}
       <div
         style={{
           display: 'flex',
@@ -351,6 +483,84 @@ window.DistrictMembersPanel = () => {
         </div>
       </div>
 
+      {/* Column Selector */}
+      {selectedDistrict && members.length > 0 && (
+        <div style={{ marginBottom: '20px', position: 'relative' }}>
+          <button
+            onClick={() => setShowColumnSelector(!showColumnSelector)}
+            style={{
+              padding: '8px 16px',
+              background: 'transparent',
+              color: 'var(--accent)',
+              border: '1px solid var(--accent)',
+              borderRadius: 'var(--radius)',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500',
+            }}
+          >
+            ⚙ Columns ({selectedColumns.length})
+          </button>
+
+          {showColumnSelector && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                marginTop: '8px',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                padding: '12px',
+                minWidth: '300px',
+                maxHeight: '400px',
+                overflowY: 'auto',
+                zIndex: 1000,
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              }}
+            >
+              <div style={{ marginBottom: '12px' }}>
+                <button
+                  onClick={resetColumns}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    background: 'transparent',
+                    color: 'var(--text2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Reset to Default
+                </button>
+              </div>
+              {availableColumns.map((col) => (
+                <label
+                  key={col.key}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '6px 0',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedColumns.includes(col.key)}
+                    onChange={() => toggleColumn(col.key)}
+                    style={{ marginRight: '8px', cursor: 'pointer' }}
+                  />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Members Table */}
       {selectedDistrict && members.length > 0 && (
         <div
@@ -439,96 +649,30 @@ window.DistrictMembersPanel = () => {
                 >
                   □
                 </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  Member ID
-                </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  Name
-                </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  WeChat ID
-                </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  Email
-                </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  Phone
-                </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  Status
-                </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  Last Login
-                </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  Modified
-                </th>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                  }}
-                >
-                  Expires
-                </th>
+                {selectedColumns.map((colKey) => (
+                  <th
+                    key={colKey}
+                    onClick={() => handleSort(colKey)}
+                    style={{
+                      padding: '12px 16px',
+                      textAlign: 'left',
+                      fontWeight: '600',
+                      color: sortBy === colKey ? 'var(--accent)' : 'var(--text2)',
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      background: sortBy === colKey ? 'rgba(var(--accent-rgb), 0.05)' : 'transparent',
+                      transition: 'background 0.15s',
+                    }}
+                    title="Click to sort"
+                  >
+                    {getColumnLabel(colKey)}
+                    {sortBy === colKey && (
+                      <span style={{ marginLeft: '6px', fontSize: '11px' }}>
+                        {sortOrder === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -549,63 +693,47 @@ window.DistrictMembersPanel = () => {
                       style={{ cursor: 'pointer' }}
                     />
                   </td>
-                  <td style={{ padding: '12px 16px', fontFamily: 'monospace', color: 'var(--accent)' }}>
-                    {member.MemberID}
-                  </td>
-                  <td style={{ padding: '12px 16px', fontWeight: '500' }}>
-                    {member.Name}
-                  </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text2)' }}>
-                    {member.WeChatID || '—'}
-                  </td>
-                  <td
-                    style={{
-                      padding: '12px 16px',
-                      color: 'var(--accent)',
-                      fontSize: '12px',
-                      wordBreak: 'break-all',
-                    }}
-                  >
-                    {member.Email}
-                  </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text2)' }}>
-                    {member.PhoneNumber || '—'}
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span
+                  {selectedColumns.map((colKey) => (
+                    <td
+                      key={`${member.MemberID}-${colKey}`}
                       style={{
-                        display: 'inline-block',
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        textTransform: 'uppercase',
-                        background:
-                          member.Status === 'active'
-                            ? 'rgba(34, 197, 94, 0.1)'
-                            : member.Status === 'pending'
-                              ? 'rgba(234, 179, 8, 0.1)'
-                              : 'rgba(107, 114, 128, 0.1)',
-                        color:
-                          member.Status === 'active'
-                            ? '#22c55e'
-                            : member.Status === 'pending'
-                              ? '#eab308'
-                              : '#6b7280',
+                        padding: '12px 16px',
+                        color: colKey === 'MemberID' ? 'var(--accent)' : 'var(--text)',
+                        fontSize: colKey === 'MemberID' ? '12px' : '13px',
+                        fontFamily: colKey === 'MemberID' ? 'monospace' : 'inherit',
+                        wordBreak: colKey === 'Email' ? 'break-all' : 'normal',
                       }}
                     >
-                      {member.Status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text2)', fontSize: '12px' }}>
-                    {formatDate(member.LastLoginDate)}
-                  </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text2)', fontSize: '12px' }}>
-                    {formatDate(member.LastModified)}
-                  </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text2)', fontSize: '12px' }}>
-                    {formatDate(member.Expiration, true)}
-                  </td>
+                      {colKey === 'Status' ? (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                            background:
+                              member.Status === 'active'
+                                ? 'rgba(34, 197, 94, 0.1)'
+                                : member.Status === 'pending'
+                                  ? 'rgba(234, 179, 8, 0.1)'
+                                  : 'rgba(107, 114, 128, 0.1)',
+                            color:
+                              member.Status === 'active'
+                                ? '#22c55e'
+                                : member.Status === 'pending'
+                                  ? '#eab308'
+                                  : '#6b7280',
+                          }}
+                        >
+                          {member.Status}
+                        </span>
+                      ) : (
+                        getCellValue(member, colKey)
+                      )}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>

@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 22:28 UTC — Add column selector and sorting to Members by District tab
+Changed: `api_district_members.py` — added sortBy/sortOrder query params with SQL injection safeguards; include all required columns (District, Gender, Type, FamilyID, PaymentDate, MembershipFeePaid, PaymentTransaction). `DistrictMembersPanel.js` — added column selector dropdown with checkboxes, clickable column headers for sorting, localStorage persistence of column/sort prefs, default 12 columns. Export function respects selected columns. Status: Ready. Next: Test sorting, column persistence across page reloads, CSV export with selected columns only.
+
 ### 2026-04-01 21:25 UTC — Convert date columns to DATE type: Expiration, PaymentDate
 Changed: `db/migrations/0015_convert_dates_to_date_type.sql` — ALTER TABLE to convert 4 columns from datetime to DATE type: members.Expiration, members.PaymentDate, webapp_events.PaymentDate, payments.PaymentDate. Updated schema_snapshot.sql. Benefits: Eliminates time component in storage, API responses show clean ISO date format (YYYY-MM-DD), frontend displays only date. Note: gmail_transactions.TransactionDate is already DATE type. Committed 81f1f46. Status: Migration ready. Next: Run migration on Azure MySQL, verify API responses show date-only format.
 
