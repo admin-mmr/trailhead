@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:26 ET — Fix tie-timestamp MATCH/SKIP logic
+Changed: `api_sheets_sync.py` — Members/Events/Payments SHEETS_WINS handling: when timestamp tie, now check for actual field diffs before logging. If no field differences (identical data) → log `= MATCH (tie: ...)` instead of `⏭️ SKIP`. If field diffs exist → log `⏭️ SKIP` (Sheets will apply on nightly sync). Prevents false SKIP entries. Committed ff7ff19. Status: Import check ✅ passed. Next: Deploy + test sync output on live data.
+
 ### 2026-04-01 14:24 ET — Commit date/time refactor; plan GAS deploy + webhook fix
 Changed: Committed `a494acb` — all 8 date/time refactor files (GAS sheets.ts/jobs.ts/webhook.ts, Python datetime_utils.py, webapp lib/date.ts/auth/complete/DashboardClient.tsx). Import check ✅ passed. Status: Ready for GAS clasp deploy + webapp build verify. Next: (1) Deploy GAS (clasp push + redeploy); (2) Re-set SheetsWebhookUrl in MySQL config (was stale 404); (3) Run webapp `npm run build`; (4) Re-run import transaction batch to verify end-to-end flow.
 
