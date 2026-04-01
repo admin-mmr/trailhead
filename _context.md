@@ -27,6 +27,9 @@ PORTAL LAUNCH PREP (Carryover):
 
 ## Session log
 
+### 2026-03-31 23:52 ET — Sync tab follow-up fixes (5 issues)
+Changed: Removed per-row skip logs from MySQL→Google Members/Events/Payments (count only in summary). Fixed Events mass-updates: missing UpdatedAt on either side now skips (was forcing update). Fixed Payments: same missing-date trigger, now uses _parse_datetime comparison. Fixed Sync Unprocessed Txns DATETIME error: removed `OR ProcessedTime = ''` from query (MySQL rejects empty string for DATETIME). Fixed Google→MySQL datetime normalization: now uses INFORMATION_SCHEMA to detect actual datetime columns instead of name-guessing (was missing `Created`, etc.). Status: committed, needs push. Next: verify G2M per-table routes work after datetime fixes.
+
 ### 2026-03-31 23:33 ET — Sync tab bug fixes (4 issues)
 Changed: Unified JobCard component with job name + action type header + View Log toggle across all Sync sub-tabs. Fixed Import Transactions Notes='' on INSERT (now Notes=Memo, preventing double-update on re-run). Fixed `RuntimeError: Working outside of request context` in `_sync_unprocessed_transactions_to_sheets` (removed erroneous `@route`/`@login_required` from thread-target function). Added per-table Google→MySQL routes + sub-tabs (Members/Events/Payments); `_sync_google_to_mysql` and `_dry_run_google_to_mysql` now accept `tables` filter param. Status: deployed to repo, needs Azure push. Next: push to Azure, verify per-table G2M routes work end-to-end.
 

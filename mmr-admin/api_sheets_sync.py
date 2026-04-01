@@ -510,11 +510,11 @@ def _sync_members_to_sheets(job_id: str):
                     if mysql_dt > sheets_dt:
                         should_update = True
                         reason = f"MySQL newer: {mysql_dt} > {sheets_dt}"
-                elif mysql_dt and not sheets_dt:
-                    should_update = True
-                    reason = "Sheets missing LastUpdated"
+                    else:
+                        reason = "Sheets newer or equal"
                 else:
-                    reason = f"Sheets newer or equal"
+                    # Missing timestamp on either side — skip to avoid spurious updates
+                    reason = "Missing LastUpdated — skipped"
 
                 if should_update:
                     rows_to_update.append(member)
@@ -522,7 +522,7 @@ def _sync_members_to_sheets(job_id: str):
                     updated.append(member_id)
                 else:
                     skipped.append(member_id)
-                    log_lines.append(f"⊘ {member_id}: skipped ({reason})")
+                    # Don't log individual skips — only count them in summary
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(members_rows)) * 50)}
@@ -708,21 +708,16 @@ def _sync_events_to_sheets(job_id: str):
                 reason = None
 
                 if mysql_dt and sheets_dt:
-                    # Both have timestamps: compare them
+                    # Both have timestamps: only update if MySQL is strictly newer
                     if mysql_dt > sheets_dt:
                         should_update = True
-                        # Get specific fields that differ
                         diff_fields = _get_field_diffs(event, sheets_event)
-                        reason = f"MySQL newer: {mysql_dt} > {sheets_dt}, fields: {', '.join(diff_fields)}"
+                        reason = f"MySQL newer: {mysql_dt} > {sheets_dt}"
                     else:
-                        reason = f"Sheets newer or equal"
-                elif mysql_dt and not sheets_dt:
-                    # MySQL has timestamp but Sheets doesn't
-                    should_update = True
-                    diff_fields = ['UpdatedAt (missing in Sheets)']
-                    reason = "Sheets missing UpdatedAt"
+                        reason = "Sheets newer or equal"
                 else:
-                    reason = "Both missing UpdatedAt"
+                    # Missing timestamp on either side — skip to avoid spurious updates
+                    reason = "Missing UpdatedAt — skipped"
 
                 if should_update:
                     rows_to_update.append(event)
@@ -731,7 +726,7 @@ def _sync_events_to_sheets(job_id: str):
                     updated.append(event_id)
                 else:
                     skipped.append(event_id)
-                    log_lines.append(f"⊘ {event_id}: skipped ({reason})")
+                    # Don't log individual skips — only count them in summary
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(events_rows)) * 50)}
@@ -878,17 +873,13 @@ def _sync_payments_to_sheets(job_id: str):
                 sheets_payment = sheets_by_id[payment_id]
                 sheets_updated = sheets_payment.get('ProcessedDate')
 
-                if mysql_updated and sheets_updated:
-                    mysql_ts = str(mysql_updated) if mysql_updated else ''
-                    sheets_ts = str(sheets_updated) if sheets_updated else ''
-                    if mysql_ts > sheets_ts:
-                        rows_to_update.append(payment)
-                        log_lines.append(f"🔄 {payment_id}: ${amount}, {member_id}, {member_name} (MySQL newer)")
-                        updated.append(payment_id)
-                elif mysql_updated:
+                mysql_dt = _parse_datetime(mysql_updated)
+                sheets_dt = _parse_datetime(sheets_updated)
+                if mysql_dt and sheets_dt and mysql_dt > sheets_dt:
                     rows_to_update.append(payment)
-                    log_lines.append(f"🔄 {payment_id}: ${amount}, {member_id}, {member_name} (Sheets missing date)")
+                    log_lines.append(f"🔄 {payment_id}: ${amount}, {member_id}, {member_name} (MySQL newer)")
                     updated.append(payment_id)
+                # else: skip silently — don't log individual skips
 
             if (idx + 1) % 100 == 0:
                 job_update = {'progress': 25 + int((idx / len(payments_rows)) * 50)}
@@ -1574,6 +1565,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
             log_lines.append(f"💾 MySQL: Fetched {len(mysql_members_by_id)} members")
 
             member_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'")]
+            member_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND DATA_TYPE IN ('datetime','timestamp','date')")}
 
             job_update['message'] = 'Syncing members...'
             job_update['progress'] = 20
@@ -1587,11 +1579,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 # INSERT new member
                 try:
                     cols_to_insert = {k: v for k, v in sheet_member.items() if k in member_columns}
-                    # Normalize datetime fields
-                    for k, v in cols_to_insert.items():
-                        if 'date' in k.lower() or 'time' in k.lower():
-                            cols_to_insert[k] = _to_iso_datetime(v)
-
+                    cols_to_insert = {k: (_to_iso_datetime(v) if k in member_dt_columns else v) for k, v in cols_to_insert.items()}
                     col_names = ', '.join(cols_to_insert.keys())
                     placeholders = ', '.join(['%s'] * len(cols_to_insert))
                     sql = f"INSERT INTO members ({col_names}) VALUES ({placeholders})"
@@ -1610,10 +1598,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
             if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
                 try:
                     cols_to_update = {k: v for k, v in sheet_member.items() if k in member_columns and k != 'MemberID'}
-                    # Normalize datetime fields
-                    for k, v in cols_to_update.items():
-                        if 'date' in k.lower() or 'time' in k.lower():
-                            cols_to_update[k] = _to_iso_datetime(v)
+                    cols_to_update = {k: (_to_iso_datetime(v) if k in member_dt_columns else v) for k, v in cols_to_update.items()}
 
                     set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                     sql = f"UPDATE members SET {set_clauses} WHERE MemberID=%s"
@@ -1644,15 +1629,14 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 log_lines.append(f"💾 MySQL: Fetched {len(mysql_events_by_id)} events")
 
                 event_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events'")]
+                event_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events' AND DATA_TYPE IN ('datetime','timestamp','date')")}
 
                 for event_id, sheet_event in sheets_events_by_id.items():
                     mysql_event = mysql_events_by_id.get(event_id)
                     if not mysql_event:
                         try:
                             cols_to_insert = {k: v for k, v in sheet_event.items() if k in event_columns}
-                            for k, v in cols_to_insert.items():
-                                if 'date' in k.lower() or 'time' in k.lower():
-                                    cols_to_insert[k] = _to_iso_datetime(v)
+                            cols_to_insert = {k: (_to_iso_datetime(v) if k in event_dt_columns else v) for k, v in cols_to_insert.items()}
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
                             sql = f"INSERT INTO webapp_events ({col_names}) VALUES ({placeholders})"
@@ -1666,9 +1650,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
                             try:
                                 cols_to_update = {k: v for k, v in sheet_event.items() if k in event_columns and k != 'EventID'}
-                                for k, v in cols_to_update.items():
-                                    if 'date' in k.lower() or 'time' in k.lower():
-                                        cols_to_update[k] = _to_iso_datetime(v)
+                                cols_to_update = {k: (_to_iso_datetime(v) if k in event_dt_columns else v) for k, v in cols_to_update.items()}
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE webapp_events SET {set_clauses} WHERE EventID=%s"
                                 values = list(cols_to_update.values()) + [event_id]
@@ -1701,15 +1683,14 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 log_lines.append(f"💾 MySQL: Fetched {len(mysql_payments_by_id)} payments")
 
                 payment_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments'")]
+                payment_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND DATA_TYPE IN ('datetime','timestamp','date')")}
 
                 for payment_id, sheet_payment in sheets_payments_by_id.items():
                     mysql_payment = mysql_payments_by_id.get(payment_id)
                     if not mysql_payment:
                         try:
                             cols_to_insert = {k: v for k, v in sheet_payment.items() if k in payment_columns}
-                            for k, v in cols_to_insert.items():
-                                if 'date' in k.lower() or 'time' in k.lower():
-                                    cols_to_insert[k] = _to_iso_datetime(v)
+                            cols_to_insert = {k: (_to_iso_datetime(v) if k in payment_dt_columns else v) for k, v in cols_to_insert.items()}
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
                             sql = f"INSERT INTO payments ({col_names}) VALUES ({placeholders})"
@@ -1723,9 +1704,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
                             try:
                                 cols_to_update = {k: v for k, v in sheet_payment.items() if k in payment_columns and k != 'PaymentID'}
-                                for k, v in cols_to_update.items():
-                                    if 'date' in k.lower() or 'time' in k.lower():
-                                        cols_to_update[k] = _to_iso_datetime(v)
+                                cols_to_update = {k: (_to_iso_datetime(v) if k in payment_dt_columns else v) for k, v in cols_to_update.items()}
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE payments SET {set_clauses} WHERE PaymentID=%s"
                                 values = list(cols_to_update.values()) + [payment_id]
@@ -1881,7 +1860,7 @@ def _sync_unprocessed_transactions_to_sheets(job_id: str):
         unprocessed = query("""
             SELECT MessageId, Notes, ProcessedTime, WebAppID
             FROM gmail_transactions
-            WHERE ProcessedTime IS NULL OR ProcessedTime = ''
+            WHERE ProcessedTime IS NULL
             ORDER BY TimeStamp DESC
         """)
         log_lines.append(f"📥 Found {len(unprocessed)} unprocessed transactions in MySQL")
