@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:24 UTC — Fix gmail_transactions sync: wrong GAS action name
+Changed: `api_sheets_sync.py` — fixed 3 calls using `get_gmail_transactions` → `get_transactions`. GAS webhook recognizes `get_transactions` action (handles Fetch-Gmail sheet). Error was: "Unknown action: get_gmail_transactions". Committed 2df87cd. Status: Ready. Next: Redeploy Flask, retry gmail_transactions sync.
+
 ### 2026-04-01 19:23 UTC — Add missing member-quick/all endpoint for fuzzy search
 Changed: `api_payments.py` — added new GET endpoint `/api/payments/member-quick/all` that returns all active/pending members with fields: MemberID, FirstName, LastName, Expiration, District, Type, WeChatID. Fixes 404 error in Quick Approve fuzzy search. Committed 92589d0. Status: Ready. Next: Redeploy Flask, test Quick Approve fuzzy search now works.
 
