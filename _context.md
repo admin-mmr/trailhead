@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:02 UTC — Add fuzzy search to Quick Approve member selection
+Changed: `payments.js` GmailQuickApprovePopover — added fuzzyMatchMember() helper (matches FirstName, LastName, MemberID, WeChatID against search query); added "Find Member" input with real-time filtering; results table shows Name, MemberID, District, Type, Expiration; click-to-select populates Member ID field. Improves UX for manual member lookup in Quick Approve workflow. Committed 410a38c. Status: Ready. Next: Test on live data + consider expanding auto-sync to also update payments + gmail_transactions sheets (currently only events synced).
+
 ### 2026-04-01 14:48 ET — Add member preview card to Quick Approve popover
 Changed: `payments.js` GmailQuickApprovePopover — added memberData state + useEffect to fetch member details when valid ID entered; displays floating preview card with Name, Expiration, WeChatID. Shows loading state while fetching, updates real-time. Green left border card for visual clarity. Improves UX for validation + quick member reference. Committed b492410. Status: Ready.
 
