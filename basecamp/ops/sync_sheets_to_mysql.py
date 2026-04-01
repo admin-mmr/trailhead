@@ -31,6 +31,18 @@ from mysql.connector import Error as MySQLError
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python'))
 
 from google_sheets_snapshot import GoogleSheetsSnapshot
+from sync_engine import (
+    parse_datetime,
+    to_mysql_datetime,
+    resolve_conflict,
+    resolve_gmail_row,
+    filter_sync_columns,
+    is_immutable_column,
+    classify_rows,
+    SyncAudit,
+    log_sync_error,
+    STANDARD_TABLES,
+)
 
 # Setup logging
 logging.basicConfig(
@@ -366,28 +378,12 @@ class SheetSyncer:
             return {}
 
     def filter_row_to_whitelist(self, row: Dict[str, str]) -> Dict[str, str]:
-        """
-        If this table has a column whitelist (TABLE_COLUMN_WHITELISTS), return
-        only the whitelisted keys from the row.  This prevents sheet columns
-        that have no business touching system/auth DB columns from ever being
-        included in INSERT/UPDATE statements.
-
-        Tables without an explicit whitelist pass through unchanged (all
-        columns that exist in the DB schema are eligible as before).
-        """
-        whitelist = TABLE_COLUMN_WHITELISTS.get(self.table_name)
-        if whitelist is None:
-            return row
-        filtered = {k: v for k, v in row.items() if k in whitelist}
-        ignored = set(row.keys()) - whitelist
-        if ignored:
-            logger.debug(f'Ignoring sheet columns not in {self.table_name} whitelist: {sorted(ignored)}')
-        return filtered
+        """Delegate to sync_engine.filter_sync_columns (spec §5.1)."""
+        return filter_sync_columns(self.table_name, row)
 
     def _is_immutable_on_update(self, col_name: str) -> bool:
-        """Return True if col_name must not be changed in UPDATE statements."""
-        immutable = TABLE_IMMUTABLE_ON_UPDATE.get(self.table_name, set())
-        return col_name in immutable
+        """Delegate to sync_engine.is_immutable_column (spec §5.2)."""
+        return is_immutable_column(self.table_name, col_name)
 
     def get_required_columns(self) -> set:
         """
@@ -590,7 +586,7 @@ class SheetSyncer:
 
                                 if 'date' in col_type_lower or 'timestamp' in col_type_lower:
                                     date_only = col_type_lower.startswith('date') and 'datetime' not in col_type_lower
-                                    converted = convert_datetime_to_mysql(str(col_value_clean), date_only=date_only)
+                                    converted = to_mysql_datetime(str(col_value_clean), date_only=date_only)
                                     if converted:
                                         col_value_clean = converted
                                     else:
@@ -1003,7 +999,50 @@ class SheetSyncer:
             for change in changes['modified']:
                 key_value = change['key']
                 try:
-                    result = self.sync_row(change['new'], 'modified', key_field, key_value)
+                    if self.table_name in STANDARD_TABLES:
+                        # ── Spec §2.2: bidirectional newer-wins conflict resolution ──
+                        # Fetch current MySQL row to compare against Sheets version.
+                        cur = self.connection.cursor(dictionary=True, buffered=True)
+                        cur.execute(
+                            f"SELECT * FROM {self.table_name} WHERE {key_field} = %s",
+                            (key_value,)
+                        )
+                        mysql_current = cur.fetchone() or {}
+                        cur.close()
+
+                        decision = resolve_conflict(
+                            self.table_name, key_value, mysql_current, change['new']
+                        )
+                        logger.debug(
+                            f'Conflict decision for {self.table_name}/{key_value}: {decision}'
+                        )
+
+                        from sync_engine import SyncDecision
+                        if decision.direction == SyncDecision.NO_CHANGE:
+                            rows_unchanged += 1
+                            rows_synced += 1
+                            continue
+                        elif decision.direction == SyncDecision.SHEETS_WINS:
+                            result = self.sync_row(change['new'], 'modified', key_field, key_value)
+                        else:
+                            # MYSQL_WINS — push MySQL row back to Sheets (caller must
+                            # arrange this via the sheets_sync push mechanism; we log it).
+                            logger.info(
+                                f'MySQL wins for {self.table_name}/{key_value} ({decision.reason}); '
+                                f'caller should push MySQL row to Sheets.'
+                            )
+                            # Record the reverse-direction change for audit visibility;
+                            # actual Sheets push is handled by the admin portal / GAS webhook.
+                            self.record_change(
+                                sheet_name, snapshot_id, 'mysql_wins',
+                                key_value, change['new'], dict(mysql_current)
+                            )
+                            rows_synced += 1
+                            continue
+                    else:
+                        # Non-standard table (e.g. gmail_transactions) — Sheets→MySQL only
+                        result = self.sync_row(change['new'], 'modified', key_field, key_value)
+
                     if result == 'updated':
                         rows_modified += 1
                     elif result == 'unchanged':
