@@ -316,7 +316,7 @@ function rowToWebAppEvent(row: any[]): WebAppEvent {
     adminApprover:            String(row[WE_COL.ADMIN_APPROVER]            ?? ''),
     approvalDate:             toISO8601(row[WE_COL.APPROVAL_DATE])         || '',
     notes:                    String(row[WE_COL.NOTES]                     ?? ''),
-    paymentDate:              toISO8601(row[WE_COL.PAYMENT_DATE])          || '',
+    paymentDate:              toISODateString(row[WE_COL.PAYMENT_DATE])    || '',  // DATE-only format (YYYY-MM-DD)
     screenshotFileId:         String(row[WE_COL.SCREENSHOT_FILE_ID]        ?? ''),
     gdriveFilePath:           String(row[WE_COL.GDRIVE_FILE_PATH]          ?? ''),
     ocrText:                  String(row[WE_COL.OCR_TEXT]                  ?? ''),
