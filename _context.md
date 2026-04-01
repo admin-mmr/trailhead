@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 21:25 UTC — Convert date columns to DATE type: Expiration, PaymentDate
+Changed: `db/migrations/0015_convert_dates_to_date_type.sql` — ALTER TABLE to convert 4 columns from datetime to DATE type: members.Expiration, members.PaymentDate, webapp_events.PaymentDate, payments.PaymentDate. Updated schema_snapshot.sql. Benefits: Eliminates time component in storage, API responses show clean ISO date format (YYYY-MM-DD), frontend displays only date. Note: gmail_transactions.TransactionDate is already DATE type. Committed 81f1f46. Status: Migration ready. Next: Run migration on Azure MySQL, verify API responses show date-only format.
+
 ### 2026-04-01 21:08 UTC — Fix parse_datetime errors: add field filtering for GAS webhook
 Changed: `api_sheets_sync.py` — added `_filter_member_fields()`, `_filter_event_fields()`, `_filter_payment_fields()` helpers to strip non-standard columns before sending to GAS webhook. Root cause: GAS resolve_conflict was trying to parse unexpected fields (e.g., MembershipType="Family Membership") as datetimes, causing "parse_datetime: unrecognised format" warnings. Filters run after serialization, before webhook POST; follow schema definitions. Applied to _sync_members/events/payments_to_sheets() for both append/update batches. Committed 2e5cee7. Status: Ready. Next: Deploy Flask to Azure, rerun syncs to verify parse errors are eliminated.
 
