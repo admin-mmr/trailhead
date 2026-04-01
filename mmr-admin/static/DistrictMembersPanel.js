@@ -309,12 +309,21 @@ window.DistrictMembersPanel = () => {
   const exportAllDistricts = async () => {
     setExportLoading(true);
     try {
+      // Map keys to CSV headers
+      const columnLabels = availableColumns.reduce((acc, col) => {
+        acc[col.key] = col.label;
+        return acc;
+      }, {});
+
+      const csvColumns = selectedColumns.map(key => columnLabels[key] || key);
+
       const response = await fetch('/api/district/export-all-districts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: statusFilter,
           renewed: renewedFilter,
+          columns: csvColumns,
         }),
       });
 

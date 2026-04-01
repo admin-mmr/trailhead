@@ -373,7 +373,8 @@ def export_all_districts():
     Export members from all districts as separate CSVs in a ZIP file.
     Body: {
         "status": "active/not active/pending/empty" (optional),
-        "renewed": "yes/no/empty" (optional)
+        "renewed": "yes/no/empty" (optional),
+        "columns": ["District", "Member ID", "Name", ...] (optional - uses selected columns)
     }
     Returns ZIP file with one CSV per district.
     """
@@ -381,6 +382,7 @@ def export_all_districts():
         data = request.get_json() or {}
         status_filter = data.get('status', '').strip()
         renewed_filter = data.get('renewed', '').strip().lower()
+        selected_columns = data.get('columns', [])
 
         # Get membership year end from env
         year_end_str = os.environ.get('MEMBERSHIP_YEAR_END', '')
@@ -404,23 +406,37 @@ def export_all_districts():
         if not districts:
             return jsonify({'success': False, 'error': 'No districts found'}), 400
 
+        # Default columns if none selected
+        if not selected_columns:
+            selected_columns = [
+                'Member ID', 'Name', 'Email', 'WeChat ID', 'Phone',
+                'District', 'Status', 'Last Login', 'Last Modified', 'Expiration'
+            ]
+
         # Create ZIP file in memory
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
             for district in districts:
-                # Build query for this district with filters
+                # Build query for this district with filters - fetch all columns
                 sql = """
                     SELECT
-                        MemberID,
-                        CONCAT(FirstName, ' ', LastName) as Name,
-                        Email,
-                        WeChatID,
-                        PhoneNumber,
                         District,
+                        MemberID,
+                        FirstName,
+                        LastName,
+                        CONCAT(FirstName, ' ', LastName) as Name,
+                        Expiration,
+                        Gender,
+                        WeChatID,
+                        Email,
+                        Type,
+                        FamilyID,
+                        PaymentDate,
+                        MembershipFeePaid,
+                        PaymentTransaction,
                         Status,
                         LastLoginDate,
-                        LastUpdated as ModifiedAt,
-                        Expiration
+                        LastUpdated as LastModified
                     FROM members
                     WHERE District = %s
                 """
@@ -441,42 +457,41 @@ def export_all_districts():
                 sql += " ORDER BY LastName, FirstName"
                 members = query(sql, params)
 
-                # Create CSV for this district
+                # Create CSV for this district with selected columns
                 csv_buffer = io.StringIO()
-                writer = csv.DictWriter(
-                    csv_buffer,
-                    fieldnames=[
-                        'Member ID',
-                        'Name',
-                        'Email',
-                        'WeChat ID',
-                        'Phone',
-                        'District',
-                        'Status',
-                        'Last Login',
-                        'Last Modified',
-                        'Expiration'
-                    ]
-                )
+                writer = csv.DictWriter(csv_buffer, fieldnames=selected_columns)
 
                 writer.writeheader()
                 for row in members:
-                    last_login = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else 'Never'
-                    modified = row['ModifiedAt'].strftime('%Y-%m-%d %H:%M') if row['ModifiedAt'] else 'N/A'
-                    expiration = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else 'N/A'
+                    row_data = {}
+                    for col in selected_columns:
+                        if col == 'Member ID':
+                            row_data[col] = row['MemberID']
+                        elif col == 'First Name':
+                            row_data[col] = row['FirstName'] or ''
+                        elif col == 'Last Name':
+                            row_data[col] = row['LastName'] or ''
+                        elif col == 'Name':
+                            row_data[col] = row['Name'] or ''
+                        elif col == 'Expiration':
+                            row_data[col] = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else ''
+                        elif col == 'Payment Date':
+                            row_data[col] = row['PaymentDate'].strftime('%Y-%m-%d') if row['PaymentDate'] else ''
+                        elif col == 'Last Login':
+                            row_data[col] = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else ''
+                        elif col == 'Last Modified':
+                            row_data[col] = row['LastModified'].strftime('%Y-%m-%d %H:%M') if row['LastModified'] else ''
+                        elif col == 'WeChat ID':
+                            row_data[col] = row['WeChatID'] or ''
+                        elif col == 'Family ID':
+                            row_data[col] = row['FamilyID'] or ''
+                        elif col == 'Phone':
+                            row_data[col] = row.get('PhoneNumber', '') or ''
+                        else:
+                            # Direct column name
+                            row_data[col] = row.get(col, '') or ''
 
-                    writer.writerow({
-                        'Member ID': row['MemberID'],
-                        'Name': row['Name'],
-                        'Email': row['Email'],
-                        'WeChat ID': row['WeChatID'] or '',
-                        'Phone': row['PhoneNumber'] or '',
-                        'District': row['District'],
-                        'Status': row['Status'],
-                        'Last Login': last_login,
-                        'Last Modified': modified,
-                        'Expiration': expiration
-                    })
+                    writer.writerow(row_data)
 
                 # Add CSV to ZIP with UTF-8-sig encoding for Chinese characters
                 csv_filename = f"{district.replace('/', '_')}_members.csv"
