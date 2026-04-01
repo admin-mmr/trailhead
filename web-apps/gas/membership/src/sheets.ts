@@ -352,7 +352,7 @@ function getUnmatchedGmailPayments(): FetchGmailRow[] {
   const results: FetchGmailRow[] = [];
   for (let i = 1; i < data.length; i++) {
     const processed = data[i][FG_COL.PROCESSED];
-    if (!processed || !(processed instanceof Date)) {
+    if (!processed || processed === false || String(processed).toUpperCase() === 'FALSE') {
       results.push(rowToFetchGmailRow(data[i], i + 1));
     }
   }
@@ -375,7 +375,13 @@ function rowToFetchGmailRow(row: any[], rowIndex: number): FetchGmailRow {
     subject: String(row[FG_COL.SUBJECT] ?? ''),
     originalMemo: String(row[FG_COL.ORIGINAL_MEMO] ?? ''),
     notes: String(row[FG_COL.NOTES] ?? ''),
-    processedTime: row[FG_COL.PROCESSED] instanceof Date ? (row[FG_COL.PROCESSED] as Date).toISOString() : null,
+    processedTime: (() => {
+      const v = row[FG_COL.PROCESSED];
+      if (!v || v === false || String(v).toUpperCase() === 'FALSE') return null;
+      if (v instanceof Date) return v.toISOString();
+      const d = new Date(String(v));
+      return isNaN(d.getTime()) ? String(v) : d.toISOString();
+    })(),
     source: String(row[FG_COL.SOURCE] ?? ''),
     paymentID: String(row[FG_COL.PAYMENT_ID] ?? ''),
     rowIndex,
