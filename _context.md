@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:34 UTC — Standardize date-only display across mmr-admin/mmr-webapp
+Changed: `DistrictMembersPanel.js` — updated formatDate() to support dateOnly parameter; Expiration now shows date-only (e.g., "Mar 31, 2027" not "Mar 31, 2027 04:00"); `payments.js` already uses date-only fmtDate(). Status: mmr-admin displays dates correctly now; Python backend returns dates as-is from DB (DATE type); GAS/Google Sheets now formats as ISO date-only via toISODateString(). Committed fcfe1a8. Next: Test end-to-end from MySQL → mmr-admin display → Google Sheets.
+
 ### 2026-04-01 19:32 UTC — Fix date format: use ISO date-only (YYYY-MM-DD) for 3 columns
 Changed: `sheets.ts` rowToEventObject() — changed PaymentDate from toISO8601() to toISODateString(). Now all 3 date-only columns consistently use ISO date format (no time/timezone): Expiration, PaymentDate, TransactionDate. Fixes: Google Sheets showing "2027-03-31 4:00:00" instead of "2027-03-31". Committed 5367b6e. Status: Ready for GAS deploy. Next: Push GAS changes, verify dates sync cleanly to Sheets.
 
