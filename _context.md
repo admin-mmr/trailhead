@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:35 ET — Auto-sync member events to Sheets after manual match
+Changed: `api_payments.py` — added _sync_member_events_to_sheets() helper (fetches member's events, filters sync-eligible columns, posts GAS webhook 'update_events'); integrated into approve_event_match (non-blocking auto-sync after approval); added POST /api/payments/sync-member-to-sheets/{member_id} endpoint for manual sync. Uses filter_sync_columns + requests to match Sheets schema. Committed 042af9a. Status: Import check ✅. Next: Deploy + test manual match approval triggers Sheets update.
+
 ### 2026-04-01 14:32 ET — Add manual event-to-transaction matcher popup
 Changed: Created ManualEventMatchModal.js (React component) + backend endpoints in api_payments.py. Feature: admin clicks "📋 Approve Pending" button in Payments tab → modal shows pending events (left) + 3-tier match suggestions (right): most likely (amount+memberID), more likely (name match), recently matched (date±2 days). Admin selects transaction row + optional notes → confirms → updates webapp_events (MatchedMessageId, MatchedTransactionNumber, AdminApprover, ApprovalDate, PaymentDate, Notes, Status='approved'). Resolves: pending events left hanging after autoguess. Committed 472a356. Status: Import check ✅ passed. Next: Deploy + test on live pending events.
 
