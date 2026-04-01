@@ -651,9 +651,22 @@ def _sync_member_events_to_sheets(member_id: str) -> None:
         return
 
     # Filter to sync-eligible columns only (to match Sheets schema)
+    # IMPORTANT: Ensure UpdatedAt is always present for conflict resolution
+    from datetime_utils import to_datetime
     synced_events = []
     for event in events:
         synced_event = filter_sync_columns('webapp_events', event)
+
+        # Ensure UpdatedAt is present and is a proper ISO datetime string
+        if not synced_event.get('UpdatedAt'):
+            # Fallback to Timestamp if UpdatedAt is missing
+            synced_event['UpdatedAt'] = synced_event.get('Timestamp', '')
+        elif isinstance(synced_event['UpdatedAt'], str):
+            # Already a string, ensure it's ISO format
+            dt = to_datetime(synced_event['UpdatedAt'])
+            if dt:
+                synced_event['UpdatedAt'] = dt.isoformat()
+
         synced_events.append(synced_event)
 
     logger.info(f'_sync_member_events_to_sheets: {member_id} has {len(synced_events)} events to sync')
