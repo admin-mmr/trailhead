@@ -98,6 +98,171 @@ def api_sync_status(event_code):
     return json_response(job)
 
 
+@sync_bp.route('/api/sync/membership-fees', methods=['POST'])
+@login_required
+def api_sync_membership_fees():
+    """
+    Sync membership fee payment data from payments table to members table.
+    For each member with a membership payment (Individual or Family),
+    update MembershipFeePaid, PaymentDate, and PaymentTransaction if the
+    new payment date is more recent than what's currently in members.
+
+    Request JSON (optional):
+      {
+        "memberID": "M001"  // optional: sync only specific member
+      }
+
+    Response:
+      {
+        "ok": true,
+        "message": "Synced N member(s)",
+        "stats": {
+          "checked": N,
+          "updated": N,
+          "errors": N
+        }
+      }
+    """
+    logger.info("🔄 api_sync_membership_fees called")
+
+    try:
+        request_data = request.get_json() or {}
+        member_id_filter = request_data.get('memberID')
+
+        # Build query for payments with membership type
+        payments_sql = """
+            SELECT
+              p.MemberID,
+              p.Amount,
+              p.PaymentDate,
+              p.TransactionReference,
+              ROW_NUMBER() OVER (PARTITION BY p.MemberID ORDER BY p.PaymentDate DESC) as rn
+            FROM payments p
+            WHERE p.MembershipType IN ('Individual Membership', 'Family Membership')
+              AND p.MemberID IS NOT NULL
+              AND p.PaymentDate IS NOT NULL
+        """
+        params = []
+
+        if member_id_filter:
+            payments_sql += " AND p.MemberID = %s"
+            params.append(member_id_filter)
+
+        # Get only the most recent payment per member
+        payments_sql = f"SELECT * FROM ({payments_sql}) ranked WHERE rn = 1"
+
+        logger.debug(f"Executing query: {payments_sql}")
+        payments = query(payments_sql, params)
+        logger.info(f"Found {len(payments)} members with recent membership payments")
+
+        if not payments:
+            return json_response({
+                'ok': True,
+                'message': 'No membership payments to sync',
+                'stats': {
+                    'checked': 0,
+                    'updated': 0,
+                    'errors': 0
+                }
+            })
+
+        # Get current members data to check if update is needed
+        member_ids = [p['MemberID'] for p in payments]
+        member_ids_str = ','.join(['%s'] * len(member_ids))
+        members_sql = f"""
+            SELECT MemberID, PaymentDate
+            FROM members
+            WHERE MemberID IN ({member_ids_str})
+        """
+        members = query(members_sql, member_ids)
+        members_dict = {m['MemberID']: m['PaymentDate'] for m in members}
+
+        # Update members table for payments newer than current data
+        checked = 0
+        updated = 0
+        errors = 0
+        conn = None
+
+        try:
+            conn = get_conn()
+            cursor = conn.cursor()
+
+            for payment in payments:
+                member_id = payment['MemberID']
+                current_date = members_dict.get(member_id)
+                new_date = payment['PaymentDate']
+
+                # Only update if: no current date OR new date is more recent
+                should_update = current_date is None or new_date > current_date
+
+                checked += 1
+
+                if should_update:
+                    update_sql = """
+                        UPDATE members
+                        SET
+                          MembershipFeePaid = %s,
+                          PaymentDate = %s,
+                          PaymentTransaction = %s,
+                          LastUpdated = NOW()
+                        WHERE MemberID = %s
+                    """
+                    try:
+                        cursor.execute(update_sql, [
+                            payment['Amount'],
+                            payment['PaymentDate'],
+                            payment['TransactionReference'],
+                            member_id
+                        ])
+                        updated += cursor.rowcount
+                        logger.debug(f"  ✓ Updated {member_id}: fee={payment['Amount']}, date={payment['PaymentDate']}")
+                    except mysql.connector.errors.Error as e:
+                        errors += 1
+                        logger.error(f"  ✗ Error updating {member_id}: {e}")
+                else:
+                    logger.debug(f"  ⊘ Skipped {member_id}: existing date {current_date} >= {new_date}")
+
+            conn.commit()
+            logger.info(f"✅ Membership fee sync complete: {updated}/{checked} updated, {errors} errors")
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            errors += len(payments) - updated
+            logger.error(f"❌ Database error during sync: {e}")
+            raise
+
+        finally:
+            if conn:
+                try:
+                    cursor.close()
+                except:
+                    pass
+                try:
+                    conn.close()
+                except:
+                    pass
+
+        return json_response({
+            'ok': True,
+            'message': f'Synced {updated} member(s)',
+            'stats': {
+                'checked': checked,
+                'updated': updated,
+                'errors': errors
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Membership fee sync failed: {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
+        return json_response({
+            'ok': False,
+            'error': str(e),
+            'message': 'Sync failed'
+        }, 500)
+
+
 def _sync_worker(event_id: int, event_code: str, force_reload: bool):
     """
     Background worker: three-step sync.

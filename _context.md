@@ -5,6 +5,9 @@ Last commit: [pending]
 
 ## Session log
 
+### 2026-04-01 23:XX UTC — Add membership fee sync endpoint to Admin Portal
+Changed: `mmr-admin/api_sync.py` — added new POST endpoint `/api/sync/membership-fees` (lines 101–202). Syncs payment data from payments table to members table for Individual/Family Membership types. For each member, finds most recent payment and updates MembershipFeePaid, PaymentDate, PaymentTransaction if new payment is more recent than existing data. Returns stats: checked, updated, errors. Supports optional memberID filter. `mmr-admin/templates/index.html` — added "💳 Membership Fees" sub-tab to Sync Panel (line 1947); added MembershipFeePanel with manual sync button + optional memberID prompt (lines 1997–2026). UI integrates with existing toast/job tracking. Status: API endpoint complete and UI integrated. Next: Test endpoint with sample data, verify payment syncing works correctly, document in API reference.
+
 ### 2026-04-01 18:00 UTC — Implement membership renewal audit feature
 Changed: Created `api_audit.py` (234 lines) with 4-path transaction tracing: gmail_transactions → PaymentID/TransactionNumber → payments/members/webapp_events. Queries matching membership fee amounts, verifies expiration dates, checks family member consistency, generates audit report with trace routes and red flags. Created `AuditPanel.js` (437 lines) React component with date range inputs, run button, summary stats grid, expandable results table showing transaction/member info, match status, trace route, and family checks. Integrated blueprint into `app.py`, wired panel into admin dashboard tabs. Status: Ready to test. Next: Run import checks, test audit workflow end-to-end, verify trace routes work correctly.
 
