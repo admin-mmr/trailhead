@@ -25,6 +25,22 @@ from helpers import json_response
 from webhook_client import send_generic_email
 from auth import login_required
 
+# ── Shared bidirectional sync engine (spec-compliant) ────────────────────────
+import sys, os as _os
+sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', 'basecamp', 'python'))
+from sync_engine import (
+    parse_datetime      as _engine_parse_dt,
+    to_mysql_datetime   as _engine_to_mysql_dt,
+    resolve_conflict    as _engine_resolve_conflict,
+    resolve_gmail_row   as _engine_resolve_gmail,
+    filter_sync_columns as _engine_filter_cols,
+    SyncDecision,
+    SyncAudit,
+    log_sync_error      as _engine_log_error,
+    STANDARD_TABLES     as _STANDARD_TABLES,
+)
+# ─────────────────────────────────────────────────────────────────────────────
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -205,99 +221,40 @@ def _normalize_gas_keys(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_datetime(value: Any) -> Optional[datetime]:
-    """Parse a datetime from various formats (ISO 8601, date string, or datetime object)."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        s = value.strip()
-        # Handle ISO 8601 Zulu timezone format ('...Z') by removing the Z.
-        # datetime.strptime doesn't handle 'Z' directly.
-        if s.endswith('Z'):
-            s = s[:-1]
-        
-        # Try ISO 8601 first (most common)
-        for fmt in [
-            '%Y-%m-%dT%H:%M:%S.%f',  # 2026-03-31T12:35:45.123456
-            '%Y-%m-%dT%H:%M:%S',      # 2026-03-31T12:35:45
-            '%Y-%m-%d %H:%M:%S',      # 2026-03-31 12:35:45
-            '%Y-%m-%d',               # 2026-03-31
-        ]:
-            try:
-                return datetime.strptime(s, fmt)
-            except ValueError:
-                continue
-    return None
+    """
+    Parse any datetime to a naive UTC datetime.
+    Delegates to sync_engine.parse_datetime — correctly applies GMT offsets
+    (e.g. 'Tue Mar 31 2026 15:51:18 GMT-0400' → UTC 2026-03-31 19:51:18).
+    """
+    return _engine_parse_dt(value)
 
 
 def _to_iso_datetime(value: Any) -> Optional[str]:
     """
-    Convert any datetime format to MySQL-safe ISO 8601 string.
-
-    Handles:
-      - Python datetime objects → ISO string
-      - ISO 8601 strings from GAS (UTC) → validated and returned
-      - Legacy JavaScript Date.toString() → parsed and converted to ISO
-      - Date strings (YYYY-MM-DD) → kept as-is
-      - None → None
-
-    Returns ISO 8601 format suitable for MySQL: YYYY-MM-DD HH:MM:SS
-    This is the single source of truth for datetime normalization.
-
-    NOTE: GAS now sends UTC ISO 8601 strings (e.g., '2026-03-31T20:27:00.000Z').
-    The 'GMT' parsing is for legacy data.
+    Convert any datetime to a MySQL-safe UTC string (YYYY-MM-DD HH:MM:SS).
+    Delegates to sync_engine.to_mysql_datetime — correctly applies GMT offsets
+    instead of discarding them (spec §4.2).
     """
-    if value is None or (isinstance(value, str) and value.strip() == ''):
-        return None
+    return _engine_to_mysql_dt(value)
 
-    # If it's already a datetime object, convert to ISO
-    if isinstance(value, datetime):
-        return value.strftime('%Y-%m-%d %H:%M:%S')
 
-    if isinstance(value, str):
-        value_str = value.strip()
-
-        # Quick check: if it already looks like ISO format, validate and return
-        # This now correctly handles '...Z' from GAS thanks to _parse_datetime.
-        if 'T' in value_str or (len(value_str) >= 19 and value_str[4] == '-' and value_str[7] == '-'):
-            # Try to parse as ISO to validate
-            dt = _parse_datetime(value_str)
-            if dt:
-                return dt.strftime('%Y-%m-%d %H:%M:%S')
-
-        # (LEGACY) Check for JavaScript Date.toString() format
-        # Format: 'Tue Mar 31 2026 15:51:18 GMT-0400 (...)'
-        # We extract the date/time part before 'GMT'
-        if 'GMT' in value_str:
-            try:
-                # Extract the date/time part: everything before ' GMT'
-                date_part = value_str.split(' GMT')[0].strip()  # 'Tue Mar 31 2026 15:51:18'
-                # Parse: 'Tue Mar 31 2026 15:51:18' with weekday and year
-                dt = datetime.strptime(date_part, '%a %b %d %Y %H:%M:%S')
-                return dt.strftime('%Y-%m-%d %H:%M:%S')
-            except ValueError as e:
-                logger.warning(f"Failed to parse legacy JavaScript Date.toString() format: {value_str} — {e}")
-                # Fallback: return None (will be caught by caller)
-                return None
-
-        # Try common date formats
-        for fmt in [
-            '%Y-%m-%dT%H:%M:%S.%f',
-            '%Y-%m-%dT%H:%M:%S',
-            '%Y-%m-%d %H:%M:%S',
-            '%Y-%m-%d',
-        ]:
-            try:
-                dt = datetime.strptime(value_str, fmt)
-                return dt.strftime('%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                continue
-
-        logger.warning(f"Could not parse datetime: {value_str}")
-        return None
-
-    return None
+def _coerce_value(v: Any, col: str, dt_cols: set, int_cols: set) -> Any:
+    """
+    Coerce a Google Sheets value to the correct MySQL type.
+    - datetime/timestamp/date cols: delegate to _to_iso_datetime; '' → None
+    - integer cols: '' or None → None; numeric strings → int
+    - everything else: pass through unchanged
+    """
+    if col in dt_cols:
+        return _to_iso_datetime(v)
+    if col in int_cols:
+        if v is None or v == '':
+            return None
+        try:
+            return int(float(str(v)))   # handles '2015', '2015.0'
+        except (ValueError, TypeError):
+            return None
+    return v
 
 
 def _datetimes_equal(dt1: Any, dt2: Any) -> bool:
@@ -495,34 +452,26 @@ def _sync_members_to_sheets(job_id: str):
                 if verbose_mode and idx < 3:
                     log_lines.append(f"   → LastUpdated={mysql_updated}")
             else:
-                # Existing member — check versioning
+                # Existing member — spec §2.2 bidirectional newer-wins conflict resolution
                 sheets_member = sheets_by_id[member_id]
-                sheets_updated = sheets_member.get('LastUpdated')
+                decision = _engine_resolve_conflict('members', member_id, member, sheets_member)
 
-                reason = None
-                should_update = False
-
-                # Compare timestamps (using proper datetime parsing)
-                mysql_dt = _parse_datetime(mysql_updated)
-                sheets_dt = _parse_datetime(sheets_updated)
-
-                if mysql_dt and sheets_dt:
-                    if mysql_dt > sheets_dt:
-                        should_update = True
-                        reason = f"MySQL newer: {mysql_dt} > {sheets_dt}"
-                    else:
-                        reason = "Sheets newer or equal"
-                else:
-                    # Missing timestamp on either side — skip to avoid spurious updates
-                    reason = "Missing LastUpdated — skipped"
-
-                if should_update:
+                if decision.direction == SyncDecision.NO_CHANGE:
+                    skipped.append(member_id)
+                elif decision.direction == SyncDecision.MYSQL_WINS:
+                    # MySQL newer → push to Sheets
                     rows_to_update.append(member)
-                    log_lines.append(f"🔄 {member_id}: {member_name} ({reason})")
+                    log_lines.append(f"🔄 {member_id}: {member_name} ({decision.reason})")
                     updated.append(member_id)
                 else:
+                    # SHEETS_WINS (newer or tie) → Sheets should overwrite MySQL;
+                    # the Sheets→MySQL nightly job handles this direction.
+                    # Log it so the admin has visibility.
+                    log_lines.append(
+                        f"⬅  {member_id}: {member_name} Sheets wins ({decision.reason}) "
+                        f"— will be applied by nightly sync"
+                    )
                     skipped.append(member_id)
-                    # Don't log individual skips — only count them in summary
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(members_rows)) * 50)}
@@ -696,37 +645,25 @@ def _sync_events_to_sheets(job_id: str):
                 if verbose_mode and idx < 3:
                     log_lines.append(f"   → UpdatedAt={mysql_updated}")
             else:
+                # Spec §2.2 bidirectional conflict resolution for webapp_events
                 sheets_event = sheets_by_id[event_id]
-                sheets_updated = sheets_event.get('UpdatedAt')
+                decision = _engine_resolve_conflict('webapp_events', event_id, event, sheets_event)
 
-                # Use proper datetime comparison that handles different formats
-                mysql_dt = _parse_datetime(mysql_updated)
-                sheets_dt = _parse_datetime(sheets_updated)
-
-                should_update = False
-                diff_fields = []
-                reason = None
-
-                if mysql_dt and sheets_dt:
-                    # Both have timestamps: only update if MySQL is strictly newer
-                    if mysql_dt > sheets_dt:
-                        should_update = True
-                        diff_fields = _get_field_diffs(event, sheets_event)
-                        reason = f"MySQL newer: {mysql_dt} > {sheets_dt}"
-                    else:
-                        reason = "Sheets newer or equal"
-                else:
-                    # Missing timestamp on either side — skip to avoid spurious updates
-                    reason = "Missing UpdatedAt — skipped"
-
-                if should_update:
-                    rows_to_update.append(event)
+                if decision.direction == SyncDecision.NO_CHANGE:
+                    skipped.append(event_id)
+                elif decision.direction == SyncDecision.MYSQL_WINS:
+                    diff_fields = _get_field_diffs(event, sheets_event)
                     diff_str = f" ({', '.join(diff_fields)})" if diff_fields else ""
-                    log_lines.append(f"🔄 {event_id}: {event_name}{diff_str}")
+                    rows_to_update.append(event)
+                    log_lines.append(f"🔄 {event_id}: {event_name}{diff_str} ({decision.reason})")
                     updated.append(event_id)
                 else:
+                    # SHEETS_WINS (newer or tie) → nightly sync handles MySQL update
+                    log_lines.append(
+                        f"⬅  {event_id}: {event_name} Sheets wins ({decision.reason}) "
+                        f"— will be applied by nightly sync"
+                    )
                     skipped.append(event_id)
-                    # Don't log individual skips — only count them in summary
 
             if (idx + 1) % 50 == 0:
                 job_update = {'progress': 25 + int((idx / len(events_rows)) * 50)}
@@ -870,16 +807,18 @@ def _sync_payments_to_sheets(job_id: str):
                 log_lines.append(f"✅ {payment_id}: ${amount}, {member_id}, {member_name} (NEW)")
                 inserted.append(f"{payment_id}: ${amount}, {member_id}, {member_name}")
             else:
+                # Spec §2.2 bidirectional conflict resolution for payments
                 sheets_payment = sheets_by_id[payment_id]
-                sheets_updated = sheets_payment.get('ProcessedDate')
+                decision = _engine_resolve_conflict('payments', payment_id, payment, sheets_payment)
 
-                mysql_dt = _parse_datetime(mysql_updated)
-                sheets_dt = _parse_datetime(sheets_updated)
-                if mysql_dt and sheets_dt and mysql_dt > sheets_dt:
+                if decision.direction == SyncDecision.MYSQL_WINS:
                     rows_to_update.append(payment)
-                    log_lines.append(f"🔄 {payment_id}: ${amount}, {member_id}, {member_name} (MySQL newer)")
+                    log_lines.append(f"🔄 {payment_id}: ${amount}, {member_id}, {member_name} ({decision.reason})")
                     updated.append(payment_id)
-                # else: skip silently — don't log individual skips
+                elif decision.direction == SyncDecision.SHEETS_WINS:
+                    # Nightly sync handles MySQL update; just count as skipped
+                    pass
+                # NO_CHANGE: skip silently
 
             if (idx + 1) % 100 == 0:
                 job_update = {'progress': 25 + int((idx / len(payments_rows)) * 50)}
@@ -1010,37 +949,20 @@ def _sync_gmail_transactions_to_sheets(job_id: str):
         with _sync_jobs_lock:
             _sync_jobs[job_id].update(job_update)
 
-        # Compare and build update list
+        # Compare and build update list (spec §3.2 field-level rules via engine)
         rows_to_update = []
         for txn in txn_rows:
             msg_id = txn['MessageId']
             if msg_id not in sheets_by_id:
-                continue  # Skip if not in Sheets
+                continue  # spec §3.2: never create Sheets rows from MySQL
 
             sheet_row = sheets_by_id[msg_id]
-            needs_update = False
+            action = _engine_resolve_gmail(msg_id, txn, sheet_row)
 
-            # Check if Notes differ
-            mysql_notes = txn.get('Notes', '')
-            sheet_notes = sheet_row.get('Notes', '')
-            if mysql_notes != sheet_notes:
-                needs_update = True
-
-            # Check if ProcessedTime differs
-            mysql_processed = txn.get('ProcessedTime')
-            sheet_processed = sheet_row.get('ProcessedTime')
-            mysql_processed_str = mysql_processed.isoformat() if mysql_processed else ''
-            sheet_processed_str = sheet_processed if isinstance(sheet_processed, str) else (sheet_processed.isoformat() if sheet_processed else '')
-
-            if mysql_processed_str != sheet_processed_str:
-                needs_update = True
-
-            if needs_update:
-                rows_to_update.append({
-                    'MessageId': msg_id,
-                    'Notes': mysql_notes or '',
-                    'ProcessedTime': mysql_processed_str if mysql_processed else '',
-                })
+            if action.has_sheets_updates:
+                update_payload = {'MessageId': msg_id}
+                update_payload.update(action.sheets_updates)
+                rows_to_update.append(update_payload)
 
         log_lines.append(f"🔄 Found {len(rows_to_update)} transactions to update in Sheets")
 
@@ -1241,39 +1163,36 @@ def _import_transactions(job_id: str):
                     errors.append(f"{message_id}: {e}")
                     log_lines.append(f"❌ {message_id}: INSERT failed — {e}")
             else:
-                # Existing transaction — compare fields
+                # Existing transaction — spec §3.2 field-level rules via engine.
+                # sheets_row uses 'Memo' key; existing row uses 'Memo' and 'Notes'.
                 existing = existing_by_id[message_id]
-                existing_notes = existing.get('Notes', '')
+                sheets_row_for_engine = {
+                    'Memo':          memo,
+                    'ProcessedTime': processed_time,
+                    'Notes':         existing.get('Notes', ''),    # Sheets has no Notes col
+                    'WebAppID':      existing.get('WebAppID', ''), # Sheets has no WebAppID col
+                }
+                action = _engine_resolve_gmail(message_id, existing, sheets_row_for_engine)
 
-                reason = None
-                should_update = False
-
-                # Check if Memo differs from Notes
-                if memo and memo != existing_notes:
-                    should_update = True
-                    reason = f"Memo changed: {repr(existing_notes)} → {repr(memo)}"
-                elif not memo and existing_notes:
-                    # Memo is empty but Notes has data — don't clear Notes
-                    reason = f"Memo is empty, Notes={repr(existing_notes)} unchanged"
-                elif not memo and not existing_notes:
-                    reason = "Both Memo and Notes empty — no change"
-                elif memo == existing_notes:
-                    reason = f"already synced ({repr(memo)})"
-
-                if should_update:
+                if action.has_mysql_updates:
+                    # Apply Memo → MySQL (the only Sheets→MySQL field per spec)
+                    set_clauses = ', '.join(f"{k} = %s" for k in action.mysql_updates)
+                    params = list(action.mysql_updates.values()) + [message_id]
                     try:
                         execute(
-                            "UPDATE gmail_transactions SET Notes = %s WHERE MessageId = %s",
-                            [memo, message_id]
+                            f"UPDATE gmail_transactions SET {set_clauses} WHERE MessageId = %s",
+                            params,
                         )
                         updated.append(message_id)
-                        log_lines.append(f"🔄 {message_id}: UPDATED — {reason}")
+                        log_lines.append(
+                            f"🔄 {message_id}: UPDATED {list(action.mysql_updates)} from Sheets"
+                        )
                     except Exception as e:
                         errors.append(f"{message_id}: {e}")
                         log_lines.append(f"❌ {message_id}: UPDATE failed — {e}")
                 else:
-                    skipped.append((message_id, reason))
-                    log_lines.append(f"⊘ {message_id}: skipped — {reason}")
+                    skipped.append((message_id, 'no mysql changes'))
+                    log_lines.append(f"⊘ {message_id}: no changes")
 
             if (idx + 1) % 100 == 0:
                 job_update = {'progress': 25 + int((idx / len(sheets_txns)) * 50)}
@@ -1566,6 +1485,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 
             member_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'")]
             member_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND DATA_TYPE IN ('datetime','timestamp','date')")}
+            member_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
 
             job_update['message'] = 'Syncing members...'
             job_update['progress'] = 20
@@ -1579,7 +1499,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 # INSERT new member
                 try:
                     cols_to_insert = {k: v for k, v in sheet_member.items() if k in member_columns}
-                    cols_to_insert = {k: (_to_iso_datetime(v) if k in member_dt_columns else v) for k, v in cols_to_insert.items()}
+                    cols_to_insert = {k: _coerce_value(v, k, member_dt_columns, member_int_columns) for k, v in cols_to_insert.items()}
                     col_names = ', '.join(cols_to_insert.keys())
                     placeholders = ', '.join(['%s'] * len(cols_to_insert))
                     sql = f"INSERT INTO members ({col_names}) VALUES ({placeholders})"
@@ -1598,7 +1518,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
             if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
                 try:
                     cols_to_update = {k: v for k, v in sheet_member.items() if k in member_columns and k != 'MemberID'}
-                    cols_to_update = {k: (_to_iso_datetime(v) if k in member_dt_columns else v) for k, v in cols_to_update.items()}
+                    cols_to_update = {k: _coerce_value(v, k, member_dt_columns, member_int_columns) for k, v in cols_to_update.items()}
 
                     set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                     sql = f"UPDATE members SET {set_clauses} WHERE MemberID=%s"
@@ -1630,19 +1550,21 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 
                 event_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events'")]
                 event_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events' AND DATA_TYPE IN ('datetime','timestamp','date')")}
+                event_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
 
                 for event_id, sheet_event in sheets_events_by_id.items():
                     mysql_event = mysql_events_by_id.get(event_id)
                     if not mysql_event:
                         try:
                             cols_to_insert = {k: v for k, v in sheet_event.items() if k in event_columns}
-                            cols_to_insert = {k: (_to_iso_datetime(v) if k in event_dt_columns else v) for k, v in cols_to_insert.items()}
+                            cols_to_insert = {k: _coerce_value(v, k, event_dt_columns, event_int_columns) for k, v in cols_to_insert.items()}
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
                             sql = f"INSERT INTO webapp_events ({col_names}) VALUES ({placeholders})"
                             execute(sql, list(cols_to_insert.values()))
                             inserted_events.append(event_id)
                         except Exception as e:
+                            log_lines.append(f"❌ Event {event_id}: INSERT failed: {e}")
                             errors_events.append(f"Event {event_id} INSERT: {e}")
                     else:
                         sheet_updated_at = _parse_datetime(sheet_event.get('Timestamp'))
@@ -1650,13 +1572,14 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
                             try:
                                 cols_to_update = {k: v for k, v in sheet_event.items() if k in event_columns and k != 'EventID'}
-                                cols_to_update = {k: (_to_iso_datetime(v) if k in event_dt_columns else v) for k, v in cols_to_update.items()}
+                                cols_to_update = {k: _coerce_value(v, k, event_dt_columns, event_int_columns) for k, v in cols_to_update.items()}
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE webapp_events SET {set_clauses} WHERE EventID=%s"
                                 values = list(cols_to_update.values()) + [event_id]
                                 execute(sql, values)
                                 updated_events.append(event_id)
                             except Exception as e:
+                                log_lines.append(f"❌ Event {event_id}: UPDATE failed: {e}")
                                 errors_events.append(f"Event {event_id} UPDATE: {e}")
                         else:
                             skipped_events.append(event_id)
@@ -1684,19 +1607,21 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 
                 payment_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments'")]
                 payment_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND DATA_TYPE IN ('datetime','timestamp','date')")}
+                payment_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
 
                 for payment_id, sheet_payment in sheets_payments_by_id.items():
                     mysql_payment = mysql_payments_by_id.get(payment_id)
                     if not mysql_payment:
                         try:
                             cols_to_insert = {k: v for k, v in sheet_payment.items() if k in payment_columns}
-                            cols_to_insert = {k: (_to_iso_datetime(v) if k in payment_dt_columns else v) for k, v in cols_to_insert.items()}
+                            cols_to_insert = {k: _coerce_value(v, k, payment_dt_columns, payment_int_columns) for k, v in cols_to_insert.items()}
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
                             sql = f"INSERT INTO payments ({col_names}) VALUES ({placeholders})"
                             execute(sql, list(cols_to_insert.values()))
                             inserted_payments.append(payment_id)
                         except Exception as e:
+                            log_lines.append(f"❌ Payment {payment_id}: INSERT failed: {e}")
                             errors_payments.append(f"Payment {payment_id} INSERT: {e}")
                     else:
                         sheet_updated_at = _parse_datetime(sheet_payment.get('ProcessedDate'))
@@ -1704,13 +1629,14 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
                             try:
                                 cols_to_update = {k: v for k, v in sheet_payment.items() if k in payment_columns and k != 'PaymentID'}
-                                cols_to_update = {k: (_to_iso_datetime(v) if k in payment_dt_columns else v) for k, v in cols_to_update.items()}
+                                cols_to_update = {k: _coerce_value(v, k, payment_dt_columns, payment_int_columns) for k, v in cols_to_update.items()}
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
                                 sql = f"UPDATE payments SET {set_clauses} WHERE PaymentID=%s"
                                 values = list(cols_to_update.values()) + [payment_id]
                                 execute(sql, values)
                                 updated_payments.append(payment_id)
                             except Exception as e:
+                                log_lines.append(f"❌ Payment {payment_id}: UPDATE failed: {e}")
                                 errors_payments.append(f"Payment {payment_id} UPDATE: {e}")
                         else:
                             skipped_payments.append(payment_id)
@@ -1727,18 +1653,27 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
         if errors:
             summary += f" ({len(errors)} errors)"
 
+        total_inserted = len(inserted_members) + len(inserted_events) + len(inserted_payments)
+        total_updated  = len(updated_members)  + len(updated_events)  + len(updated_payments)
+        total_skipped  = len(skipped_members)  + len(skipped_events)  + len(skipped_payments)
         job_update = {
             'status': 'done',
             'message': summary,
             'progress': 100,
             'result': {
                 'operation': 'sync_google_to_mysql',
+                # Normalised summary keys (consumed by JobCard stat line)
+                'inserted': total_inserted,
+                'updated':  total_updated,
+                'skipped':  total_skipped,
+                'errors_count': len(errors),
+                # Per-table detail
                 'inserted_members': len(inserted_members),
-                'updated_members': len(updated_members),
-                'inserted_events': len(inserted_events),
-                'updated_events': len(updated_events),
+                'updated_members':  len(updated_members),
+                'inserted_events':  len(inserted_events),
+                'updated_events':   len(updated_events),
                 'inserted_payments': len(inserted_payments),
-                'updated_payments': len(updated_payments),
+                'updated_payments':  len(updated_payments),
                 'errors': errors,
                 'log': '\n'.join(log_lines),
             }
@@ -2078,6 +2013,17 @@ for _table in ('members', 'events', 'payments'):
     )
 
 
+@sheets_sync_bp.route('/api/sync/jobs')
+@login_required
+def api_sync_jobs():
+    """Return all known sync jobs (newest first) so the UI can restore state on mount."""
+    with _sync_jobs_lock:
+        snapshot = dict(_sync_jobs)
+    # Sort descending by job_id (UUID v4 with timestamp prefix keeps chronological order)
+    ordered = dict(sorted(snapshot.items(), key=lambda x: x[0], reverse=True))
+    return json_response({'ok': True, 'jobs': ordered})
+
+
 @sheets_sync_bp.route('/api/sync/status/<job_id>')
 @login_required
 def api_sync_status(job_id):
@@ -2089,3 +2035,143 @@ def api_sync_status(job_id):
         return json_response({'ok': False, 'error': 'Job not found'}, 404)
 
     return json_response({'ok': True, 'data': job})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cron token auth — lets GitHub Actions call sync routes without a session
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _cron_auth_or_session(f):
+    """
+    Decorator: allow request if either:
+    - user is logged in (normal session), OR
+    - X-Cron-Token header matches SYNC_CRON_TOKEN env var (for GH Actions)
+    """
+    import functools, os as _os2
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        token = request.headers.get('X-Cron-Token', '')
+        expected = _os2.environ.get('SYNC_CRON_TOKEN', '')
+        if expected and token == expected:
+            return f(*args, **kwargs)   # cron path — bypass session check
+        # Fall through to normal session auth
+        from auth import login_required as _lr
+        return _lr(f)(*args, **kwargs)
+    return wrapper
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Full Bidirectional Sync — all 8 phases in sequence
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FULL_SYNC_PHASES = [
+    # (label, fn, kwargs)
+    ('Members: MySQL → Google',          _sync_members_to_sheets,                  {}),
+    ('Members: Google → MySQL',          _sync_google_to_mysql,                    {'tables': ['members']}),
+    ('Events: MySQL → Google',           _sync_events_to_sheets,                   {}),
+    ('Events: Google → MySQL',           _sync_google_to_mysql,                    {'tables': ['events']}),
+    ('Payments: MySQL → Google',         _sync_payments_to_sheets,                 {}),
+    ('Payments: Google → MySQL',         _sync_google_to_mysql,                    {'tables': ['payments']}),
+    ('Gmail Transactions: Import',       _import_transactions,                      {}),
+    ('Unprocessed Txns: MySQL → Google', _sync_unprocessed_transactions_to_sheets, {}),
+]
+
+
+def _run_full_bidirectional_sync(job_id: str):
+    """
+    Run all 8 sync phases in sequence.
+    Each phase is called directly (same thread) using its own sub-job-id.
+    Admin email sent after every phase; summary email at the end.
+    """
+    n = len(_FULL_SYNC_PHASES)
+    results = []
+    overall_log = []
+
+    with _sync_jobs_lock:
+        _sync_jobs[job_id].update({
+            'status': 'running',
+            'message': f'Starting full sync ({n} phases)…',
+            'progress': 0,
+        })
+
+    for i, (label, fn, kwargs) in enumerate(_FULL_SYNC_PHASES):
+        sub_id = f'{job_id}-p{i + 1}'
+        with _sync_jobs_lock:
+            _sync_jobs[sub_id] = {
+                'status': 'running', 'message': f'Running {label}…',
+                'jobName': label, 'actionType': 'Full Sync',
+            }
+            _sync_jobs[job_id].update({
+                'message': f'Phase {i + 1}/{n}: {label}',
+                'progress': int(i / n * 100),
+            })
+
+        try:
+            fn(sub_id, **kwargs)
+        except Exception as exc:
+            logger.error('Full sync phase %s error: %s', label, exc)
+            with _sync_jobs_lock:
+                _sync_jobs[sub_id].update({'status': 'error', 'message': str(exc)})
+
+        phase = _sync_jobs.get(sub_id, {})
+        phase_status = phase.get('status', 'unknown')
+        phase_log    = (phase.get('result') or {}).get('log', '')
+        results.append({'phase': label, 'status': phase_status, 'message': phase.get('message', '')})
+        overall_log.append(f'\n── Phase {i + 1}/{n}: {label} [{phase_status.upper()}] ──\n{phase_log}')
+
+        # Per-phase email to admin
+        _send_sync_report(
+            recipient='admin@mmrunners.org',
+            operation=f'Full Sync — Phase {i + 1}/{n}: {label}',
+            summary=phase.get('message', ''),
+            details=[f"Status: {phase_status}"],
+            log_content=phase_log,
+        )
+
+    all_ok = all(r['status'] == 'done' for r in results)
+    ok_count = sum(1 for r in results if r['status'] == 'done')
+    emoji = '✅' if all_ok else '⚠️'
+    summary = (f'{emoji} Full Bidirectional Sync complete: '
+               f'{ok_count}/{n} phases succeeded.')
+    if not all_ok:
+        failed = [r['phase'] for r in results if r['status'] != 'done']
+        summary += f' Failed: {", ".join(failed)}.'
+
+    with _sync_jobs_lock:
+        _sync_jobs[job_id].update({
+            'status': 'done' if all_ok else 'error',
+            'message': summary,
+            'progress': 100,
+            'result': {
+                'inserted': sum(r.get('inserted', 0) for r in results if isinstance(r, dict)),
+                'updated':  sum(r.get('updated',  0) for r in results if isinstance(r, dict)),
+                'phases': results,
+                'log': '\n'.join(overall_log),
+            },
+        })
+
+    # Final summary email
+    _send_sync_report(
+        recipient='admin@mmrunners.org',
+        operation='Full Bidirectional Sync — Complete',
+        summary=summary,
+        details=[f"  {'✅' if r['status']=='done' else '❌'} {r['phase']}: {r['message']}" for r in results],
+        log_content='\n'.join(overall_log),
+    )
+
+
+@sheets_sync_bp.route('/api/sync/full-bidirectional-sync', methods=['POST'])
+@_cron_auth_or_session
+def api_full_bidirectional_sync():
+    """
+    Trigger a full 8-phase bidirectional sync.
+    Accessible via admin session OR X-Cron-Token header (for GitHub Actions).
+    """
+    job_id = f'full-{datetime.utcnow().strftime("%Y%m%d%H%M%S")}-{id(threading.current_thread()) % 10000:04d}'
+    with _sync_jobs_lock:
+        _sync_jobs[job_id] = {
+            'status': 'queued', 'message': 'Queued…', 'progress': 0,
+            'jobName': 'Full Sync', 'actionType': 'All Tables',
+        }
+    threading.Thread(target=_run_full_bidirectional_sync, args=(job_id,), daemon=True).start()
+    return json_response({'ok': True, 'job_id': job_id})

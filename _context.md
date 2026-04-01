@@ -27,6 +27,15 @@ PORTAL LAUNCH PREP (Carryover):
 
 ## Session log
 
+### 2026-04-01 01:08 ET — Full bidirectional sync + UI symmetry
+Changed: Flattened `GoogleToMySQLPanel` to match MySQL→Google style (3 primary buttons, no inner tabs, no dry-run). Added `Full Sync` sub-tab to `SyncPanel` with 8-phase list + button. Added `_run_full_bidirectional_sync()` orchestrator + `_cron_auth_or_session` decorator + `/api/sync/full-bidirectional-sync` route to `api_sheets_sync.py`. Created `.github/workflows/bidirectional-sync.yml` — 8 chained jobs (cron 4×/day), each polls `/api/sync/status/{id}` via `X-Cron-Token` auth, final notify job emails admin@mmrunners.org. Fixed `errors_count` asymmetry in `JobCard`. Status: needs 2 new GH Secrets (`MMR_ADMIN_URL`, `SYNC_CRON_TOKEN`) and `SYNC_CRON_TOKEN` set in Azure app settings. Next: push + set secrets.
+
+### 2026-04-01 00:55 ET — G→MySQL type coercion + UI fixes
+Changed: Added `_coerce_value()` to `api_sheets_sync.py` — detects INT/YEAR columns via INFORMATION_SCHEMA and converts `''`→`None`, fixing 1366 errors on `JoinYear` (members, events, payments). Added per-row `log_lines` error output for events + payments. Normalised G→MySQL result shape to add top-level `inserted/updated/skipped/errors_count`. Added `/api/sync/jobs` list endpoint + `SyncPanel` mounts from it (jobs persist across tab switches/page reload). Rewrote `JobCard` to show `result.error` prominently + stat line. Removed duplicate `RecentJobs` from `GoogleToMySQLPanel`; added `filterFn` prop so each sub-tab shows only its own jobs. Updated description copy to reflect bidirectional sync. Status: committed locally, needs push. Next: verify G→MySQL members/events/payments run clean.
+
+### 2026-04-01 00:34 ET — Bidirectional sync engine (shared module)
+Changed: Created `basecamp/python/sync_engine.py` (598 lines) — canonical spec-compliant bidirectional logic shared by cron job and admin portal. Fixes: GMT offset discarded instead of applied to UTC, tie-breaker not implemented (Sheets wins), missing-timestamp edge cases skipped instead of resolved. Updated `basecamp/ops/sync_sheets_to_mysql.py` and `mmr-admin/api_sheets_sync.py` to import from engine. Status: all 6 conflict-resolution test cases pass. Next: commit + run `nyrr-test` to verify import chain.
+
 ### 2026-04-01 00:03 ET — Remove page_admin from GAS membership app
 Changed: Deleted frontend/page_admin.html and dist/page_admin.html; removed 'admin' from allowedPages in ui.ts; removed Admin Panel button + JS from page_dashboard.html; removed admin approval deep-link from page_payment_history.html. Status: done, needs push + clasp deploy. Next: —
 
