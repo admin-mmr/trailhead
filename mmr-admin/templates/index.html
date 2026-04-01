@@ -11,6 +11,7 @@
   <script src="/static/payments.js"></script>
   <script src="/static/ManualEventMatchModal.js"></script>
   <script type="text/babel" src="/static/DistrictMembersPanel.js"></script>
+  <script type="text/babel" src="/static/AuditPanel.js"></script>
   <style>
     :root {
       --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
@@ -2543,6 +2544,9 @@ const App = () => {
           {(userRole === 'super_admin' || userRole === 'admin') && (
             <button className={`tab ${view === 'sync' ? 'active' : ''}`} onClick={() => setView('sync')}>Sync</button>
           )}
+          {(userRole === 'super_admin' || userRole === 'admin') && (
+            <button className={`tab ${view === 'audit' ? 'active' : ''}`} onClick={() => setView('audit')}>🔍 Renewal Audit</button>
+          )}
           <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => setView('tables')}>Data Browser</button>
           <button className={`tab ${view === 'log' ? 'active' : ''}`} onClick={() => setView('log')}>Sync Log</button>
           {(userRole === 'super_admin' || userRole === 'admin') && (
@@ -2564,6 +2568,7 @@ const App = () => {
       {view === 'detail' && selectedEventId && <EventDetail eventId={selectedEventId} onBack={goBack} />}
       {view === 'payments' && window.PaymentsPanel && React.createElement(window.PaymentsPanel)}
       {view === 'district' && window.DistrictMembersPanel && React.createElement(window.DistrictMembersPanel)}
+      {view === 'audit' && window.AuditPanel && React.createElement(window.AuditPanel)}
       {view === 'sync' && <SyncPanel />}
       {view === 'tables' && <TableBrowser />}
       {view === 'log' && <ProcessingLog />}

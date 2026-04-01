@@ -145,6 +145,9 @@ app.register_blueprint(py_exec_bp)
 from api_schema import schema_bp
 app.register_blueprint(schema_bp)
 
+from api_audit import audit_bp
+app.register_blueprint(audit_bp)
+
 
 # ---------------------------------------------------------------------------
 # Main
