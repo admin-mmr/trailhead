@@ -176,7 +176,20 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
   const [intent, setIntent] = useState(suggestIntent(gmail.Amount));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [popoverPos, setPopoverPos] = useState({ left: 0, right: 'auto' });
+  const popoverRef = useRef(null);
   const e = React.createElement;
+
+  // Measure and adjust popover position to stay within viewport
+  useEffect(() => {
+    if (popoverRef.current) {
+      const rect = popoverRef.current.getBoundingClientRect();
+      if (rect.right > window.innerWidth - 8) {
+        // Shift left if it goes off-screen
+        setPopoverPos({ left: 'auto', right: 0 });
+      }
+    }
+  }, []);
 
   const handleApprove = async () => {
     const mid = memberId.trim().toUpperCase();
@@ -196,10 +209,11 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
   };
 
   return e('div', {
+    ref: popoverRef,
     style: {
-      position: 'absolute', zIndex: 50, top: '100%', left: 0,
+      position: 'absolute', zIndex: 50, top: '100%', ...popoverPos,
       background: 'var(--surface)', border: '1px solid var(--accent)',
-      borderRadius: 'var(--radius)', padding: 16, minWidth: 340,
+      borderRadius: 'var(--radius)', padding: 16, minWidth: 340, maxWidth: 360,
       boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
     },
     onClick: ev => ev.stopPropagation(),
