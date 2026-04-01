@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 07:48 ET — delete redundant sync-all-sheets-ordered workflow
+Changed: Deleted `.github/workflows/sync-all-sheets-ordered.yml` (replaced by bidirectional-sync). Status: Done. Next: Push deletion commit.
+
 ### 2026-04-01 07:29 ET — improve sync logging and G→M summary format
 Changed: MySQL→Google events log now shows `field: old → new` per diff; G→M summary includes skipped+errors per table; `errors_members` tracked separately. Status: Done. Next: Push all commits to deploy.
 
