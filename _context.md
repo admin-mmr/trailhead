@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 14:32 ET — Add manual event-to-transaction matcher popup
+Changed: Created ManualEventMatchModal.js (React component) + backend endpoints in api_payments.py. Feature: admin clicks "📋 Approve Pending" button in Payments tab → modal shows pending events (left) + 3-tier match suggestions (right): most likely (amount+memberID), more likely (name match), recently matched (date±2 days). Admin selects transaction row + optional notes → confirms → updates webapp_events (MatchedMessageId, MatchedTransactionNumber, AdminApprover, ApprovalDate, PaymentDate, Notes, Status='approved'). Resolves: pending events left hanging after autoguess. Committed 472a356. Status: Import check ✅ passed. Next: Deploy + test on live pending events.
+
 ### 2026-04-01 14:26 ET — Fix tie-timestamp MATCH/SKIP logic
 Changed: `api_sheets_sync.py` — Members/Events/Payments SHEETS_WINS handling: when timestamp tie, now check for actual field diffs before logging. If no field differences (identical data) → log `= MATCH (tie: ...)` instead of `⏭️ SKIP`. If field diffs exist → log `⏭️ SKIP` (Sheets will apply on nightly sync). Prevents false SKIP entries. Committed ff7ff19. Status: Import check ✅ passed. Next: Deploy + test sync output on live data.
 
