@@ -193,6 +193,7 @@ def _normalize_gas_keys(row: Dict[str, Any]) -> Dict[str, Any]:
         'transactionNumber': 'TransactionNumber',
         'transactionDate': 'TransactionDate',
         'originalMemo': 'OriginalMemo',
+        'processedTime': 'ProcessedTime',
         'paymentID': 'PaymentID',
         # Common fields
         'timestamp': 'Timestamp',
@@ -1200,9 +1201,15 @@ def _import_transactions(job_id: str):
             except (ValueError, TypeError):
                 amount = None
 
-            # Normalize TransactionDate to a plain date string (YYYY-MM-DD)
+            # Normalize TransactionDate — GAS sends JS Date.toString() e.g.
+            # 'Tue Mar 31 2026 00:00:00 GMT-0400 (...)'; reuse _to_iso_datetime
+            # then take the date portion only (YYYY-MM-DD).
             transaction_date_raw = txn.get('TransactionDate', '')
-            transaction_date = str(transaction_date_raw)[:10] if transaction_date_raw else None
+            if transaction_date_raw:
+                _td_iso = _to_iso_datetime(transaction_date_raw)
+                transaction_date = str(_td_iso)[:10] if _td_iso else None
+            else:
+                transaction_date = None
 
             # Normalize timestamps to MySQL-safe ISO format
             timestamp = _to_iso_datetime(timestamp_raw)
