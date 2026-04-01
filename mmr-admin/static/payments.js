@@ -170,6 +170,20 @@ const MemberIdChip = ({ memberId, tooltipHandlers, onClick }) => {
 // Gmail Quick-Approve Popover
 // ---------------------------------------------------------------------------
 
+// Fuzzy search helper: match query against member fields
+const fuzzyMatchMember = (query, member) => {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const searchFields = [
+    (member.FirstName || ''),
+    (member.LastName || ''),
+    (member.MemberID || ''),
+    (member.WeChatID || ''),
+  ].join(' ').toLowerCase();
+  // Simple fuzzy: each word must match somewhere
+  return q.split(/\s+/).every(word => searchFields.includes(word));
+};
+
 const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers }) => {
   const memoIds = extractMemberIds((gmail.Memo || '') + ' ' + (gmail.OriginalMemo || ''));
   const [memberId, setMemberId] = useState(memoIds[0] || '');
@@ -179,8 +193,24 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
   const [popoverPos, setPopoverPos] = useState({ left: 0, right: 'auto' });
   const [memberData, setMemberData] = useState(null);
   const [memberLoading, setMemberLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allMembers, setAllMembers] = useState([]);
+  const [membersLoaded, setMembersLoaded] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
   const popoverRef = useRef(null);
   const e = React.createElement;
+
+  // Load all members on first render (for fuzzy search)
+  useEffect(() => {
+    if (!membersLoaded) {
+      api('/api/payments/member-quick/all').then(r => {
+        if (r.ok && Array.isArray(r.data)) {
+          setAllMembers(r.data);
+        }
+        setMembersLoaded(true);
+      });
+    }
+  }, []);
 
   // Measure and adjust popover position to stay within viewport
   useEffect(() => {
@@ -192,6 +222,16 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
       }
     }
   }, []);
+
+  // Fuzzy search as user types in search query
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const filtered = allMembers.filter(m => fuzzyMatchMember(searchQuery, m)).slice(0, 10);
+    setSearchResults(filtered);
+  }, [searchQuery, allMembers]);
 
   // Fetch member data when member ID is entered
   useEffect(() => {
@@ -210,6 +250,12 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
       setMemberLoading(false);
     });
   }, [memberId]);
+
+  const handleSelectMember = (member) => {
+    setMemberId(member.MemberID);
+    setSearchQuery('');
+    setSearchResults([]);
+  };
 
   const handleApprove = async () => {
     const mid = memberId.trim().toUpperCase();
@@ -246,6 +292,42 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
       e('div', null, `Sender: ${gmail.Sender || '—'}`),
       e('div', null, `Amount: ${fmtMoney(gmail.Amount)}  ·  Date: ${fmtDate(gmail.TransactionDate)}`),
       e('div', { style: { wordBreak: 'break-all' } }, `Memo: ${gmail.Memo || '—'}`),
+    ),
+    e('div', { style: { marginBottom: 8 } },
+      e('label', { style: { fontSize: 12, color: 'var(--text2)', display: 'block', marginBottom: 4 } }, 'Find Member'),
+      e('input', {
+        placeholder: 'Search by name, WeChat ID, or A####',
+        value: searchQuery,
+        onChange: ev => setSearchQuery(ev.target.value),
+        style: { width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13, boxSizing: 'border-box' },
+      }),
+      // Search results table
+      searchResults.length > 0 && e('div', {
+        style: {
+          marginTop: 6, maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11,
+        },
+      },
+        searchResults.map(m => e('div', {
+          key: m.MemberID,
+          onClick: () => handleSelectMember(m),
+          style: {
+            padding: '6px 8px', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg)',
+            ':hover': { background: 'var(--accent)22' },
+            display: 'flex', justifyContent: 'space-between', fontSize: 11,
+          },
+          onMouseOver: ev => ev.target.style.background = 'var(--accent)22',
+          onMouseOut: ev => ev.target.style.background = 'var(--bg)',
+        },
+          e('div', null,
+            e('div', { style: { fontWeight: 500 } }, `${m.FirstName || ''} ${m.LastName || ''}`.trim()),
+            e('div', { style: { color: 'var(--text2)', fontSize: 10 } }, `${m.MemberID}${m.District ? ' · ' + m.District : ''}`),
+          ),
+          e('div', { style: { textAlign: 'right', color: 'var(--text2)' } },
+            e('div', null, m.Type || '—'),
+            e('div', { style: { fontSize: 10 } }, fmtDate(m.Expiration) || '—'),
+          ),
+        ))
+      ),
     ),
     e('div', { style: { marginBottom: 8 } },
       e('label', { style: { fontSize: 12, color: 'var(--text2)', display: 'block', marginBottom: 4 } }, 'Member ID'),
