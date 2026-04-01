@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:20 UTC — Fix member sync duplicates: appending instead of updating
+Changed: `webhook.ts` handleUpdateMembers() + handleAppendMembers() — added duplicate detection + defensive logic. Root cause: MemberID comparison was failing (whitespace, stale data, or missing fields) causing updates to be skipped and rows appended instead. Fixes: (1) trim whitespace on MemberID compare; (2) data validity checks; (3) log not-found members; (4) detect & warn if appending duplicates. Returns notFound/duplicates counts for debugging. Committed 8c56389. Status: Ready for GAS redeploy. Next: Deploy GAS, run member sync test, verify updates happen in-place without duplicates.
+
 ### 2026-04-01 19:18 UTC — Fix logger error + improve event selection highlight
 Changed: `api_payments.py` — added missing `import logging` + `logger = logging.getLogger(__name__)` (was undefined in approve-event-match endpoint). `ManualEventMatchModal.js` — improved left panel event highlighting: blue border, glow effect, "✓ For matching" label when selected. Committed 95921bf. Status: Ready. Next: Redeploy Flask to Azure and test manual match flow end-to-end.
 
