@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 20:52 UTC — Create _convert_date_fields_to_iso_date() helper for MySQL→Google members sync
+Changed: `api_sheets_sync.py` — added `_convert_date_fields_to_iso_date()` helper function (lines 135–183) to convert Expiration and PaymentDate from ISO8601 datetime format (YYYY-MM-DDTHH:MM:SS) to ISO date-only (YYYY-MM-DD). Handles both formats, logs warnings on parse errors. Called in _sync_members_to_sheets() at lines 557, 573 for both append/update batches. Ensures GAS receives clean date-only strings without time component. Syntax verified. Status: Ready. Next: Deploy Flask and test MySQL→Google member sync with proper date formatting.
+
 ### 2026-04-01 19:34 UTC — Standardize date-only display across mmr-admin/mmr-webapp
 Changed: `DistrictMembersPanel.js` — updated formatDate() to support dateOnly parameter; Expiration now shows date-only (e.g., "Mar 31, 2027" not "Mar 31, 2027 04:00"); `payments.js` already uses date-only fmtDate(). Status: mmr-admin displays dates correctly now; Python backend returns dates as-is from DB (DATE type); GAS/Google Sheets now formats as ISO date-only via toISODateString(). Committed fcfe1a8. Next: Test end-to-end from MySQL → mmr-admin display → Google Sheets.
 

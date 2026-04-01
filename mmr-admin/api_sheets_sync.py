@@ -132,6 +132,57 @@ def _serialize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [_serialize_row(row) for row in rows]
 
 
+def _convert_date_fields_to_iso_date(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Convert Expiration and PaymentDate from ISO8601 datetime format (YYYY-MM-DDTHH:MM:SS)
+    to ISO date-only format (YYYY-MM-DD).
+
+    This function operates on already-serialized rows (string values) and ensures that
+    date fields are sent to GAS as date-only strings without time component.
+
+    Args:
+        rows: List of serialized row dicts with string values
+
+    Returns:
+        List of rows with Expiration and PaymentDate converted to date-only format
+    """
+    result = []
+    for row in rows:
+        new_row = row.copy()
+
+        # Convert Expiration field
+        if 'Expiration' in new_row:
+            exp_val = new_row['Expiration']
+            if exp_val and isinstance(exp_val, str):
+                try:
+                    # Handle both "2027-03-31T04:00:00" and "2027-03-31" formats
+                    if 'T' in exp_val:
+                        date_part = exp_val.split('T')[0]
+                    else:
+                        date_part = exp_val[:10]  # Take first 10 chars (YYYY-MM-DD)
+                    new_row['Expiration'] = date_part
+                except Exception as e:
+                    logger.warning(f"Failed to convert Expiration '{exp_val}': {e}")
+
+        # Convert PaymentDate field
+        if 'PaymentDate' in new_row:
+            pd_val = new_row['PaymentDate']
+            if pd_val and isinstance(pd_val, str):
+                try:
+                    # Handle both "2027-03-31T04:00:00" and "2027-03-31" formats
+                    if 'T' in pd_val:
+                        date_part = pd_val.split('T')[0]
+                    else:
+                        date_part = pd_val[:10]  # Take first 10 chars (YYYY-MM-DD)
+                    new_row['PaymentDate'] = date_part
+                except Exception as e:
+                    logger.warning(f"Failed to convert PaymentDate '{pd_val}': {e}")
+
+        result.append(new_row)
+
+    return result
+
+
 def _normalize_gas_keys(row: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert camelCase keys from GAS webhook to PascalCase (MySQL column names).
@@ -552,7 +603,10 @@ def _sync_members_to_sheets(job_id: str):
                 batch_num = (batch_idx // batch_size) + 1
                 total_batches = (len(rows_to_append) + batch_size - 1) // batch_size
                 try:
-                    _call_gas_webhook({'action': 'append_members', 'rows': _serialize_rows(batch)})
+                    serialized = _serialize_rows(batch)
+                    # Convert Expiration and PaymentDate to ISO date-only format (YYYY-MM-DD)
+                    serialized = _convert_date_fields_to_iso_date(serialized)
+                    _call_gas_webhook({'action': 'append_members', 'rows': serialized})
                     log_lines.append(f"📤 Appended batch {batch_num}/{total_batches}: {len(batch)} new members to Sheets")
                 except Exception as e:
                     error_msg = f"append_members batch {batch_num}: {e}"
@@ -565,7 +619,10 @@ def _sync_members_to_sheets(job_id: str):
                 batch_num = (batch_idx // batch_size) + 1
                 total_batches = (len(rows_to_update) + batch_size - 1) // batch_size
                 try:
-                    _call_gas_webhook({'action': 'update_members', 'rows': _serialize_rows(batch)})
+                    serialized = _serialize_rows(batch)
+                    # Convert Expiration and PaymentDate to ISO date-only format (YYYY-MM-DD)
+                    serialized = _convert_date_fields_to_iso_date(serialized)
+                    _call_gas_webhook({'action': 'update_members', 'rows': serialized})
                     log_lines.append(f"📤 Updated batch {batch_num}/{total_batches}: {len(batch)} members in Sheets")
                 except Exception as e:
                     error_msg = f"update_members batch {batch_num}: {e}"
