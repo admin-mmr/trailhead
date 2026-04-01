@@ -5,6 +5,9 @@ Last commit: 7b2491e (fix: replace get_db_connection() with get_conn() in all py
 
 ## Session log
 
+### 2026-04-01 19:23 UTC — Add missing member-quick/all endpoint for fuzzy search
+Changed: `api_payments.py` — added new GET endpoint `/api/payments/member-quick/all` that returns all active/pending members with fields: MemberID, FirstName, LastName, Expiration, District, Type, WeChatID. Fixes 404 error in Quick Approve fuzzy search. Committed 92589d0. Status: Ready. Next: Redeploy Flask, test Quick Approve fuzzy search now works.
+
 ### 2026-04-01 19:20 UTC — Fix member sync duplicates: appending instead of updating
 Changed: `webhook.ts` handleUpdateMembers() + handleAppendMembers() — added duplicate detection + defensive logic. Root cause: MemberID comparison was failing (whitespace, stale data, or missing fields) causing updates to be skipped and rows appended instead. Fixes: (1) trim whitespace on MemberID compare; (2) data validity checks; (3) log not-found members; (4) detect & warn if appending duplicates. Returns notFound/duplicates counts for debugging. Committed 8c56389. Status: Ready for GAS redeploy. Next: Deploy GAS, run member sync test, verify updates happen in-place without duplicates.
 
