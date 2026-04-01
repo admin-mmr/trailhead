@@ -17,6 +17,7 @@ window.DistrictMembersPanel = () => {
   const [sortBy, setSortBy] = React.useState('District');
   const [sortOrder, setSortOrder] = React.useState('asc');
   const [showColumnSelector, setShowColumnSelector] = React.useState(false);
+  const [columnFilters, setColumnFilters] = React.useState({});
 
   // Available columns with labels
   const availableColumns = [
@@ -41,7 +42,7 @@ window.DistrictMembersPanel = () => {
 
   // Default columns
   const defaultColumns = [
-    'District', 'MemberID', 'Name', 'Expiration', 'Gender',
+    'District', 'MemberID', 'Name', 'Status', 'Expiration', 'Gender',
     'WeChatID', 'Email', 'Type', 'FamilyID', 'PaymentDate',
     'MembershipFeePaid', 'PaymentTransaction'
   ];
@@ -160,10 +161,19 @@ window.DistrictMembersPanel = () => {
   };
 
   const toggleAll = () => {
-    if (selectedMembers.size === members.length) {
+    const filteredMembers = getFilteredMembers();
+    const filteredIds = filteredMembers.map((m) => m.MemberID);
+
+    // If all filtered members are selected, deselect all; otherwise select all filtered
+    const allFilteredSelected = filteredIds.every(id => selectedMembers.has(id));
+
+    if (allFilteredSelected && selectedMembers.size === filteredIds.length) {
       setSelectedMembers(new Set());
     } else {
-      setSelectedMembers(new Set(members.map((m) => m.MemberID)));
+      // Add filtered members to selection (keep existing selections)
+      const newSelected = new Set(selectedMembers);
+      filteredIds.forEach(id => newSelected.add(id));
+      setSelectedMembers(newSelected);
     }
   };
 
@@ -186,6 +196,70 @@ window.DistrictMembersPanel = () => {
       // New column, default to ascending
       updateSort(columnKey, 'asc');
     }
+  };
+
+  // Format date with optional time
+  const formatDate = (dateStr, dateOnly = false) => {
+    if (!dateStr) return '—';
+    const date = new Date(dateStr);
+    const options = {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    };
+    if (!dateOnly) {
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+    }
+    return date.toLocaleDateString('en-US', options);
+  };
+
+  // Get column label
+  const getColumnLabel = (key) => {
+    const col = availableColumns.find(c => c.key === key);
+    return col ? col.label : key;
+  };
+
+  // Get cell value
+  const getCellValue = (member, key) => {
+    if (key === 'Name') {
+      return `${member.FirstName || ''} ${member.LastName || ''}`.trim();
+    }
+    const value = member[key];
+    if (key === 'Expiration' || key === 'PaymentDate') {
+      return formatDate(value, true);
+    }
+    if (key === 'LastLoginDate' || key === 'LastModified') {
+      return formatDate(value, false);
+    }
+    return value || '—';
+  };
+
+  const updateColumnFilter = (columnKey, value) => {
+    setColumnFilters(prev => ({
+      ...prev,
+      [columnKey]: value
+    }));
+  };
+
+  const getFilteredMembers = () => {
+    if (Object.keys(columnFilters).length === 0) {
+      return members;
+    }
+
+    return members.filter(member => {
+      for (const [colKey, filterValue] of Object.entries(columnFilters)) {
+        if (!filterValue) continue; // Skip empty filters
+
+        const cellValue = getCellValue(member, colKey).toLowerCase();
+        const searchValue = filterValue.toLowerCase();
+
+        if (!cellValue.includes(searchValue)) {
+          return false;
+        }
+      }
+      return true;
+    });
   };
 
   const exportCSV = async (includeAll = false) => {
@@ -263,43 +337,6 @@ window.DistrictMembersPanel = () => {
     } finally {
       setExportLoading(false);
     }
-  };
-
-  // Format date with optional time
-  const formatDate = (dateStr, dateOnly = false) => {
-    if (!dateStr) return '—';
-    const date = new Date(dateStr);
-    const options = {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    };
-    if (!dateOnly) {
-      options.hour = '2-digit';
-      options.minute = '2-digit';
-    }
-    return date.toLocaleDateString('en-US', options);
-  };
-
-  // Get column label
-  const getColumnLabel = (key) => {
-    const col = availableColumns.find(c => c.key === key);
-    return col ? col.label : key;
-  };
-
-  // Get cell value
-  const getCellValue = (member, key) => {
-    if (key === 'Name') {
-      return `${member.FirstName || ''} ${member.LastName || ''}`.trim();
-    }
-    const value = member[key];
-    if (key === 'Expiration' || key === 'PaymentDate') {
-      return formatDate(value, true);
-    }
-    if (key === 'LastLoginDate' || key === 'LastModified') {
-      return formatDate(value, false);
-    }
-    return value || '—';
   };
 
   return (
@@ -568,6 +605,8 @@ window.DistrictMembersPanel = () => {
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius)',
             overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
           {/* Table Toolbar */}
@@ -584,11 +623,11 @@ window.DistrictMembersPanel = () => {
             <div style={{ fontSize: '13px', color: 'var(--text2)' }}>
               <input
                 type="checkbox"
-                checked={selectedMembers.size === members.length && members.length > 0}
+                checked={selectedMembers.size === getFilteredMembers().length && getFilteredMembers().length > 0}
                 onChange={toggleAll}
                 style={{ marginRight: '8px', cursor: 'pointer' }}
               />
-              {selectedMembers.size} of {members.length} selected
+              {selectedMembers.size} of {getFilteredMembers().length} visible selected
             </div>
 
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -628,116 +667,203 @@ window.DistrictMembersPanel = () => {
             </div>
           </div>
 
-          {/* Table */}
-          <table
+          {/* Table with horizontal scroll */}
+          <div
             style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontSize: '13px',
+              overflowX: 'auto',
+              overflowY: 'visible',
+              flex: 1,
             }}
           >
-            <thead>
-              <tr style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-                <th
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    fontWeight: '600',
-                    color: 'var(--text2)',
-                    width: '40px',
-                  }}
-                >
-                  □
-                </th>
-                {selectedColumns.map((colKey) => (
+            <table
+              style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '13px',
+                minWidth: 'min-content',
+              }}
+            >
+              <thead>
+                {/* Header Row */}
+                <tr style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
                   <th
-                    key={colKey}
-                    onClick={() => handleSort(colKey)}
                     style={{
                       padding: '12px 16px',
                       textAlign: 'left',
                       fontWeight: '600',
-                      color: sortBy === colKey ? 'var(--accent)' : 'var(--text2)',
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                      background: sortBy === colKey ? 'rgba(var(--accent-rgb), 0.05)' : 'transparent',
-                      transition: 'background 0.15s',
+                      color: 'var(--text2)',
+                      width: '40px',
+                      minWidth: '40px',
+                      position: 'sticky',
+                      left: 0,
+                      background: 'var(--surface)',
+                      zIndex: 2,
                     }}
-                    title="Click to sort"
                   >
-                    {getColumnLabel(colKey)}
-                    {sortBy === colKey && (
-                      <span style={{ marginLeft: '6px', fontSize: '11px' }}>
-                        {sortOrder === 'asc' ? '↑' : '↓'}
-                      </span>
-                    )}
+                    □
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => (
-                <tr
-                  key={member.MemberID}
-                  style={{
-                    borderBottom: '1px solid var(--border)',
-                    background: selectedMembers.has(member.MemberID) ? 'rgba(var(--accent-rgb), 0.05)' : 'transparent',
-                    transition: 'background 0.15s',
-                  }}
-                >
-                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedMembers.has(member.MemberID)}
-                      onChange={() => toggleMember(member.MemberID)}
-                      style={{ cursor: 'pointer' }}
-                    />
-                  </td>
                   {selectedColumns.map((colKey) => (
-                    <td
-                      key={`${member.MemberID}-${colKey}`}
+                    <th
+                      key={colKey}
+                      onClick={() => handleSort(colKey)}
                       style={{
                         padding: '12px 16px',
-                        color: colKey === 'MemberID' ? 'var(--accent)' : 'var(--text)',
-                        fontSize: colKey === 'MemberID' ? '12px' : '13px',
-                        fontFamily: colKey === 'MemberID' ? 'monospace' : 'inherit',
-                        wordBreak: colKey === 'Email' ? 'break-all' : 'normal',
+                        textAlign: 'left',
+                        fontWeight: '600',
+                        color: sortBy === colKey ? 'var(--accent)' : 'var(--text2)',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        background: sortBy === colKey ? 'rgba(var(--accent-rgb), 0.05)' : 'transparent',
+                        transition: 'background 0.15s',
+                        whiteSpace: 'nowrap',
+                        minWidth: '120px',
                       }}
+                      title="Click to sort"
                     >
-                      {colKey === 'Status' ? (
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            textTransform: 'uppercase',
-                            background:
-                              member.Status === 'active'
-                                ? 'rgba(34, 197, 94, 0.1)'
-                                : member.Status === 'pending'
-                                  ? 'rgba(234, 179, 8, 0.1)'
-                                  : 'rgba(107, 114, 128, 0.1)',
-                            color:
-                              member.Status === 'active'
-                                ? '#22c55e'
-                                : member.Status === 'pending'
-                                  ? '#eab308'
-                                  : '#6b7280',
-                          }}
-                        >
-                          {member.Status}
+                      {getColumnLabel(colKey)}
+                      {sortBy === colKey && (
+                        <span style={{ marginLeft: '6px', fontSize: '11px' }}>
+                          {sortOrder === 'asc' ? '↑' : '↓'}
                         </span>
-                      ) : (
-                        getCellValue(member, colKey)
                       )}
-                    </td>
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+
+                {/* Filter Row */}
+                <tr style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+                  <th
+                    style={{
+                      padding: '8px 16px',
+                      width: '40px',
+                      minWidth: '40px',
+                      position: 'sticky',
+                      left: 0,
+                      background: 'var(--surface)',
+                      zIndex: 2,
+                    }}
+                  />
+                  {selectedColumns.map((colKey) => (
+                    <th
+                      key={`filter-${colKey}`}
+                      style={{
+                        padding: '8px 16px',
+                        minWidth: '120px',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        placeholder={`Filter ${getColumnLabel(colKey)}`}
+                        value={columnFilters[colKey] || ''}
+                        onChange={(e) => updateColumnFilter(colKey, e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '6px 8px',
+                          border: '1px solid var(--border)',
+                          borderRadius: '4px',
+                          background: 'var(--input-bg)',
+                          color: 'var(--text)',
+                          fontSize: '12px',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {getFilteredMembers().map((member) => (
+                  <tr
+                    key={member.MemberID}
+                    style={{
+                      borderBottom: '1px solid var(--border)',
+                      background: selectedMembers.has(member.MemberID) ? 'rgba(var(--accent-rgb), 0.05)' : 'transparent',
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    <td
+                      style={{
+                        padding: '12px 16px',
+                        textAlign: 'center',
+                        width: '40px',
+                        minWidth: '40px',
+                        position: 'sticky',
+                        left: 0,
+                        background: selectedMembers.has(member.MemberID)
+                          ? 'rgba(var(--accent-rgb), 0.05)'
+                          : 'transparent',
+                        zIndex: 1,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedMembers.has(member.MemberID)}
+                        onChange={() => toggleMember(member.MemberID)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </td>
+                    {selectedColumns.map((colKey) => (
+                      <td
+                        key={`${member.MemberID}-${colKey}`}
+                        style={{
+                          padding: '12px 16px',
+                          color: colKey === 'MemberID' ? 'var(--accent)' : 'var(--text)',
+                          fontSize: colKey === 'MemberID' ? '12px' : '13px',
+                          fontFamily: colKey === 'MemberID' ? 'monospace' : 'inherit',
+                          wordBreak: colKey === 'Email' ? 'break-all' : 'normal',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {colKey === 'Status' ? (
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              textTransform: 'uppercase',
+                              background:
+                                member.Status === 'active'
+                                  ? 'rgba(34, 197, 94, 0.1)'
+                                  : member.Status === 'pending'
+                                    ? 'rgba(234, 179, 8, 0.1)'
+                                    : 'rgba(107, 114, 128, 0.1)',
+                              color:
+                                member.Status === 'active'
+                                  ? '#22c55e'
+                                  : member.Status === 'pending'
+                                    ? '#eab308'
+                                    : '#6b7280',
+                            }}
+                          >
+                            {member.Status}
+                          </span>
+                        ) : (
+                          getCellValue(member, colKey)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Empty filtered results message */}
+          {members.length > 0 && getFilteredMembers().length === 0 && (
+            <div
+              style={{
+                padding: '20px',
+                textAlign: 'center',
+                color: 'var(--text2)',
+                fontSize: '13px',
+              }}
+            >
+              No members match the current filters
+            </div>
+          )}
         </div>
       )}
 
