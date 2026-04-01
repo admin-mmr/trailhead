@@ -142,6 +142,9 @@ app.register_blueprint(sheets_sync_bp)
 from api_python_exec import py_exec_bp
 app.register_blueprint(py_exec_bp)
 
+from api_schema import schema_bp
+app.register_blueprint(schema_bp)
+
 
 # ---------------------------------------------------------------------------
 # Main
