@@ -1,0 +1,240 @@
+name: Manual MySQL Operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'MySQL operation to run'
+        required: true
+        type: choice
+        options:
+          - drop-broken-triggers
+          - fix-member-log-triggers
+          - fix-unix-timestamp-triggers
+          - status-check
+
+jobs:
+  mysql-operation:
+    name: Execute MySQL Operation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install MySQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+
+      - name: Drop Broken Triggers (Emergency)
+        if: github.event.inputs.operation == 'drop-broken-triggers'
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          echo "⚠️  Dropping ALL broken triggers that reference dropped/renamed columns..."
+          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
+          -- Drop ALL broken triggers immediately
+          DROP TRIGGER IF EXISTS members_after_insert;
+          DROP TRIGGER IF EXISTS members_after_update;
+          DROP TRIGGER IF EXISTS members_update_lastupdated_unix;
+          DROP TRIGGER IF EXISTS members_insert_lastupdated_unix;
+          DROP TRIGGER IF EXISTS members_update_lastlogindate_unix;
+          DROP TRIGGER IF EXISTS members_insert_lastlogindate_unix;
+          DROP TRIGGER IF EXISTS members_update_profilelastupdated_unix;
+          DROP TRIGGER IF EXISTS members_insert_profilelastupdated_unix;
+          DROP TRIGGER IF EXISTS members_update_createdat_unix;
+          DROP TRIGGER IF EXISTS members_insert_createdat_unix;
+          DROP TRIGGER IF EXISTS payments_update_processeddate_unix;
+          DROP TRIGGER IF EXISTS payments_insert_processeddate_unix;
+          DROP TRIGGER IF EXISTS webapp_events_update_timestamp_unix;
+          DROP TRIGGER IF EXISTS webapp_events_insert_timestamp_unix;
+          DROP TRIGGER IF EXISTS webapp_events_update_expiresat_unix;
+          DROP TRIGGER IF EXISTS webapp_events_insert_expiresat_unix;
+          DROP TRIGGER IF EXISTS webapp_events_update_approvaldate_unix;
+          DROP TRIGGER IF EXISTS webapp_events_insert_approvaldate_unix;
+
+          SELECT '✅ Triggers dropped successfully' AS result;
+          EOF
+
+      - name: Fix member_log Audit Triggers (V10)
+        if: github.event.inputs.operation == 'fix-member-log-triggers'
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          echo "🔧 Fixing member_log audit triggers for V10 columns..."
+          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
+          -- Drop old triggers
+          DROP TRIGGER IF EXISTS members_after_insert;
+          DROP TRIGGER IF EXISTS members_after_update;
+
+          -- Create new triggers with V10 columns (LastLogin, not LastLoginDate)
+          CREATE TRIGGER members_after_insert
+          AFTER INSERT ON members
+          FOR EACH ROW
+          BEGIN
+            INSERT INTO member_log (
+              LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+              Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+              Info, LastUpdated, MembershipFeePaid, PaymentDate, PaymentTransaction,
+              JoinYear, PhoneNumber, LastLogin, Notes, NYRRRunnerName, YearBorn
+            )
+            VALUES (
+              CONCAT('ML-', UNIX_TIMESTAMP(NOW(3)) * 1000, '-', FLOOR(RAND() * 10000)),
+              NOW(),
+              NEW.MemberID, 'INSERT', NEW.Status, NEW.Created, NEW.Expiration,
+              NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID,
+              NEW.Gender, NEW.WeChatID, NEW.District,
+              NEW.Info, NEW.LastUpdated, NEW.MembershipFeePaid, NEW.PaymentDate,
+              NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.LastLogin,
+              NEW.Notes, NEW.NYRRRunnerName, NEW.YearBorn
+            );
+          END;
+          $$
+
+          CREATE TRIGGER members_after_update
+          AFTER UPDATE ON members
+          FOR EACH ROW
+          BEGIN
+            INSERT INTO member_log (
+              LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+              Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+              Info, LastUpdated, MembershipFeePaid, PaymentDate, PaymentTransaction,
+              JoinYear, PhoneNumber, LastLogin, Notes, NYRRRunnerName, YearBorn
+            )
+            VALUES (
+              CONCAT('ML-', UNIX_TIMESTAMP(NOW(3)) * 1000, '-', FLOOR(RAND() * 10000)),
+              NOW(),
+              NEW.MemberID, 'UPDATE', NEW.Status, NEW.Created, NEW.Expiration,
+              NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID,
+              NEW.Gender, NEW.WeChatID, NEW.District,
+              NEW.Info, NEW.LastUpdated, NEW.MembershipFeePaid, NEW.PaymentDate,
+              NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.LastLogin,
+              NEW.Notes, NEW.NYRRRunnerName, NEW.YearBorn
+            );
+          END;
+          $$
+
+          SELECT '✅ member_log triggers fixed' AS result;
+          EOF
+
+      - name: Fix Unix Timestamp Triggers (V10)
+        if: github.event.inputs.operation == 'fix-unix-timestamp-triggers'
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          echo "🔧 Fixing unix timestamp triggers for V10 columns..."
+          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
+          -- Drop old unix timestamp triggers
+          DROP TRIGGER IF EXISTS members_update_lastlogindate_unix;
+          DROP TRIGGER IF EXISTS members_insert_lastlogindate_unix;
+          DROP TRIGGER IF EXISTS members_update_profilelastupdated_unix;
+          DROP TRIGGER IF EXISTS members_insert_profilelastupdated_unix;
+          DROP TRIGGER IF EXISTS members_update_createdat_unix;
+          DROP TRIGGER IF EXISTS members_insert_createdat_unix;
+
+          -- Create new triggers with correct V10 column names
+          CREATE TRIGGER members_update_lastlogin_unix
+          BEFORE UPDATE ON members
+          FOR EACH ROW
+          BEGIN
+            IF NEW.LastLogin <> OLD.LastLogin OR
+               (NEW.LastLogin IS NULL AND OLD.LastLogin IS NOT NULL) OR
+               (NEW.LastLogin IS NOT NULL AND OLD.LastLogin IS NULL)
+            THEN
+              SET NEW.last_login_unix = IF(NEW.LastLogin IS NULL, 0, UNIX_TIMESTAMP(NEW.LastLogin));
+            END IF;
+          END;
+          $$
+
+          CREATE TRIGGER members_insert_lastlogin_unix
+          BEFORE INSERT ON members
+          FOR EACH ROW
+          BEGIN
+            IF NEW.LastLogin IS NOT NULL THEN
+              SET NEW.last_login_unix = UNIX_TIMESTAMP(NEW.LastLogin);
+            ELSE
+              SET NEW.last_login_unix = 0;
+            END IF;
+          END;
+          $$
+
+          CREATE TRIGGER members_update_created_unix
+          BEFORE UPDATE ON members
+          FOR EACH ROW
+          BEGIN
+            IF NEW.Created <> OLD.Created OR
+               (NEW.Created IS NULL AND OLD.Created IS NOT NULL) OR
+               (NEW.Created IS NOT NULL AND OLD.Created IS NULL)
+            THEN
+              SET NEW.created_at_unix = IF(NEW.Created IS NULL, 0, UNIX_TIMESTAMP(NEW.Created));
+            END IF;
+          END;
+          $$
+
+          CREATE TRIGGER members_insert_created_unix
+          BEFORE INSERT ON members
+          FOR EACH ROW
+          BEGIN
+            IF NEW.Created IS NOT NULL THEN
+              SET NEW.created_at_unix = UNIX_TIMESTAMP(NEW.Created);
+            ELSE
+              SET NEW.created_at_unix = 0;
+            END IF;
+          END;
+          $$
+
+          SELECT '✅ Unix timestamp triggers fixed' AS result;
+          EOF
+
+      - name: Status Check - Show All Triggers
+        if: github.event.inputs.operation == 'status-check'
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          echo "📊 Checking triggers on members table..."
+          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
+          SELECT TRIGGER_NAME, TRIGGER_TIME, TRIGGER_EVENT, EVENT_OBJECT_TABLE
+          FROM INFORMATION_SCHEMA.TRIGGERS
+          WHERE TRIGGER_SCHEMA = DATABASE()
+            AND EVENT_OBJECT_TABLE IN ('members', 'payments', 'webapp_events')
+          ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME;
+          EOF
+
+          echo ""
+          echo "📊 Members table columns..."
+          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
+          SELECT COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'
+          ORDER BY ORDINAL_POSITION;
+          EOF
+
+      - name: Summary
+        if: always()
+        run: |
+          echo ""
+          echo "✅ Operation completed: ${{ github.event.inputs.operation }}"
+          echo ""
+          echo "Next steps:"
+          echo "1. Run 'status-check' operation to verify trigger state"
+          echo "2. Re-trigger the member status update workflow"
+          echo "3. Check logs to confirm success"
