@@ -14,6 +14,7 @@ Implements membership renewal audit workflow:
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, date
 from flask import Blueprint, request
@@ -94,13 +95,32 @@ def api_renewal_audit():
     logger.info("=== Audit: Start renewal audit ===")
 
     try:
-        data = request.get_json()
-        logger.info(f"Request data type: {type(data)}, value: {data}")
+        # Try multiple ways to get the JSON data
+        data = request.get_json(silent=True)
+        logger.info(f"Step 1 - get_json() returned type: {type(data)}")
 
-        # Handle case where get_json() returns string or None
+        # If get_json() returned a string, parse it
+        if isinstance(data, str):
+            logger.warning(f"get_json() returned string, parsing manually")
+            data = json.loads(data)
+            logger.info(f"Step 2 - manual parse returned type: {type(data)}")
+
+        # If still not a dict, try parsing request body
         if not isinstance(data, dict):
-            logger.error(f"Expected dict from get_json(), got {type(data)}: {data}")
-            return json_response({'error': f'Invalid JSON payload (expected object, got {type(data).__name__})'}, 400)
+            logger.warning(f"Still not dict after parsing, trying request.data")
+            try:
+                body = request.get_data(as_text=True)
+                logger.info(f"Request body: {body}")
+                if body:
+                    data = json.loads(body)
+                    logger.info(f"Step 3 - parsed request.data returned type: {type(data)}")
+            except Exception as e:
+                logger.error(f"Failed to parse request.data: {e}")
+
+        # Final validation
+        if not isinstance(data, dict):
+            logger.error(f"Expected dict, got {type(data)}: {data}")
+            return json_response({'error': f'Invalid JSON payload (expected object, got {type(data).__name__}). Raw: {data}'}, 400)
 
         start_date = data.get('start_date')
         end_date = data.get('end_date')
