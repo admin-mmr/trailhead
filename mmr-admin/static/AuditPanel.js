@@ -460,7 +460,7 @@ window.AuditPanel = () => {
             <tbody>
               {filteredResults.map((entry, idx) => {
                 const isExpanded = expandedRows.has(entry.transaction_id);
-                const bgColor = entry.red_flags?.length > 0 ? '#fff5e6' : (idx % 2 === 0 ? '#fff' : '#f9f9f9');
+                const bgColor = entry.red_flags?.length > 0 ? '#fff5e6' : '#f5f5f5';
                 return (
                   <React.Fragment key={idx}>
                     <tr style={{
