@@ -332,6 +332,40 @@ window.DistrictMembersPanel = () => {
     }
   };
 
+  const exportAllAsSheet = async () => {
+    setExportLoading(true);
+    try {
+      const response = await fetch('/api/district/export-all-sheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: statusFilter,
+          renewed: renewedFilter,
+          columns: selectedColumns,
+        }),
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `all_members_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Export failed');
+      }
+    } catch (err) {
+      setError(`Export error: ${err.message}`);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   return (
     <div style={{ padding: '20px', maxWidth: '1600px', margin: '0 auto' }}>
       <div style={{ marginBottom: '24px' }}>
@@ -508,7 +542,25 @@ window.DistrictMembersPanel = () => {
               opacity: exportLoading ? 0.6 : 1,
             }}
           >
-            {exportLoading ? 'Exporting...' : '⬇ Export All Districts'}
+            {exportLoading ? 'Exporting...' : '⬇ Export All Districts (ZIP)'}
+          </button>
+
+          <button
+            onClick={exportAllAsSheet}
+            disabled={exportLoading}
+            style={{
+              padding: '8px 16px',
+              background: 'var(--accent)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 'var(--radius)',
+              cursor: exportLoading ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              opacity: exportLoading ? 0.6 : 1,
+            }}
+          >
+            {exportLoading ? 'Exporting...' : '⬇ Export All (Single Sheet)'}
           </button>
         </div>
       </div>

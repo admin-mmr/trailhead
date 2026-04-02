@@ -536,3 +536,149 @@ def export_all_districts():
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@district_members_bp.route('/export-all-sheet', methods=['POST'])
+@login_required
+def export_all_sheet():
+    """
+    Export all members from all districts as a single CSV sheet.
+    Body: {
+        "status": "active/not active/pending/empty" (optional),
+        "renewed": "yes/no/empty" (optional),
+        "columns": ["District", "MemberID", "Name", ...] (optional, column KEYS not labels)
+    }
+    Returns single CSV file with all members.
+    """
+    try:
+        data = request.get_json() or {}
+        status_filter = data.get('status', '').strip()
+        renewed_filter = data.get('renewed', '').strip().lower()
+        selected_columns = data.get('columns', [])
+
+        # Map column keys to display labels for CSV headers
+        column_labels = {
+            'District': 'District',
+            'MemberID': 'Member ID',
+            'FirstName': 'First Name',
+            'LastName': 'Last Name',
+            'Name': 'Full Name',
+            'Expiration': 'Expiration',
+            'Gender': 'Gender',
+            'WeChatID': 'WeChat ID',
+            'Email': 'Email',
+            'Type': 'Type',
+            'FamilyID': 'Family ID',
+            'PaymentDate': 'Payment Date',
+            'MembershipFeePaid': 'Membership Fee Paid',
+            'PaymentTransaction': 'Payment Transaction',
+            'Status': 'Status',
+            'LastLoginDate': 'Last Login',
+            'LastModified': 'Last Modified',
+        }
+
+        # Default columns if none selected (using column KEYS not labels)
+        if not selected_columns:
+            selected_columns = [
+                'District', 'MemberID', 'Name', 'Email', 'Status',
+                'LastLoginDate', 'LastModified', 'Expiration'
+            ]
+
+        # Get membership year end from env
+        year_end_str = os.environ.get('MEMBERSHIP_YEAR_END', '')
+        year_end_date = None
+        if year_end_str:
+            try:
+                year_end_date = datetime.strptime(year_end_str, '%Y-%m-%d').date()
+            except ValueError:
+                pass
+
+        # Build query to fetch all members with filters
+        sql = """
+            SELECT
+                District,
+                MemberID,
+                FirstName,
+                LastName,
+                Expiration,
+                Gender,
+                WeChatID,
+                Email,
+                Type,
+                FamilyID,
+                PaymentDate,
+                MembershipFeePaid,
+                PaymentTransaction,
+                Status,
+                LastLoginDate,
+                LastUpdated as LastModified
+            FROM members
+            WHERE 1=1
+        """
+        params = []
+
+        if status_filter:
+            sql += " AND Status = %s"
+            params.append(status_filter)
+
+        if renewed_filter and year_end_date:
+            if renewed_filter == 'yes':
+                sql += " AND Expiration >= %s"
+                params.append(year_end_date)
+            elif renewed_filter == 'no':
+                sql += " AND Expiration < %s"
+                params.append(year_end_date)
+
+        sql += " ORDER BY District, LastName, FirstName"
+        members = query(sql, params)
+
+        if not members:
+            return jsonify({'success': False, 'error': 'No members found'}), 400
+
+        # Generate single CSV sheet
+        csv_buffer = io.StringIO()
+        csv_headers = [column_labels.get(col, col) for col in selected_columns]
+        writer = csv.DictWriter(csv_buffer, fieldnames=csv_headers)
+
+        writer.writeheader()
+        for row in members:
+            row_data = {}
+            for col_key, col_label in zip(selected_columns, csv_headers):
+                if col_key == 'MemberID':
+                    row_data[col_label] = row['MemberID']
+                elif col_key == 'FirstName':
+                    row_data[col_label] = row['FirstName'] or ''
+                elif col_key == 'LastName':
+                    row_data[col_label] = row['LastName'] or ''
+                elif col_key == 'Name':
+                    # Compute Full Name from FirstName + LastName
+                    full_name = f"{row['FirstName'] or ''} {row['LastName'] or ''}".strip()
+                    row_data[col_label] = full_name
+                elif col_key == 'Expiration':
+                    row_data[col_label] = row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else ''
+                elif col_key == 'PaymentDate':
+                    row_data[col_label] = row['PaymentDate'].strftime('%Y-%m-%d') if row['PaymentDate'] else ''
+                elif col_key == 'LastLoginDate':
+                    row_data[col_label] = row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else ''
+                elif col_key == 'LastModified':
+                    row_data[col_label] = row['LastModified'].strftime('%Y-%m-%d %H:%M') if row['LastModified'] else ''
+                elif col_key == 'WeChatID':
+                    row_data[col_label] = row['WeChatID'] or ''
+                elif col_key == 'FamilyID':
+                    row_data[col_label] = row['FamilyID'] or ''
+                else:
+                    # Direct column key
+                    row_data[col_label] = row.get(col_key, '') or ''
+
+            writer.writerow(row_data)
+
+        # Return CSV as downloadable file with UTF-8-sig encoding
+        csv_content = csv_buffer.getvalue().encode('utf-8-sig')
+        return Response(
+            csv_content,
+            mimetype='text/csv; charset=utf-8',
+            headers={'Content-Disposition': f'attachment;filename=all_members_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'}
+        )
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
