@@ -1,9 +1,15 @@
 # Trailhead Project Context
 
-Last updated: 2026-04-02 21:48 UTC
+Last updated: 2026-04-02 22:12 UTC
 Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI colors)
 
 ## Session log
+
+### 2026-04-02 22:12 UTC — Verbose logging for sync operations via GitHub Actions
+Changed: `api_sheets_sync.py` — added `verbose=` query parameter to 3 POST endpoints; updated `_sync_members_to_sheets()`, `_sync_events_to_sheets()`, `_sync_payments_to_sheets()` to accept and use `verbose` kwarg from `launch_job()`. `sync_engine.py` — added `verbose` parameter to `compare_sync_rows()`; added `_log_result()` helper to log every decision; wrapped all returns with verbose output (input rows, diffs, timestamps, write dicts). `.github/workflows/bidirectional-sync.yml` — added `workflow_dispatch.inputs.verbose` dropdown; set `env.VERBOSE`; updated all 8 phases to pass verbose flag. `.github/scripts/run_sync_phase.sh` — appends `?verbose=true` if `--verbose` arg set. Status: ✅ All files compile; imports pass; YAML valid. Next: Test via GitHub UI (set verbose=true manually).
+
+### 2026-04-02 21:58 UTC — Sync refactor: unified compare_sync_rows() function
+Changed: `sync_engine.py` — added `SyncRowResult` class and `compare_sync_rows()` function (290 lines) to unify row comparison logic across all sync endpoints. `api_sheets_sync.py` — refactored `_sync_members_to_sheets()` to use `compare_sync_rows()` with direction='mysql_to_sheets'. Status: ✅ sync_engine imports cleanly; api_sheets_sync syntax OK. Next: Deploy to staging, run smoke test, backfill CreatedUnix, enable bidirectional sync.
 
 ### 2026-04-02 21:48 UTC — Payment matching UX: direct approval without modal
 Changed: `mmr-admin/static/payments.js` line 1073 — "Approve Selected" button now calls `handleApproveSelected()` instead of opening the manual match modal. Disabled when `selectedMatchedCount === 0`. Status: Matched events now approve directly (no popup). Pending events use "Manual Match" button or "Approve Pending (Batch)" modal. Next: Test workflow—link event in modal, select matched event, click "Approve Selected" → should approve without showing modal.

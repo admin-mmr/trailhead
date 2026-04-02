@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Usage: run_sync_phase.sh <endpoint-path>
+# Usage: run_sync_phase.sh <endpoint-path> [--verbose]
 # e.g.   run_sync_phase.sh /api/sync/mysql-to-google/members
+# e.g.   run_sync_phase.sh /api/sync/mysql-to-google/members --verbose
 #
 # Env vars expected (set by the workflow):
 #   ADMIN_URL      — base URL of the admin app, no trailing slash
@@ -14,8 +15,14 @@
 set -euo pipefail
 
 ENDPOINT="${1:?endpoint argument required}"
+VERBOSE="${2:-}"  # Optional --verbose flag
 POLL_INTERVAL="${POLL_INTERVAL:-5}"
 POLL_TIMEOUT="${POLL_TIMEOUT:-300}"
+
+# Append ?verbose=true if --verbose flag is set
+if [ "$VERBOSE" = "--verbose" ]; then
+  ENDPOINT="${ENDPOINT}?verbose=true"
+fi
 
 # ── Trigger job ──────────────────────────────────────────────────────────────
 echo "▶ POST $ADMIN_URL$ENDPOINT"

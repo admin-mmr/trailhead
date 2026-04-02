@@ -35,10 +35,13 @@ from sync_engine import (
     resolve_conflict_unix   as _engine_resolve_conflict_unix,
     resolve_gmail_row       as _engine_resolve_gmail,
     filter_sync_columns     as _engine_filter_cols,
+    compare_sync_rows,
+    SyncRowResult,
     SyncDecision,
     SyncAudit,
     log_sync_error          as _engine_log_error,
     STANDARD_TABLES         as _STANDARD_TABLES,
+    MEMBERS_SYNC_COLUMNS,
 )
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -473,7 +476,7 @@ Generated: {datetime.now().isoformat()}
 # MySQL → Google: Members sync
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _sync_members_to_sheets(job_id: str):
+def _sync_members_to_sheets(job_id: str, verbose: bool = False):
     """
     Fetch all members from MySQL, compare against Google Sheets by MemberID.
 
@@ -485,13 +488,17 @@ def _sync_members_to_sheets(job_id: str):
 
     Creates detailed sync log with all changes.
     Verbose mode shows first 3 members from each source for debugging.
+
+    Args:
+        job_id: sync job ID (managed by sync_jobs module)
+        verbose: if True, include detailed sample rows and field diffs in logs
     """
     log_lines = []
     inserted = []
     updated = []
     skipped = []
     errors = []
-    verbose_mode = True  # Set to False to reduce verbosity
+    verbose_mode = verbose
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching members from MySQL...', 'progress': 0}
@@ -556,36 +563,42 @@ def _sync_members_to_sheets(job_id: str):
                 )
                 inserted.append(member_id)
             else:
-                # Existing member — spec §2.2 bidirectional newer-wins conflict resolution
-                # Use Unix timestamp comparison (timezone-invariant) if available, else fallback to datetime
+                # Existing member — unified conflict resolution
                 sheets_member = sheets_by_id[member_id]
-                decision = _engine_resolve_conflict_unix('members', member_id, member, sheets_member)
+                result = compare_sync_rows(
+                    primary_key='MemberID',
+                    key_value=member_id,
+                    mysql_row=member,
+                    sheets_row=sheets_member,
+                    compare_cols=list(MEMBERS_SYNC_COLUMNS),
+                    ts_col='LastUpdated',
+                    direction='mysql_to_sheets',  # MySQL→Sheets: MySQL always wins
+                    verbose=verbose_mode,
+                )
 
-                if decision.direction == SyncDecision.NO_CHANGE:
+                if result.action == SyncRowResult.MATCH:
                     skipped.append(member_id)
                     log_lines.append(f"= MATCH | {member_id}")
-                elif decision.direction == SyncDecision.MYSQL_WINS:
-                    # MySQL newer → push to Sheets; compute field diff for log
-                    diff_fields = _get_field_diffs(member, sheets_member)
+                elif result.action == SyncRowResult.UPDATE_SHEETS:
+                    # MySQL newer → push to Sheets
                     field_detail = ', '.join(
                         f"{f}: {sheets_member.get(f)!r} → {member.get(f)!r}"
-                        for f in diff_fields if f != 'LastUpdated'
+                        for f in result.diffs if f != 'LastUpdated'
                     ) or '(timestamp only)'
                     rows_to_update.append(member)
                     log_lines.append(
-                        f"🔄 UPDATE | {member_id} | {field_detail} | {decision.reason}"
+                        f"🔄 UPDATE | {member_id} | {field_detail} | {result.reason}"
                     )
                     updated.append(member_id)
-                else:
-                    # SHEETS_WINS (newer or tie) → check if there are actual field diffs
-                    diff_fields = _get_field_diffs(member, sheets_member, exclude_fields=['LastUpdated'])
-                    if not diff_fields:
-                        # Tie with no field differences → silent match (don't log noise)
+                elif result.action == SyncRowResult.SKIP:
+                    # Conflict; Sheets wins — check if there are actual field diffs
+                    if not result.diffs:
+                        # No field differences → silent match (don't log noise)
                         pass
                     else:
-                        # Tie or Sheets newer with field diffs → log the conflict
+                        # Field diffs exist → log the conflict
                         log_lines.append(
-                            f"⏭️ SKIP | {member_id} | Sheets wins ({decision.reason}) — has field diffs: {', '.join(diff_fields)}"
+                            f"⏭️ SKIP | {member_id} | {result.reason} — has field diffs: {', '.join(result.diffs)}"
                         )
                     skipped.append(member_id)
 
@@ -746,17 +759,21 @@ def _filter_event_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return result
 
 
-def _sync_events_to_sheets(job_id: str):
+def _sync_events_to_sheets(job_id: str, verbose: bool = False):
     """Compare webapp_events by EventID with smart versioning.
 
     Verbose mode shows first 3 events from each source for debugging.
+
+    Args:
+        job_id: sync job ID (managed by sync_jobs module)
+        verbose: if True, include detailed sample rows and field diffs in logs
     """
     log_lines = []
     inserted = []
     updated = []
     skipped = []
     errors = []
-    verbose_mode = True  # Set to False to reduce verbosity
+    verbose_mode = verbose
 
     try:
         job_update = {'status': 'running', 'message': 'Fetching events...', 'progress': 0}
@@ -957,8 +974,13 @@ def _filter_payment_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return result
 
 
-def _sync_payments_to_sheets(job_id: str):
-    """Compare payments by PaymentID with smart versioning."""
+def _sync_payments_to_sheets(job_id: str, verbose: bool = False):
+    """Compare payments by PaymentID with smart versioning.
+
+    Args:
+        job_id: sync job ID (managed by sync_jobs module)
+        verbose: if True, include detailed sample rows and field diffs in logs
+    """
     log_lines = []
     inserted = []
     updated = []
@@ -2162,28 +2184,43 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 @sheets_sync_bp.route('/api/sync/mysql-to-google/members', methods=['POST'])
 @login_required
 def api_sync_members():
-    """Trigger members sync (MySQL → Google Sheets)."""
-    job_id = launch_job(_sync_members_to_sheets)
+    """Trigger members sync (MySQL → Google Sheets).
 
-    return json_response({'ok': True, 'job_id': job_id})
+    Query parameters:
+      ?verbose=true  — Enable verbose logging (shows sample rows, detailed diffs)
+    """
+    verbose = request.args.get('verbose', 'false').lower() == 'true'
+    job_id = launch_job(_sync_members_to_sheets, verbose=verbose)
+
+    return json_response({'ok': True, 'job_id': job_id, 'verbose': verbose})
 
 
 @sheets_sync_bp.route('/api/sync/mysql-to-google/events', methods=['POST'])
 @login_required
 def api_sync_events():
-    """Trigger events sync (MySQL → Google Sheets)."""
-    job_id = launch_job(_sync_events_to_sheets)
+    """Trigger events sync (MySQL → Google Sheets).
 
-    return json_response({'ok': True, 'job_id': job_id})
+    Query parameters:
+      ?verbose=true  — Enable verbose logging (shows sample rows, detailed diffs)
+    """
+    verbose = request.args.get('verbose', 'false').lower() == 'true'
+    job_id = launch_job(_sync_events_to_sheets, verbose=verbose)
+
+    return json_response({'ok': True, 'job_id': job_id, 'verbose': verbose})
 
 
 @sheets_sync_bp.route('/api/sync/mysql-to-google/payments', methods=['POST'])
 @login_required
 def api_sync_payments():
-    """Trigger payments sync (MySQL → Google Sheets)."""
-    job_id = launch_job(_sync_payments_to_sheets)
+    """Trigger payments sync (MySQL → Google Sheets).
 
-    return json_response({'ok': True, 'job_id': job_id})
+    Query parameters:
+      ?verbose=true  — Enable verbose logging (shows sample rows, detailed diffs)
+    """
+    verbose = request.args.get('verbose', 'false').lower() == 'true'
+    job_id = launch_job(_sync_payments_to_sheets, verbose=verbose)
+
+    return json_response({'ok': True, 'job_id': job_id, 'verbose': verbose})
 
 
 def _sync_unprocessed_transactions_to_sheets(job_id: str):

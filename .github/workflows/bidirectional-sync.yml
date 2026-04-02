@@ -4,12 +4,22 @@ on:
   schedule:
     - cron: '0 2,8,14,20 * * *'   # 02:00 / 08:00 / 14:00 / 20:00 UTC
   workflow_dispatch:               # Manual trigger from GitHub UI
+    inputs:
+      verbose:
+        description: 'Enable verbose logging (shows sample rows and diffs)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   ADMIN_URL:     ${{ secrets.MMR_ADMIN_URL }}    # https://mmr-admin.azurewebsites.net
   CRON_TOKEN:    ${{ secrets.SYNC_CRON_TOKEN }}  # shared secret, set in Azure App Settings too
   POLL_INTERVAL: 5
   POLL_TIMEOUT:  300
+  VERBOSE:       ${{ inputs.verbose || 'false' }}
 
 # Each phase job:
 #   1. checks out the repo (so the shared poll script is available)
@@ -30,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run & poll
         id: run
-        run: bash .github/scripts/run_sync_phase.sh /api/sync/mysql-to-google/members
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/mysql-to-google/members ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
 
   p2-members-google-to-mysql:
     name: "2/8 · Members: Google → MySQL"
@@ -44,7 +54,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run & poll
         id: run
-        run: bash .github/scripts/run_sync_phase.sh /api/sync/google-to-mysql/members
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/google-to-mysql/members ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
 
   p3-events-mysql-to-google:
     name: "3/8 · Events: MySQL → Google"
@@ -58,7 +68,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run & poll
         id: run
-        run: bash .github/scripts/run_sync_phase.sh /api/sync/mysql-to-google/events
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/mysql-to-google/events ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
 
   p4-events-google-to-mysql:
     name: "4/8 · Events: Google → MySQL"
@@ -72,7 +82,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run & poll
         id: run
-        run: bash .github/scripts/run_sync_phase.sh /api/sync/google-to-mysql/events
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/google-to-mysql/events ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
 
   p5-payments-mysql-to-google:
     name: "5/8 · Payments: MySQL → Google"
@@ -86,7 +96,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run & poll
         id: run
-        run: bash .github/scripts/run_sync_phase.sh /api/sync/mysql-to-google/payments
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/mysql-to-google/payments ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
 
   p6-payments-google-to-mysql:
     name: "6/8 · Payments: Google → MySQL"
@@ -100,7 +110,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run & poll
         id: run
-        run: bash .github/scripts/run_sync_phase.sh /api/sync/google-to-mysql/payments
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/google-to-mysql/payments ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
 
   p7-import-gmail-transactions:
     name: "7/8 · Gmail Transactions: Import to MySQL"
@@ -114,7 +124,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run & poll
         id: run
-        run: bash .github/scripts/run_sync_phase.sh /api/sync/import-transactions
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/import-transactions ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
 
   p8-sync-unprocessed-txns:
     name: "8/8 · Unprocessed Txns: MySQL → Google"
@@ -128,7 +138,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run & poll
         id: run
-        run: bash .github/scripts/run_sync_phase.sh /api/sync/unprocessed-transactions
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/unprocessed-transactions ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
 
   # ── Final summary email ──────────────────────────────────────────────────
   notify:
