@@ -1,9 +1,12 @@
 # Trailhead Project Context
 
-Last updated: 2026-04-02 21:30 UTC
+Last updated: 2026-04-02 21:48 UTC
 Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI colors)
 
 ## Session log
+
+### 2026-04-02 21:48 UTC — Payment matching UX: direct approval without modal
+Changed: `mmr-admin/static/payments.js` line 1073 — "Approve Selected" button now calls `handleApproveSelected()` instead of opening the manual match modal. Disabled when `selectedMatchedCount === 0`. Status: Matched events now approve directly (no popup). Pending events use "Manual Match" button or "Approve Pending (Batch)" modal. Next: Test workflow—link event in modal, select matched event, click "Approve Selected" → should approve without showing modal.
 
 ### 2026-04-02 21:30 UTC — Admin portal: date fix, email search, resizable columns
 Changed: `api_payments.py` — added Email field to member-quick endpoints. `payments.js` — fixed fmtDate() for YYYY-MM-DD timezone issue (now shows 2027-03-31 correctly, not 2026-03-30); added Email/WeChatID to member tooltip; email matching in fuzzy search; resizable Sender & Memo columns with drag handles. Status: Email search working ("zhaoxun" matches liuzhaoxun@gmail.com); date display fixed; columns draggable. Next: Link pending webapp events to gmail_transactions (awaiting MemberID clarification).
