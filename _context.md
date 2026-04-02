@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 04:25 UTC — Fix Audit Panel: amount-based type inference + lighter highlights
+Changed: `AuditPanel.js` — Added `inferMembershipType(entry)` helper to infer type from amount ($50→Family, $30→Individual) when membership_type is null. Updated filteredResults to use inferred type, display inferred type in member column. Changed expanded row highlight from #f8f8f8 to #f0f7ff (lighter blue). Status: All 9 untraced transactions now show with inferred type and pass through filters. Highlight color is now readable. Next: User test with current data.
+
 ### 2026-04-01 20:24 UTC — Fix Renewal Audit UX: colors, data visibility, multi-select filter
 Changed: `AuditPanel.js` — Enhanced color contrast (green #007d2f→#00b859, red #d73a49→#e63946, orange #b08500→#ff8c00); removed sender/memo truncation (now shows full text with wordBreak); converted membership type filter from single-select dropdown to multi-select checkboxes. Status: All three UX issues resolved. Users can now: (1) see bright, warm status colors with high contrast, (2) view complete SENDER/MEMO for all rows (especially useful for unmatched records), (3) select both Individual and Family simultaneously. Next: User testing on live data.
 

@@ -133,6 +133,18 @@ window.AuditPanel = () => {
     setExpandedRows(newExpanded);
   };
 
+  // Infer membership type from amount if not already set
+  const inferMembershipType = (entry) => {
+    if (entry.membership_type) return entry.membership_type;
+
+    // Infer from amount: $50 → Family, $30 → Individual
+    const amount = parseFloat(entry.amount);
+    if (amount === 50) return 'Family';
+    if (amount === 30) return 'Individual';
+
+    return null;
+  };
+
   const unmatchTransaction = async (messageId) => {
     if (!confirm(`Unmatch transaction ${messageId}? This will reset ProcessedTime and PaymentID.`)) {
       return;
@@ -163,7 +175,8 @@ window.AuditPanel = () => {
   };
 
   const filteredResults = auditResults?.audit_results?.filter(entry => {
-    return membershipFilter.has(entry.membership_type);
+    const inferredType = inferMembershipType(entry);
+    return membershipFilter.has(inferredType);
   }) || [];
 
   // Log filter status
@@ -500,7 +513,7 @@ window.AuditPanel = () => {
                       <td style={{ padding: '10px', color: '#333' }}>
                         <div style={{ fontWeight: '600' }}>{entry.member_name || '—'}</div>
                         <div style={{ color: '#666', fontSize: '12px' }}>
-                          {entry.member_id || '—'} • {entry.membership_type || '—'}
+                          {entry.member_id || '—'} • {inferMembershipType(entry) || '—'}
                         </div>
                       </td>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
@@ -532,7 +545,7 @@ window.AuditPanel = () => {
 
                     {/* Expanded Details */}
                     {isExpanded && (
-                      <tr style={{ backgroundColor: '#f8f8f8', borderBottom: '1px solid #ddd' }}>
+                      <tr style={{ backgroundColor: '#f0f7ff', borderBottom: '1px solid #ddd' }}>
                         <td colSpan="6" style={{ padding: '16px', paddingLeft: '40px' }}>
                           <div style={{
                             display: 'grid',
