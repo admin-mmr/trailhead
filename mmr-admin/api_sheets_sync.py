@@ -2182,7 +2182,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @sheets_sync_bp.route('/api/sync/mysql-to-google/members', methods=['POST'])
-@login_required
+@_cron_auth_or_session
 def api_sync_members():
     """Trigger members sync (MySQL → Google Sheets).
 
@@ -2196,7 +2196,7 @@ def api_sync_members():
 
 
 @sheets_sync_bp.route('/api/sync/mysql-to-google/events', methods=['POST'])
-@login_required
+@_cron_auth_or_session
 def api_sync_events():
     """Trigger events sync (MySQL → Google Sheets).
 
@@ -2210,7 +2210,7 @@ def api_sync_events():
 
 
 @sheets_sync_bp.route('/api/sync/mysql-to-google/payments', methods=['POST'])
-@login_required
+@_cron_auth_or_session
 def api_sync_payments():
     """Trigger payments sync (MySQL → Google Sheets).
 
