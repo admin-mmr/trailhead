@@ -36,11 +36,11 @@ jobs:
         run: |
           echo "🔧 Creating V10 audit triggers (trg_members_after_insert/update)..."
           mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
-          DELIMITER $$
           -- Drop existing triggers if they exist
-          DROP TRIGGER IF EXISTS trg_members_after_insert$$
-          DROP TRIGGER IF EXISTS trg_members_after_update$$
+          DROP TRIGGER IF EXISTS trg_members_after_insert;
+          DROP TRIGGER IF EXISTS trg_members_after_update;
 
+          DELIMITER $$
           -- Create audit triggers with V10 column names
           -- These log member changes to member_log table
           -- Uses: LastLogin (not LastLoginDate), no WebApp/PaymentCheck columns
