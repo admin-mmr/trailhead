@@ -103,7 +103,7 @@ def _apply_gmt_offset(dt: datetime, sign: str, hours: int, minutes: int) -> date
         return dt + offset   # local = UTC - offset  →  UTC = local + offset
 
 
-def parse_datetime(value: Any) -> Optional[datetime]:
+def parse_datetime(value: Any, silent: bool = False) -> Optional[datetime]:
     """
     Parse any datetime value to a *timezone-naive UTC* datetime.
 
@@ -116,6 +116,10 @@ def parse_datetime(value: Any) -> Optional[datetime]:
     • JS Date.toString() with offset   → 'Tue Mar 31 2026 15:51:18 GMT-0400 (...)'
     • MySQL DATETIME string            → '2026-03-31 20:27:00'
     • Date-only string                 → '2026-03-31'
+
+    Args:
+        value: value to parse
+        silent: if True, suppress warning logs for unparseable values (used by datetimes_equal)
 
     Returns None for empty / unparseable input.
 
@@ -192,7 +196,8 @@ def parse_datetime(value: Any) -> Optional[datetime]:
         except ValueError:
             continue
 
-    logger.warning("parse_datetime: unrecognised format: %s", s[:80])
+    if not silent:
+        logger.warning("parse_datetime: unrecognised format: %s", s[:80])
     return None
 
 
@@ -223,8 +228,8 @@ def datetimes_equal(a: Any, b: Any, tolerance_seconds: int = 1) -> bool:
     tolerance_seconds: allow up to this many seconds of difference (handles
     fractional-second storage inconsistencies between MySQL and Sheets).
     """
-    dt_a = parse_datetime(a)
-    dt_b = parse_datetime(b)
+    dt_a = parse_datetime(a, silent=True)
+    dt_b = parse_datetime(b, silent=True)
     if dt_a is None or dt_b is None:
         return False   # not comparable as datetimes
     return abs((dt_a - dt_b).total_seconds()) <= tolerance_seconds

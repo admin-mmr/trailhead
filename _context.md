@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 20:45 UTC — Fix Azure sync log warnings: Status enum vs datetime parsing
+Changed: `sync_engine.py` (both mmr-admin and basecamp/python) — added `silent: bool = False` parameter to `parse_datetime()` to suppress warnings when called from `datetimes_equal()`. Status enum values like "expired", "inactive", "not active" no longer flood Azure logs. Status: Tested — all imports clean (7/7 pass). Next: Run sync again to confirm clean logs.
+
 ### 2026-04-02 18:02 UTC — Migration V10: Status enum + column cleanup (MySQL & Python)
 Changed: Status enum expanded (active/expired/inactive/pending); dropped WebApp/PaymentCheck/oauth_subs from members & member_log; updated MEMBERS_SYNC_COLUMNS in sync_engine.py; fixed api_sheets_sync.py CASE_MAP & VALID_MEMBER_FIELDS; fixed api_data.py unix_timestamp backfill; updated api_district_{export,members}.py LastLogin refs. Status: Python imports clean (7/7 pass). Schema snapshot updated. MIGRATION_V10_COMMANDS.md + IMPLEMENTATION_SUMMARY_V10.md ready for deployment. Next: Run SQL migrations on Azure MySQL, deploy Python/TypeScript changes, test Sync tab.
 
