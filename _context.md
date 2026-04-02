@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 20:50 UTC — Dedup sync_engine.py: CI copies basecamp/ → mmr-admin/
+Changed: `.github/workflows/deploy-mmr-admin.yml` — added `cp basecamp/python/sync_engine.py mmr-admin/sync_engine.py` to build step. `.gitignore` — added `mmr-admin/sync_engine.py`. Untracked `mmr-admin/sync_engine.py` from git (file exists locally, CI regenerates on build). Created `scripts/sync-shared-modules.sh` and `SHARED_MODULES.md`. Status: CI copies pattern established for both nyrr_api and sync_engine. Imports clean (10/10 pass). Next: Commit changes.
+
 ### 2026-04-02 20:45 UTC — Fix Azure sync log warnings: Status enum vs datetime parsing
 Changed: `sync_engine.py` (both mmr-admin and basecamp/python) — added `silent: bool = False` parameter to `parse_datetime()` to suppress warnings when called from `datetimes_equal()`. Status enum values like "expired", "inactive", "not active" no longer flood Azure logs. Status: Tested — all imports clean (7/7 pass). Next: Run sync again to confirm clean logs.
 
