@@ -12,6 +12,7 @@
   <script src="/static/ManualEventMatchModal.js"></script>
   <script type="text/babel" src="/static/DistrictMembersPanel.js"></script>
   <script type="text/babel" src="/static/AuditPanel.js"></script>
+  <script type="text/babel" src="/static/Members.js"></script>
   <style>
     :root {
       --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
@@ -2612,6 +2613,9 @@ const App = () => {
           {(userRole === 'super_admin' || userRole === 'admin') && (
             <button className={`tab ${view === 'payments' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
           )}
+          {(userRole === 'super_admin' || userRole === 'admin') && (
+            <button className={`tab ${view === 'members' ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
+          )}
           <button className={`tab ${view === 'district' ? 'active' : ''}`} onClick={() => setView('district')}>Members by District</button>
           {(userRole === 'super_admin' || userRole === 'admin') && (
             <button className={`tab ${view === 'sync' ? 'active' : ''}`} onClick={() => setView('sync')}>Sync</button>
@@ -2639,6 +2643,7 @@ const App = () => {
       {view === 'dashboard' && <Dashboard onSelectEvent={selectEvent} onGoSettings={() => setView('settings')} />}
       {view === 'detail' && selectedEventId && <EventDetail eventId={selectedEventId} onBack={goBack} />}
       {view === 'payments' && window.PaymentsPanel && React.createElement(window.PaymentsPanel)}
+      {view === 'members' && window.MembersPanel && React.createElement(window.MembersPanel)}
       {view === 'district' && window.DistrictMembersPanel && React.createElement(window.DistrictMembersPanel)}
       {view === 'audit' && window.AuditPanel && React.createElement(window.AuditPanel)}
       {view === 'sync' && <SyncPanel />}

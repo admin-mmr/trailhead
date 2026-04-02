@@ -1,9 +1,12 @@
 # Trailhead Project Context
 
-Last updated: 2026-04-01 18:00 UTC
+Last updated: 2026-04-01 13:35 UTC
 Last commit: [pending]
 
 ## Session log
+
+### 2026-04-01 13:35 UTC — Add Members Management tab: family ops + district change
+Changed: Created `mmr-admin/api_members.py` (315 lines) with 6 endpoints: `/api/members/search` (search by name/ID), `/api/members/<id>/family` (get family members), `/api/members/family/add-member` (add to family, share payment fields), `/api/members/family/remove-member` (revert to individual), `/api/districts` (list districts), `/api/members/<id>/district` (change district). All ops set LastUpdated and log admin ID via activity_logger. Created `mmr-admin/static/Members.js` (438 lines) React component with two sub-tabs: (1) Update Family: search primary member (Family type), display family table with Remove buttons, search + add members via search modal; (2) Change District: search member, pick new district from dropdown, confirm change. Both sub-tabs include toast notifications, error handling, loading states. Updated `mmr-admin/templates/index.html` to load Members.js, add Members tab after Payments (restricted to admin role), render MembersPanel component. Registered blueprint in `mmr-admin/app.py`. Status: Code written, import check passed. Next: Manual test of family add/remove/district workflows; verify LastUpdated and admin ID logged correctly.
 
 ### 2026-04-01 20:48 ET — Create sync_jobs table to fix sync status API 404 errors
 Changed: Created `db/schemas/migration_v6_sync_jobs.sql` with `sync_jobs` table schema (9 columns: JobID, Operation, Status, Message, Progress, Result, StartedAt, UpdatedAt, CompletedAt). Root cause: `/api/sync/status/{job_id}` endpoint was querying non-existent table, returning MySQL error 1146. Status: Migration applied via Data Query. Next: Verify sync status checks now return job metadata without 404 errors.
