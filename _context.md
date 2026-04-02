@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 09:25 ET — fix family member add crash
+Changed: Renamed `family_members`→`members` and `remaining_family_members`→`members` in `api_members.py` add/remove endpoints to match frontend shape. Status: Fixed. Next: Deploy backend.
+
 ### 2026-04-02 09:24 ET — Import Transactions: debug logging for GAS webhook + ProcessedTime parse failures
 Changed: `api_sheets_sync.py` — added raw pre-normalization webhook payload logging (keys + 3 rows), per-row ⚠️ when `ProcessedTime` is non-empty but unparseable (EV- IDs appearing in wrong column), failure count in final job result. Status: Done. Next: Run import, check job log for raw column names and ⚠️ rows to identify GAS column mapping bug; also investigate multi-instance job-not-found on Azure.
 
