@@ -2177,6 +2177,29 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
         )
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# Auth decorator (must be defined before endpoints that use it)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _cron_auth_or_session(f):
+    """
+    Decorator: allow request if either:
+    - user is logged in (normal session), OR
+    - X-Cron-Token header matches SYNC_CRON_TOKEN env var (for GH Actions)
+    """
+    import functools, os as _os2
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        token = request.headers.get('X-Cron-Token', '')
+        expected = _os2.environ.get('SYNC_CRON_TOKEN', '')
+        if expected and token == expected:
+            return f(*args, **kwargs)   # cron path — bypass session check
+        # Fall through to normal session auth
+        from auth import login_required as _lr
+        return _lr(f)(*args, **kwargs)
+    return wrapper
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # REST API Endpoints
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2437,25 +2460,6 @@ def api_sync_status(job_id):
 # ─────────────────────────────────────────────────────────────────────────────
 # Cron token auth — lets GitHub Actions call sync routes without a session
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _cron_auth_or_session(f):
-    """
-    Decorator: allow request if either:
-    - user is logged in (normal session), OR
-    - X-Cron-Token header matches SYNC_CRON_TOKEN env var (for GH Actions)
-    """
-    import functools, os as _os2
-    @functools.wraps(f)
-    def wrapper(*args, **kwargs):
-        token = request.headers.get('X-Cron-Token', '')
-        expected = _os2.environ.get('SYNC_CRON_TOKEN', '')
-        if expected and token == expected:
-            return f(*args, **kwargs)   # cron path — bypass session check
-        # Fall through to normal session auth
-        from auth import login_required as _lr
-        return _lr(f)(*args, **kwargs)
-    return wrapper
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Full Bidirectional Sync — all 8 phases in sequence
