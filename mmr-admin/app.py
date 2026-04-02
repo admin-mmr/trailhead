@@ -75,6 +75,23 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-prod')
 app.json.sort_keys = False
 
 # ---------------------------------------------------------------------------
+# Logging — ensure DEBUG lines reach Azure App Service log stream.
+# Set LOG_LEVEL=DEBUG in App Service Application Settings to enable verbose
+# payment debug logs (auto-match details, per-row rejection reasons, etc.).
+# Defaults to INFO so prod isn't flooded unless you need it.
+# ---------------------------------------------------------------------------
+import logging as _logging
+_log_level = getattr(_logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), _logging.INFO)
+_logging.basicConfig(
+    level=_log_level,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S',
+)
+# Always show INFO+ for payment modules regardless of global level
+for _mod in ('payment_actions', 'api_payments', 'payment_handlers'):
+    _logging.getLogger(_mod).setLevel(min(_log_level, _logging.INFO))
+
+# ---------------------------------------------------------------------------
 # Initialize database tables
 # ---------------------------------------------------------------------------
 

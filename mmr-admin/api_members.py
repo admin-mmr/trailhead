@@ -243,7 +243,7 @@ def api_add_member_to_family():
 
     return json_response({'ok': True, 'data': {
         'updated_member': updated_member,
-        'family_members': family_members,
+        'members': family_members,
         'message': f'{new_member_id} added to family {primary["FamilyID"]}'
     }})
 
@@ -325,7 +325,7 @@ def api_remove_member_from_family():
 
     return json_response({'ok': True, 'data': {
         'updated_member': updated_member,
-        'remaining_family_members': remaining_members,
+        'members': remaining_members,
         'message': f'{member_id} removed from family and reverted'
     }})
 

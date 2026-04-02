@@ -193,7 +193,16 @@ def api_auto_match():
     Run the auto-match heuristic on all pending events.
     Returns stats: { matched, skipped, errors, details }.
     """
-    stats = run_auto_match()
+    admin_email = session.get('user', {}).get('email', 'unknown')
+    logger.info('[api_auto_match] called by %s', admin_email)
+    try:
+        stats = run_auto_match()
+    except Exception as e:
+        logger.error('[api_auto_match] EXCEPTION: %s', e, exc_info=True)
+        raise
+    logger.info('[api_auto_match] result: matched=%s skipped=%s errors=%s details=%s',
+                stats.get('matched'), stats.get('skipped'), stats.get('errors'),
+                stats.get('details'))
     return json_response({'ok': True, 'data': stats})
 
 

@@ -14,9 +14,12 @@ Imports: db, payment_handlers, sheets_sync.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from db import query, execute
 from core import gen_id
@@ -85,10 +88,19 @@ def find_gmail_match(
     event_member_id = (event.get('MemberID') or '').strip().upper()
     event_payer     = (event.get('PayerName') or '').strip()
 
+    eid = event.get('EventID', '?')[:16]
+    logger.debug(
+        '[find_gmail_match] event=%s amount=%.2f ts=%s last4=%r member_id=%r payer=%r | candidates=%d',
+        eid, event_amount, event_ts, event_last4, event_member_id, event_payer, len(unmatched_gmail)
+    )
+
     for gmail in unmatched_gmail:
+        mid = (gmail.get('MessageId') or '?')[:16]
+
         # Rule 1: amount match
         gmail_amount = float(gmail.get('Amount') or 0)
         if abs(gmail_amount - event_amount) > 0.01:
+            logger.debug('  [%s] SKIP amount mismatch: event=%.2f gmail=%.2f', mid, event_amount, gmail_amount)
             continue
 
         # Rule 2: date within ±7 days
@@ -97,7 +109,10 @@ def find_gmail_match(
             if gmail_dt:
                 delta = abs((gmail_dt - event_ts).days)
                 if delta > 7:
+                    logger.debug('  [%s] SKIP date delta=%d days (event=%s gmail=%s)', mid, delta, event_ts, gmail_dt)
                     continue
+            else:
+                logger.debug('  [%s] date unparseable: %r — skipping date check', mid, gmail.get('TransactionDate'))
 
         # Rule 3: at least one identifier match
         gmail_tx_num = (gmail.get('TransactionNumber') or '').strip()
@@ -105,24 +120,35 @@ def find_gmail_match(
         gmail_sender = (gmail.get('Sender') or '').strip()
 
         matched = False
+        match_reason = ''
 
         # 3a: last4 digits
         if event_last4 and gmail_tx_num and gmail_tx_num.endswith(event_last4):
             matched = True
+            match_reason = f'last4={event_last4}'
 
         # 3b: MemberID in memo
         if not matched and event_member_id:
             extracted = _extract_member_id(gmail_memo)
             if extracted == event_member_id:
                 matched = True
+                match_reason = f'member_id={event_member_id}'
+            else:
+                logger.debug('  [%s] memo member_id extracted=%r expected=%r', mid, extracted, event_member_id)
 
         # 3c: payer name
         if not matched and event_payer and _name_match(event_payer, gmail_sender):
             matched = True
+            match_reason = f'name_match payer={event_payer!r} sender={gmail_sender!r}'
 
         if matched:
+            logger.info('[find_gmail_match] MATCH event=%s → gmail=%s via %s', eid, mid, match_reason)
             return gmail
 
+        logger.debug('  [%s] SKIP no identifier: last4=%r tx_num=%r sender=%r memo=%r',
+                     mid, event_last4, gmail_tx_num, gmail_sender, gmail_memo[:80])
+
+    logger.debug('[find_gmail_match] NO MATCH for event=%s', eid)
     return None
 
 
@@ -146,6 +172,9 @@ def run_auto_match() -> Dict[str, Any]:
         ORDER BY TransactionDate DESC
     """)
 
+    logger.info('[run_auto_match] START: %d pending events, %d unmatched gmail rows',
+                len(pending), len(unmatched_gmail))
+
     stats: Dict[str, Any] = {'matched': 0, 'skipped': 0, 'errors': 0, 'details': []}
     matched_message_ids: set = set()
 
@@ -162,6 +191,8 @@ def run_auto_match() -> Dict[str, Any]:
                 event_id = event['EventID']
                 message_id = gmail_match['MessageId']
                 tx_num = gmail_match.get('TransactionNumber', '')
+                logger.info('[run_auto_match] Writing match: event=%s → msg=%s tx=%s',
+                            event_id[:16], message_id[:16], tx_num)
 
                 execute("""
                     UPDATE webapp_events SET
@@ -193,9 +224,17 @@ def run_auto_match() -> Dict[str, Any]:
                     'eventId': event.get('EventID'),
                     'error': str(e)[:200],
                 })
+                logger.error('[run_auto_match] DB error for event=%s: %s',
+                             event.get('EventID', '?')[:16], e, exc_info=True)
         else:
             stats['skipped'] += 1
+            logger.debug('[run_auto_match] SKIPPED event=%s amount=%.2f member=%s',
+                         event.get('EventID', '?')[:16],
+                         float(event.get('Amount') or 0),
+                         event.get('MemberID', '?'))
 
+    logger.info('[run_auto_match] DONE: matched=%d skipped=%d errors=%d',
+                stats['matched'], stats['skipped'], stats['errors'])
     return stats
 
 

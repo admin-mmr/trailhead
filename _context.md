@@ -5,6 +5,12 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 09:24 ET — Import Transactions: debug logging for GAS webhook + ProcessedTime parse failures
+Changed: `api_sheets_sync.py` — added raw pre-normalization webhook payload logging (keys + 3 rows), per-row ⚠️ when `ProcessedTime` is non-empty but unparseable (EV- IDs appearing in wrong column), failure count in final job result. Status: Done. Next: Run import, check job log for raw column names and ⚠️ rows to identify GAS column mapping bug; also investigate multi-instance job-not-found on Azure.
+
+### 2026-04-02 09:14 ET — Payments: debug logging for Auto-Match / Auto-Guess & Approve
+Changed: `payment_actions.py` — added `logger` + verbose DEBUG per-row rejection in `find_gmail_match`, INFO stats in `run_auto_match`; `api_payments.py` — caller + full stats logged in `api_auto_match`; `app.py` — `basicConfig` respecting `LOG_LEVEL` env var; `payments.js` — `console.log` throughout both button handlers. Status: Done. Next: Deploy, set `LOG_LEVEL=DEBUG` in App Settings to see per-row detail, then share browser console + Azure log stream output.
+
 ### 2026-04-02 08:40 ET — AuditPanel: Not Traced filter, dark theme fix, member search
 Changed: `AuditPanel.js` — ⚠ Not Traced Only filter checkbox; all hardcoded light colors → CSS vars (`--bg`, `--surface`, `--text`, etc.); Member Lookup card with debounced `/api/members/search` + expiration color badges. Status: Done. Next: Test in admin portal.
 

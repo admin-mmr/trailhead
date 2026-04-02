@@ -854,31 +854,59 @@ const PaymentsPanel = () => {
   };
 
   const handleAutoMatch = async () => {
+    console.log('[AutoMatch] Starting auto-match...');
     setLoading(true);
     const r = await api('/api/payments/auto-match', { method: 'POST' });
     setLoading(false);
-    if (r.ok) { const s = r.data; showToast(`Auto-match: ${s.matched} matched, ${s.skipped} skipped, ${s.errors} errors`); loadAll(); }
-    else { showToast(`Error: ${r.error}`); }
+    console.log('[AutoMatch] Response:', r);
+    if (r.ok) {
+      const s = r.data;
+      console.log('[AutoMatch] Stats:', s);
+      console.log('[AutoMatch] Details:', s.details);
+      showToast(`Auto-match: ${s.matched} matched, ${s.skipped} skipped, ${s.errors} errors`);
+      loadAll();
+    } else {
+      console.error('[AutoMatch] FAILED:', r.error, r);
+      showToast(`Error: ${r.error}`);
+    }
   };
 
   const handleAutoGuessAndApprove = async () => {
     if (!confirm('Run Auto-Match then approve ALL matched events?\nThis will update member expirations and send renewal emails.')) return;
+    console.log('[AutoGuessApprove] Starting step 1/2: auto-match...');
     setLoading(true);
     showToast('Step 1/2: Running auto-match…');
     const matchRes = await api('/api/payments/auto-match', { method: 'POST' });
-    if (!matchRes.ok) { setLoading(false); showToast(`Auto-match failed: ${matchRes.error}`); return; }
+    console.log('[AutoGuessApprove] auto-match response:', matchRes);
+    if (!matchRes.ok) {
+      console.error('[AutoGuessApprove] auto-match FAILED:', matchRes.error, matchRes);
+      setLoading(false); showToast(`Auto-match failed: ${matchRes.error}`); return;
+    }
     const { matched: newlyMatched } = matchRes.data;
+    console.log('[AutoGuessApprove] auto-match stats:', matchRes.data);
+    console.log('[AutoGuessApprove] auto-match details:', matchRes.data.details);
     const evRes = await api('/api/payments/pending-events');
-    if (!evRes.ok) { setLoading(false); showToast(`Matched ${newlyMatched} but failed to reload`); return; }
+    console.log('[AutoGuessApprove] pending-events response:', evRes);
+    if (!evRes.ok) {
+      console.error('[AutoGuessApprove] pending-events FAILED:', evRes.error);
+      setLoading(false); showToast(`Matched ${newlyMatched} but failed to reload`); return;
+    }
     const allMatched = evRes.data.filter(ev => ev.Status === 'matched');
+    console.log(`[AutoGuessApprove] ${allMatched.length} events in matched status:`, allMatched.map(e => e.EventID));
     if (!allMatched.length) { setLoading(false); showToast(`Auto-match: ${newlyMatched} newly matched, 0 ready to approve`); loadAll(); return; }
     showToast(`Step 2/2: Approving ${allMatched.length} matched event(s)…`);
     let approved = 0, failed = 0, failedIds = [];
     for (const ev of allMatched) {
+      console.log(`[AutoGuessApprove] Approving event ${ev.EventID}...`);
       const r = await api(`/api/payments/approve/${ev.EventID}`, { method: 'POST', body: '{}' });
-      if (r.ok) { approved++; } else { failed++; failedIds.push(ev.EventID.slice(0, 12)); }
+      console.log(`[AutoGuessApprove] approve/${ev.EventID} response:`, r);
+      if (r.ok) { approved++; } else {
+        console.error(`[AutoGuessApprove] approve/${ev.EventID} FAILED:`, r.error, r);
+        failed++; failedIds.push(ev.EventID.slice(0, 12));
+      }
     }
     setLoading(false);
+    console.log(`[AutoGuessApprove] DONE: ${newlyMatched} matched, ${approved} approved, ${failed} failed`);
     showToast(`Done! ${newlyMatched} matched → ${approved} approved${failed ? `, ${failed} failed: ${failedIds.join(', ')}` : ''}`);
     setSelectedEventIds(new Set()); clearEventFocus(); loadAll();
   };

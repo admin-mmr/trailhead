@@ -1306,6 +1306,7 @@ def _import_transactions(job_id: str):
     updated = []
     skipped = []
     errors = []
+    processed_time_parse_failures = []  # rows where ProcessedTime was non-empty but unparseable
     verbose_mode = True  # Set to False to reduce verbosity
 
     try:
@@ -1315,21 +1316,30 @@ def _import_transactions(job_id: str):
         # Fetch transactions from Google Sheets
         try:
             sheets_data = _call_gas_webhook({'action': 'get_transactions'})
-            sheets_txns = sheets_data if isinstance(sheets_data, list) else []
+            sheets_txns_raw = sheets_data if isinstance(sheets_data, list) else []
+
+            # Log RAW webhook payload (before key normalization) so we can diagnose
+            # column mapping issues (e.g. EV-IDs appearing in ProcessedTime).
+            if verbose_mode and sheets_txns_raw:
+                raw_first = sheets_txns_raw[0]
+                log_lines.append(f"🔍 RAW webhook keys (before normalization): {', '.join(raw_first.keys())}")
+                log_lines.append(f"   📋 RAW example rows from GAS (first 3, truncated to 60 chars):")
+                for i, row in enumerate(sheets_txns_raw[:3]):
+                    row_str = json.dumps({k: str(v)[:60] for k, v in row.items()}, indent=0)
+                    log_lines.append(f"      [Raw {i+1}]: {row_str}")
 
             # CRITICAL: Normalize camelCase keys from GAS to PascalCase (MySQL column names)
-            sheets_txns = [_normalize_gas_keys(row) for row in sheets_txns]
+            sheets_txns = [_normalize_gas_keys(row) for row in sheets_txns_raw]
 
             log_lines.append(f"📥 Fetched {len(sheets_txns)} transactions from Google Sheets")
 
             if verbose_mode and sheets_txns:
-                # Show column names and first 3 rows as examples
+                # Show column names and first 3 rows as examples (post-normalization)
                 first_row = sheets_txns[0]
-                log_lines.append(f"   Columns: {', '.join(first_row.keys())}")
-                log_lines.append(f"   📋 Example rows from Google Sheets (normalized):")
+                log_lines.append(f"   Columns (normalized): {', '.join(first_row.keys())}")
+                log_lines.append(f"   📋 Example rows (normalized, first 3):")
                 for i, row in enumerate(sheets_txns[:3]):
-                    # Print all fields with values
-                    row_str = json.dumps({k: str(v)[:50] for k, v in row.items()}, indent=0)
+                    row_str = json.dumps({k: str(v)[:60] for k, v in row.items()}, indent=0)
                     log_lines.append(f"      [Row {i+1}]: {row_str}")
         except Exception as e:
             log_lines.append(f"❌ Failed to fetch from Sheets: {e}")
@@ -1376,6 +1386,14 @@ def _import_transactions(job_id: str):
             # Normalize timestamps to MySQL-safe ISO format
             timestamp = _to_iso_datetime(timestamp_raw)
             processed_time = _to_iso_datetime(processed_time_raw) if processed_time_raw else None
+
+            # Debug: flag rows where ProcessedTime is non-empty but failed datetime parse
+            if processed_time_raw and not processed_time:
+                log_lines.append(
+                    f"⚠️  [Row {idx}] ProcessedTime parse failed — raw value: {repr(str(processed_time_raw)[:80])}"
+                    f" | MessageId={message_id} | (column mapping issue?)"
+                )
+                processed_time_parse_failures.append({'row': idx, 'messageId': message_id, 'raw': str(processed_time_raw)[:80]})
 
             if verbose_mode and idx < 5:
                 # Log first 5 rows in detail to show what we're reading
@@ -1470,7 +1488,11 @@ def _import_transactions(job_id: str):
                 job_update = {'progress': 25 + int((idx / len(sheets_txns)) * 50)}
                 update_job(job_id, **job_update)
 
-        summary = f"✅ Import Complete: {len(inserted)} inserted, {len(updated)} updated, {len(skipped)} skipped, {len(errors)} errors"
+        pt_fail_count = len(processed_time_parse_failures)
+        pt_warn = f", {pt_fail_count} ProcessedTime parse failures" if pt_fail_count else ""
+        summary = f"✅ Import Complete: {len(inserted)} inserted, {len(updated)} updated, {len(skipped)} skipped, {len(errors)} errors{pt_warn}"
+        if pt_fail_count:
+            log_lines.append(f"⚠️  ProcessedTime parse failures ({pt_fail_count} rows): {processed_time_parse_failures[:10]}")
 
         job_update = {
             'status': 'done',
@@ -1483,6 +1505,8 @@ def _import_transactions(job_id: str):
                 'skipped': len(skipped),
                 'errors': len(errors),
                 'total_processed': len(sheets_txns),
+                'processed_time_parse_failures': pt_fail_count,
+                'processed_time_failure_examples': processed_time_parse_failures[:5],
                 'log': '\n'.join(log_lines),
                 'inserted_ids': inserted[:100],  # First 100 for reference
                 'updated_ids': updated[:100],
