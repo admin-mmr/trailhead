@@ -116,6 +116,28 @@ Shared hooks live in `.githooks/` (enabled via `git config core.hooksPath .githo
 
 ---
 
+## SHARED PYTHON MODULES
+
+Two modules are synced from `basecamp/python/` to `mmr-admin/` (CI + manual):
+- `sync_engine.py` — Core sync logic (MySQL ↔ Sheets) used by both admin portal and scheduled jobs
+- `nyrr_api.py` — NYRR API client shared between integration points
+
+**Source of truth:** `basecamp/python/` (always edit here first)
+
+**CI behavior:** GitHub Actions automatically copies both modules to `mmr-admin/` before building. `mmr-admin/` copies are `.gitignore`'d and regenerated on every build.
+
+**Local dev workflow:**
+1. Edit in `basecamp/python/sync_engine.py`
+2. Sync copies: `./scripts/sync-shared-modules.sh`
+3. Test: `python3 mmr-admin/test_imports.py`
+4. Commit the source file (CI handles the copy)
+
+**Critical:** When changing these modules, always update `basecamp/python/` first. If you only edit `mmr-admin/`, your changes will be overwritten by the next CI run.
+
+See **SHARED_MODULES.md** for full details.
+
+---
+
 ## ENVIRONMENT VARIABLES
 
 Secrets and credentials are stored in the **macOS Keychain**, not in `.env.local` or `.env` files. Never assume a `.env` file exists or is complete.
