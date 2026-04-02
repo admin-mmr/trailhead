@@ -230,13 +230,12 @@ def api_add_member_to_family():
     ))
 
     # Log the action
-    log_activity('member_family_add', {
-        'primary_member_id': primary_id,
-        'new_member_id': new_member_id,
-        'family_id': primary['FamilyID'],
-        'admin': admin_id,
-        'old_state': old_state,
-    })
+    log_activity(
+        action='member_family_add',
+        member_id=new_member_id,
+        admin_email=admin_id,
+        state=f'primary={primary_id},family_id={primary["FamilyID"]}'
+    )
 
     # Get updated member for response
     updated_member = get_member_by_id(new_member_id)
@@ -313,12 +312,12 @@ def api_remove_member_from_family():
     ))
 
     # Log the action
-    log_activity('member_family_remove', {
-        'member_id': member_id,
-        'family_id': family_id,
-        'admin': admin_id,
-        'restored_state': old_state,
-    })
+    log_activity(
+        action='member_family_remove',
+        member_id=member_id,
+        admin_email=admin_id,
+        state=f'family_id={family_id},restored_type={old_state.get("Type")}'
+    )
 
     # Get updated members
     updated_member = get_member_by_id(member_id)
@@ -401,12 +400,12 @@ def api_change_member_district(member_id: str):
     """, (new_district, now, member_id))
 
     # Log the action
-    log_activity('member_district_change', {
-        'member_id': member_id,
-        'old_district': old_district,
-        'new_district': new_district,
-        'admin': admin_id,
-    })
+    log_activity(
+        action='member_district_change',
+        member_id=member_id,
+        admin_email=admin_id,
+        state=f'old_district={old_district},new_district={new_district}'
+    )
 
     # Get updated member
     updated_member = get_member_by_id(member_id)
