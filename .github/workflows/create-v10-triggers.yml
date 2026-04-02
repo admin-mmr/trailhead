@@ -36,6 +36,7 @@ jobs:
         run: |
           echo "🔧 Creating V10 audit triggers (trg_members_after_insert/update)..."
           mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
+          DELIMITER $$
           -- Create audit triggers with V10 column names
           -- These log member changes to member_log table
           -- Uses: LastLogin (not LastLoginDate), no WebApp/PaymentCheck columns
@@ -60,8 +61,7 @@ jobs:
               NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.LastLogin,
               NEW.Notes, NEW.NYRRRunnerName, NEW.YearBorn
             );
-          END;
-          $$
+          END$$
 
           CREATE TRIGGER trg_members_after_update
           AFTER UPDATE ON members
@@ -83,8 +83,9 @@ jobs:
               NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.LastLogin,
               NEW.Notes, NEW.NYRRRunnerName, NEW.YearBorn
             );
-          END;
-          $$
+          END$$
+
+          DELIMITER ;
 
           SELECT 'TRIGGER trg_members_after_insert' AS created;
           SELECT 'TRIGGER trg_members_after_update' AS created;
