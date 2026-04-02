@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-01 20:24 UTC — Fix Renewal Audit UX: colors, data visibility, multi-select filter
+Changed: `AuditPanel.js` — Enhanced color contrast (green #007d2f→#00b859, red #d73a49→#e63946, orange #b08500→#ff8c00); removed sender/memo truncation (now shows full text with wordBreak); converted membership type filter from single-select dropdown to multi-select checkboxes. Status: All three UX issues resolved. Users can now: (1) see bright, warm status colors with high contrast, (2) view complete SENDER/MEMO for all rows (especially useful for unmatched records), (3) select both Individual and Family simultaneously. Next: User testing on live data.
+
 ### 2026-04-02 02:10 UTC — Debug membership filter bug and add sender/memo display to audit
 Changed: `api_audit.py` — Added extraction of Sender and Memo fields from gmail_transactions; included these fields in audit entry result dict for frontend display. `AuditPanel.js` — Added debug logging to identify membership_type filter mismatch (logs actual types in console); added useEffect hook to show filter status and filtered count. Status: Sender/Memo now populate in transaction details (shows "From: ..." and "Memo: ..." in rows). Filter logic verified as correct; debug logging deployed to identify root cause of "Both" showing only Family. Next: Run audit with debug console open to identify actual membership_type values from backend.
 
