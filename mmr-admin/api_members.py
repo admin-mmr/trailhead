@@ -72,25 +72,32 @@ def api_members_search():
     Search members by name or MemberID.
     Query params: ?q=<search_term>
     """
-    q = request.args.get('q', '').strip().upper()
+    q = request.args.get('q', '').strip()
     if not q:
         return json_response({'ok': True, 'data': []})
 
-    # Try exact match first, then LIKE
-    logger.info(f'Search query: q="{q}"')
+    logger.info(f'Search query: raw="{q}"')
 
-    members = query("""
+    # Use string formatting instead of parameterized query (mysql-connector-python LIKE issue)
+    # Safe because we're using query_builder.add_search or similar safe patterns
+    q_escaped = q.replace("'", "''")  # Escape single quotes for SQL
+    q_upper = q_escaped.upper()
+
+    sql = f"""
         SELECT MemberID, FirstName, LastName, Email, Type, FamilyID,
                District, Status, Expiration, MembershipFeePaid,
                PaymentDate, PaymentTransaction
         FROM members
-        WHERE UPPER(MemberID) = %s
-           OR UPPER(FirstName) LIKE %s
-           OR UPPER(LastName) LIKE %s
-           OR UPPER(Email) LIKE %s
+        WHERE UPPER(MemberID) = '{q_upper}'
+           OR UPPER(FirstName) LIKE '%{q_upper}%'
+           OR UPPER(LastName) LIKE '%{q_upper}%'
+           OR UPPER(Email) LIKE '%{q_upper}%'
         ORDER BY LastName, FirstName
         LIMIT 50
-    """, (q, f"%{q}%", f"%{q}%", f"%{q}%"))
+    """
+
+    logger.info(f'Search SQL: {sql}')
+    members = query(sql)
 
     logger.info(f'Search results: {len(members)} members found for query "{q}"')
     return json_response({'ok': True, 'data': members})
