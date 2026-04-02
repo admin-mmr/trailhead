@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 22:31 UTC — Fix GitHub Actions auth: X-Cron-Token validation before session fallback
+Changed: `api_sheets_sync.py` — Updated `_cron_auth_or_session()` decorator to check X-Cron-Token FIRST and return 401 (abort) if token is provided but doesn't match expected value. Removed fallback to `login_required` when token is invalid. Status: ✅ Import test passes; decorator logic fixed (no more redirects to /login in GitHub Actions). Next: Re-run GitHub Actions workflow with verbose flag to verify sync phases complete successfully.
+
 ### 2026-04-02 22:12 UTC — Verbose logging for sync operations via GitHub Actions
 Changed: `api_sheets_sync.py` — added `verbose=` query parameter to 3 POST endpoints; updated `_sync_members_to_sheets()`, `_sync_events_to_sheets()`, `_sync_payments_to_sheets()` to accept and use `verbose` kwarg from `launch_job()`. `sync_engine.py` — added `verbose` parameter to `compare_sync_rows()`; added `_log_result()` helper to log every decision; wrapped all returns with verbose output (input rows, diffs, timestamps, write dicts). `.github/workflows/bidirectional-sync.yml` — added `workflow_dispatch.inputs.verbose` dropdown; set `env.VERBOSE`; updated all 8 phases to pass verbose flag. `.github/scripts/run_sync_phase.sh` — appends `?verbose=true` if `--verbose` arg set. Status: ✅ All files compile; imports pass; YAML valid. Next: Test via GitHub UI (set verbose=true manually).
 

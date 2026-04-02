@@ -2184,17 +2184,29 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
 def _cron_auth_or_session(f):
     """
     Decorator: allow request if either:
-    - user is logged in (normal session), OR
-    - X-Cron-Token header matches SYNC_CRON_TOKEN env var (for GH Actions)
+    - X-Cron-Token header matches SYNC_CRON_TOKEN env var (for GH Actions), OR
+    - user is logged in (normal session)
+
+    Key: Check X-Cron-Token FIRST. If token is sent but doesn't match, return 401
+    (don't fall back to session check). If no token is sent, check session.
     """
     import functools, os as _os2
+    from flask import abort
+
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
+        # Check cron token FIRST (before session check)
         token = request.headers.get('X-Cron-Token', '')
         expected = _os2.environ.get('SYNC_CRON_TOKEN', '')
-        if expected and token == expected:
-            return f(*args, **kwargs)   # cron path — bypass session check
-        # Fall through to normal session auth
+
+        if token:
+            # Token was provided → validate it strictly
+            if expected and token == expected:
+                return f(*args, **kwargs)  # Token matches → proceed
+            else:
+                abort(401)  # Token provided but doesn't match → 401 Unauthorized
+
+        # No token provided → check session auth
         from auth import login_required as _lr
         return _lr(f)(*args, **kwargs)
     return wrapper
