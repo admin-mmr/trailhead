@@ -28,9 +28,25 @@ fi
 echo "▶ POST $ADMIN_URL$ENDPOINT"
 RESP=$(curl -sf -X POST "$ADMIN_URL$ENDPOINT" \
   -H "X-Cron-Token: $CRON_TOKEN" \
-  -H "Content-Type: application/json")
+  -H "Content-Type: application/json" 2>&1) || true
 
-JOB_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+# Debug: show raw response if it looks empty or like an error
+if [ -z "$RESP" ]; then
+  echo "❌ ERROR: Empty response from server"
+  exit 1
+fi
+
+if echo "$RESP" | grep -q "^<html\|<!DOCTYPE\|error\|Error\|ERROR"; then
+  echo "❌ ERROR: Unexpected response (HTML error or plain text):"
+  echo "$RESP" | head -20
+  exit 1
+fi
+
+JOB_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])" 2>&1) || {
+  echo "❌ ERROR: Failed to parse JSON response:"
+  echo "Response was: $RESP" | head -100
+  exit 1
+}
 echo "job_id=$JOB_ID"
 
 # ── Poll until done / error / timeout ────────────────────────────────────────
@@ -40,12 +56,27 @@ while [ "$ELAPSED" -lt "$POLL_TIMEOUT" ]; do
   ELAPSED=$((ELAPSED + POLL_INTERVAL))
 
   STATUS_RESP=$(curl -sf "$ADMIN_URL/api/sync/status/$JOB_ID" \
-    -H "X-Cron-Token: $CRON_TOKEN")
+    -H "X-Cron-Token: $CRON_TOKEN" 2>&1) || true
+
+  if [ -z "$STATUS_RESP" ]; then
+    echo "[${ELAPSED}s] ⏳ Waiting (no response yet)..."
+    continue
+  fi
+
+  if echo "$STATUS_RESP" | grep -q "^<html\|<!DOCTYPE\|401\|403"; then
+    echo "[${ELAPSED}s] ❌ ERROR: Auth failed or server error"
+    echo "Response: $STATUS_RESP" | head -20
+    exit 1
+  fi
 
   JOB_STATUS=$(echo "$STATUS_RESP" | python3 -c \
-    "import sys,json; print(json.load(sys.stdin)['data'].get('status',''))")
+    "import sys,json; print(json.load(sys.stdin)['data'].get('status',''))" 2>&1) || {
+    echo "[${ELAPSED}s] ❌ ERROR: Failed to parse status response: $STATUS_RESP"
+    exit 1
+  }
+
   JOB_MSG=$(echo "$STATUS_RESP" | python3 -c \
-    "import sys,json; print(json.load(sys.stdin)['data'].get('message',''))")
+    "import sys,json; print(json.load(sys.stdin)['data'].get('message',''))" 2>&1) || JOB_MSG="(unknown)"
 
   echo "[${ELAPSED}s] $JOB_STATUS — $JOB_MSG"
 
