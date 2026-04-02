@@ -27,8 +27,8 @@ Deploy to Azure Web App as usual. Once live, the endpoint auto-loads.
 
 ### 3. Download the schema
 ```bash
-# Replace with your actual web app URL
-curl https://mmr-admin-dev.azurewebsites.net/api/export-schema > db/schema_snapshot.sql
+
+curl https://mmr-nyrr-viewer-e9gugyf4gqc4gmgv.swedencentral-01.azurewebsites.net/api/export-schema > db/schema_snapshot.sql
 ```
 
 The endpoint will:

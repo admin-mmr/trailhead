@@ -145,7 +145,10 @@ CREATE TABLE `members` (
   KEY `idx_expiration` (`Expiration`),
   KEY `idx_family` (`FamilyID`),
   KEY `idx_joinyear` (`JoinYear`),
-  KEY `idx_members_updated_at_unix` (`updated_at_unix`)
+  KEY `idx_members_updated_at_unix` (`updated_at_unix`),
+  KEY `idx_members_last_login_date_unix` (`last_login_date_unix`),
+  KEY `idx_members_profile_last_updated_unix` (`profile_last_updated_unix`),
+  KEY `idx_members_created_at_unix` (`created_at_unix`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `nyrr_event_runners` (
@@ -400,6 +403,8 @@ CREATE TABLE `webapp_events` (
   KEY `idx_pe_timestamp` (`Timestamp`),
   KEY `idx_pe_matchedmessageid` (`MatchedMessageId`),
   KEY `idx_webapp_events_timestamp_unix` (`timestamp_unix`),
+  KEY `idx_webapp_events_expires_at_unix` (`expires_at_unix`),
+  KEY `idx_webapp_events_approval_date_unix` (`approval_date_unix`),
   CONSTRAINT `fk_pe_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
