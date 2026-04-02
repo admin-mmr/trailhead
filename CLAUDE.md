@@ -27,7 +27,7 @@ Copy this into your Claude Project settings for optimal context efficiency.
 - Update it at the end of each task: log what changed, what's now done, what's still open.
 - Never delete existing entries, only append or correct.
 - Do not rewrite or reformat the whole file.
-- Session log format: `### YYYY-MM-DD HH:MM ET — short title` — **time is mandatory**, not optional (run `TZ=America/New_York date '+%Y-%m-%d %H:%M ET'` to get it)
+- Session log format: `### YYYY-MM-DD HH:MM UTC — short title` — **time is mandatory**, not optional (run `TZ=UTC '+%Y-%m-%d %H:%M UTC'` to get it)
 - **Insert new sessions at the top of the session log** (newest first, right after the `## Session log` heading).
 - **Keep entries concise:** 3 lines max — `Changed: X. Status: Y. Next: Z.` Use bullet points only for distinct items; no sub-bullets.
 - **Trim when over 15 sessions:** Move all but the 3 most recent sessions to `_context_archive.md` (append, never overwrite). Keep only 3 in `_context.md`.
@@ -171,12 +171,13 @@ When fixing build errors, use this protocol instead of declaring done without ve
 4. Suggest optimizations or refactoring
 
 **Database Changes:**
-1. Read schema in `db/schemas/`
+1. Read schema in `db/schema_snapshot.sql`
 2. Understand current MySQL structure (members, events, payments, photos, sync state)
-3. **Schema reconciliation:** use the snapshot file (`db/schemas/snapshot.sql` or equivalent) as the source of truth — diff the live schema against it before proposing migrations, and update the snapshot after any approved change
+3. **Schema reconciliation:** use the snapshot file (`db/schema_snapshot.sql`) as the source of truth — diff the live schema against it before proposing migrations, and update the snapshot after any approved change
 4. Propose migrations with backward compatibility
 5. Document changes in markdown
 6. When using mysql command, always use `mysql-mmr` alias as credentials are set up for that
+7. due to hotel network restrictions, use the temporary schema export endpoint (see SCHEMA_EXPORT_TEMP.md) to get the latest schema from Azure Web App for local work
 
 **Web App Updates:**
 1. Navigate `web-apps/mmr-webapp/` (Next.js structure)
@@ -188,11 +189,11 @@ When fixing build errors, use this protocol instead of declaring done without ve
 
 ## QUICK REFERENCES
 
-**Key files:** `.gitignore`, `.github/workflows/`, `db/schemas/snapshot.sql` (canonical schema), `load-env.sh` (Keychain loader), `mmr-admin/api_*.py` (route modules), `mmr-admin/test_imports.py` (import checks).
+**Key files:** `.gitignore`, `.github/workflows/`, `db/schema_snapshot.sql` (canonical schema), `load-env.sh` (Keychain loader), `mmr-admin/api_*.py` (route modules), `mmr-admin/test_imports.py` (import checks).
 
 **Azure resources:** See AZURE.md. Database: `mmr-mysql-v4` (Sweden Central). Use `mysql-mmr` alias for CLI access. All keys/creds from macOS Keychain only.
 
-**Shell shortcuts:** `mmr` (cd repo), `mmr-env` (cd+venv+env), `mysql-mmr` (mysql w/ creds), `mmr-web` (dev), `mmr-check` (tsc), `mmr-log` (git log), `nyrr` (admin app), `nyrr-test` (imports), `nyrr-logs/nyrr-restart/nyrr-status` (Azure ops). Always use these shortcuts instead of raw commands.
+**Shell shortcuts:** `mmr` (cd repo), `mmr-env` (cd+venv+env), `mysql-mmr` (mysql w/ creds), `mmr-web` (dev), `mmr-check` (tsc), `mmr-log` (git log), `nyrr` (admin app), `adm-test` (imports), `adm-logs/adm-restart/adm-status` (Azure ops). Always use these shortcuts instead of raw commands.
 
 ---
 
