@@ -13,7 +13,7 @@ window.AuditPanel = () => {
   const [startDate, setStartDate] = React.useState('');
   const [endDate, setEndDate] = React.useState('');
   const [targetExpiration, setTargetExpiration] = React.useState('');
-  const [membershipFilter, setMembershipFilter] = React.useState('Both'); // Individual, Family, Both
+  const [membershipFilter, setMembershipFilter] = React.useState(new Set(['Individual', 'Family'])); // Multi-select set
   const [loading, setLoading] = React.useState(false);
   const [unmatching, setUnmatching] = React.useState(null);
   const [error, setError] = React.useState('');
@@ -113,6 +113,16 @@ window.AuditPanel = () => {
     }
   };
 
+  const toggleMembershipFilter = (type) => {
+    const newFilter = new Set(membershipFilter);
+    if (newFilter.has(type)) {
+      newFilter.delete(type);
+    } else {
+      newFilter.add(type);
+    }
+    setMembershipFilter(newFilter);
+  };
+
   const toggleRowExpand = (txnId) => {
     const newExpanded = new Set(expandedRows);
     if (newExpanded.has(txnId)) {
@@ -153,13 +163,7 @@ window.AuditPanel = () => {
   };
 
   const filteredResults = auditResults?.audit_results?.filter(entry => {
-    if (membershipFilter === 'Both') return true;
-    const matches = entry.membership_type === membershipFilter;
-    // Debug logging to identify membership_type values
-    if (!matches && console) {
-      console.debug(`Filter mismatch: membershipFilter='${membershipFilter}', entry.membership_type='${entry.membership_type}'`);
-    }
-    return matches;
+    return membershipFilter.has(entry.membership_type);
   }) || [];
 
   // Log filter status
@@ -167,7 +171,7 @@ window.AuditPanel = () => {
     if (auditResults?.audit_results) {
       const types = auditResults.audit_results.map(r => r.membership_type);
       console.log(`Audit results membership types: ${JSON.stringify([...new Set(types)])}`);
-      console.log(`Current filter: '${membershipFilter}' → filtered: ${filteredResults.length} of ${auditResults.audit_results.length}`);
+      console.log(`Current filter: ${JSON.stringify([...membershipFilter])} → filtered: ${filteredResults.length} of ${auditResults.audit_results.length}`);
     }
   }, [membershipFilter, auditResults]);
 
@@ -219,9 +223,9 @@ window.AuditPanel = () => {
 
   const getStatusColor = (status) => {
     if (!status) return '#999';
-    if (status.includes('MATCH')) return '#007d2f';      // Green
-    if (status.includes('MISMATCH') || status.includes('NO EXPIRATION')) return '#d73a49';  // Red
-    if (status.includes('NOT TRACED')) return '#b08500';  // Dark orange (more visible than yellow)
+    if (status.includes('MATCH')) return '#00b859';       // Bright green
+    if (status.includes('MISMATCH') || status.includes('NO EXPIRATION')) return '#e63946';  // Bright red
+    if (status.includes('NOT TRACED')) return '#ff8c00';  // Warm bright orange
     return '#666';                                         // Dark gray
   };
 
@@ -310,23 +314,28 @@ window.AuditPanel = () => {
             <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#333' }}>
               Membership Type
             </label>
-            <select
-              value={membershipFilter}
-              onChange={(e) => setMembershipFilter(e.target.value)}
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '8px',
-                border: '1px solid #999',
-                borderRadius: '4px',
-                fontSize: '14px',
-                color: '#333'
-              }}
-            >
-              <option value="Both">Both (Individual & Family)</option>
-              <option value="Individual">Individual Only</option>
-              <option value="Family">Family Only</option>
-            </select>
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+                <input
+                  type="checkbox"
+                  checked={membershipFilter.has('Individual')}
+                  onChange={() => toggleMembershipFilter('Individual')}
+                  disabled={loading}
+                  style={{ cursor: loading ? 'not-allowed' : 'pointer' }}
+                />
+                <span style={{ fontSize: '14px', color: '#333' }}>Individual</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+                <input
+                  type="checkbox"
+                  checked={membershipFilter.has('Family')}
+                  onChange={() => toggleMembershipFilter('Family')}
+                  disabled={loading}
+                  style={{ cursor: loading ? 'not-allowed' : 'pointer' }}
+                />
+                <span style={{ fontSize: '14px', color: '#333' }}>Family</span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -481,11 +490,11 @@ window.AuditPanel = () => {
                         <div style={{ color: '#666', fontSize: '12px', marginBottom: '4px' }}>
                           ${entry.amount?.toFixed(2) || 'N/A'} • {entry.transaction_date}
                         </div>
-                        <div style={{ color: '#666', fontSize: '11px', marginBottom: '2px' }}>
+                        <div style={{ color: '#333', fontSize: '11px', marginBottom: '2px', wordBreak: 'break-word' }}>
                           <strong>From:</strong> {entry.sender || '—'}
                         </div>
-                        <div style={{ color: '#666', fontSize: '11px' }}>
-                          <strong>Memo:</strong> {entry.memo ? entry.memo.substring(0, 40) : '—'}{entry.memo && entry.memo.length > 40 ? '...' : ''}
+                        <div style={{ color: '#333', fontSize: '11px', wordBreak: 'break-word' }}>
+                          <strong>Memo:</strong> {entry.memo || '—'}
                         </div>
                       </td>
                       <td style={{ padding: '10px', color: '#333' }}>
@@ -645,7 +654,7 @@ window.AuditPanel = () => {
           color: '#0056b3',
           fontWeight: '500'
         }}>
-          No {membershipFilter === 'Both' ? 'transactions' : membershipFilter + ' transactions'} match the current filter.
+          No {[...membershipFilter].join(' or ')} transactions match the current filter.
         </div>
       )}
 
