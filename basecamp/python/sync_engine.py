@@ -760,29 +760,38 @@ class SyncRowResult:
 
 def _coerce_val(val: Any) -> Any:
     """
-    Normalize a value for comparison, handling format mismatches:
-    - None, '', 0 all become None (empty equivalence)
-    - date/datetime objects → ISO string (e.g., '2027-03-31')
-    - int/float → string (e.g., 28535243003 → '28535243003')
-    - Sheets strings stay as strings for string-to-string matching
+    Normalize a value to a standard string/date format for display/logging.
+    (Does NOT perform comparison; use _values_equal for that.)
 
-    This allows MySQL datetime.date(2027, 3, 31) to match Sheets string '2027-03-31'.
+    Handles:
+    - None → None
+    - datetime objects → UTC ISO string (no fractional seconds)
+    - date objects → ISO date string
+    - int/float → string
+    - Decimal → numeric string
+    - datetime strings → parsed to UTC ISO string
+    - other strings → as-is
     """
-    # Empty equivalence: None, '', 0 all become None
-    if val is None or val == '' or val == 0:
+    if val is None or val == '':
         return None
 
-    # Convert date/datetime to ISO format string
     if isinstance(val, datetime):
-        return val.isoformat()
+        if val.tzinfo is not None:
+            val = val.astimezone(timezone.utc).replace(tzinfo=None)
+        return val.strftime('%Y-%m-%dT%H:%M:%S')
+
     if isinstance(val, date):
         return val.isoformat()
 
-    # Convert numeric types to string (handles int/float from MySQL vs string from Sheets)
     if isinstance(val, (int, float)):
         return str(val)
 
-    # Everything else: strings, lists, dicts, etc. pass through
+    if isinstance(val, str):
+        # Try parsing as datetime to normalize format
+        dt = parse_datetime(val, silent=True)
+        if dt is not None:
+            return dt.strftime('%Y-%m-%dT%H:%M:%S')
+
     return val
 
 
@@ -810,22 +819,19 @@ def _diff_rows(
     """
     Find which columns differ between MySQL and Sheets rows.
 
-    Handles format mismatches:
-    - datetime.date(2027, 3, 31) == '2027-03-31'
-    - datetime.datetime(...) == '2026-03-23T09:17:35.000Z'
-    - 28535243003 (int) == '28535243003' (string)
+    Uses _values_equal which handles:
     - None == '' == 0 (empty equivalence)
+    - Decimal('50.00') == 50 (numeric epsilon within 0.001)
+    - datetime.datetime(...) == '2026-03-23T09:17:35.000Z' (timezone & format)
+    - Case-insensitive string matching
     """
     diffs = []
     for col in compare_cols:
         mysql_val = mysql_row.get(col)
         sheets_val = sheets_row.get(col)
 
-        # Coerce both to comparable format
-        mysql_coerced = _coerce_val(mysql_val)
-        sheets_coerced = _coerce_val(sheets_val)
-
-        if mysql_coerced != sheets_coerced:
+        # Use _values_equal which has epsilon logic for numerics & datetimes
+        if not _values_equal(mysql_val, sheets_val):
             diffs.append(col)
 
     return diffs

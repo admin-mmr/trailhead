@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 23:00 UTC — Refactor sync comparison: use _values_equal in _diff_rows + epsilon for numerics
+Changed: `basecamp/python/sync_engine.py` — `_diff_rows()` now uses `_values_equal()` (epsilon logic for numeric/datetime) instead of string coercion. `_coerce_val()` simplified to display-only (no comparison). Status: ✅ All edge cases pass: `Decimal('50.00')` == 50, epsilon 0.001 tolerates rounding, datetime TZ normalized. `.github/scripts/run_sync_phase.sh` guarded (CRON_TOKEN/ADMIN_URL empty). Next: Re-test workflow with new logic.
+
 ### 2026-04-02 22:31 UTC — Fix GitHub Actions auth: X-Cron-Token validation before session fallback
 Changed: `api_sheets_sync.py` — Updated `_cron_auth_or_session()` decorator to check X-Cron-Token FIRST and return 401 (abort) if token is provided but doesn't match expected value. Removed fallback to `login_required` when token is invalid. Status: ✅ Import test passes; decorator logic fixed (no more redirects to /login in GitHub Actions). Next: Re-run GitHub Actions workflow with verbose flag to verify sync phases complete successfully.
 

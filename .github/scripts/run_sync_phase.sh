@@ -19,6 +19,20 @@ VERBOSE="${2:-}"  # Optional --verbose flag
 POLL_INTERVAL="${POLL_INTERVAL:-5}"
 POLL_TIMEOUT="${POLL_TIMEOUT:-300}"
 
+# Guard: fail fast if secrets are not configured
+if [ -z "${CRON_TOKEN:-}" ]; then
+  echo "❌ ERROR: CRON_TOKEN is empty. Set the SYNC_CRON_TOKEN secret in GitHub repo settings."
+  echo "status=error" >> "$GITHUB_OUTPUT"
+  echo "summary=SYNC_CRON_TOKEN secret not configured" >> "$GITHUB_OUTPUT"
+  exit 1
+fi
+if [ -z "${ADMIN_URL:-}" ]; then
+  echo "❌ ERROR: ADMIN_URL is empty. Set the MMR_ADMIN_URL secret in GitHub repo settings."
+  echo "status=error" >> "$GITHUB_OUTPUT"
+  echo "summary=MMR_ADMIN_URL secret not configured" >> "$GITHUB_OUTPUT"
+  exit 1
+fi
+
 # Append ?verbose=true if --verbose flag is set
 if [ "$VERBOSE" = "--verbose" ]; then
   ENDPOINT="${ENDPOINT}?verbose=true"
