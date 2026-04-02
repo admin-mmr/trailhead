@@ -115,7 +115,6 @@ def _build_member_search(tokens: list[str]) -> tuple[str, list]:
     where = '\n        AND '.join(clauses)
     # Exact MemberID match ordering only meaningful for single-token queries.
     exact = tokens[0] if len(tokens) == 1 else ''
-    params.append(exact)
 
     sql = f"""
         SELECT MemberID, FirstName, LastName, WeChatID, Email,

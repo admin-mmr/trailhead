@@ -128,6 +128,12 @@ def parse_datetime(value: Any) -> Optional[datetime]:
     if value is None:
         return None
 
+    # Treat integer 0 and string "0" as NULL (common in corrupted Sheets data)
+    if isinstance(value, int) and value == 0:
+        return None
+    if isinstance(value, str) and value.strip() == '0':
+        return None
+
     # ── Already a Python datetime ─────────────────────────────────────────
     if isinstance(value, datetime):
         if value.tzinfo is not None:
@@ -192,7 +198,7 @@ def parse_datetime(value: Any) -> Optional[datetime]:
         except ValueError:
             continue
 
-    logger.warning("parse_datetime: unrecognised format: %s", s[:80])
+    logger.warning("parse_datetime: unrecognised format: %s (type: %s)", s[:80], type(value).__name__)
     return None
 
 
