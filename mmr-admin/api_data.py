@@ -5,7 +5,6 @@ Blueprint: data_bp
 Routes: /api/tables, /api/tables/<name>, /api/user-settings/<name>,
         /api/log, /api/connection/*, /api/version
 """
-
 from __future__ import annotations
 
 import json
