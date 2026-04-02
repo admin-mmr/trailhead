@@ -104,7 +104,7 @@ jobs:
           echo ""
           echo "📋 Current triggers on members table:"
           mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
-          SELECT TRIGGER_NAME, TRIGGER_TIME, TRIGGER_EVENT
+          SELECT TRIGGER_NAME
           FROM INFORMATION_SCHEMA.TRIGGERS
           WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = 'members'
           ORDER BY TRIGGER_NAME;
