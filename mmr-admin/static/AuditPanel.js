@@ -478,7 +478,7 @@ window.AuditPanel = () => {
                   <React.Fragment key={idx}>
                     <tr style={{
                       borderBottom: '1px solid #ddd',
-                      backgroundColor: bgColor
+                      backgroundColor: '#f0f7ff'
                     }}>
                       <td style={{ padding: '10px', textAlign: 'center', color: '#333' }}>
                         <button

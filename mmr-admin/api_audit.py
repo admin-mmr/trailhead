@@ -198,17 +198,17 @@ def api_renewal_audit():
 
         # Get membership fee amounts from config
         try:
-            individual_fee_str = get_config('MembershipFeeIndividual', '50.00')
-            family_fee_str = get_config('MembershipFeeFamily', '80.00')
+            individual_fee_str = get_config('MembershipFeeIndividual', '30.00')
+            family_fee_str = get_config('MembershipFeeFamily', '50.00')
             logger.info(f"Config fees: individual={individual_fee_str}, family={family_fee_str}")
 
-            individual_fee = float(individual_fee_str) if individual_fee_str else 50.00
-            family_fee = float(family_fee_str) if family_fee_str else 80.00
+            individual_fee = float(individual_fee_str) if individual_fee_str else 30.00
+            family_fee = float(family_fee_str) if family_fee_str else 50.00
             logger.info(f"Parsed fees: individual={individual_fee}, family={family_fee}")
         except (ValueError, TypeError) as e:
             logger.warning(f"Error parsing config fees, using defaults: {e}")
-            individual_fee = 50.00
-            family_fee = 80.00
+            individual_fee = 30.00
+            family_fee = 50.00
 
         # Run the audit
         logger.info("Running audit...")
