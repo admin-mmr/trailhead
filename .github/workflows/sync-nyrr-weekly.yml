@@ -131,28 +131,21 @@ jobs:
           path: sync-nyrr-weekly.log
           retention-days: 30
 
-      - name: Send failure notification
+      - name: Send failure notification (GAS webhook)
         if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.MAIL_SERVER }}
-          server_port: ${{ secrets.MAIL_PORT }}
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: '❌ NYRR Weekly Sync Failed - GitHub Actions'
-          to: ${{ secrets.NOTIFICATION_EMAIL }}
-          cc: 'admin@mmrunners.org'
-          from: 'GitHub Actions <noreply@github.com>'
-          body: |
-            Workflow: Weekly NYRR Sync & Finisher Audit (Tuesday)
-            Status: FAILED
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Time: ${{ github.event.repository.updated_at }}
-            Branch: ${{ github.ref }}
-            Commit: ${{ github.sha }}
-
-            Check the logs for details.
+        env:
+          GAS_WEBHOOK_URL: ${{ secrets.GAS_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$GAS_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "action": "email_send",
+              "to": "${{ secrets.NOTIFICATION_EMAIL }}",
+              "subject": "❌ NYRR Weekly Sync Failed",
+              "html_content": "<h2>Workflow Failed</h2><p>Weekly NYRR Sync & Finisher Audit (Tuesday) did not complete successfully.</p><p><strong>Run:</strong> <a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">View in GitHub</a></p><p><strong>Branch:</strong> ${{ github.ref }}<br><strong>Commit:</strong> ${{ github.sha }}</p><p>Check the logs for details.</p>",
+              "cc": "admin@mmrunners.org",
+              "email_type": "github_action_failure"
+            }'
 
   verify:
     runs-on: ubuntu-latest
@@ -267,20 +260,18 @@ jobs:
               exit(1)
           EOF
 
-      - name: Send success notification
+      - name: Send success notification (GAS webhook)
         if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.MAIL_SERVER }}
-          server_port: ${{ secrets.MAIL_PORT }}
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: '✓ NYRR Weekly Sync Completed Successfully'
-          to: ${{ secrets.NOTIFICATION_EMAIL }}
-          cc: 'admin@mmrunners.org'
-          from: 'GitHub Actions <noreply@github.com>'
-          body: |
-            Workflow: Weekly NYRR Sync & Finisher Audit (Tuesday)
-            Status: SUCCESS
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Time: ${{ github.event.repository.updated_at }}
+        env:
+          GAS_WEBHOOK_URL: ${{ secrets.GAS_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$GAS_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "action": "email_send",
+              "to": "${{ secrets.NOTIFICATION_EMAIL }}",
+              "subject": "✓ NYRR Weekly Sync Completed Successfully",
+              "html_content": "<h2>Workflow Completed</h2><p>Weekly NYRR Sync & Finisher Audit (Tuesday) finished successfully.</p><p><strong>Run:</strong> <a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">View in GitHub</a></p><p><strong>Branch:</strong> ${{ github.ref }}<br><strong>Commit:</strong> ${{ github.sha }}</p>",
+              "cc": "admin@mmrunners.org",
+              "email_type": "github_action_success"
+            }'

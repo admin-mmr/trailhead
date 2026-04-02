@@ -4,7 +4,10 @@ Webhook client for sending emails via GAS webhook.
 Replaces email_client.py which used Azure Communication Services.
 Now all emails are sent to GAS, which logs them and sends via Gmail.
 
-Depends on: MySQL config table for SheetsWebhookUrl
+Configuration:
+  - GAS_WEBHOOK_URL (GitHub Secrets) — recommended
+  - SHEETS_WEBHOOK_URL (env var) — legacy
+  - MySQL config table SheetsWebhookUrl — deprecated fallback
 """
 
 import os
@@ -22,23 +25,36 @@ def get_sheets_webhook_url() -> str:
     """
     Get the GAS webhook URL.
 
-    Priority: SHEETS_WEBHOOK_URL env var (for testing), then MySQL config table.
+    Priority:
+      1. GAS_WEBHOOK_URL (GitHub Secrets) — recommended
+      2. SHEETS_WEBHOOK_URL (env var) — legacy
+      3. MySQL config SheetsWebhookUrl — deprecated
     """
-    env_url = os.environ.get('SHEETS_WEBHOOK_URL')
+    # GitHub Secrets (primary)
+    env_url = os.environ.get('GAS_WEBHOOK_URL')
     if env_url:
-        logger.info(f'[webhook_client] Using SHEETS_WEBHOOK_URL from env: {env_url[:60]}...')
+        logger.info(f'[webhook_client] Using GAS_WEBHOOK_URL from env: {env_url[:60]}...')
         return env_url
 
+    # Legacy env var (backward compatibility)
+    env_url = os.environ.get('SHEETS_WEBHOOK_URL')
+    if env_url:
+        logger.info(f'[webhook_client] Using SHEETS_WEBHOOK_URL from env (legacy): {env_url[:60]}...')
+        return env_url
+
+    # MySQL fallback (deprecated)
     try:
         from config_cache import get_config
         url = get_config('SheetsWebhookUrl', '').strip()
         if url:
-            logger.info(f'[webhook_client] Found SheetsWebhookUrl in config: {url[:60]}...')
+            logger.info(f'[webhook_client] Found SheetsWebhookUrl in config (legacy): {url[:60]}...')
             return url
     except Exception as e:
         logger.error(f'[webhook_client] Failed to fetch webhook URL: {type(e).__name__}: {e}', exc_info=True)
 
-    raise ValueError('SHEETS_WEBHOOK_URL not found in MySQL config or environment')
+    raise ValueError(
+        'GAS_WEBHOOK_URL not set. Set via: GitHub Secrets, SHEETS_WEBHOOK_URL env var, or MySQL config'
+    )
 
 
 def send_email_webhook(

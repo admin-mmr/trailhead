@@ -44,13 +44,14 @@ export async function POST(req: NextRequest) {
     const resetUrl = `${appUrl}/auth/reset-password?token=${rawToken}`
 
     await sendEmail({
-      to:      email,
-      subject: 'Reset your MMR password · 重置密码',
-      html:    passwordResetEmailHtml({
+      to:        email,
+      subject:   'Reset your MMR password',
+      html:      passwordResetEmailHtml({
         firstName:  member.firstName ?? email.split('@')[0],
         resetUrl,
         expiryMins: EXPIRY_MINUTES,
       }),
+      emailType: 'password_reset',
     })
 
     return NextResponse.json({ ok: true })

@@ -1,4 +1,8 @@
-import { EmailClient } from '@azure/communication-email'
+/**
+ * Email client for MMR webapp — sends via GAS webhook
+ * All emails route through Google Apps Script for unified sending.
+ */
+
 import {
   welcomeEmailHtml,
   applicationReceivedEmailHtml,
@@ -7,17 +11,8 @@ import {
   paymentExpiredEmailHtml,
   expirationRepairedEmailHtml,
   autoMatchConfirmationEmailHtml,
+  passwordResetEmailHtml,
 } from './templates'
-import pool from '@/lib/db/connection'
-
-let client: EmailClient | undefined
-
-function getEmailClient(): EmailClient {
-  if (!client) {
-    client = new EmailClient(process.env.AZURE_COMM_CONNECTION_STRING!)
-  }
-  return client
-}
 
 interface SendEmailParams {
   to: string
@@ -25,28 +20,53 @@ interface SendEmailParams {
   html: string
   text?: string
   cc?: string | string[]
+  emailType?: string
+  memberId?: string
 }
 
-export async function sendEmail({ to, subject, html, text, cc }: SendEmailParams): Promise<void> {
-  const emailClient = getEmailClient()
+async function getGasWebhookUrl(): Promise<string> {
+  const url = process.env.GAS_WEBHOOK_URL
+  if (!url) {
+    throw new Error('GAS_WEBHOOK_URL not set in environment')
+  }
+  return url
+}
 
-  // Normalize CC to array of objects
-  let ccRecipients: Array<{ address: string }> = []
-  if (cc) {
-    const ccAddresses = Array.isArray(cc) ? cc : cc.split(',').map(e => e.trim())
-    ccRecipients = ccAddresses.map(address => ({ address }))
+export async function sendEmail({
+  to,
+  subject,
+  html,
+  text,
+  cc,
+  emailType,
+  memberId,
+}: SendEmailParams): Promise<void> {
+  const webhookUrl = await getGasWebhookUrl()
+
+  const payload = {
+    action: 'email_send',
+    to,
+    subject,
+    html_content: html,
+    text_content: text || undefined,
+    cc: cc ? (Array.isArray(cc) ? cc.join(',') : cc) : 'admin@mmrunners.org',
+    email_type: emailType,
+    member_id: memberId,
   }
 
-  const message = {
-    senderAddress: process.env.EMAIL_SENDER_ADDRESS!,
-    content: { subject, html, plainText: text ?? '' },
-    recipients: {
-      to: [{ address: to }],
-      ...(ccRecipients.length > 0 && { cc: ccRecipients }),
-    },
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(
+      `GAS webhook failed: ${response.status} ${response.statusText} - ${errorText}`
+    )
   }
-  const poller = await emailClient.beginSend(message)
-  await poller.pollUntilDone()
 }
 
 // ── Welcome / membership activated ────────────────────────────────────────────
@@ -60,10 +80,12 @@ export async function sendMemberWelcomeEmail(params: {
 }): Promise<void> {
   const planLabel = params.planLabel ?? 'Individual Membership'
   await sendEmail({
-    to:      params.to,
-    cc:      'admin@mmrunners.org',
-    subject: `Welcome to Misty Mountain Runners! 🎉 Your Member ID: ${params.memberId}`,
-    html:    welcomeEmailHtml({ ...params, planLabel }),
+    to:         params.to,
+    cc:         'admin@mmrunners.org',
+    subject:    `Welcome to Misty Mountain Runners! 🎉 Your Member ID: ${params.memberId}`,
+    html:       welcomeEmailHtml({ ...params, planLabel }),
+    emailType:  'welcome',
+    memberId:   params.memberId,
   })
 }
 
@@ -78,10 +100,11 @@ export async function sendApplicationReceivedEmail(params: {
   referenceId:   string
 }): Promise<void> {
   await sendEmail({
-    to:      params.to,
-    cc:      'admin@mmrunners.org',
-    subject: `MMR Membership Application Received — Ref ${params.referenceId}`,
-    html:    applicationReceivedEmailHtml(params),
+    to:        params.to,
+    cc:        'admin@mmrunners.org',
+    subject:   `MMR Membership Application Received — Ref ${params.referenceId}`,
+    html:      applicationReceivedEmailHtml(params),
+    emailType: 'application_received',
   })
 }
 
@@ -112,15 +135,17 @@ export async function sendRenewalReminders(): Promise<{ sent: number; skipped: n
     const firstName = (member.english_name ?? member.email).split(' ')[0]
     try {
       await sendEmail({
-        to:      member.email,
-        cc:      'admin@mmrunners.org',
-        subject: `Your MMR membership expires in ${member.days_left} day${member.days_left !== 1 ? 's' : ''}`,
-        html:    renewalReminderEmailHtml({
+        to:        member.email,
+        cc:        'admin@mmrunners.org',
+        subject:   `Your MMR membership expires in ${member.days_left} day${member.days_left !== 1 ? 's' : ''}`,
+        html:      renewalReminderEmailHtml({
           firstName,
           memberId:  member.member_id,
           expiresAt: String(member.expires_at),
           daysLeft:  Number(member.days_left),
         }),
+        emailType: 'renewal_reminder',
+        memberId:  member.member_id,
       })
 
       await pool.query(
@@ -148,10 +173,11 @@ export async function sendPaymentRejectedEmail(params: {
   reason?:       string
 }): Promise<void> {
   await sendEmail({
-    to:      params.to,
-    cc:      'admin@mmrunners.org',
-    subject: `MMR Payment Could Not Be Verified — Ref ${params.referenceId}`,
-    html:    paymentRejectedEmailHtml(params),
+    to:        params.to,
+    cc:        'admin@mmrunners.org',
+    subject:   `MMR Payment Could Not Be Verified — Ref ${params.referenceId}`,
+    html:      paymentRejectedEmailHtml(params),
+    emailType: 'payment_rejected',
   })
 }
 
@@ -164,10 +190,11 @@ export async function sendPaymentExpiredEmail(params: {
   expiresAt:   string
 }): Promise<void> {
   await sendEmail({
-    to:      params.to,
-    cc:      'admin@mmrunners.org',
-    subject: `⏰ Your MMR payment submission has expired — Ref ${params.referenceId}`,
-    html:    paymentExpiredEmailHtml(params),
+    to:        params.to,
+    cc:        'admin@mmrunners.org',
+    subject:   `⏰ Your MMR payment submission has expired — Ref ${params.referenceId}`,
+    html:      paymentExpiredEmailHtml(params),
+    emailType: 'payment_expired',
   })
 }
 
@@ -181,10 +208,12 @@ export async function sendExpirationRepairedEmail(params: {
   planLabel: string
 }): Promise<void> {
   await sendEmail({
-    to:      params.to,
-    cc:      'admin@mmrunners.org',
-    subject: `Your MMR membership record has been updated`,
-    html:    expirationRepairedEmailHtml(params),
+    to:        params.to,
+    cc:        'admin@mmrunners.org',
+    subject:   `Your MMR membership record has been updated`,
+    html:      expirationRepairedEmailHtml(params),
+    emailType: 'expiration_repaired',
+    memberId:  params.memberId,
   })
 }
 
@@ -199,9 +228,11 @@ export async function sendAutoMatchConfirmationEmail(params: {
   amount:        number
 }): Promise<void> {
   await sendEmail({
-    to:      params.to,
-    cc:      'admin@mmrunners.org',
-    subject: `✅ Your MMR payment has been matched — Membership activated`,
-    html:    autoMatchConfirmationEmailHtml(params),
+    to:        params.to,
+    cc:        'admin@mmrunners.org',
+    subject:   `✅ Your MMR payment has been matched — Membership activated`,
+    html:      autoMatchConfirmationEmailHtml(params),
+    emailType: 'auto_match_confirmation',
+    memberId:  params.memberId,
   })
 }
