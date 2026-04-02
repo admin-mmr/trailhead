@@ -29,15 +29,16 @@ from sync_jobs import launch_job, update_job, get_job, list_jobs as list_sync_jo
 
 # ── Shared bidirectional sync engine (spec-compliant) ────────────────────────
 from sync_engine import (
-    parse_datetime      as _engine_parse_dt,
-    to_mysql_datetime   as _engine_to_mysql_dt,
-    resolve_conflict    as _engine_resolve_conflict,
-    resolve_gmail_row   as _engine_resolve_gmail,
-    filter_sync_columns as _engine_filter_cols,
+    parse_datetime          as _engine_parse_dt,
+    to_mysql_datetime       as _engine_to_mysql_dt,
+    resolve_conflict        as _engine_resolve_conflict,
+    resolve_conflict_unix   as _engine_resolve_conflict_unix,
+    resolve_gmail_row       as _engine_resolve_gmail,
+    filter_sync_columns     as _engine_filter_cols,
     SyncDecision,
     SyncAudit,
-    log_sync_error      as _engine_log_error,
-    STANDARD_TABLES     as _STANDARD_TABLES,
+    log_sync_error          as _engine_log_error,
+    STANDARD_TABLES         as _STANDARD_TABLES,
 )
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -559,8 +560,9 @@ def _sync_members_to_sheets(job_id: str):
                 inserted.append(member_id)
             else:
                 # Existing member — spec §2.2 bidirectional newer-wins conflict resolution
+                # Use Unix timestamp comparison (timezone-invariant) if available, else fallback to datetime
                 sheets_member = sheets_by_id[member_id]
-                decision = _engine_resolve_conflict('members', member_id, member, sheets_member)
+                decision = _engine_resolve_conflict_unix('members', member_id, member, sheets_member)
 
                 if decision.direction == SyncDecision.NO_CHANGE:
                     skipped.append(member_id)
@@ -815,8 +817,9 @@ def _sync_events_to_sheets(job_id: str):
                 inserted.append(event_id)
             else:
                 # Spec §2.2 bidirectional conflict resolution for webapp_events
+                # Use Unix timestamp comparison (timezone-invariant) if available, else fallback to datetime
                 sheets_event = sheets_by_id[event_id]
-                decision = _engine_resolve_conflict('webapp_events', event_id, event, sheets_event)
+                decision = _engine_resolve_conflict_unix('webapp_events', event_id, event, sheets_event)
 
                 if decision.direction == SyncDecision.NO_CHANGE:
                     skipped.append(event_id)
@@ -1012,8 +1015,9 @@ def _sync_payments_to_sheets(job_id: str):
                 inserted.append(f"{payment_id}: ${amount}, {member_id}, {member_name}")
             else:
                 # Spec §2.2 bidirectional conflict resolution for payments
+                # Use Unix timestamp comparison (timezone-invariant) if available, else fallback to datetime
                 sheets_payment = sheets_by_id[payment_id]
-                decision = _engine_resolve_conflict('payments', payment_id, payment, sheets_payment)
+                decision = _engine_resolve_conflict_unix('payments', payment_id, payment, sheets_payment)
 
                 if decision.direction == SyncDecision.MYSQL_WINS:
                     diff_fields = _get_field_diffs(payment, sheets_payment)

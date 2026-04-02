@@ -1,9 +1,18 @@
 # Trailhead Project Context
 
-Last updated: 2026-04-01 13:35 UTC
-Last commit: [pending]
+Last updated: 2026-04-02 01:40 UTC
+Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI colors)
 
 ## Session log
+
+### 2026-04-02 01:35 UTC — Complete membership renewal audit feature with filters and unmatch capability
+Changed: `api_audit.py` — Added POST `/api/audit/unmatch` endpoint to reset gmail_transactions (ProcessedTime=NULL, PaymentID=NULL) for NOT TRACED items; allows admin to re-process failed traces. Enhanced JSON request parsing with 3-level fallback (get_json() → manual json.loads() → request.data). `AuditPanel.js` — Added membership type filter dropdown (Individual/Family/Both); unmatch button appears on NOT TRACED items with confirmation; redesigned UI with light theme (white background, dark text) for readability. Color palette: blacks, grays, greens (#007d2f), reds (#d73a49). Summary cards show white with borders instead of blue. Status: Feature complete and tested on live data. Next: Document audit workflow; consider audit history/log.
+
+### 2026-04-02 01:10 UTC — Fix date type serialization and auto-load MembershipYearEnd config
+Changed: `api_audit.py` — Added `_serialize_for_json()` helper to recursively convert date/datetime objects to ISO strings before JSON response; fixed 500 TypeError. Added GET `/api/config/get?key=MembershipYearEnd` endpoint. `AuditPanel.js` — Auto-loads MembershipYearEnd from config on mount (supports both full date YYYY-MM-DD and MM-DD formats); defaults to 12-31 if unavailable. Set default start date to 2025-10-01, end date to today(). Enhanced error logging with console output for debugging. Status: All date issues resolved, config loading works end-to-end.
+
+### 2026-04-01 14:49 UTC — Implement Unix timestamps for timezone-invariant sync (GAS + Python)
+Changed: **GAS:** Fixed timestamp comparison across MySQL (EDT) and Google Sheets (UTC). Added `toUnixTimestamp()` helper to `sheets.ts`. Modified `updateMemberRow()` to auto-calculate Unix timestamps whenever ISO datetime is set (LAST_UPDATED → LAST_UPDATED_UNIX, etc.). Added Unix columns to config.ts MM_COL (26-29), WE_COL (24-26), PH_COL (17). Updated all row converters to include Unix fields. Updated 2 direct writes in jobs.ts. **Python:** Added `resolve_conflict_unix()` to sync_engine.py for integer-based comparison (vs datetime parsing). Updated 3 sync endpoints in api_sheets_sync.py to use Unix comparison. Created backfill_unix_timestamps.py helper script. **Database:** Migration 0016 corrected — Unix columns already exist in schema, migration now adds 5 missing indices and backfills any NULL/0 values. All code syntax-checked. Status: Full implementation complete. Next: (1) Apply migration 0016 to Azure MySQL, (2) Deploy GAS code, (3) Deploy Flask to Azure App Service, (4) Test end-to-end sync.
 
 ### 2026-04-01 13:35 UTC — Add Members Management tab: family ops + district change
 Changed: Created `mmr-admin/api_members.py` (315 lines) with 6 endpoints: `/api/members/search` (search by name/ID), `/api/members/<id>/family` (get family members), `/api/members/family/add-member` (add to family, share payment fields), `/api/members/family/remove-member` (revert to individual), `/api/districts` (list districts), `/api/members/<id>/district` (change district). All ops set LastUpdated and log admin ID via activity_logger. Created `mmr-admin/static/Members.js` (438 lines) React component with two sub-tabs: (1) Update Family: search primary member (Family type), display family table with Remove buttons, search + add members via search modal; (2) Change District: search member, pick new district from dropdown, confirm change. Both sub-tabs include toast notifications, error handling, loading states. Updated `mmr-admin/templates/index.html` to load Members.js, add Members tab after Payments (restricted to admin role), render MembersPanel component. Registered blueprint in `mmr-admin/app.py`. Status: Code written, import check passed. Next: Manual test of family add/remove/district workflows; verify LastUpdated and admin ID logged correctly.

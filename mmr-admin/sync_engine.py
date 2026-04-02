@@ -331,6 +331,125 @@ def resolve_conflict(
     )
 
 
+def resolve_conflict_unix(
+    table: str,
+    key_value: str,
+    mysql_row: Dict[str, Any],
+    sheets_row: Dict[str, Any],
+) -> SyncDecision:
+    """
+    Apply spec §2.2 version conflict resolution using Unix timestamps.
+
+    Same logic as resolve_conflict() but uses Unix timestamp columns instead
+    of parsing ISO datetime strings. This is timezone-invariant and avoids
+    the EDT/UTC comparison issue.
+
+    Args:
+        table:      table name (used to look up ts_col and unix_ts_col)
+        key_value:  PK value (for logging only)
+        mysql_row:  dict of MySQL column values
+        sheets_row: dict of Google Sheets column values
+
+    Returns:
+        SyncDecision
+
+    Unix column mapping:
+      members:       updated_at → updated_at_unix
+      webapp_events: timestamp → timestamp_unix
+      payment_history: processed_date → processed_date_unix
+    """
+    cfg = STANDARD_TABLES.get(table)
+    if cfg is None:
+        raise ValueError(f'resolve_conflict_unix called for non-standard table: {table}')
+
+    ts_col = cfg['ts_col']
+
+    # Map timestamp column → Unix timestamp column
+    unix_col_map = {
+        'members': {
+            'LastUpdated': 'LastUpdatedUnix',
+            'LastLoginDate': 'LastLoginDateUnix',
+            'ProfileLastUpdated': 'ProfileLastUpdatedUnix',
+            'CreatedAt': 'CreatedAtUnix',
+        },
+        'payments': {
+            'ProcessedDate': 'ProcessedDateUnix',
+        },
+        'webapp_events': {
+            'Timestamp': 'TimestampUnix',
+            'ExpiresAt': 'ExpiresAtUnix',
+            'ApprovalDate': 'ApprovalDateUnix',
+        },
+    }
+
+    unix_col = unix_col_map.get(table, {}).get(ts_col)
+    if not unix_col:
+        # Fallback to datetime comparison if Unix column not found
+        logger.warning(f'Unix column not mapped for {table}.{ts_col}; falling back to datetime comparison')
+        return resolve_conflict(table, key_value, mysql_row, sheets_row)
+
+    # Get Unix timestamps (integers, seconds since epoch)
+    mysql_unix = _safe_int(mysql_row.get(unix_col))
+    sheets_unix = _safe_int(sheets_row.get(unix_col))
+
+    # Check for any data differences (ignoring the timestamp column itself)
+    if not _rows_differ(mysql_row, sheets_row, ignore_cols={ts_col, unix_col}):
+        return SyncDecision(SyncDecision.NO_CHANGE, 'rows identical')
+
+    # Both Unix timestamps present
+    # NOTE: Apply 10-second buffer to Sheets timestamps to account for async propagation
+    if mysql_unix is not None and mysql_unix > 0 and sheets_unix is not None and sheets_unix > 0:
+        sheets_unix_adjusted = sheets_unix - 10  # Subtract 10 seconds
+        diff = mysql_unix - sheets_unix_adjusted
+
+        if diff > 1:
+            return SyncDecision(
+                SyncDecision.MYSQL_WINS,
+                f'MySQL newer (Unix): {mysql_unix} > {sheets_unix} (adjusted -10s)',
+            )
+        if diff < -1:
+            return SyncDecision(
+                SyncDecision.SHEETS_WINS,
+                f'Sheets newer (Unix): {sheets_unix} > {mysql_unix} (adjusted -10s)',
+            )
+        # Tie (within 1 second after adjustment) → MySQL wins
+        return SyncDecision(
+            SyncDecision.MYSQL_WINS,
+            f'Tie within 10s buffer (Unix: {sheets_unix}): MySQL wins',
+        )
+
+    # Missing Unix timestamp on one or both sides → Sheets wins
+    if (mysql_unix is None or mysql_unix == 0) and (sheets_unix is None or sheets_unix == 0):
+        return SyncDecision(
+            SyncDecision.SHEETS_WINS,
+            'both Unix timestamps missing; Sheets wins by default',
+        )
+    if mysql_unix is None or mysql_unix == 0:
+        return SyncDecision(
+            SyncDecision.SHEETS_WINS,
+            f'MySQL Unix timestamp missing; Sheets ({sheets_unix}) wins',
+        )
+    # sheets_unix is None or 0
+    return SyncDecision(
+        SyncDecision.MYSQL_WINS,
+        f'Sheets Unix timestamp missing; MySQL ({mysql_unix}) wins',
+    )
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    """
+    Safely convert a value to int, handling None, 0, and non-numeric values.
+    Returns None if value is None, 0, or cannot be converted.
+    """
+    if value is None:
+        return None
+    try:
+        i = int(value)
+        return i if i > 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
 def _rows_differ(
     mysql_row: Dict[str, Any],
     sheets_row: Dict[str, Any],
