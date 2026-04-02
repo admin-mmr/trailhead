@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 08:40 ET — AuditPanel: Not Traced filter, dark theme fix, member search
+Changed: `AuditPanel.js` — ⚠ Not Traced Only filter checkbox; all hardcoded light colors → CSS vars (`--bg`, `--surface`, `--text`, etc.); Member Lookup card with debounced `/api/members/search` + expiration color badges. Status: Done. Next: Test in admin portal.
+
 ### 2026-04-01 20:44 UTC — Fix member search endpoint conflict and security issue
 Changed: `api_runners.py` — Renamed `/api/members/search` → `/api/runners/search` for NYRR runner candidate matching (fuzzy search for manual runner-member matching); kept parameterized query approach. `api_members.py` — Fixed `/api/members/search` to use parameterized queries with LIKE matching instead of unsafe string formatting; prioritizes exact MemberID match first, then fuzzy name/email matching; returns up to 50 results sorted by relevance. Status: Route naming is now explicit (members vs runners search), SQL injection vulnerability eliminated, Members tab search ready to test. Next: Verify member search works in Members tab for family/district ops.
 
