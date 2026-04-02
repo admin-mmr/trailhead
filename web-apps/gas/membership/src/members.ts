@@ -51,7 +51,6 @@ function updateMemberProfile(jsonRequest: string): string {
     const now = new Date().toISOString();
     const updates: Record<string, any> = {
       LAST_UPDATED: now,
-      PROFILE_LAST_UPDATED: now,
     };
     if (payload.firstName   !== undefined) updates['FIRST_NAME']   = payload.firstName.trim();
     if (payload.lastName    !== undefined) updates['LAST_NAME']    = payload.lastName.trim();
@@ -115,7 +114,7 @@ function createNewMember(jsonRequest: string): string {
     newRow[MM_COL.DISTRICT] = (payload.district || '').trim();
     newRow[MM_COL.JOIN_YEAR] = currentYear;
     newRow[MM_COL.LAST_UPDATED] = now;
-    newRow[MM_COL.LAST_LOGIN_DATE] = now;
+    newRow[MM_COL.LAST_LOGIN] = now;
     sheet.appendRow(newRow);
 
     console.log('[mmr][createNewMember] created member ID:', memberID, 'for:', email);

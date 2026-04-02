@@ -339,7 +339,7 @@ def api_backfill_unix_timestamps():
     Backfill Unix timestamp columns from their corresponding DATETIME columns.
 
     Populates:
-      - members: updated_at_unix, last_login_date_unix, profile_last_updated_unix, created_at_unix
+      - members: updated_at_unix, last_login_unix, created_at_unix
       - payments: processed_date_unix
       - webapp_events: timestamp_unix, expires_at_unix, approval_date_unix
 
@@ -356,25 +356,18 @@ def api_backfill_unix_timestamps():
                WHERE LastUpdated IS NOT NULL AND updated_at_unix = 0""")
         stats['members'] += result
 
-        # Backfill members.last_login_date_unix
+        # Backfill members.last_login_unix
         result = execute(
             """UPDATE members
-               SET last_login_date_unix = UNIX_TIMESTAMP(LastLoginDate)
-               WHERE LastLoginDate IS NOT NULL AND last_login_date_unix = 0""")
-        stats['members'] += result
-
-        # Backfill members.profile_last_updated_unix
-        result = execute(
-            """UPDATE members
-               SET profile_last_updated_unix = UNIX_TIMESTAMP(ProfileLastUpdated)
-               WHERE ProfileLastUpdated IS NOT NULL AND profile_last_updated_unix = 0""")
+               SET last_login_unix = UNIX_TIMESTAMP(LastLogin)
+               WHERE LastLogin IS NOT NULL AND last_login_unix = 0""")
         stats['members'] += result
 
         # Backfill members.created_at_unix
         result = execute(
             """UPDATE members
-               SET created_at_unix = UNIX_TIMESTAMP(CreatedAt)
-               WHERE CreatedAt IS NOT NULL AND created_at_unix = 0""")
+               SET created_at_unix = UNIX_TIMESTAMP(Created)
+               WHERE Created IS NOT NULL AND created_at_unix = 0""")
         stats['members'] += result
 
         # Backfill payments.processed_date_unix

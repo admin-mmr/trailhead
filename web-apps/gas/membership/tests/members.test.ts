@@ -36,8 +36,7 @@ function makeMainRow(overrides: Record<number, any> = {}): any[] {
   row[5] = 'Alice';
   row[6] = 'Smith';
   row[7] = 'Individual';
-  row[21] = new Date().toISOString(); // LAST_LOGIN_DATE
-  row[22] = ''; // PROFILE_LAST_UPDATED
+  row[21] = new Date().toISOString(); // LAST_LOGIN
   Object.entries(overrides).forEach(([k, v]) => { row[Number(k)] = v; });
   return row;
 }
@@ -130,18 +129,6 @@ describe('updateMemberProfile', () => {
     expect(mainRows[1][6]).toBe('Smithson');
     expect(mainRows[1][20]).toBe('5551234567');
     expect(mainRows[1][11]).toBe('North');
-  });
-
-  it('sets PROFILE_LAST_UPDATED timestamp (NEW FIELD)', () => {
-    const oldTime = '2024-01-01T00:00:00Z';
-    __seedSheet(MAIN, [new Array(24).fill(''), makeMainRow({ 0: 'A0001', 22: oldTime })]);
-
-    updateMemberProfile(req({ memberID: 'A0001', firstName: 'Updated' }));
-
-    const mainRows = __getSheet(MAIN);
-    const profileLastUpdated = mainRows[1][22];
-    expect(profileLastUpdated).not.toEqual(oldTime);
-    expect(profileLastUpdated).toMatch(/\d{4}-\d{2}-\d{2}T/); // ISO date format
   });
 
   it('logs before write (audit trail)', () => {

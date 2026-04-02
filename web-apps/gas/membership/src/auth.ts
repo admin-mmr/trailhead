@@ -24,7 +24,7 @@ function handleGoogleLogin(jsonRequest: string): string {
     }
 
     console.log('[mmr][handleGoogleLogin] returning member:', existing.member.memberID);
-    updateMemberRow(existing.rowIndex, { LAST_LOGIN_DATE: new Date().toISOString() });
+    updateMemberRow(existing.rowIndex, { LAST_LOGIN: new Date().toISOString() });
     auditLog('LOGIN_SUCCESS', { sessionID: payload.sessionID, email, memberID: existing.member.memberID });
     return jsonOk(req.requestId, { member: existing.member, isNewMember: false });
   } catch (e: any) {
@@ -187,7 +187,7 @@ function verifyEmailOtp(jsonRequest: string): string {
     }
 
     console.log('[mmr][verifyEmailOtp] returning member:', existing.member.memberID);
-    updateMemberRow(existing.rowIndex, { LAST_LOGIN_DATE: new Date().toISOString() });
+    updateMemberRow(existing.rowIndex, { LAST_LOGIN: new Date().toISOString() });
     auditLog('OTP_VERIFY_SUCCESS', { sessionID: payload.sessionID, email, memberID: existing.member.memberID });
     return jsonOk(req.requestId, { member: existing.member, isNewMember: false });
   } catch (e: any) {

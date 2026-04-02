@@ -1,9 +1,18 @@
 # Trailhead Project Context
 
-Last updated: 2026-04-02 01:40 UTC
+Last updated: 2026-04-02 18:02 UTC
 Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI colors)
 
 ## Session log
+
+### 2026-04-02 18:02 UTC — Migration V10: Status enum + column cleanup (MySQL & Python)
+Changed: Status enum expanded (active/expired/inactive/pending); dropped WebApp/PaymentCheck/oauth_subs from members & member_log; updated MEMBERS_SYNC_COLUMNS in sync_engine.py; fixed api_sheets_sync.py CASE_MAP & VALID_MEMBER_FIELDS; fixed api_data.py unix_timestamp backfill; updated api_district_{export,members}.py LastLogin refs. Status: Python imports clean (7/7 pass). Schema snapshot updated. MIGRATION_V10_COMMANDS.md + IMPLEMENTATION_SUMMARY_V10.md ready for deployment. Next: Run SQL migrations on Azure MySQL, deploy Python/TypeScript changes, test Sync tab.
+
+### 2026-04-02 17:35 UTC — GAS column mapping fix: remove ProfileLastUpdated, rename LastLogin
+Changed: `config.ts` MM_COL (cols 22–29 corrected), SHEET_HEADERS[MEMBERSHIP_LOG] completed with all cols; `types.ts` Member interface; `sheets.ts` rowToMember + updateMemberRow; `auth.ts`, `members.ts`, `webhook.ts` callers updated. Status: tsc clean, members.test.ts 15/15 pass. Next: MySQL Migration V10 (rename LastLoginDate→LastLogin, drop ProfileLastUpdated/CreatedAt), then Python file renames.
+
+### 2026-04-02 17:29 UTC — Fix import_transactions: 526 false updates + timestamp display
+Changed: `api_sheets_sync.py` — SELECT in `_import_transactions` now fetches all backfill columns (Amount, Sender, TransactionDate, etc.); verbose log shows Unix epoch instead of raw ISO string. Status: Backfill will no longer fire on every existing row (was always NULL because columns weren't fetched). Next: Optional — unified `compare_sync_rows()` in sync_engine to consolidate all three sync comparison paths.
 
 ### 2026-04-02 15:42 UTC — Members: fix search parameter mismatch error
 Changed: `api_members.py` — Removed duplicate `params.append(exact)` in `_build_member_search` (line 118 was redundant). Status: Fixed "Not all parameters were used in the SQL statement" error in member search. Verified: Single token = 5 params, two tokens = 9 params (counts now match placeholders). Next: Test member search in Members tab.

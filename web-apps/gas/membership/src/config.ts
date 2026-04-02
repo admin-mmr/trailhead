@@ -43,26 +43,21 @@ const MM_COL = {
   GENDER: 9,
   WECHAT_ID: 10,
   DISTRICT: 11,
-  WEBAPP: 12,
-  PAYMENT_CHECK: 13,
-  INFO: 14,
-  LAST_UPDATED: 15,
-  MEMBERSHIP_FEE_PAID: 16,
-  PAYMENT_DATE: 17,
-  PAYMENT_TRANSACTION: 18,
-  // New columns appended after existing ones
-  JOIN_YEAR: 19,
-  PHONE_NUMBER: 20,
-  LAST_LOGIN_DATE: 21,
-  PROFILE_LAST_UPDATED: 22,
-  NOTES: 23,
-  NYRR_RUNNER_NAME: 24,
-  YEAR_BORN: 25,
+  INFO: 12,                // shifted −2 (WebApp + PaymentCheck removed)
+  LAST_UPDATED: 13,
+  MEMBERSHIP_FEE_PAID: 14,
+  PAYMENT_DATE: 15,
+  PAYMENT_TRANSACTION: 16,
+  JOIN_YEAR: 17,
+  PHONE_NUMBER: 18,
+  LAST_LOGIN: 19,
+  NOTES: 20,
+  NYRR_RUNNER_NAME: 21,
+  YEAR_BORN: 22,
   // Unix timestamp columns (for timezone-invariant sync)
-  LAST_UPDATED_UNIX: 26,
-  LAST_LOGIN_DATE_UNIX: 27,
-  PROFILE_LAST_UPDATED_UNIX: 28,
-  CREATED_UNIX: 29,
+  LAST_UPDATED_UNIX: 23,
+  LAST_LOGIN_UNIX: 24,
+  CREATED_UNIX: 25,
 };
 
 // Membership-Master-Log column indices (0-based)
@@ -207,12 +202,14 @@ const PCE_COL = {
 const SHEET_HEADERS: Record<string, string[]> = {
   [SHEET_NAMES.MEMBERSHIP_LOG]: [
     'LogID', 'LoggingTime',
-    // All Main table columns follow (mirrors MM_COL order)
+    // All Main table columns follow (mirrors MM_COL order exactly — keep in sync)
     'MemberID', 'Status', 'Created', 'Expiration', 'Email',
     'FirstName', 'LastName', 'Type', 'FamilyID', 'Gender',
-    'WeChatID', 'District', 'WebApp', 'PaymentCheck', 'Info',
+    'WeChatID', 'District', 'Info',
     'LastUpdated', 'MembershipFeePaid', 'PaymentDate', 'PaymentTransaction',
-    'JoinYear', 'PhoneNumber', 'LastLoginDate', 'ProfileLastUpdated', 'Notes',
+    'JoinYear', 'PhoneNumber', 'LastLogin', 'Notes',
+    'NYRRRunnerName', 'YearBorn',
+    'LastUpdatedUnix', 'LastLoginUnix', 'CreatedUnix',
   ],
   [SHEET_NAMES.WEBAPP_EVENTS]: [
     'EventID', 'EventType', 'Timestamp', 'ExpiresAt', 'MemberID', 'Email',

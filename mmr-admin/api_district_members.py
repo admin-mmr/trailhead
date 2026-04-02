@@ -38,7 +38,7 @@ def get_district_members():
         safe_columns = {
             'District', 'MemberID', 'FirstName', 'LastName', 'Name', 'Expiration',
             'Gender', 'WeChatID', 'Email', 'Type', 'FamilyID', 'PaymentDate',
-            'MembershipFeePaid', 'PaymentTransaction', 'Status', 'LastLoginDate'
+            'MembershipFeePaid', 'PaymentTransaction', 'Status', 'LastLogin'
         }
         if sort_by not in safe_columns:
             sort_by = 'District'
@@ -71,7 +71,7 @@ def get_district_members():
                 MembershipFeePaid,
                 PaymentTransaction,
                 Status,
-                LastLoginDate,
+                LastLogin,
                 LastUpdated as LastModified
             FROM members
             WHERE 1=1
@@ -107,8 +107,8 @@ def get_district_members():
 
         # Format dates for JSON serialization
         for member in members:
-            if member.get('LastLoginDate'):
-                member['LastLoginDate'] = member['LastLoginDate'].isoformat()
+            if member.get('LastLogin'):
+                member['LastLogin'] = member['LastLogin'].isoformat()
             if member.get('LastModified'):
                 member['LastModified'] = member['LastModified'].isoformat()
             if member.get('Expiration'):

@@ -56,15 +56,15 @@ STANDARD_TABLES: Dict[str, Dict[str, str]] = {
     },
 }
 
-# Column whitelist for members (cols 1–26, ending at YearBorn).
+# Column whitelist for members (cols 1–24, ending at YearBorn).
 # Anything after YearBorn in the schema is a system/auth column — never synced.
 MEMBERS_SYNC_COLUMNS: Set[str] = {
     'MemberID', 'Status', 'Created', 'Expiration',
     'Email', 'FirstName', 'LastName', 'Type', 'FamilyID',
-    'Gender', 'WeChatID', 'District', 'WebApp', 'PaymentCheck',
+    'Gender', 'WeChatID', 'District',
     'Info', 'LastUpdated', 'MembershipFeePaid', 'PaymentDate',
     'PaymentTransaction', 'JoinYear', 'PhoneNumber',
-    'LastLoginDate', 'ProfileLastUpdated', 'Notes',
+    'LastLogin', 'Notes',
     'NYRRRunnerName', 'YearBorn',
 }
 
@@ -368,9 +368,8 @@ def resolve_conflict_unix(
     unix_col_map = {
         'members': {
             'LastUpdated': 'LastUpdatedUnix',
-            'LastLoginDate': 'LastLoginDateUnix',
-            'ProfileLastUpdated': 'ProfileLastUpdatedUnix',
-            'CreatedAt': 'CreatedAtUnix',
+            'LastLogin': 'LastLoginUnix',
+            'Created': 'CreatedUnix',
         },
         'payments': {
             'ProcessedDate': 'ProcessedDateUnix',

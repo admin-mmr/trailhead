@@ -127,19 +127,19 @@ describe('logMainTableRow', () => {
     // Header row + one member row
     __seedSheet(MAIN, [
       ['MemberID','Status','Created','Expiration','Email','FirstName','LastName',
-       'Type','FamilyID','Gender','WeChatID','District','WebApp','PaymentCheck','Info',
+       'Type','FamilyID','Gender','WeChatID','District','Info',
        'LastUpdated','MembershipFeePaid','PaymentDate','PaymentTransaction',
-       'JoinYear','PhoneNumber','LastLoginDate','Notes'],
+       'JoinYear','PhoneNumber','LastLogin','Notes'],
       ['A0001', 'active', '', future.toISOString(), 'a@example.com',
-       'Ann', 'Lee', 'Individual', '', '', '', '', '', '', '',
+       'Ann', 'Lee', 'Individual', '', '', '', '',
        '', '', '', '', '2022', '', '', ''],
     ]);
     __seedSheet(LOG, [
       ['LogID','LoggingTime',
        'MemberID','Status','Created','Expiration','Email','FirstName','LastName',
-       'Type','FamilyID','Gender','WeChatID','District','WebApp','PaymentCheck','Info',
+       'Type','FamilyID','Gender','WeChatID','District','Info',
        'LastUpdated','MembershipFeePaid','PaymentDate','PaymentTransaction',
-       'JoinYear','PhoneNumber','LastLoginDate','Notes'],
+       'JoinYear','PhoneNumber','LastLogin','Notes'],
     ]);
   });
 

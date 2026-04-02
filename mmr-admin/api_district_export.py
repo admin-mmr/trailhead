@@ -33,7 +33,7 @@ def get_column_labels():
         'MembershipFeePaid': 'Membership Fee Paid',
         'PaymentTransaction': 'Payment Transaction',
         'Status': 'Status',
-        'LastLoginDate': 'Last Login',
+        'LastLogin': 'Last Login',
         'LastModified': 'Last Modified',
     }
 

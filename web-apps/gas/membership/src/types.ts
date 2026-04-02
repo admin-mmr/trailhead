@@ -15,8 +15,6 @@ interface Member {
   gender: string;
   wechatID: string;
   district: string;
-  webApp: string;
-  paymentCheck: string;
   info: string;
   lastUpdated: string;
   membershipFeePaid: string;
@@ -25,8 +23,7 @@ interface Member {
   // New columns
   joinYear: string;
   phoneNumber: string;
-  lastLoginDate: string;
-  profileLastUpdated: string;
+  lastLogin: string;         // renamed from lastLoginDate
   notes: string;
 }
 

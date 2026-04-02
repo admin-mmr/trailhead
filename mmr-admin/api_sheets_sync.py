@@ -205,16 +205,13 @@ def _normalize_gas_keys(row: Dict[str, Any]) -> Dict[str, Any]:
         'lastName': 'LastName',
         'familyID': 'FamilyID',
         'wechatID': 'WeChatID',
-        'webApp': 'WebApp',
-        'paymentCheck': 'PaymentCheck',
         'lastUpdated': 'LastUpdated',
         'membershipFeePaid': 'MembershipFeePaid',
         'paymentDate': 'PaymentDate',
         'paymentTransaction': 'PaymentTransaction',
         'joinYear': 'JoinYear',
         'phoneNumber': 'PhoneNumber',
-        'lastLoginDate': 'LastLoginDate',
-        'profileLastUpdated': 'ProfileLastUpdated',
+        'lastLogin': 'LastLogin',
         # WebApp Events table
         'eventID': 'EventID',
         'eventType': 'EventType',
@@ -707,14 +704,15 @@ def _filter_member_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     Prevents parse_datetime errors when unexpected fields are present.
 
     Standard fields: MemberID, FirstName, LastName, FamilyID, WeChatID, PhoneNumber, Email,
-    District, MembershipType, Expiration, Status, WebApp, PaymentCheck, JoinYear, LastLoginDate,
-    ProfileLastUpdated, PaymentDate, PaymentTransaction, MembershipFeePaid, LastUpdated, etc.
+    District, MembershipType, Expiration, Status, JoinYear, LastLogin,
+    PaymentDate, PaymentTransaction, MembershipFeePaid, LastUpdated, Notes, etc.
     """
     VALID_MEMBER_FIELDS = {
         'MemberID', 'FirstName', 'LastName', 'FamilyID', 'WeChatID', 'PhoneNumber', 'Email',
-        'District', 'MembershipType', 'Expiration', 'Status', 'WebApp', 'PaymentCheck',
-        'JoinYear', 'LastLoginDate', 'ProfileLastUpdated', 'PaymentDate', 'PaymentTransaction',
-        'MembershipFeePaid', 'LastUpdated', 'CreatedAt', 'UpdatedAt'
+        'District', 'MembershipType', 'Expiration', 'Status',
+        'JoinYear', 'LastLogin', 'PaymentDate', 'PaymentTransaction',
+        'MembershipFeePaid', 'LastUpdated', 'Notes', 'NYRRRunnerName', 'YearBorn',
+        'CreatedAt', 'UpdatedAt', 'Info', 'Type', 'Gender', 'Created'
     }
     result = []
     for row in rows:
@@ -1346,7 +1344,11 @@ def _import_transactions(job_id: str):
             raise
 
         # Get existing transactions from MySQL
-        existing_txns = query("SELECT MessageId, Memo, Notes, ProcessedTime, PaymentID, TimeStamp, SyncedAt FROM gmail_transactions")
+        existing_txns = query("""
+            SELECT MessageId, Memo, Notes, ProcessedTime, PaymentID, TimeStamp, SyncedAt,
+                   Amount, Sender, TransactionDate, TransactionNumber, Subject, OriginalMemo, Source
+            FROM gmail_transactions
+        """)
         existing_by_id = {t['MessageId']: t for t in existing_txns}
         log_lines.append(f"📥 Found {len(existing_by_id)} existing transactions in MySQL")
 
@@ -1396,8 +1398,18 @@ def _import_transactions(job_id: str):
                 processed_time_parse_failures.append({'row': idx, 'messageId': message_id, 'raw': str(processed_time_raw)[:80]})
 
             if verbose_mode and idx < 5:
-                # Log first 5 rows in detail to show what we're reading
-                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp} (from {repr(str(timestamp_raw)[:60])}), Sender={repr(sender)}, Amount={amount}, Memo={repr(memo)}, ProcessedTime={processed_time}")
+                # Show Unix epoch so same-instant timestamps are unambiguous
+                _ts_unix = ''
+                if timestamp:
+                    try:
+                        from datetime import timezone
+                        _dt = datetime.fromisoformat(str(timestamp))
+                        if _dt.tzinfo is None:
+                            _dt = _dt.replace(tzinfo=timezone.utc)
+                        _ts_unix = f' unix={int(_dt.timestamp())}'
+                    except Exception:
+                        pass
+                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp}{_ts_unix}, Sender={repr(sender)}, Amount={amount}, Memo={repr(memo)}, ProcessedTime={processed_time}")
 
             if not message_id:
                 log_lines.append(f"⚠️  Skipping row {idx}: missing MessageId")

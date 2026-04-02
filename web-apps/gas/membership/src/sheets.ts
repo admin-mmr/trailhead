@@ -9,7 +9,7 @@
 //
 //   toISO8601()       → full UTC ISO 8601 string ("2026-03-31T04:00:00.000Z")
 //                       Use for DATETIME/TIMESTAMP fields: Timestamp, ProcessedTime,
-//                       Created, LastUpdated, LastLoginDate, ProfileLastUpdated.
+//                       Created, LastUpdated, LastLogin.
 //
 //   toISODateString() → local calendar date ("2026-03-31")
 //                       Use for DATE-only fields: Expiration, TransactionDate, PaymentDate.
@@ -176,8 +176,6 @@ function rowToMember(row: any[]): Member {
     gender: String(row[MM_COL.GENDER] ?? ''),
     wechatID: String(row[MM_COL.WECHAT_ID] ?? ''),
     district: String(row[MM_COL.DISTRICT] ?? ''),
-    webApp: String(row[MM_COL.WEBAPP] ?? ''),
-    paymentCheck: String(row[MM_COL.PAYMENT_CHECK] ?? ''),
     info: String(row[MM_COL.INFO] ?? ''),
     lastUpdated: toISO8601(row[MM_COL.LAST_UPDATED]) || '',
     membershipFeePaid: String(row[MM_COL.MEMBERSHIP_FEE_PAID] ?? ''),
@@ -185,8 +183,7 @@ function rowToMember(row: any[]): Member {
     paymentTransaction: String(row[MM_COL.PAYMENT_TRANSACTION] ?? ''),
     joinYear: String(row[MM_COL.JOIN_YEAR] ?? ''),
     phoneNumber: String(row[MM_COL.PHONE_NUMBER] ?? ''),
-    lastLoginDate: toISO8601(row[MM_COL.LAST_LOGIN_DATE]) || '',
-    profileLastUpdated: toISO8601(row[MM_COL.PROFILE_LAST_UPDATED]) || '',
+    lastLogin: toISO8601(row[MM_COL.LAST_LOGIN]) || '',
     notes: String(row[MM_COL.NOTES] ?? ''),
   };
 }
@@ -305,11 +302,8 @@ function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
   if (updates['LAST_UPDATED']) {
     updatesWithUnix['LAST_UPDATED_UNIX'] = toUnixTimestamp(updates['LAST_UPDATED']);
   }
-  if (updates['LAST_LOGIN_DATE']) {
-    updatesWithUnix['LAST_LOGIN_DATE_UNIX'] = toUnixTimestamp(updates['LAST_LOGIN_DATE']);
-  }
-  if (updates['PROFILE_LAST_UPDATED']) {
-    updatesWithUnix['PROFILE_LAST_UPDATED_UNIX'] = toUnixTimestamp(updates['PROFILE_LAST_UPDATED']);
+  if (updates['LAST_LOGIN']) {
+    updatesWithUnix['LAST_LOGIN_UNIX'] = toUnixTimestamp(updates['LAST_LOGIN']);
   }
   if (updates['CREATED']) {
     updatesWithUnix['CREATED_UNIX'] = toUnixTimestamp(updates['CREATED']);

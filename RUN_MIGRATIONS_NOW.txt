@@ -1,0 +1,155 @@
+═════════════════════════════════════════════════════════════════════════════
+MIGRATION V10 — READY TO RUN ON AZURE MYSQL
+═════════════════════════════════════════════════════════════════════════════
+
+STEP 1: Connect to Azure MySQL (mmrdb, Sweden Central)
+───────────────────────────────────────────────────────
+Use the mysql-mmr alias (credentials from macOS Keychain):
+
+    mysql-mmr mmrdb
+
+Or manually:
+    mysql -u mmradmin -p<password> -h <host> mmrdb
+
+
+STEP 2: Run V10-b (members table)
+──────────────────────────────────
+
+Copy and paste this entire block into mysql-mmr:
+
+ALTER TABLE members
+  CHANGE COLUMN Status Status enum('active','expired','inactive','pending') NOT NULL DEFAULT 'pending' COMMENT 'active=paying; expired=may renew (send reminders); inactive=left (no reminders); pending=awaiting payment',
+  DROP COLUMN WebApp,
+  DROP COLUMN PaymentCheck,
+  DROP COLUMN apple_sub,
+  DROP KEY apple_sub,
+  DROP COLUMN yahoo_sub,
+  DROP KEY yahoo_sub,
+  DROP COLUMN facebook_sub,
+  DROP KEY uq_members_facebook;
+
+✅ Expected output: "Query OK, 0 rows affected" (no data changes, schema only)
+
+
+STEP 3: Run V10-c (member_log table)
+─────────────────────────────────────
+
+Copy and paste this entire block into mysql-mmr:
+
+ALTER TABLE member_log
+  CHANGE COLUMN LastLoginDate LastLogin   datetime DEFAULT NULL COMMENT 'Last login timestamp (UTC)',
+  CHANGE COLUMN PaymentDate   PaymentDate date     DEFAULT NULL COMMENT 'Payment date (YYYY-MM-DD)',
+  CHANGE COLUMN Expiration    Expiration  date     DEFAULT NULL COMMENT 'Membership expiration date (YYYY-MM-DD)',
+  DROP COLUMN WebApp,
+  DROP COLUMN PaymentCheck;
+
+✅ Expected output: "Query OK, 0 rows affected"
+
+
+STEP 4: Verify Changes
+──────────────────────
+
+Run these SELECT statements to confirm:
+
+# Check Status enum values
+SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_NAME='members' AND COLUMN_NAME='Status';
+
+Expected: enum('active','expired','inactive','pending')
+
+
+# Check columns are gone
+SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_NAME='members'
+  AND COLUMN_NAME IN ('WebApp','PaymentCheck','apple_sub','yahoo_sub','facebook_sub');
+
+Expected: (empty result set)
+
+
+# Check member_log LastLogin
+SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_NAME='member_log' AND COLUMN_NAME='LastLogin';
+
+Expected: LastLogin
+
+
+STEP 5: Export New Schema
+─────────────────────────
+
+After migrations complete, export the schema snapshot:
+
+    mysqldump -u mmradmin -p"$(security find-generic-password -s mmr_mysql_pass -w 2>/dev/null)" \
+      -h "$(security find-generic-password -s mmr_mysql_host -w 2>/dev/null)" \
+      --no-data mmrdb > db/schema_snapshot.sql
+
+This file is already updated in code; this step confirms the live schema matches.
+
+
+STEP 6: Deploy Code Changes
+────────────────────────────
+
+All Python and TypeScript changes are already in the repo:
+
+  ✅ mmr-admin/ (sync_engine.py, api_sheets_sync.py, api_data.py, api_district_*.py)
+  ✅ basecamp/python/ (sync_engine.py)
+  ✅ web-apps/ GAS code (already updated)
+  ✅ db/schema_snapshot.sql (already updated)
+
+Push to main and GitHub Actions will deploy to Azure App Services:
+
+    git add -A && git commit -m "chore: Migration V10 schema + Python/TypeScript column updates"
+    git push origin main
+
+
+STEP 7: Test Sync in Admin Portal
+──────────────────────────────────
+
+After deployment, verify:
+
+1. Members sync (MySQL → Google):
+   - Check that Status values (active/expired/inactive/pending) sync correctly
+   - Verify no false updates
+
+2. Import Transactions (Google → MySQL):
+   - Should show "526 matched" (not 526 updated)
+   - Verify no backfill errors
+
+3. Monitor sync_jobs table:
+   - Query: SELECT * FROM sync_jobs ORDER BY UpdatedAt DESC LIMIT 10;
+   - Watch for errors or stuck jobs
+
+
+═════════════════════════════════════════════════════════════════════════════
+ROLLBACK PLAN (if needed)
+═════════════════════════════════════════════════════════════════════════════
+
+To revert V10-b:
+
+ALTER TABLE members
+  ADD COLUMN WebApp varchar(100) DEFAULT NULL,
+  ADD COLUMN PaymentCheck varchar(100) DEFAULT NULL,
+  ADD COLUMN apple_sub varchar(255) DEFAULT NULL,
+  ADD COLUMN yahoo_sub varchar(255) DEFAULT NULL,
+  ADD COLUMN facebook_sub varchar(255) DEFAULT NULL,
+  ADD KEY apple_sub (apple_sub),
+  ADD KEY yahoo_sub (yahoo_sub),
+  ADD UNIQUE KEY uq_members_facebook (facebook_sub),
+  CHANGE COLUMN Status Status enum('active','not active','pending') NOT NULL DEFAULT 'pending';
+
+To revert V10-c:
+
+ALTER TABLE member_log
+  CHANGE COLUMN LastLogin LastLoginDate datetime DEFAULT NULL,
+  ADD COLUMN WebApp varchar(100) DEFAULT NULL,
+  ADD COLUMN PaymentCheck varchar(100) DEFAULT NULL;
+
+
+═════════════════════════════════════════════════════════════════════════════
+REFERENCES
+═════════════════════════════════════════════════════════════════════════════
+
+- MIGRATION_V10_COMMANDS.md — Full documentation with context and testing plan
+- IMPLEMENTATION_SUMMARY_V10.md — All changes made to code and schema
+- session log (2026-04-02 18:02 UTC) — Detailed change log
+
+═════════════════════════════════════════════════════════════════════════════
