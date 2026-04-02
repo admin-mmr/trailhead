@@ -52,9 +52,13 @@ jobs:
           echo ""
           echo "🔨 Dropping triggers..."
           mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
-          -- Drop ALL broken triggers immediately
+          -- Drop the audit log triggers (these reference WebApp, PaymentCheck, LastLoginDate which don't exist)
+          DROP TRIGGER IF EXISTS trg_members_after_insert;
+          DROP TRIGGER IF EXISTS trg_members_after_update;
           DROP TRIGGER IF EXISTS members_after_insert;
           DROP TRIGGER IF EXISTS members_after_update;
+
+          -- Drop old unix timestamp triggers (these reference columns that were renamed)
           DROP TRIGGER IF EXISTS members_update_lastupdated_unix;
           DROP TRIGGER IF EXISTS members_insert_lastupdated_unix;
           DROP TRIGGER IF EXISTS members_update_lastlogindate_unix;
@@ -63,6 +67,8 @@ jobs:
           DROP TRIGGER IF EXISTS members_insert_profilelastupdated_unix;
           DROP TRIGGER IF EXISTS members_update_createdat_unix;
           DROP TRIGGER IF EXISTS members_insert_createdat_unix;
+
+          -- Drop payment and webapp_events triggers (may reference old columns too)
           DROP TRIGGER IF EXISTS payments_update_processeddate_unix;
           DROP TRIGGER IF EXISTS payments_insert_processeddate_unix;
           DROP TRIGGER IF EXISTS webapp_events_update_timestamp_unix;
@@ -71,6 +77,11 @@ jobs:
           DROP TRIGGER IF EXISTS webapp_events_insert_expiresat_unix;
           DROP TRIGGER IF EXISTS webapp_events_update_approvaldate_unix;
           DROP TRIGGER IF EXISTS webapp_events_insert_approvaldate_unix;
+
+          -- Note: We're keeping the new V10 triggers that already exist:
+          -- members_insert_created_unix, members_update_created_unix
+          -- members_insert_lastlogin_unix, members_update_lastlogin_unix
+          -- These are correct and don't need to be dropped.
           EOF
 
           echo ""
