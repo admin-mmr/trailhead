@@ -335,6 +335,8 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
         txn_date = txn.get('TransactionDate')
         txn_number = txn.get('TransactionNumber', '')
         payment_id = txn.get('PaymentID', '')
+        sender = txn.get('Sender', '')
+        memo = txn.get('Memo', '') or txn.get('OriginalMemo', '')
     except (KeyError, ValueError, TypeError) as e:
         logger.error(f"Error extracting transaction fields: {e}")
         return {
@@ -344,6 +346,8 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
             'member_id': None,
             'member_name': None,
             'membership_type': None,
+            'sender': '',
+            'memo': '',
             'trace_route': 'ERROR',
             'expiration_date': None,
             'target_expiration': target_expiration.isoformat(),
@@ -360,6 +364,8 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
         'member_id': None,
         'member_name': None,
         'membership_type': None,
+        'sender': sender,
+        'memo': memo,
         'trace_route': None,
         'expiration_date': None,
         'target_expiration': target_expiration.isoformat(),

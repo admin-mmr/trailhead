@@ -154,8 +154,22 @@ window.AuditPanel = () => {
 
   const filteredResults = auditResults?.audit_results?.filter(entry => {
     if (membershipFilter === 'Both') return true;
-    return entry.membership_type === membershipFilter;
+    const matches = entry.membership_type === membershipFilter;
+    // Debug logging to identify membership_type values
+    if (!matches && console) {
+      console.debug(`Filter mismatch: membershipFilter='${membershipFilter}', entry.membership_type='${entry.membership_type}'`);
+    }
+    return matches;
   }) || [];
+
+  // Log filter status
+  React.useEffect(() => {
+    if (auditResults?.audit_results) {
+      const types = auditResults.audit_results.map(r => r.membership_type);
+      console.log(`Audit results membership types: ${JSON.stringify([...new Set(types)])}`);
+      console.log(`Current filter: '${membershipFilter}' → filtered: ${filteredResults.length} of ${auditResults.audit_results.length}`);
+    }
+  }, [membershipFilter, auditResults]);
 
   const exportResults = () => {
     if (!auditResults || !auditResults.audit_results) return;
@@ -205,10 +219,10 @@ window.AuditPanel = () => {
 
   const getStatusColor = (status) => {
     if (!status) return '#999';
-    if (status.includes('MATCH')) return '#28a745';
-    if (status.includes('MISMATCH') || status.includes('NO EXPIRATION')) return '#dc3545';
-    if (status.includes('NOT TRACED')) return '#ffc107';
-    return '#6c757d';
+    if (status.includes('MATCH')) return '#007d2f';      // Green
+    if (status.includes('MISMATCH') || status.includes('NO EXPIRATION')) return '#d73a49';  // Red
+    if (status.includes('NOT TRACED')) return '#b08500';  // Dark orange (more visible than yellow)
+    return '#666';                                         // Dark gray
   };
 
   const getStatusIcon = (status) => {
@@ -464,8 +478,14 @@ window.AuditPanel = () => {
                         <div style={{ fontWeight: '600', marginBottom: '4px' }}>
                           {entry.transaction_id.substring(0, 16)}...
                         </div>
-                        <div style={{ color: '#666', fontSize: '12px' }}>
+                        <div style={{ color: '#666', fontSize: '12px', marginBottom: '4px' }}>
                           ${entry.amount?.toFixed(2) || 'N/A'} • {entry.transaction_date}
+                        </div>
+                        <div style={{ color: '#666', fontSize: '11px', marginBottom: '2px' }}>
+                          <strong>From:</strong> {entry.sender || '—'}
+                        </div>
+                        <div style={{ color: '#666', fontSize: '11px' }}>
+                          <strong>Memo:</strong> {entry.memo ? entry.memo.substring(0, 40) : '—'}{entry.memo && entry.memo.length > 40 ? '...' : ''}
                         </div>
                       </td>
                       <td style={{ padding: '10px', color: '#333' }}>
