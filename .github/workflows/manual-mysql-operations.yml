@@ -42,6 +42,15 @@ jobs:
           MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
         run: |
           echo "⚠️  Dropping ALL broken triggers that reference dropped/renamed columns..."
+
+          echo "📋 BEFORE: Listing all triggers..."
+          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
+          SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE FROM INFORMATION_SCHEMA.TRIGGERS
+          WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY TRIGGER_NAME;
+          EOF
+
+          echo ""
+          echo "🔨 Dropping triggers..."
           mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
           -- Drop ALL broken triggers immediately
           DROP TRIGGER IF EXISTS members_after_insert;
@@ -62,9 +71,17 @@ jobs:
           DROP TRIGGER IF EXISTS webapp_events_insert_expiresat_unix;
           DROP TRIGGER IF EXISTS webapp_events_update_approvaldate_unix;
           DROP TRIGGER IF EXISTS webapp_events_insert_approvaldate_unix;
-
-          SELECT '✅ Triggers dropped successfully' AS result;
           EOF
+
+          echo ""
+          echo "📋 AFTER: Listing remaining triggers..."
+          mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" <<'EOF'
+          SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE FROM INFORMATION_SCHEMA.TRIGGERS
+          WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY TRIGGER_NAME;
+          EOF
+
+          echo ""
+          echo "✅ Trigger drop operation completed"
 
       - name: Fix member_log Audit Triggers (V10)
         if: github.event.inputs.operation == 'fix-member-log-triggers'
