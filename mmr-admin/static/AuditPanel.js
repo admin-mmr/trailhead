@@ -13,7 +13,9 @@ window.AuditPanel = () => {
   const [startDate, setStartDate] = React.useState('');
   const [endDate, setEndDate] = React.useState('');
   const [targetExpiration, setTargetExpiration] = React.useState('');
+  const [membershipFilter, setMembershipFilter] = React.useState('Both'); // Individual, Family, Both
   const [loading, setLoading] = React.useState(false);
+  const [unmatching, setUnmatching] = React.useState(null);
   const [error, setError] = React.useState('');
   const [auditResults, setAuditResults] = React.useState(null);
   const [expandedRows, setExpandedRows] = React.useState(new Set());
@@ -121,6 +123,40 @@ window.AuditPanel = () => {
     setExpandedRows(newExpanded);
   };
 
+  const unmatchTransaction = async (messageId) => {
+    if (!confirm(`Unmatch transaction ${messageId}? This will reset ProcessedTime and PaymentID.`)) {
+      return;
+    }
+
+    setUnmatching(messageId);
+    try {
+      const response = await mmrUtils.api('/api/audit/unmatch', {
+        method: 'POST',
+        body: JSON.stringify({ message_id: messageId })
+      });
+
+      if (response.success) {
+        // Remove the untraced item from results
+        setAuditResults({
+          ...auditResults,
+          audit_results: auditResults.audit_results.filter(r => r.transaction_id !== messageId)
+        });
+        alert(`Unmatched: ${messageId}`);
+      } else {
+        alert(`Error: ${response.error}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setUnmatching(null);
+    }
+  };
+
+  const filteredResults = auditResults?.audit_results?.filter(entry => {
+    if (membershipFilter === 'Both') return true;
+    return entry.membership_type === membershipFilter;
+  }) || [];
+
   const exportResults = () => {
     if (!auditResults || !auditResults.audit_results) return;
 
@@ -184,21 +220,21 @@ window.AuditPanel = () => {
   };
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      <h2 style={{ marginBottom: '20px' }}>🔍 Membership Renewal Audit</h2>
+    <div style={{ padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif', backgroundColor: '#fff', minHeight: '100vh' }}>
+      <h2 style={{ marginBottom: '20px', color: '#333' }}>🔍 Membership Renewal Audit</h2>
 
       {/* Input Section */}
       <div style={{
-        backgroundColor: '#f8f9fa',
-        border: '1px solid #dee2e6',
+        backgroundColor: '#f5f5f5',
+        border: '1px solid #ccc',
         borderRadius: '6px',
         padding: '16px',
         marginBottom: '20px'
       }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '16px' }}>
           <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>
-              Transaction Start Date
+            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#333' }}>
+              Start Date
             </label>
             <input
               type="date"
@@ -208,16 +244,17 @@ window.AuditPanel = () => {
               style={{
                 width: '100%',
                 padding: '8px',
-                border: '1px solid #dee2e6',
+                border: '1px solid #999',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '14px',
+                color: '#333'
               }}
             />
           </div>
 
           <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>
-              Transaction End Date
+            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#333' }}>
+              End Date
             </label>
             <input
               type="date"
@@ -227,16 +264,17 @@ window.AuditPanel = () => {
               style={{
                 width: '100%',
                 padding: '8px',
-                border: '1px solid #dee2e6',
+                border: '1px solid #999',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '14px',
+                color: '#333'
               }}
             />
           </div>
 
           <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>
-              Target Expiration Date
+            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#333' }}>
+              Target Expiration
             </label>
             <input
               type="date"
@@ -246,11 +284,35 @@ window.AuditPanel = () => {
               style={{
                 width: '100%',
                 padding: '8px',
-                border: '1px solid #dee2e6',
+                border: '1px solid #999',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '14px',
+                color: '#333'
               }}
             />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500', color: '#333' }}>
+              Membership Type
+            </label>
+            <select
+              value={membershipFilter}
+              onChange={(e) => setMembershipFilter(e.target.value)}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #999',
+                borderRadius: '4px',
+                fontSize: '14px',
+                color: '#333'
+              }}
+            >
+              <option value="Both">Both (Individual & Family)</option>
+              <option value="Individual">Individual Only</option>
+              <option value="Family">Family Only</option>
+            </select>
           </div>
         </div>
 
@@ -259,31 +321,31 @@ window.AuditPanel = () => {
             onClick={runAudit}
             disabled={loading || !startDate || !endDate || !targetExpiration}
             style={{
-              padding: '8px 16px',
-              backgroundColor: loading ? '#ccc' : '#007bff',
+              padding: '10px 20px',
+              backgroundColor: loading ? '#ccc' : '#0056b3',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
               cursor: loading ? 'not-allowed' : 'pointer',
               fontSize: '14px',
-              fontWeight: '500'
+              fontWeight: '600'
             }}
           >
-            {loading ? '⏳ Running Audit...' : '▶ Run Audit'}
+            {loading ? '⏳ Running...' : '▶ Run Audit'}
           </button>
 
           {auditResults && (
             <button
               onClick={exportResults}
               style={{
-                padding: '8px 16px',
-                backgroundColor: '#28a745',
+                padding: '10px 20px',
+                backgroundColor: '#007d2f',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 fontSize: '14px',
-                fontWeight: '500'
+                fontWeight: '600'
               }}
             >
               📥 Export CSV
@@ -295,55 +357,56 @@ window.AuditPanel = () => {
       {/* Error Message */}
       {error && (
         <div style={{
-          backgroundColor: '#f8d7da',
-          border: '1px solid #f5c6cb',
+          backgroundColor: '#fde4e4',
+          border: '2px solid #d73a49',
           borderRadius: '4px',
           padding: '12px',
           marginBottom: '20px',
-          color: '#721c24'
+          color: '#d73a49',
+          fontWeight: '500'
         }}>
-          {error}
+          ⚠ {error}
         </div>
       )}
 
       {/* Summary */}
       {auditResults && auditResults.summary && (
         <div style={{
-          backgroundColor: '#e7f3ff',
-          border: '1px solid #b3d9ff',
+          backgroundColor: '#e8f4f8',
+          border: '2px solid #0066cc',
           borderRadius: '6px',
           padding: '16px',
           marginBottom: '20px'
         }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Audit Summary</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-            <div>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#333' }}>📊 Audit Summary</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+            <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}>
               <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Total Transactions</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0066cc' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#333' }}>
                 {auditResults.summary.total_transactions || 0}
               </div>
             </div>
-            <div>
+            <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}>
               <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>Traced Members</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0066cc' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0056b3' }}>
                 {auditResults.summary.traced_members || 0}
               </div>
             </div>
-            <div>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>✓ Expirations Matched</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#28a745' }}>
+            <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}>
+              <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>✓ Matched</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#007d2f' }}>
                 {auditResults.summary.expirations_matched || 0}
               </div>
             </div>
-            <div>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>✗ Expirations Mismatched</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc3545' }}>
+            <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}>
+              <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>✗ Mismatched</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#d73a49' }}>
                 {auditResults.summary.expirations_mismatched || 0}
               </div>
             </div>
-            <div>
+            <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}>
               <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>⚠ Not Traced</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#ffc107' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#b08500' }}>
                 {auditResults.summary.not_traced || 0}
               </div>
             </div>
@@ -352,61 +415,63 @@ window.AuditPanel = () => {
       )}
 
       {/* Results Table */}
-      {auditResults && auditResults.audit_results && auditResults.audit_results.length > 0 && (
+      {auditResults && filteredResults && filteredResults.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{
             width: '100%',
             borderCollapse: 'collapse',
             fontSize: '13px',
-            backgroundColor: 'white'
+            backgroundColor: 'white',
+            border: '1px solid #ccc'
           }}>
             <thead>
-              <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '500', minWidth: '60px' }}>Expand</th>
-                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '500' }}>Transaction</th>
-                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '500' }}>Member</th>
-                <th style={{ padding: '10px', textAlign: 'center', fontWeight: '500', minWidth: '100px' }}>Status</th>
-                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '500' }}>Trace Route</th>
-                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '500' }}>Red Flags</th>
+              <tr style={{ backgroundColor: '#f0f0f0', borderBottom: '2px solid #999' }}>
+                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '600', minWidth: '50px', color: '#333' }}>▼</th>
+                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '600', color: '#333' }}>Transaction</th>
+                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '600', color: '#333' }}>Member</th>
+                <th style={{ padding: '10px', textAlign: 'center', fontWeight: '600', minWidth: '100px', color: '#333' }}>Status</th>
+                <th style={{ padding: '10px', textAlign: 'left', fontWeight: '600', color: '#333' }}>Trace Route</th>
+                <th style={{ padding: '10px', textAlign: 'center', fontWeight: '600', minWidth: '80px', color: '#333' }}>Flags</th>
               </tr>
             </thead>
             <tbody>
-              {auditResults.audit_results.map((entry, idx) => {
+              {filteredResults.map((entry, idx) => {
                 const isExpanded = expandedRows.has(entry.transaction_id);
+                const bgColor = entry.red_flags?.length > 0 ? '#fff5e6' : (idx % 2 === 0 ? '#fff' : '#f9f9f9');
                 return (
                   <React.Fragment key={idx}>
                     <tr style={{
-                      borderBottom: '1px solid #dee2e6',
-                      backgroundColor: idx % 2 === 0 ? 'white' : '#f9f9f9',
-                      ...(entry.red_flags && entry.red_flags.length > 0 ? { backgroundColor: '#fff3cd' } : {})
+                      borderBottom: '1px solid #ddd',
+                      backgroundColor: bgColor
                     }}>
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                      <td style={{ padding: '10px', textAlign: 'center', color: '#333' }}>
                         <button
                           onClick={() => toggleRowExpand(entry.transaction_id)}
                           style={{
                             background: 'none',
                             border: 'none',
                             cursor: 'pointer',
-                            fontSize: '16px',
+                            fontSize: '14px',
                             padding: '0',
-                            width: '30px'
+                            width: '30px',
+                            color: '#333'
                           }}
                         >
                           {isExpanded ? '▼' : '▶'}
                         </button>
                       </td>
-                      <td style={{ padding: '10px' }}>
-                        <div style={{ fontWeight: '500', marginBottom: '4px' }}>
-                          {entry.transaction_id.substring(0, 20)}...
+                      <td style={{ padding: '10px', color: '#333' }}>
+                        <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                          {entry.transaction_id.substring(0, 16)}...
                         </div>
                         <div style={{ color: '#666', fontSize: '12px' }}>
                           ${entry.amount?.toFixed(2) || 'N/A'} • {entry.transaction_date}
                         </div>
                       </td>
-                      <td style={{ padding: '10px' }}>
-                        <div style={{ fontWeight: '500' }}>{entry.member_name || 'N/A'}</div>
+                      <td style={{ padding: '10px', color: '#333' }}>
+                        <div style={{ fontWeight: '600' }}>{entry.member_name || '—'}</div>
                         <div style={{ color: '#666', fontSize: '12px' }}>
-                          ID: {entry.member_id || 'N/A'} • {entry.membership_type || 'N/A'}
+                          {entry.member_id || '—'} • {entry.membership_type || '—'}
                         </div>
                       </td>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
@@ -416,31 +481,29 @@ window.AuditPanel = () => {
                           borderRadius: '4px',
                           backgroundColor: getStatusColor(entry.match_status),
                           color: 'white',
-                          fontWeight: '500',
+                          fontWeight: '600',
                           fontSize: '12px'
                         }}>
-                          {getStatusIcon(entry.match_status)} {entry.match_status}
+                          {getStatusIcon(entry.match_status)}
                         </div>
                       </td>
-                      <td style={{ padding: '10px' }}>
-                        <div style={{ fontSize: '12px', color: '#666' }}>
-                          {entry.trace_route || 'Not traced'}
-                        </div>
+                      <td style={{ padding: '10px', fontSize: '12px', color: '#666' }}>
+                        {entry.trace_route === 'NOT TRACED' ? '—' : entry.trace_route}
                       </td>
-                      <td style={{ padding: '10px' }}>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
                         {entry.red_flags && entry.red_flags.length > 0 ? (
-                          <div style={{ color: '#dc3545', fontWeight: '500', fontSize: '12px' }}>
-                            ⚠ {entry.red_flags.length} flag(s)
+                          <div style={{ color: '#d73a49', fontWeight: '600', fontSize: '12px' }}>
+                            {entry.red_flags.length}
                           </div>
                         ) : (
-                          <div style={{ color: '#666', fontSize: '12px' }}>—</div>
+                          <div style={{ color: '#999', fontSize: '12px' }}>—</div>
                         )}
                       </td>
                     </tr>
 
                     {/* Expanded Details */}
                     {isExpanded && (
-                      <tr style={{ backgroundColor: '#f0f0f0', borderBottom: '1px solid #dee2e6' }}>
+                      <tr style={{ backgroundColor: '#f8f8f8', borderBottom: '1px solid #ddd' }}>
                         <td colSpan="6" style={{ padding: '16px', paddingLeft: '40px' }}>
                           <div style={{
                             display: 'grid',
@@ -481,11 +544,35 @@ window.AuditPanel = () => {
                                 </div>
                                 <ul style={{ margin: '0', paddingLeft: '20px' }}>
                                   {entry.red_flags.map((flag, i) => (
-                                    <li key={i} style={{ color: '#dc3545', marginBottom: '4px' }}>
+                                    <li key={i} style={{ color: '#d73a49', marginBottom: '4px' }}>
                                       {flag}
                                     </li>
                                   ))}
                                 </ul>
+                              </div>
+                            )}
+
+                            {entry.trace_route === 'NOT TRACED' && (
+                              <div style={{ gridColumn: '1 / -1' }}>
+                                <button
+                                  onClick={() => unmatchTransaction(entry.transaction_id)}
+                                  disabled={unmatching === entry.transaction_id}
+                                  style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: unmatching === entry.transaction_id ? '#ccc' : '#d73a49',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: unmatching === entry.transaction_id ? 'not-allowed' : 'pointer',
+                                    fontSize: '13px',
+                                    fontWeight: '600'
+                                  }}
+                                >
+                                  {unmatching === entry.transaction_id ? '⏳ Unmatching...' : '🔌 Unmatch Transaction'}
+                                </button>
+                                <div style={{ fontSize: '11px', color: '#666', marginTop: '6px' }}>
+                                  Resets ProcessedTime &amp; PaymentID in gmail_transactions
+                                </div>
                               </div>
                             )}
 
@@ -528,16 +615,31 @@ window.AuditPanel = () => {
         </div>
       )}
 
-      {auditResults && auditResults.audit_results && auditResults.audit_results.length === 0 && (
+      {auditResults && filteredResults && filteredResults.length === 0 && auditResults.audit_results.length > 0 && (
         <div style={{
-          backgroundColor: '#d1ecf1',
-          border: '1px solid #bee5eb',
+          backgroundColor: '#e8f4f8',
+          border: '2px solid #0066cc',
           borderRadius: '4px',
           padding: '16px',
           textAlign: 'center',
-          color: '#0c5460'
+          color: '#0056b3',
+          fontWeight: '500'
         }}>
-          No transactions found matching the specified criteria.
+          No {membershipFilter === 'Both' ? 'transactions' : membershipFilter + ' transactions'} match the current filter.
+        </div>
+      )}
+
+      {auditResults && auditResults.audit_results && auditResults.audit_results.length === 0 && (
+        <div style={{
+          backgroundColor: '#e8f4f8',
+          border: '2px solid #0066cc',
+          borderRadius: '4px',
+          padding: '16px',
+          textAlign: 'center',
+          color: '#0056b3',
+          fontWeight: '500'
+        }}>
+          ✓ No transactions found matching the specified criteria.
         </div>
       )}
     </div>

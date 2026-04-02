@@ -47,6 +47,57 @@ def _serialize_for_json(obj):
 
 
 # ---------------------------------------------------------------------------
+# Unmatch Transaction Endpoint
+# ---------------------------------------------------------------------------
+
+@audit_bp.route('/api/audit/unmatch', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_unmatch_transaction():
+    """
+    Reset a gmail_transaction to unprocessed state.
+
+    Request body:
+      {
+        "message_id": "19cb3da76e6b20b4"
+      }
+
+    Updates:
+      - ProcessedTime = NULL
+      - PaymentID = NULL
+    """
+    data = request.get_json(silent=True)
+    if isinstance(data, str):
+        data = json.loads(data)
+
+    if not isinstance(data, dict):
+        return json_response({'error': 'Invalid JSON payload'}, 400)
+
+    message_id = data.get('message_id', '').strip()
+    if not message_id:
+        return json_response({'error': 'Missing message_id'}, 400)
+
+    try:
+        sql = """
+            UPDATE gmail_transactions
+            SET ProcessedTime = NULL, PaymentID = NULL
+            WHERE MessageId = %s
+        """
+        execute(sql, [message_id])
+        logger.info(f"Unmatched transaction: {message_id}")
+
+        return json_response({
+            'success': True,
+            'message': f'Transaction {message_id} unmatched',
+            'message_id': message_id
+        })
+    except Exception as e:
+        logger.error(f"Error unmatching transaction {message_id}: {e}")
+        raise
+
+
+# ---------------------------------------------------------------------------
 # Config Endpoint
 # ---------------------------------------------------------------------------
 
