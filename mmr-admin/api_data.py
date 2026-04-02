@@ -13,7 +13,7 @@ import subprocess
 
 from flask import Blueprint, request, session
 
-from auth import login_required
+from auth import login_required, require_role
 from db import query, execute, get_conn, get_db_config, update_db_config, PRESETS
 from helpers import json_response
 
@@ -323,5 +323,94 @@ def api_save_user_settings(table_name):
             [email, table_name, json.dumps(visible_columns)],
         )
         return json_response({'ok': True})
+    except Exception as e:
+        return json_response({'ok': False, 'error': str(e)}, 500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backfill Unix Timestamp Columns
+# ─────────────────────────────────────────────────────────────────────────────
+
+@data_bp.route('/api/backfill-unix-timestamps', methods=['POST'])
+@login_required
+@require_role('admin')
+def api_backfill_unix_timestamps():
+    """
+    Backfill Unix timestamp columns from their corresponding DATETIME columns.
+
+    Populates:
+      - members: updated_at_unix, last_login_date_unix, profile_last_updated_unix, created_at_unix
+      - payments: processed_date_unix
+      - webapp_events: timestamp_unix, expires_at_unix, approval_date_unix
+
+    Only fills rows where the Unix column is currently 0 (unset).
+    Safe to run multiple times.
+    """
+    try:
+        stats = {'members': 0, 'payments': 0, 'webapp_events': 0}
+
+        # Backfill members.updated_at_unix
+        result = execute(
+            """UPDATE members
+               SET updated_at_unix = UNIX_TIMESTAMP(LastUpdated)
+               WHERE LastUpdated IS NOT NULL AND updated_at_unix = 0""")
+        stats['members'] += result
+
+        # Backfill members.last_login_date_unix
+        result = execute(
+            """UPDATE members
+               SET last_login_date_unix = UNIX_TIMESTAMP(LastLoginDate)
+               WHERE LastLoginDate IS NOT NULL AND last_login_date_unix = 0""")
+        stats['members'] += result
+
+        # Backfill members.profile_last_updated_unix
+        result = execute(
+            """UPDATE members
+               SET profile_last_updated_unix = UNIX_TIMESTAMP(ProfileLastUpdated)
+               WHERE ProfileLastUpdated IS NOT NULL AND profile_last_updated_unix = 0""")
+        stats['members'] += result
+
+        # Backfill members.created_at_unix
+        result = execute(
+            """UPDATE members
+               SET created_at_unix = UNIX_TIMESTAMP(CreatedAt)
+               WHERE CreatedAt IS NOT NULL AND created_at_unix = 0""")
+        stats['members'] += result
+
+        # Backfill payments.processed_date_unix
+        result = execute(
+            """UPDATE payments
+               SET processed_date_unix = UNIX_TIMESTAMP(ProcessedDate)
+               WHERE ProcessedDate IS NOT NULL AND processed_date_unix = 0""")
+        stats['payments'] += result
+
+        # Backfill webapp_events.timestamp_unix
+        result = execute(
+            """UPDATE webapp_events
+               SET timestamp_unix = UNIX_TIMESTAMP(Timestamp)
+               WHERE Timestamp IS NOT NULL AND timestamp_unix = 0""")
+        stats['webapp_events'] += result
+
+        # Backfill webapp_events.expires_at_unix
+        result = execute(
+            """UPDATE webapp_events
+               SET expires_at_unix = UNIX_TIMESTAMP(ExpiresAt)
+               WHERE ExpiresAt IS NOT NULL AND expires_at_unix = 0""")
+        stats['webapp_events'] += result
+
+        # Backfill webapp_events.approval_date_unix
+        result = execute(
+            """UPDATE webapp_events
+               SET approval_date_unix = UNIX_TIMESTAMP(ApprovalDate)
+               WHERE ApprovalDate IS NOT NULL AND approval_date_unix = 0""")
+        stats['webapp_events'] += result
+
+        total_updated = sum(stats.values())
+
+        return json_response({
+            'ok': True,
+            'message': f'Backfill complete: {total_updated} rows updated',
+            'stats': stats,
+        })
     except Exception as e:
         return json_response({'ok': False, 'error': str(e)}, 500)

@@ -365,20 +365,21 @@ def resolve_conflict_unix(
     ts_col = cfg['ts_col']
 
     # Map timestamp column → Unix timestamp column
+    # NOTE: Column names use lowercase snake_case to match the actual schema.
     unix_col_map = {
         'members': {
-            'LastUpdated': 'LastUpdatedUnix',
-            'LastLoginDate': 'LastLoginDateUnix',
-            'ProfileLastUpdated': 'ProfileLastUpdatedUnix',
-            'CreatedAt': 'CreatedAtUnix',
+            'LastUpdated': 'updated_at_unix',
+            'LastLoginDate': 'last_login_date_unix',
+            'ProfileLastUpdated': 'profile_last_updated_unix',
+            'CreatedAt': 'created_at_unix',
         },
         'payments': {
-            'ProcessedDate': 'ProcessedDateUnix',
+            'ProcessedDate': 'processed_date_unix',
         },
         'webapp_events': {
-            'Timestamp': 'TimestampUnix',
-            'ExpiresAt': 'ExpiresAtUnix',
-            'ApprovalDate': 'ApprovalDateUnix',
+            'Timestamp': 'timestamp_unix',
+            'ExpiresAt': 'expires_at_unix',
+            'ApprovalDate': 'approval_date_unix',
         },
     }
 

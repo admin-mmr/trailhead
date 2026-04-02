@@ -2000,8 +2000,9 @@ const SyncPanel = () => {
       {subTab === 'members-table' && (
         <div>
           <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-            <button className={`tab ${subTab === 'members-table' && !['members-fees', 'members-lastupdated'].includes(subTab2) ? 'active' : subTab2 === 'members-fees' ? 'active' : ''}`} onClick={() => setSubTab2('members-fees')}>💳 Membership Fees</button>
+            <button className={`tab ${subTab === 'members-table' && !['members-fees', 'members-lastupdated', 'members-unix'].includes(subTab2) ? 'active' : subTab2 === 'members-fees' ? 'active' : ''}`} onClick={() => setSubTab2('members-fees')}>💳 Membership Fees</button>
             <button className={`tab ${subTab2 === 'members-lastupdated' ? 'active' : ''}`} onClick={() => setSubTab2('members-lastupdated')}>🕐 Sync LastUpdated</button>
+            <button className={`tab ${subTab2 === 'members-unix' ? 'active' : ''}`} onClick={() => setSubTab2('members-unix')}>⏱️ Backfill Unix Timestamps</button>
           </div>
 
           {/* Membership Fees Sub-tab */}
@@ -2060,6 +2061,37 @@ const SyncPanel = () => {
               </div>
               <div style={{ background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: 12, fontSize: 12, color: 'var(--text2)' }}>
                 <strong>ℹ️ Manual sync:</strong> Click the button above to sync all members, or enter a MemberID to sync a specific member.
+              </div>
+            </div>
+          )}
+
+          {/* Backfill Unix Timestamps Sub-tab */}
+          {subTab2 === 'members-unix' && (
+            <div>
+              <h2 style={{ fontSize: 18, marginBottom: 16 }}>Backfill Unix Timestamp Columns</h2>
+              <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
+                Populate Unix timestamp columns (updated_at_unix, last_login_date_unix, etc.) from their
+                corresponding DATETIME columns. This backfill is required after adding triggers to MySQL.
+                Safe to run multiple times — only fills rows where Unix column is currently 0.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+                <button className="btn btn-primary" onClick={() => {
+                  if (window.confirm('⏱️ Backfill Unix timestamps in all tables?\n\nThis will update:\n• members (4 columns)\n• payments (1 column)\n• webapp_events (3 columns)\n\nSafe to run multiple times.')) {
+                    api('/api/backfill-unix-timestamps', { method: 'POST' })
+                      .then(r => {
+                        if (r.ok) {
+                          const { members, payments, webapp_events } = r.stats;
+                          setToast(`✅ ${r.message}\n\nMembers: ${members} | Payments: ${payments} | WebApp Events: ${webapp_events}`);
+                        } else {
+                          setToast(`❌ Error: ${r.error || 'Unknown error'}`);
+                        }
+                      })
+                      .catch(e => setToast(`❌ Error: ${e.message}`));
+                  }
+                }}>⏱️ Backfill Now</button>
+              </div>
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: 12, fontSize: 12, color: 'var(--text2)' }}>
+                <strong>ℹ️ Step 1 of 2:</strong> Click above to backfill existing data. Then deploy the MySQL triggers (migration 0017) to keep Unix timestamps in sync going forward.
               </div>
             </div>
           )}
