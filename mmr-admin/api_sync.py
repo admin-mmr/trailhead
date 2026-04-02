@@ -263,6 +263,157 @@ def api_sync_membership_fees():
         }, 500)
 
 
+@sync_bp.route('/api/sync/members-lastupdated', methods=['POST'])
+@login_required
+def api_sync_members_lastupdated():
+    """
+    Sync LastUpdated column in members table from member_log audit trail.
+    For each member, if the most recent LoggingTime in member_log is newer than
+    the current LastUpdated in members, updates LastUpdated to that LoggingTime.
+
+    Request JSON (optional):
+      {
+        "memberID": "M001"  // optional: sync only specific member
+      }
+
+    Response:
+      {
+        "ok": true,
+        "message": "Synced N member(s)",
+        "stats": {
+          "checked": N,
+          "updated": N,
+          "errors": N
+        }
+      }
+    """
+    logger.info("🔄 api_sync_members_lastupdated called")
+
+    try:
+        request_data = request.get_json() or {}
+        member_id_filter = request_data.get('memberID')
+
+        # Build query for most recent log entry per member
+        logs_sql = """
+            SELECT
+              ml.MemberID,
+              MAX(ml.LoggingTime) as LatestLogTime,
+              ROW_NUMBER() OVER (PARTITION BY ml.MemberID ORDER BY ml.LoggingTime DESC) as rn
+            FROM member_log ml
+            WHERE ml.MemberID IS NOT NULL
+              AND ml.LoggingTime IS NOT NULL
+        """
+        params = []
+
+        if member_id_filter:
+            logs_sql += " AND ml.MemberID = %s"
+            params.append(member_id_filter)
+
+        logs_sql += " GROUP BY ml.MemberID"
+
+        logger.debug(f"Executing query: {logs_sql}")
+        logs = query(logs_sql, params)
+        logger.info(f"Found {len(logs)} members with log entries")
+
+        if not logs:
+            return json_response({
+                'ok': True,
+                'message': 'No member log entries to sync',
+                'stats': {
+                    'checked': 0,
+                    'updated': 0,
+                    'errors': 0
+                }
+            })
+
+        # Get current members data to check if update is needed
+        member_ids = [m['MemberID'] for m in logs]
+        member_ids_str = ','.join(['%s'] * len(member_ids))
+        members_sql = f"""
+            SELECT MemberID, LastUpdated
+            FROM members
+            WHERE MemberID IN ({member_ids_str})
+        """
+        members = query(members_sql, member_ids)
+        members_dict = {m['MemberID']: m['LastUpdated'] for m in members}
+
+        # Update members table for log entries newer than current LastUpdated
+        checked = 0
+        updated = 0
+        errors = 0
+        conn = None
+
+        try:
+            conn = get_conn()
+            cursor = conn.cursor()
+
+            for log in logs:
+                member_id = log['MemberID']
+                current_lastupdated = members_dict.get(member_id)
+                new_lastupdated = log['LatestLogTime']
+
+                # Only update if: no current LastUpdated OR new LogTime is more recent
+                should_update = current_lastupdated is None or new_lastupdated > current_lastupdated
+
+                checked += 1
+
+                if should_update:
+                    update_sql = """
+                        UPDATE members
+                        SET LastUpdated = %s
+                        WHERE MemberID = %s
+                    """
+                    try:
+                        cursor.execute(update_sql, [new_lastupdated, member_id])
+                        updated += cursor.rowcount
+                        logger.debug(f"  ✓ Updated {member_id}: LastUpdated={new_lastupdated}")
+                    except mysql.connector.errors.Error as e:
+                        errors += 1
+                        logger.error(f"  ✗ Error updating {member_id}: {e}")
+                else:
+                    logger.debug(f"  ⊘ Skipped {member_id}: existing {current_lastupdated} >= {new_lastupdated}")
+
+            conn.commit()
+            logger.info(f"✅ LastUpdated sync complete: {updated}/{checked} updated, {errors} errors")
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            errors += len(logs) - updated
+            logger.error(f"❌ Database error during sync: {e}")
+            raise
+
+        finally:
+            if conn:
+                try:
+                    cursor.close()
+                except:
+                    pass
+                try:
+                    conn.close()
+                except:
+                    pass
+
+        return json_response({
+            'ok': True,
+            'message': f'Synced {updated} member(s)',
+            'stats': {
+                'checked': checked,
+                'updated': updated,
+                'errors': errors
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"❌ LastUpdated sync failed: {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
+        return json_response({
+            'ok': False,
+            'error': str(e),
+            'message': 'Sync failed'
+        }, 500)
+
+
 def _sync_worker(event_id: int, event_code: str, force_reload: bool):
     """
     Background worker: three-step sync.
