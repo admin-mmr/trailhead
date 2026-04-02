@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 09:34 ET — member card + partial search utilities (centralised)
+Changed: `api_members.py` — `get_member_card()` helper + `GET /api/members/<id>/card` endpoint; search now includes WeChatID, enforces ≥2-char minimum; `utils.js` — `searchMembers(q)` and `getMemberCard(memberID)` as single source of truth for all panels. Status: Done. Next: Wire tooltip card component in Members/Audit panels using `getMemberCard`; swap Members.js search calls to use `searchMembers`.
+
 ### 2026-04-02 09:25 ET — fix family member add crash
 Changed: Renamed `family_members`→`members` and `remaining_family_members`→`members` in `api_members.py` add/remove endpoints to match frontend shape. Status: Fixed. Next: Deploy backend.
 

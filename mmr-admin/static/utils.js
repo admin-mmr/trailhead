@@ -98,6 +98,46 @@
     return resp.json();
   }
 
+  // ── Member search ──────────────────────────────────────────────────────────
+  // Single source of truth for partial member search.
+  // Mirrors the backend rule: query must be ≥2 characters.
+  // Searches: FirstName, LastName, WeChatID, MemberID.
+  //
+  // Usage:
+  //   const members = await searchMembers('zh');   // partial match
+  //   const members = await searchMembers('A001');  // ID prefix
+  //
+  // Returns [] immediately when query is shorter than minChars.
+
+  const SEARCH_MIN_CHARS = 2;
+
+  async function searchMembers(q, minChars) {
+    var min = (minChars !== undefined) ? minChars : SEARCH_MIN_CHARS;
+    var term = (q || '').trim();
+    if (term.length < min) return [];
+    var data = await api('/api/members/search?q=' + encodeURIComponent(term));
+    return (data && data.data) ? data.data : [];
+  }
+
+  // ── Member card ────────────────────────────────────────────────────────────
+  // Fetch lightweight member data for tooltip / hover-card display.
+  // Fields: MemberID, FirstName, LastName, WeChatID, PhoneNumber, Email,
+  //         Type, FamilyID, District, Status, Expiration, MembershipFeePaid.
+  //
+  // Usage:
+  //   const card = await getMemberCard('A0042');
+  //   if (!card) { /* not found */ }
+
+  async function getMemberCard(memberID) {
+    if (!memberID) return null;
+    try {
+      var data = await api('/api/members/' + encodeURIComponent(memberID) + '/card');
+      return (data && data.data) ? data.data : null;
+    } catch (_) {
+      return null;   // caller decides how to handle missing member
+    }
+  }
+
   // ── Export ─────────────────────────────────────────────────────────────────
 
   window.mmrUtils = {
@@ -108,6 +148,10 @@
     Badge,
     extractMemberIds,
     api,
+    // member helpers — single source of truth, use these everywhere
+    searchMembers,
+    getMemberCard,
+    SEARCH_MIN_CHARS,
   };
 
 })();
