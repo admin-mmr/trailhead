@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
@@ -758,10 +758,31 @@ class SyncRowResult:
         return f'SyncRowResult({self.action}: {self.reason})'
 
 
-def _normalize_val(val: Any) -> Any:
-    """Normalize empty values for comparison: None, '', 0 all become None."""
+def _coerce_val(val: Any) -> Any:
+    """
+    Normalize a value for comparison, handling format mismatches:
+    - None, '', 0 all become None (empty equivalence)
+    - date/datetime objects → ISO string (e.g., '2027-03-31')
+    - int/float → string (e.g., 28535243003 → '28535243003')
+    - Sheets strings stay as strings for string-to-string matching
+
+    This allows MySQL datetime.date(2027, 3, 31) to match Sheets string '2027-03-31'.
+    """
+    # Empty equivalence: None, '', 0 all become None
     if val is None or val == '' or val == 0:
         return None
+
+    # Convert date/datetime to ISO format string
+    if isinstance(val, datetime):
+        return val.isoformat()
+    if isinstance(val, date):
+        return val.isoformat()
+
+    # Convert numeric types to string (handles int/float from MySQL vs string from Sheets)
+    if isinstance(val, (int, float)):
+        return str(val)
+
+    # Everything else: strings, lists, dicts, etc. pass through
     return val
 
 
@@ -786,14 +807,25 @@ def _diff_rows(
     sheets_row: Dict[str, Any],
     compare_cols: List[str],
 ) -> List[str]:
-    """Find which columns differ between MySQL and Sheets rows."""
+    """
+    Find which columns differ between MySQL and Sheets rows.
+
+    Handles format mismatches:
+    - datetime.date(2027, 3, 31) == '2027-03-31'
+    - datetime.datetime(...) == '2026-03-23T09:17:35.000Z'
+    - 28535243003 (int) == '28535243003' (string)
+    - None == '' == 0 (empty equivalence)
+    """
     diffs = []
     for col in compare_cols:
         mysql_val = mysql_row.get(col)
         sheets_val = sheets_row.get(col)
 
-        # Normalize: None == '' == 0 for comparison
-        if _normalize_val(mysql_val) != _normalize_val(sheets_val):
+        # Coerce both to comparable format
+        mysql_coerced = _coerce_val(mysql_val)
+        sheets_coerced = _coerce_val(sheets_val)
+
+        if mysql_coerced != sheets_coerced:
             diffs.append(col)
 
     return diffs
