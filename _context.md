@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-02 02:10 UTC — Debug membership filter bug and add sender/memo display to audit
+Changed: `api_audit.py` — Added extraction of Sender and Memo fields from gmail_transactions; included these fields in audit entry result dict for frontend display. `AuditPanel.js` — Added debug logging to identify membership_type filter mismatch (logs actual types in console); added useEffect hook to show filter status and filtered count. Status: Sender/Memo now populate in transaction details (shows "From: ..." and "Memo: ..." in rows). Filter logic verified as correct; debug logging deployed to identify root cause of "Both" showing only Family. Next: Run audit with debug console open to identify actual membership_type values from backend.
+
 ### 2026-04-02 01:35 UTC — Complete membership renewal audit feature with filters and unmatch capability
 Changed: `api_audit.py` — Added POST `/api/audit/unmatch` endpoint to reset gmail_transactions (ProcessedTime=NULL, PaymentID=NULL) for NOT TRACED items; allows admin to re-process failed traces. Enhanced JSON request parsing with 3-level fallback (get_json() → manual json.loads() → request.data). `AuditPanel.js` — Added membership type filter dropdown (Individual/Family/Both); unmatch button appears on NOT TRACED items with confirmation; redesigned UI with light theme (white background, dark text) for readability. Color palette: blacks, grays, greens (#007d2f), reds (#d73a49). Summary cards show white with borders instead of blue. Status: Feature complete and tested on live data. Next: Document audit workflow; consider audit history/log.
 
