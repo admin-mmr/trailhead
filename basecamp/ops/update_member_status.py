@@ -5,14 +5,15 @@ Daily Member Status Updater
 Recalculates Status for every member based on their current Expiration value.
 Does NOT modify Expiration — that is handled by the payment reconciliation process.
 
-Status logic:
-  • active     → Expiration >= NOW()
-  • pending    → Expiration < NOW() (or NULL)
-                 AND EXISTS a webapp_events row where
-                     MemberID = <this member>
-                     AND Status = 'pending'
-                     AND PaymentIntent LIKE '%Membership%'
-  • not active → Expiration < NOW() (or NULL) AND no pending membership event
+Status logic (V10):
+  • active     → Expiration >= TODAY()
+  • expired    → TODAY() > Expiration >= 2026-01-01 (can renew; send reminders)
+  • inactive   → LOCKED ONCE SET: Never changed by cron job (manual override)
+  • pending    → Expiration IS NULL AND has a pending Membership payment event
+
+⚠️ CRITICAL: If a member's status is 'inactive', the cron job will SKIP them entirely.
+            To change an inactive member, update MySQL manually.
+            This allows admins to mark members as "do not contact" without expiration date changes.
 
 Usage:
     python update_member_status.py            # live run
@@ -26,7 +27,7 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, date
 from urllib.parse import urlparse
 
 import mysql.connector
@@ -104,13 +105,23 @@ def has_pending_membership_event(conn, payment_events_table: str, member_id: str
 def update_statuses(conn, payment_events_table: str, dry_run: bool) -> dict:
     """
     Recalculate Status for every member based on Expiration and pending events.
-    Returns counts: {active, not_active, pending, skipped}.
+
+    Logic (V10):
+      • active   → Expiration >= TODAY()
+      • expired  → TODAY() > Expiration >= 2026-01-01 (can renew; send reminders)
+      • inactive → LOCKED: Once set to 'inactive', never changed by this job
+      • pending  → Expiration IS NULL AND has pending Membership event
+
+    CRITICAL: If Status = 'inactive', it is NOT recalculated. This is a manual override
+    that persists across cron runs. To change an inactive member back, update MySQL manually.
+
+    Returns counts: {active, expired, inactive, pending, skipped}.
     """
     pe_exists = check_table_exists(conn, payment_events_table)
     if not pe_exists:
         logger.warning(
             "Table '%s' not found — pending detection disabled. "
-            "Expired/NULL members will be set to 'not active' only.",
+            "NULL expiration members will be set to 'inactive' only.",
             payment_events_table,
         )
 
@@ -119,8 +130,10 @@ def update_statuses(conn, payment_events_table: str, dry_run: bool) -> dict:
     members = cursor.fetchall()
     cursor.close()
 
-    now = datetime.now()
-    counts = {"active": 0, "not_active": 0, "pending": 0, "skipped": 0}
+    today = date.today()
+    cutoff_inactive = date(2026, 1, 1)
+
+    counts = {"active": 0, "expired": 0, "inactive": 0, "pending": 0, "skipped": 0}
     updates = []  # (new_status, member_id, email, old_status)
 
     for m in members:
@@ -129,23 +142,40 @@ def update_statuses(conn, payment_events_table: str, dry_run: bool) -> dict:
         expiration = m["Expiration"]   # datetime or None
         old_status = m["Status"]
 
-        if expiration is not None and expiration >= now:
+        # RULE: If already inactive, skip (it's a manual override, don't change it)
+        if old_status == "inactive":
+            counts["inactive"] += 1
+            continue
+
+        # Convert expiration to date if it's a datetime
+        exp_date = expiration.date() if expiration else None
+
+        # Determine new status based on expiration
+        if exp_date is not None and exp_date >= today:
+            # Expiration is today or in future → active
             new_status = "active"
+        elif exp_date is not None and exp_date >= cutoff_inactive:
+            # Expiration is in past but >= 2026-01-01 → expired (may renew)
+            new_status = "expired"
+        elif exp_date is not None and exp_date < cutoff_inactive:
+            # Expiration is before 2026-01-01 → would be inactive, but respect existing active/expired
+            # If they were previously marked inactive manually, we already skipped them above
+            # Here we only auto-set to inactive if they were active/expired/pending
+            new_status = "inactive"
         else:
-            # Expired or no expiration — check for pending membership event
+            # Expiration is NULL — check for pending membership event
             if pe_exists and has_pending_membership_event(conn, payment_events_table, mid):
                 new_status = "pending"
-            elif expiration is None:
-                # No expiration and no pending event — can't determine, skip
-                counts["skipped"] += 1
-                continue
             else:
-                new_status = "not active"
+                # NULL expiration and no pending event → inactive
+                new_status = "inactive"
 
         if new_status == "active":
             counts["active"] += 1
-        elif new_status == "not active":
-            counts["not_active"] += 1
+        elif new_status == "expired":
+            counts["expired"] += 1
+        elif new_status == "inactive":
+            counts["inactive"] += 1
         else:
             counts["pending"] += 1
 
@@ -153,10 +183,12 @@ def update_statuses(conn, payment_events_table: str, dry_run: bool) -> dict:
             updates.append((new_status, mid, email, old_status))
 
     logger.info(
-        "Status breakdown: %d active, %d not active, %d pending, %d skipped (NULL expiration, no pending event)",
-        counts["active"], counts["not_active"], counts["pending"], counts["skipped"],
+        "Status breakdown: %d active, %d expired, %d inactive (locked), %d pending",
+        counts["active"], counts["expired"], counts["inactive"], counts["pending"],
     )
     logger.info("Status changes to apply: %d member(s)", len(updates))
+    if counts["inactive"] > 0:
+        logger.info("  ℹ️  %d member(s) already marked as 'inactive' — SKIPPED (locked status)", counts["inactive"])
 
     if dry_run:
         for (new_s, mid, email, old_s) in updates[:20]:
@@ -213,8 +245,8 @@ def main():
     try:
         counts = update_statuses(conn, args.payment_events_table, args.dry_run)
         logger.info(
-            "Done: %d active / %d not active / %d pending / %d skipped",
-            counts["active"], counts["not_active"], counts["pending"], counts["skipped"],
+            "Done: %d active / %d expired / %d inactive (locked) / %d pending",
+            counts["active"], counts["expired"], counts["inactive"], counts["pending"],
         )
         if not args.dry_run:
             print_summary(conn)

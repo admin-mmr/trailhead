@@ -4,10 +4,14 @@ name: 🔄 Daily Member Status Update
 # ensuring fresh data is always in MySQL before status is recalculated.
 # Does NOT touch Expiration — that is handled by the payment reconciliation process.
 #
-# Status logic:
-#   active     → Expiration >= NOW()
-#   pending    → Expiration < NOW() (or NULL) AND has a pending Membership payment event
-#   not active → Expiration < NOW() (or NULL) AND no pending Membership event
+# Status logic (V10):
+#   active     → Expiration >= TODAY()
+#   expired    → TODAY() > Expiration >= 2026-01-01 (can renew; send reminders)
+#   inactive   → LOCKED ONCE SET: Never changed by cron job (manual override)
+#   pending    → Expiration IS NULL AND has a pending Membership payment event
+#
+# CRITICAL: If status = 'inactive', the job skips that member entirely.
+#           This allows admins to mark members as "do not contact" permanently.
 
 on:
   # Disabled — depends on sync-all-sheets-ordered which is now disabled
