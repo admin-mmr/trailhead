@@ -147,8 +147,15 @@ def update_statuses(conn, payment_events_table: str, dry_run: bool) -> dict:
             counts["inactive"] += 1
             continue
 
-        # Convert expiration to date if it's a datetime
-        exp_date = expiration.date() if expiration else None
+        # Convert expiration to date (handle both datetime and date objects)
+        if expiration is None:
+            exp_date = None
+        elif isinstance(expiration, datetime):
+            # It's a datetime object, convert to date
+            exp_date = expiration.date()
+        else:
+            # It's already a date object
+            exp_date = expiration
 
         # Determine new status based on expiration
         if exp_date is not None and exp_date >= today:
