@@ -403,12 +403,12 @@ def api_member_quick_all():
     """
     Fetch all members for fuzzy search in Quick Approve popover.
     Includes all statuses (active, inactive, pending) since payments can renew expired memberships.
-    Returns: MemberID, FirstName, LastName, Expiration, District, Type, WeChatID
+    Returns: MemberID, FirstName, LastName, Email, Expiration, District, Type, WeChatID
     Used for real-time filtering as user types.
     """
     # Fetch ALL members (no status filter) — payments can renew inactive members
     rows = query(
-        "SELECT MemberID, FirstName, LastName, Expiration, District, Type, WeChatID "
+        "SELECT MemberID, FirstName, LastName, Email, Expiration, District, Type, WeChatID "
         "FROM members "
         "ORDER BY LastName, FirstName, MemberID"
     )
@@ -430,10 +430,10 @@ def api_member_quick_all():
 def api_member_quick(member_id):
     """
     Lightweight member data for the hover tooltip.
-    Returns name, expiration, type, gender, district only.
+    Returns name, email, expiration, type, gender, district.
     """
     rows = query(
-        "SELECT MemberID, FirstName, LastName, Expiration, Type, Gender, District "
+        "SELECT MemberID, FirstName, LastName, Email, Expiration, Type, Gender, District, WeChatID "
         "FROM members WHERE MemberID = %s",
         [member_id]
     )

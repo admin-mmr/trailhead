@@ -22,7 +22,15 @@
 const fmt = (v) => v == null ? '—' : String(v);
 const fmtDate = (v) => {
   if (!v) return '—';
-  try { return new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+  try {
+    // Handle YYYY-MM-DD string dates by parsing manually to avoid timezone issues
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+      const [year, month, day] = v.split('T')[0].split('-');
+      const date = new Date(year, month - 1, day); // month is 0-indexed
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    return new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
   catch { return String(v); }
 };
 const fmtMoney = (v) => v == null ? '—' : `$${Number(v).toFixed(2)}`;
@@ -113,7 +121,7 @@ const MemberTooltip = ({ memberId, anchorRect, data }) => {
       background: 'var(--surface)', border: '1px solid var(--accent)',
       borderRadius: 8, padding: '10px 14px', fontSize: 12,
       boxShadow: '0 6px 24px rgba(0,0,0,0.5)', pointerEvents: 'none',
-      minWidth: 200, maxWidth: 270,
+      minWidth: 250, maxWidth: 320,
     },
   },
     !data
@@ -124,12 +132,22 @@ const MemberTooltip = ({ memberId, anchorRect, data }) => {
           ),
           React.createElement('div', { style: { color: 'var(--text2)', fontSize: 11, marginBottom: 6 } }, memberId),
           React.createElement('div', {
-            style: { display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 10, rowGap: 3 },
+            style: { display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 10, rowGap: 3, fontSize: 11 },
           },
             React.createElement('span', { style: { color: 'var(--text2)' } }, 'Expires'),
             React.createElement('span', null, fmtDate(data.Expiration)),
             React.createElement('span', { style: { color: 'var(--text2)' } }, 'Type'),
             React.createElement('span', null, fmt(data.Type)),
+            data.Email
+              ? React.createElement(React.Fragment, null,
+                  React.createElement('span', { style: { color: 'var(--text2)' } }, 'Email'),
+                  React.createElement('span', { style: { wordBreak: 'break-all' } }, data.Email),
+                ) : null,
+            data.WeChatID
+              ? React.createElement(React.Fragment, null,
+                  React.createElement('span', { style: { color: 'var(--text2)' } }, 'WeChat'),
+                  React.createElement('span', null, data.WeChatID),
+                ) : null,
             data.Gender
               ? React.createElement(React.Fragment, null,
                   React.createElement('span', { style: { color: 'var(--text2)' } }, 'Gender'),
@@ -170,7 +188,7 @@ const MemberIdChip = ({ memberId, tooltipHandlers, onClick }) => {
 // Gmail Quick-Approve Popover
 // ---------------------------------------------------------------------------
 
-// Fuzzy search helper: match query against member fields
+// Fuzzy search helper: match query against member fields (including email)
 const fuzzyMatchMember = (query, member) => {
   if (!query) return true;
   const q = query.toLowerCase();
@@ -178,6 +196,7 @@ const fuzzyMatchMember = (query, member) => {
     (member.FirstName || ''),
     (member.LastName || ''),
     (member.MemberID || ''),
+    (member.Email || ''),
     (member.WeChatID || ''),
   ].join(' ').toLowerCase();
   // Simple fuzzy: each word must match somewhere
@@ -321,6 +340,7 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
           e('div', null,
             e('div', { style: { fontWeight: 500 } }, `${m.FirstName || ''} ${m.LastName || ''}`.trim()),
             e('div', { style: { color: 'var(--text2)', fontSize: 10 } }, `${m.MemberID}${m.District ? ' · ' + m.District : ''}`),
+            m.Email && e('div', { style: { color: 'var(--text2)', fontSize: 9, marginTop: 2, wordBreak: 'break-all' } }, m.Email),
           ),
           e('div', { style: { textAlign: 'right', color: 'var(--text2)' } },
             e('div', null, m.Type || '—'),
@@ -559,10 +579,35 @@ const MatchCtxBadge = ({ ctx, processedTime }) => {
 
 const GmailTable = ({ rows, candidates, focusedEvent, candidatesLoading, selectedMessageId, onSelect, onQuickApproved, onClearFocus, tooltipHandlers }) => {
   const [activePopover, setActivePopover] = useState(null);
+  const [colWidths, setColWidths] = useState({ sender: 120, memo: 200 });
+  const [resizing, setResizing] = useState(null);
+  const tableRef = useRef(null);
   const e = React.createElement;
 
   const isFilterMode = candidates !== null;
   const displayRows  = isFilterMode ? candidates : rows;
+
+  // Handle column resize
+  const handleResizeStart = (col, ev) => {
+    ev.preventDefault();
+    setResizing({ col, startX: ev.clientX, startWidth: colWidths[col] });
+  };
+
+  useEffect(() => {
+    if (!resizing) return;
+    const handleMouseMove = (ev) => {
+      const delta = ev.clientX - resizing.startX;
+      const newWidth = Math.max(80, resizing.startWidth + delta);
+      setColWidths(prev => ({ ...prev, [resizing.col]: newWidth }));
+    };
+    const handleMouseUp = () => setResizing(null);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizing]);
 
   if (candidatesLoading) {
     return e('div', { style: { padding: 24, textAlign: 'center', color: 'var(--text2)' } }, 'Loading candidates…');
@@ -574,14 +619,44 @@ const GmailTable = ({ rows, candidates, focusedEvent, candidatesLoading, selecte
     );
   }
 
-  return e('table', { className: 'data-table' },
+  return e('table', { className: 'data-table', ref: tableRef, style: { tableLayout: 'fixed' } },
     e('thead', null,
       e('tr', null,
         e('th', null, ''),
         isFilterMode && e('th', null, 'Match'),
-        e('th', null, 'Sender'),
+        e('th', {
+          style: { position: 'relative', width: colWidths.sender, userSelect: 'none' },
+          title: 'Drag right edge to resize'
+        },
+          e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            'Sender',
+            e('div', {
+              onMouseDown: (ev) => handleResizeStart('sender', ev),
+              style: {
+                cursor: 'col-resize', width: 4, height: 20, margin: '0 -2px',
+                background: resizing?.col === 'sender' ? 'var(--accent)' : 'transparent',
+                transition: 'background 0.2s',
+              }
+            })
+          )
+        ),
         e('th', null, 'Amount'),
-        e('th', null, 'Memo'),
+        e('th', {
+          style: { position: 'relative', width: colWidths.memo, userSelect: 'none' },
+          title: 'Drag right edge to resize'
+        },
+          e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            'Memo',
+            e('div', {
+              onMouseDown: (ev) => handleResizeStart('memo', ev),
+              style: {
+                cursor: 'col-resize', width: 4, height: 20, margin: '0 -2px',
+                background: resizing?.col === 'memo' ? 'var(--accent)' : 'transparent',
+                transition: 'background 0.2s',
+              }
+            })
+          )
+        ),
         e('th', null, 'Tx Date'),
         e('th', null, 'Tx #'),
         e('th', null, ''),
@@ -611,9 +686,9 @@ const GmailTable = ({ rows, candidates, focusedEvent, candidatesLoading, selecte
           isFilterMode && e('td', { style: { whiteSpace: 'nowrap' } },
             e(MatchCtxBadge, { ctx: g.MatchContext, processedTime: g.ProcessedTime })
           ),
-          e('td', { style: { fontSize: 12 } }, fmt(g.Sender)),
+          e('td', { style: { fontSize: 12, width: colWidths.sender, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, fmt(g.Sender)),
           e('td', null, fmtMoney(g.Amount)),
-          e('td', { style: { maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+          e('td', { style: { width: colWidths.memo, overflow: 'hidden', textOverflow: 'ellipsis' } },
             hasMemoId
               ? e('span', null,
                   e('span', {
