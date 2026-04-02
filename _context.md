@@ -5,6 +5,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-01 20:44 UTC — Fix member search endpoint conflict and security issue
+Changed: `api_runners.py` — Renamed `/api/members/search` → `/api/runners/search` for NYRR runner candidate matching (fuzzy search for manual runner-member matching); kept parameterized query approach. `api_members.py` — Fixed `/api/members/search` to use parameterized queries with LIKE matching instead of unsafe string formatting; prioritizes exact MemberID match first, then fuzzy name/email matching; returns up to 50 results sorted by relevance. Status: Route naming is now explicit (members vs runners search), SQL injection vulnerability eliminated, Members tab search ready to test. Next: Verify member search works in Members tab for family/district ops.
+
 ### 2026-04-02 04:25 UTC — Fix Audit Panel: amount-based type inference + lighter highlights
 Changed: `AuditPanel.js` — Added `inferMembershipType(entry)` helper to infer type from amount ($50→Family, $30→Individual) when membership_type is null. Updated filteredResults to use inferred type, display inferred type in member column. Changed expanded row highlight from #f8f8f8 to #f0f7ff (lighter blue). Status: All 9 untraced transactions now show with inferred type and pass through filters. Highlight color is now readable. Next: User test with current data.
 

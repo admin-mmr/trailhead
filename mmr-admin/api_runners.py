@@ -2,7 +2,7 @@
 Runner match/unmatch & member search routes for mmr-admin.
 
 Blueprint: runners_bp
-Routes: /api/members/search, /api/runners/<id>/match, /api/runner/<id>/history
+Routes: /api/runners/search, /api/runners/<id>/match, /api/runner/<id>/history
 """
 
 from __future__ import annotations
@@ -26,12 +26,12 @@ RUNNER_HISTORY_CACHE_TTL = 3600  # 1 hour
 
 
 # ---------------------------------------------------------------------------
-# Member search (for manual matching)
+# Runner search (for manual member matching)
 # ---------------------------------------------------------------------------
 
-@runners_bp.route('/api/members/search')
+@runners_bp.route('/api/runners/search')
 @login_required
-def api_members_search():
+def api_runners_search():
     """
     Fuzzy-search the members table by name for manual NYRR runner matching.
     Returns up to 20 candidates ordered by exact-name match first, then active.

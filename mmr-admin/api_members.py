@@ -69,38 +69,39 @@ def get_family_members(family_id: str) -> list[dict]:
 @handle_api_errors
 def api_members_search():
     """
-    Search members by name or MemberID.
+    Search members by name or MemberID (for Members tab: family, district).
     Query params: ?q=<search_term>
+    Returns up to 50 members matching name, email, or ID (case-insensitive).
     """
     q = request.args.get('q', '').strip()
     if not q:
         return json_response({'ok': True, 'data': []})
 
-    logger.info(f'Search query: raw="{q}"')
+    logger.info(f'Member search: query="{q}"')
 
-    # Use string formatting instead of parameterized query (mysql-connector-python LIKE issue)
-    # Safe because we're using query_builder.add_search or similar safe patterns
-    q_escaped = q.replace("'", "''")  # Escape single quotes for SQL
-    q_upper = q_escaped.upper()
+    # Use parameterized query with LIKE for fuzzy matching
+    like = f'%{q}%'
+    try:
+        members = query("""
+            SELECT MemberID, FirstName, LastName, Email, Type, FamilyID,
+                   District, Status, Expiration, MembershipFeePaid,
+                   PaymentDate, PaymentTransaction
+            FROM members
+            WHERE MemberID = %s
+               OR UPPER(FirstName) LIKE UPPER(%s)
+               OR UPPER(LastName) LIKE UPPER(%s)
+               OR UPPER(Email) LIKE UPPER(%s)
+            ORDER BY
+                (MemberID = %s) DESC,
+                LastName, FirstName
+            LIMIT 50
+        """, [q, like, like, like, q])
 
-    sql = f"""
-        SELECT MemberID, FirstName, LastName, Email, Type, FamilyID,
-               District, Status, Expiration, MembershipFeePaid,
-               PaymentDate, PaymentTransaction
-        FROM members
-        WHERE UPPER(MemberID) = '{q_upper}'
-           OR UPPER(FirstName) LIKE '%{q_upper}%'
-           OR UPPER(LastName) LIKE '%{q_upper}%'
-           OR UPPER(Email) LIKE '%{q_upper}%'
-        ORDER BY LastName, FirstName
-        LIMIT 50
-    """
-
-    logger.info(f'Search SQL: {sql}')
-    members = query(sql)
-
-    logger.info(f'Search results: {len(members)} members found for query "{q}"')
-    return json_response({'ok': True, 'data': members})
+        logger.info(f'Member search: {len(members)} results for "{q}"')
+        return json_response({'ok': True, 'data': members})
+    except Exception as e:
+        logger.error(f'Member search error: {str(e)}')
+        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
 
 
 # ─────────────────────────────────────────────────────────────────
