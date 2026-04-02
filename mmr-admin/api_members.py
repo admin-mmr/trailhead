@@ -72,24 +72,27 @@ def api_members_search():
     Search members by name or MemberID.
     Query params: ?q=<search_term>
     """
-    q = request.args.get('q', '').strip()
+    q = request.args.get('q', '').strip().upper()
     if not q:
         return json_response({'ok': True, 'data': []})
 
-    # Search by name or MemberID
-    search_pattern = f"%{q}%"
+    # Try exact match first, then LIKE
+    logger.info(f'Search query: q="{q}"')
+
     members = query("""
         SELECT MemberID, FirstName, LastName, Email, Type, FamilyID,
                District, Status, Expiration, MembershipFeePaid,
                PaymentDate, PaymentTransaction
         FROM members
-        WHERE MemberID LIKE %s
-           OR CONCAT(FirstName, ' ', LastName) LIKE %s
-           OR Email LIKE %s
+        WHERE UPPER(MemberID) = %s
+           OR UPPER(FirstName) LIKE %s
+           OR UPPER(LastName) LIKE %s
+           OR UPPER(Email) LIKE %s
         ORDER BY LastName, FirstName
         LIMIT 50
-    """, (search_pattern, search_pattern, search_pattern))
+    """, (q, f"%{q}%", f"%{q}%", f"%{q}%"))
 
+    logger.info(f'Search results: {len(members)} members found for query "{q}"')
     return json_response({'ok': True, 'data': members})
 
 
