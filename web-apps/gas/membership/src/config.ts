@@ -58,6 +58,11 @@ const MM_COL = {
   NOTES: 23,
   NYRR_RUNNER_NAME: 24,
   YEAR_BORN: 25,
+  // Unix timestamp columns (for timezone-invariant sync)
+  LAST_UPDATED_UNIX: 26,
+  LAST_LOGIN_DATE_UNIX: 27,
+  PROFILE_LAST_UPDATED_UNIX: 28,
+  CREATED_UNIX: 29,
 };
 
 // Membership-Master-Log column indices (0-based)
@@ -96,6 +101,10 @@ const WE_COL = {
   GDRIVE_FILE_PATH: 21,
   OCR_TEXT: 22,
   OCR_TIMESTAMP: 23,
+  // Unix timestamp columns (for timezone-invariant sync)
+  TIMESTAMP_UNIX: 24,
+  EXPIRES_AT_UNIX: 25,
+  APPROVAL_DATE_UNIX: 26,
 };
 
 // Payment-History column indices (0-based)
@@ -117,6 +126,8 @@ const PH_COL = {
   PROCESSED_DATE: 14,
   SOURCE: 15,
   NOTES: 16,
+  // Unix timestamp columns (for timezone-invariant sync)
+  PROCESSED_DATE_UNIX: 17,
 };
 
 // Auth-OTP column indices (0-based)

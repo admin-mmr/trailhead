@@ -641,6 +641,7 @@ function expireInactiveMemberships(): void {
 
       sheet.getRange(i + 1, MM_COL.STATUS + 1).setValue('inactive');
       sheet.getRange(i + 1, MM_COL.LAST_UPDATED + 1).setValue(now);
+      sheet.getRange(i + 1, MM_COL.LAST_UPDATED_UNIX + 1).setValue(toUnixTimestamp(now));
       expiredCount++;
 
       try {
@@ -732,6 +733,7 @@ function normalizeExpirationDateFormats(): { checked: number; fixed: number; ski
     console.log(`[mmr][normalizeExpirationDateFormats] ${memberID} row ${i + 1}: "${expirationRaw}" → "${isoDate}"`);
     sheet.getRange(i + 1, MM_COL.EXPIRATION + 1).setValue(isoDate);
     sheet.getRange(i + 1, MM_COL.LAST_UPDATED + 1).setValue(now);
+    sheet.getRange(i + 1, MM_COL.LAST_UPDATED_UNIX + 1).setValue(toUnixTimestamp(now));
 
     auditLog('EXPIRATION_FORMAT_NORMALIZED', {
       memberID,

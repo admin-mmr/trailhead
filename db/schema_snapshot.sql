@@ -98,7 +98,7 @@ CREATE TABLE `members` (
   `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
   `Status` enum('active','not active','pending') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
   `Created` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `Expiration` datetime DEFAULT NULL,
+  `Expiration` date DEFAULT NULL,
   `Email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `FirstName` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `LastName` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -112,7 +112,7 @@ CREATE TABLE `members` (
   `Info` text COLLATE utf8mb4_unicode_ci,
   `LastUpdated` datetime DEFAULT NULL,
   `MembershipFeePaid` decimal(10,2) DEFAULT NULL,
-  `PaymentDate` datetime DEFAULT NULL,
+  `PaymentDate` date DEFAULT NULL,
   `PaymentTransaction` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `JoinYear` smallint DEFAULT NULL,
   `PhoneNumber` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -130,6 +130,10 @@ CREATE TABLE `members` (
   `facebook_sub` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Facebook user ID (sub) for Sign in with Facebook',
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `updated_at_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp (seconds since epoch) for timezone-invariant sync comparison',
+  `last_login_date_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp for last login',
+  `profile_last_updated_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp for profile update',
+  `created_at_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp for member creation',
   PRIMARY KEY (`MemberID`),
   UNIQUE KEY `uq_members_email` (`Email`),
   UNIQUE KEY `google_sub` (`google_sub`),
@@ -140,7 +144,8 @@ CREATE TABLE `members` (
   KEY `idx_status` (`Status`),
   KEY `idx_expiration` (`Expiration`),
   KEY `idx_family` (`FamilyID`),
-  KEY `idx_joinyear` (`JoinYear`)
+  KEY `idx_joinyear` (`JoinYear`),
+  KEY `idx_members_updated_at_unix` (`updated_at_unix`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `nyrr_event_runners` (
@@ -246,7 +251,7 @@ CREATE TABLE `payments` (
   `PaymentID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `EventID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `PaymentDate` datetime DEFAULT NULL,
+  `PaymentDate` date DEFAULT NULL,
   `Amount` decimal(10,2) NOT NULL,
   `PaymentIntent` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Payment intent ID (from webapp_events)',
   `MembershipType` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -262,12 +267,14 @@ CREATE TABLE `payments` (
   `Source` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `Notes` text COLLATE utf8mb4_unicode_ci,
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `processed_date_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp (seconds since epoch) for timezone-invariant sync',
   PRIMARY KEY (`PaymentID`),
   KEY `idx_payments_memberid` (`MemberID`),
   KEY `idx_payments_eventid` (`EventID`),
   KEY `idx_payments_paymentdate` (`PaymentDate`),
   KEY `idx_payments_periodend` (`PeriodEnd`),
   KEY `idx_payments_transactionref` (`TransactionReference`),
+  KEY `idx_payment_history_processed_date_unix` (`processed_date_unix`),
   CONSTRAINT `fk_payments_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -291,6 +298,22 @@ CREATE TABLE `sync_changes` (
   KEY `idx_snapshot` (`snapshot_id`),
   KEY `idx_sheet` (`sheet_name`)
 ) ENGINE=InnoDB AUTO_INCREMENT=26714 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `sync_jobs` (
+  `JobID` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Operation` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Status` enum('queued','running','done','error') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'queued',
+  `Message` text COLLATE utf8mb4_unicode_ci,
+  `Progress` int DEFAULT '0',
+  `Result` longtext COLLATE utf8mb4_unicode_ci,
+  `StartedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `UpdatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `CompletedAt` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`JobID`),
+  KEY `Status` (`Status`),
+  KEY `StartedAt` (`StartedAt`),
+  KEY `UpdatedAt` (`UpdatedAt`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `sync_metadata` (
   `sheet_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -360,19 +383,23 @@ CREATE TABLE `webapp_events` (
   `AdminApprover` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ApprovalDate` datetime DEFAULT NULL,
   `Notes` text COLLATE utf8mb4_unicode_ci,
-  `PaymentDate` datetime DEFAULT NULL,
+  `PaymentDate` date DEFAULT NULL,
   `ScreenshotFileId` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `GDriveFilePath` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `OCRText` text COLLATE utf8mb4_unicode_ci,
   `OCRTimestamp` datetime DEFAULT NULL,
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `timestamp_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp (seconds since epoch) for timezone-invariant sync',
+  `expires_at_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp for expiration',
+  `approval_date_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp for approval',
   PRIMARY KEY (`EventID`),
   KEY `idx_pe_memberid` (`MemberID`),
   KEY `idx_pe_email` (`Email`),
   KEY `idx_pe_status` (`Status`),
   KEY `idx_pe_timestamp` (`Timestamp`),
   KEY `idx_pe_matchedmessageid` (`MatchedMessageId`),
+  KEY `idx_webapp_events_timestamp_unix` (`timestamp_unix`),
   CONSTRAINT `fk_pe_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

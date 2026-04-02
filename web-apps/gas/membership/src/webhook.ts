@@ -548,6 +548,7 @@ function rowToMemberObject(row: any[]): any {
     MemberID: row[MM_COL.MEMBER_ID],
     Status: row[MM_COL.STATUS],
     Created: toISO8601(row[MM_COL.CREATED]) || '',
+    CreatedUnix: toUnixTimestamp(row[MM_COL.CREATED]),
     Expiration: toISODateString(row[MM_COL.EXPIRATION]) || '',
     Email: row[MM_COL.EMAIL],
     FirstName: row[MM_COL.FIRST_NAME],
@@ -561,13 +562,16 @@ function rowToMemberObject(row: any[]): any {
     PaymentCheck: row[MM_COL.PAYMENT_CHECK],
     Info: row[MM_COL.INFO],
     LastUpdated: toISO8601(row[MM_COL.LAST_UPDATED]) || '',
+    LastUpdatedUnix: toUnixTimestamp(row[MM_COL.LAST_UPDATED]),
     MembershipFeePaid: row[MM_COL.MEMBERSHIP_FEE_PAID],
     PaymentDate: toISODateString(row[MM_COL.PAYMENT_DATE]) || '',
     PaymentTransaction: row[MM_COL.PAYMENT_TRANSACTION],
     JoinYear: row[MM_COL.JOIN_YEAR],
     PhoneNumber: row[MM_COL.PHONE_NUMBER],
     LastLoginDate: toISO8601(row[MM_COL.LAST_LOGIN_DATE]) || '',
+    LastLoginDateUnix: toUnixTimestamp(row[MM_COL.LAST_LOGIN_DATE]),
     ProfileLastUpdated: toISO8601(row[MM_COL.PROFILE_LAST_UPDATED]) || '',
+    ProfileLastUpdatedUnix: toUnixTimestamp(row[MM_COL.PROFILE_LAST_UPDATED]),
     Notes: row[MM_COL.NOTES],
     NYRRRunnerName: row[MM_COL.NYRR_RUNNER_NAME],
     YearBorn: row[MM_COL.YEAR_BORN],
@@ -602,6 +606,10 @@ function memberObjectToRow(obj: any): any[] {
     obj.Notes || obj.notes || '',
     obj.NYRRRunnerName || obj.nyrRRunnerName || '',
     obj.YearBorn || obj.yearBorn || '',
+    obj.LastUpdatedUnix || obj.lastUpdatedUnix || 0,
+    obj.LastLoginDateUnix || obj.lastLoginDateUnix || 0,
+    obj.ProfileLastUpdatedUnix || obj.profileLastUpdatedUnix || 0,
+    obj.CreatedUnix || obj.createdUnix || 0,
   ];
 }
 
@@ -610,7 +618,9 @@ function rowToEventObject(row: any[]): any {
     EventID: row[WE_COL.EVENT_ID],
     EventType: row[WE_COL.EVENT_TYPE],
     Timestamp: toISO8601(row[WE_COL.TIMESTAMP]) || '',
+    TimestampUnix: toUnixTimestamp(row[WE_COL.TIMESTAMP]),
     ExpiresAt: toISO8601(row[WE_COL.EXPIRES_AT]) || '',
+    ExpiresAtUnix: toUnixTimestamp(row[WE_COL.EXPIRES_AT]),
     MemberID: row[WE_COL.MEMBER_ID],
     Email: row[WE_COL.EMAIL],
     PaymentIntent: row[WE_COL.PAYMENT_INTENT],
@@ -625,13 +635,14 @@ function rowToEventObject(row: any[]): any {
     MatchedTransactionNumber: row[WE_COL.MATCHED_TRANSACTION_NUMBER],
     AdminApprover: row[WE_COL.ADMIN_APPROVER],
     ApprovalDate: toISO8601(row[WE_COL.APPROVAL_DATE]) || '',
+    ApprovalDateUnix: toUnixTimestamp(row[WE_COL.APPROVAL_DATE]),
     Notes: row[WE_COL.NOTES],
     PaymentDate: toISODateString(row[WE_COL.PAYMENT_DATE]) || '',
     ScreenshotFileId: row[WE_COL.SCREENSHOT_FILE_ID],
     GdriveFilePath: row[WE_COL.GDRIVE_FILE_PATH],
     OcrText: row[WE_COL.OCR_TEXT],
     OcrTimestamp: row[WE_COL.OCR_TIMESTAMP],
-    UpdatedAt: row[WE_COL.TIMESTAMP], // Use TIMESTAMP as proxy for versioning
+    UpdatedAtUnix: toUnixTimestamp(row[WE_COL.TIMESTAMP]), // Use TIMESTAMP for versioning
   };
 }
 
@@ -661,6 +672,9 @@ function eventObjectToRow(obj: any): any[] {
     obj.GdriveFilePath || obj.gdriveFilePath || '',
     obj.OcrText || obj.ocrText || '',
     obj.OcrTimestamp || obj.ocrTimestamp || '',
+    obj.TimestampUnix || obj.timestampUnix || 0,
+    obj.ExpiresAtUnix || obj.expiresAtUnix || 0,
+    obj.ApprovalDateUnix || obj.approvalDateUnix || 0,
   ];
 }
 
@@ -681,6 +695,7 @@ function rowToPaymentObject(row: any[]): any {
     PeriodEnd: row[PH_COL.PERIOD_END],
     ProcessedBy: row[PH_COL.PROCESSED_BY],
     ProcessedDate: row[PH_COL.PROCESSED_DATE],
+    ProcessedDateUnix: toUnixTimestamp(row[PH_COL.PROCESSED_DATE]),
     Source: row[PH_COL.SOURCE],
     Notes: row[PH_COL.NOTES],
   };
@@ -705,6 +720,7 @@ function paymentObjectToRow(obj: any): any[] {
     obj.ProcessedDate || obj.processedDate || '',
     obj.Source || obj.source || '',
     obj.Notes || obj.notes || '',
+    obj.ProcessedDateUnix || obj.processedDateUnix || 0,
   ];
 }
 

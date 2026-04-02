@@ -17,6 +17,10 @@
 //                       that would corrupt dates for users in negative UTC offsets (e.g. NYC).
 //                       Safe to pass a Date object, a "Tue Mar 31 2026 ..." string, or
 //                       an already-formatted "YYYY-MM-DD" string.
+//
+//   toUnixTimestamp()  → integer seconds since epoch (1743667323)
+//                       TIMEZONE-INVARIANT. Use for sync comparisons where timezone doesn't matter.
+//                       Store in MySQL for bulletproof timestamp comparison.
 
 /**
  * Parse any incoming datetime/timestamp and return ISO 8601 UTC string.
@@ -79,6 +83,30 @@ function toISODateString(value: any): string {
   const mo = String(d.getMonth() + 1).padStart(2, '0');
   const dy = String(d.getDate()).padStart(2, '0');
   return `${y}-${mo}-${dy}`;
+}
+
+/**
+ * Convert any datetime representation to Unix timestamp (seconds since epoch).
+ * Timezone-invariant: always returns the same number regardless of local timezone.
+ * Perfect for sync comparisons and database storage.
+ * Returns 0 if invalid (to distinguish from null).
+ */
+function toUnixTimestamp(value: any): number {
+  if (!value) return 0;
+  let d: Date;
+  if (value instanceof Date) {
+    d = value;
+  } else if (typeof value === 'number') {
+    // Already a timestamp (or ms)? Assume seconds if < 10^11, ms if >= 10^11
+    if (value > 10000000000) {
+      return Math.floor(value / 1000); // Convert ms to seconds
+    }
+    return value > 0 ? value : 0;
+  } else {
+    d = new Date(String(value).trim());
+  }
+  if (isNaN(d.getTime())) return 0;
+  return Math.floor(d.getTime() / 1000);
 }
 
 /**
@@ -270,7 +298,24 @@ function getMembersByFamilyID(familyID: string): Member[] {
 // ── PROTECTED: Direct row update (internal only, must be called via updateMemberWithLog) ──
 function updateMemberRow(rowIndex: number, updates: Record<string, any>): void {
   const sheet = getSheet(SHEET_NAMES.MEMBERSHIP_MASTER);
-  for (const [colKey, value] of Object.entries(updates)) {
+
+  // Auto-compute Unix timestamps for datetime fields
+  // Whenever a human-readable timestamp is set, also set its Unix counterpart
+  const updatesWithUnix = { ...updates };
+  if (updates['LAST_UPDATED']) {
+    updatesWithUnix['LAST_UPDATED_UNIX'] = toUnixTimestamp(updates['LAST_UPDATED']);
+  }
+  if (updates['LAST_LOGIN_DATE']) {
+    updatesWithUnix['LAST_LOGIN_DATE_UNIX'] = toUnixTimestamp(updates['LAST_LOGIN_DATE']);
+  }
+  if (updates['PROFILE_LAST_UPDATED']) {
+    updatesWithUnix['PROFILE_LAST_UPDATED_UNIX'] = toUnixTimestamp(updates['PROFILE_LAST_UPDATED']);
+  }
+  if (updates['CREATED']) {
+    updatesWithUnix['CREATED_UNIX'] = toUnixTimestamp(updates['CREATED']);
+  }
+
+  for (const [colKey, value] of Object.entries(updatesWithUnix)) {
     const colIndex = (MM_COL as Record<string, number>)[colKey];
     if (colIndex !== undefined) {
       sheet.getRange(rowIndex, colIndex + 1).setValue(value);
