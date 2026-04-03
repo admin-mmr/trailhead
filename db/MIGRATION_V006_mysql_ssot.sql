@@ -56,27 +56,42 @@ CREATE TABLE IF NOT EXISTS `admin_member_overrides` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- STEP 3: ADD TransactionNumber COLUMN to payments (if not exists)
+-- STEP 3: ADD MISSING COLUMNS TO payments TABLE (keep existing columns)
 -- ============================================================================
 
-SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'payments' AND COLUMN_NAME = 'TransactionNumber');
-
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'payments' AND COLUMN_NAME = 'SubmissionID');
 SET @sql = IF(@col_exists = 0,
-  'ALTER TABLE `payments` ADD COLUMN `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-  'SELECT "Column TransactionNumber already exists"'
+  'ALTER TABLE `payments` ADD COLUMN `SubmissionID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT "Optional: Link to the user submission that started this"',
+  'SELECT "SubmissionID already exists"'
 );
-
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
-SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = 'payments' AND INDEX_NAME = 'idx_pay_tx');
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'payments' AND COLUMN_NAME = 'PaymentType');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE `payments` ADD COLUMN `PaymentType` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT "Set at creation (e.g., Membership, Donation)"',
+  'SELECT "PaymentType already exists"'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'payments' AND COLUMN_NAME = 'TransactionNumber');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE `payments` ADD COLUMN `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT "Linked to gmail_transactions.TransactionNumber"',
+  'SELECT "TransactionNumber already exists"'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add index on TransactionNumber
+SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = 'payments' AND INDEX_NAME = 'idx_pay_tx');
 SET @sql_idx = IF(@idx_exists = 0,
   'CREATE INDEX `idx_pay_tx` ON `payments`(`TransactionNumber`)',
   'SELECT "Index idx_pay_tx already exists"'
 );
-
 PREPARE stmt_idx FROM @sql_idx;
 EXECUTE stmt_idx;
 DEALLOCATE PREPARE stmt_idx;
