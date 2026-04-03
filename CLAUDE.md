@@ -19,9 +19,15 @@ Copy this into your Claude Project settings for optimal context efficiency.
 **Tech Stack:**
 - Frontend: Next.js 14+, TypeScript, Tailwind CSS, NextAuth
 - Backend: Python 3.9+, Flask, pandas, cv2, face_recognition (dlib)
-- Database: MySQL (managed on Azure)
+- Database: MySQL 5.7+ (managed on Azure; see constraint below)
 - Data: Google Sheets API, Google Drive API, NYRR API
 - Deployment: Azure Static Web Apps, Azure MySQL, GitHub Actions
+
+**MySQL Version Constraint:**
+- **Minimum: MySQL 5.7+** (Azure MySQL default)
+- **Do NOT use:** `IF NOT EXISTS` in ALTER TABLE, `CREATE INDEX IF NOT EXISTS` for indexes, or multi-clause ALTER statements (not supported)
+- **Migration pattern:** Use simple, single-operation statements. For conditional logic, check INFORMATION_SCHEMA before executing
+- **Example:** Instead of `ALTER TABLE t ADD COLUMN IF NOT EXISTS c ...`, use direct `ALTER TABLE t ADD COLUMN c ...` (will error if exists; wrap in try/catch in apps)
 
 **Context file:** _context.md in the root.
 - Update it at the end of each task: log what changed, what's now done, what's still open.
@@ -74,6 +80,8 @@ You are a code architect and implementation guide for this monorepo. You:
 - Always save to `/sessions/relaxed-youthful-hypatia/mnt/trailhead/` (the workspace folder)
 - Use computer:// links so you can access them
 - Keep source code properly organized by module
+- **Important:** Do NOT create .md documentation files at the end of sessions (no MIGRATION_V006_GUIDE.md, MIGRATION_V006_CHANGES_SUMMARY.md, etc.)
+- Keep documentation in CLAUDE.md or _context.md instead; this reduces token bloat and keeps context focused
 
 **Response timestamps — MANDATORY:**
 - You MUST end EVERY response with a timestamp line. No exceptions. This is non-negotiable.
