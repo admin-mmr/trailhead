@@ -1,0 +1,93 @@
+name: Run Database Migrations
+
+# Trigger on:
+# 1. Pushes to main that modify db/* migration files
+# 2. Manual trigger from Actions UI
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'db/MIGRATION_V*.sql'
+  workflow_dispatch:
+    inputs:
+      migration_version:
+        description: 'Migration version to run (optional; if empty, runs all pending)'
+        required: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    name: Execute Database Migrations
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup MySQL CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+
+      - name: List pending migrations
+        run: |
+          echo "📋 Checking db/ directory for migration files..."
+          ls -lah db/MIGRATION_V*.sql 2>/dev/null || echo "No migration files found"
+
+      - name: Run migrations against MySQL
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          # Build connection string
+          MYSQL_CONN="-h ${MYSQL_HOST} -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE}"
+
+          echo "🔗 Connecting to MySQL: ${MYSQL_HOST}/${MYSQL_DATABASE}"
+
+          # Run migrations in version order
+          for migration_file in db/MIGRATION_V*.sql; do
+            if [ -f "$migration_file" ]; then
+              echo ""
+              echo "🚀 Applying: $(basename $migration_file)"
+              echo "---"
+
+              # Run migration and capture output
+              if mysql ${MYSQL_CONN} < "$migration_file" 2>&1 | tee /tmp/migration_output.txt; then
+                echo "✅ Success: $(basename $migration_file)"
+              else
+                echo "❌ Failed: $(basename $migration_file)"
+                cat /tmp/migration_output.txt
+                exit 1
+              fi
+            fi
+          done
+
+          echo ""
+          echo "✨ All migrations completed successfully"
+
+      - name: Verify schema_migrations table
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          MYSQL_CONN="-h ${MYSQL_HOST} -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE}"
+          echo ""
+          echo "📊 Executed migrations:"
+          mysql ${MYSQL_CONN} -e "SELECT version, description, executed_at FROM schema_migrations ORDER BY executed_at DESC LIMIT 10;"
+
+      - name: Post success notification (optional)
+        if: success()
+        run: |
+          echo "✅ Migration job completed successfully"
+          echo "Database: ${MYSQL_DATABASE}"
+          echo "Check logs above for details"
+
+      - name: Post failure notification (optional)
+        if: failure()
+        run: |
+          echo "❌ Migration job failed"
+          echo "Review error messages above and check migration files"
+          exit 1

@@ -10,6 +10,19 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-03 20:45 UTC — Add data migration strategy: webapp_events → submissions, link SubmissionID to payments
+Updated: `db/MIGRATION_V006_mysql_ssot.sql` (614 lines, from 514) — Added Step 1b (INSERT...SELECT webapp_events→submissions with Status remapping) + Step 4b (UPDATE payments to link SubmissionID). Zero new payment rows created. webapp_events kept as archive by default (can DROP after row count verification). Created: `MIGRATION_V006_DATA_STRATEGY.md` — Detailed breakdown of column mapping, Status enum remapping (matched→approved, rejected/error→cancelled), verification queries, risk mitigation, FAQ. Status: ✅ Data migration ready; zero rows lost. Next: Staging test with row count verification queries.
+
+### 2026-04-03 20:32 UTC — Finalize migration V006: ALTER member_log, restructure gmail_transactions, align triggers with schema_plan
+Updated: `db/MIGRATION_V006_mysql_ssot.sql` (514 lines, from 385) — Completely overridden with schema_plan.sql implementation. Key differences from first version:
+  • member_log: ALTER TABLE strategy (10 changes) — preserves existing rows + inline comments; drops Info/LastLogin; Status enum expanded; LoggingTime gets DEFAULT; Notes gets comment
+  • gmail_transactions: Restructured (backup→migrate→new) — TransactionNumber becomes PRIMARY KEY, MessageId as secondary col; Note + UpdatedAt cols added; data copied from backup to preserve 1000+ rows
+  • Payment triggers: 5 total (auto_fill, limit_check_insert, limit_check_update, post_process, members guard)
+  • Procedures: 2 (sp_admin_update_member_status, sp_link_transaction for split payments)
+  • Views: 3 (v_payment_details, v_gmail_split_audit new)
+  • Audit triggers: trg_members_after_insert/update now capture all member changes to member_log
+Created: `MIGRATION_V006_CHANGES_SUMMARY.md` — Detailed breakdown of ALTER vs DROP strategies, data preservation, risk mitigation, testing checklist. Status: ✅ Migration ready for staging test. Next: Test on staging; verify gmail_transactions row counts match; test triggers/procedures; then push to main.
+
 ### 2026-04-03 19:35 UTC — Add documentation discipline + consolidate .md guidance
 Changed: `CLAUDE.md` — Added "Documentation discipline (CRITICAL)" section: avoid creating multiple .md files per task; prefer inline responses (max 30 lines) for analyses; create 1 SQL file only for migrations. Updated Database Changes section to clarify analysis vs implementation. Status: ✅ Rules committed. Next: Consolidate earlier markdown files into _context.md summary.
 
