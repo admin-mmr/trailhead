@@ -85,18 +85,20 @@ DEALLOCATE PREPARE stmt_idx;
 -- STEP 4: RESTRUCTURE gmail_transactions TABLE
 -- ============================================================================
 
--- Only rename if table exists (if not, skip restructure)
--- For idempotency, check before renaming
+-- Only rename if table exists and backup doesn't
 SET @table_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'gmail_transactions' AND TABLE_SCHEMA = DATABASE());
+SET @backup_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'gmail_transactions_backup' AND TABLE_SCHEMA = DATABASE());
 
-SET @sql = IF(@table_exists > 0,
+SET @sql = IF(@table_exists > 0 AND @backup_exists = 0,
   'RENAME TABLE `gmail_transactions` TO `gmail_transactions_backup`',
-  'SELECT "gmail_transactions does not exist, skipping rename"'
+  'SELECT "Skipping RENAME (table already processed or backup exists)"'
 );
 
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+DROP TABLE IF EXISTS `gmail_transactions_backup`;
 
 CREATE TABLE IF NOT EXISTS `gmail_transactions` (
   `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -113,10 +115,17 @@ CREATE TABLE IF NOT EXISTS `gmail_transactions` (
   PRIMARY KEY (`TransactionNumber`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO `gmail_transactions` (TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate, PaymentMethod, MessageId, OriginalMemo, Notes, UpdatedAt)
-SELECT TransactionNumber, TimeStamp, Sender, Amount, Memo, TransactionDate, COALESCE(PaymentMethod, NULL), MessageId, OriginalMemo, COALESCE(Notes, NULL), NOW() FROM `gmail_transactions_backup`;
+-- Only migrate if backup exists (first-time run)
+SET @backup_exists_for_migrate = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'gmail_transactions_backup' AND TABLE_SCHEMA = DATABASE());
 
-DROP TABLE `gmail_transactions_backup`;
+SET @sql_migrate = IF(@backup_exists_for_migrate > 0,
+  'INSERT IGNORE INTO `gmail_transactions` (TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate, PaymentMethod, MessageId, OriginalMemo, Notes, UpdatedAt) SELECT TransactionNumber, TimeStamp, Sender, Amount, Memo, TransactionDate, COALESCE(PaymentMethod, NULL), MessageId, OriginalMemo, COALESCE(Notes, NULL), NOW() FROM `gmail_transactions_backup`',
+  'SELECT "Backup table does not exist, skipping migrate"'
+);
+
+PREPARE stmt_migrate FROM @sql_migrate;
+EXECUTE stmt_migrate;
+DEALLOCATE PREPARE stmt_migrate;
 
 -- ============================================================================
 -- STEP 5: RECORD MIGRATION
