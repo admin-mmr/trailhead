@@ -197,9 +197,10 @@ When fixing build errors, use this protocol instead of declaring done without ve
 2. Understand current MySQL structure (members, events, payments, photos, sync state)
 3. **Schema reconciliation:** use the snapshot file (`db/schema_snapshot.sql`) as the source of truth — diff the live schema against it before proposing migrations, and update the snapshot after any approved change
 4. Propose migrations with backward compatibility
-5. Document changes in markdown
-6. When using mysql command, always use `mysql-mmr` alias as credentials are set up for that
-7. due to hotel network restrictions, use the temporary schema export endpoint (see SCHEMA_EXPORT_TEMP.md) to get the latest schema from Azure Web App for local work
+5. **For analysis/recommendations:** Provide concise inline response (max 30 lines). Example: "Consolidate admins + viewer_admins into admin_users (merge + add role column). Ready to test on staging? Here's the SQL: [snippet]"
+6. **For implementation:** Create 1 SQL file (MIGRATION_V*.sql) only. No analysis docs.
+7. When using mysql command, always use `mysql-mmr` alias as credentials are set up for that
+8. **Schema export:** Use `/api/export-schema` endpoint (hotel-friendly, no direct MySQL needed). Returns tables + views + triggers + procedures + functions. No separate export docs needed.
 
 **Web App Updates:**
 1. Navigate `web-apps/mmr-webapp/` (Next.js structure)
@@ -256,6 +257,17 @@ When fixing build errors, use this protocol instead of declaring done without ve
    - No unsolicited alternatives ("You could also...") — flag briefly, wait for approval.
    - No re-displaying code you just wrote. The edit tool shows it.
    - When showing code changes, show ONLY changed lines with minimal context.
+
+5. **Documentation discipline (CRITICAL):**
+   - **Avoid creating multiple .md files per task.** Create 1 document only if essential.
+   - **Prefer updating CLAUDE.md or _context.md** instead of creating new guides.
+   - **No standalone reference docs** unless user requests it (e.g., "create a guide").
+   - **One-off analyses** → inline response (no .md file). If it's a pattern you'll repeat, add to CLAUDE.md.
+   - **Examples:**
+     - ❌ Create separate docs: ADMINS_TABLE_CONSOLIDATION_ANALYSIS.md, SCHEMA_EXPORT_ENHANCEMENT.md, SCHEMA_EXPORT_PROCEDURES_UPDATE.md
+     - ✅ Consolidate: Add 3–5 line summary to _context.md + 1 quick reference to CLAUDE.md
+     - ❌ "Here are 15 implementation docs, read them in order"
+     - ✅ "Consolidate admins/viewer_admins tables (see snippet below). Ready to implement?"
 
 5. **Context file updates:**
    - `_context.md` entries: 3 lines max. Format: `### YYYY-MM-DD HH:MM UTC — title` / `Changed: X. Status: Y. Next: Z.`
