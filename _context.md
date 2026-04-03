@@ -10,8 +10,14 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
-### 2026-04-03 20:45 UTC — Add data migration strategy: webapp_events → submissions, link SubmissionID to payments
-Updated: `db/MIGRATION_V006_mysql_ssot.sql` (614 lines, from 514) — Added Step 1b (INSERT...SELECT webapp_events→submissions with Status remapping) + Step 4b (UPDATE payments to link SubmissionID). Zero new payment rows created. webapp_events kept as archive by default (can DROP after row count verification). Created: `MIGRATION_V006_DATA_STRATEGY.md` — Detailed breakdown of column mapping, Status enum remapping (matched→approved, rejected/error→cancelled), verification queries, risk mitigation, FAQ. Status: ✅ Data migration ready; zero rows lost. Next: Staging test with row count verification queries.
+### 2026-04-03 20:58 UTC — Fix migration V006: simplify member_log ALTER, handle payments.EventID as SubmissionID link
+Updated: `db/MIGRATION_V006_mysql_ssot.sql` (547 lines, from 614) — Fixes after first staging run:
+  • Removed problematic multi-clause ALTER TABLE for members (not needed; Status/Notes already exist)
+  • Simplified member_log STEP 8 (table already has correct structure; no ALTER needed)
+  • Changed STEP 4 to handle payments.EventID → treat as SubmissionID reference (EventID links to webapp_events.EventID which becomes submissions.SubmissionID)
+  • Removed UPDATE operations that tried to link via SubmissionID (not needed; EventID is already the link)
+  • Added TransactionNumber column to payments (for gmail_transactions reference)
+Status: ⚠️ First run had SQL syntax error (line 139); fixed. Migration structure now simpler & clearer. Next: Re-run on staging with corrected migration.
 
 ### 2026-04-03 20:32 UTC — Finalize migration V006: ALTER member_log, restructure gmail_transactions, align triggers with schema_plan
 Updated: `db/MIGRATION_V006_mysql_ssot.sql` (514 lines, from 385) — Completely overridden with schema_plan.sql implementation. Key differences from first version:

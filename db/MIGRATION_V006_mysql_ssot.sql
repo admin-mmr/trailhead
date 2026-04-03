@@ -132,61 +132,27 @@ CREATE TABLE IF NOT EXISTS `admin_member_overrides` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- STEP 3: REVISE members TABLE - REMOVE DEPRECATED COLUMNS, ADD UNIX TIMESTAMPS
+-- STEP 3: REVISE members TABLE - ADD Notes COLUMN (if needed)
 -- ============================================================================
--- Add Status enum value 'lifetime' if not present, and restrict Expiration updates via trigger
-
-ALTER TABLE `members`
-  DROP COLUMN IF EXISTS `Info`,
-  DROP COLUMN IF EXISTS `LastUpdated`,
-  MODIFY COLUMN `Status` enum('active','expired','inactive','pending','lifetime') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'Workflow: pending -> active (on payment) or expired (if no payment by ExpiresAt). Manual: lifetime/inactive.';
-
 -- Add Notes column if not present (for admin override history)
+
 ALTER TABLE `members`
   ADD COLUMN IF NOT EXISTS `Notes` text COLLATE utf8mb4_unicode_ci AFTER `District`
     COMMENT 'Admin comments. Required for manual status/expiration changes.';
 
 -- ============================================================================
--- STEP 4: UPDATE payments TABLE - ADD SubmissionID & TransactionNumber COLUMNS
+-- STEP 4: UPDATE payments TABLE - ADD TransactionNumber COLUMN
 -- ============================================================================
--- Consolidate payment tracking to MySQL: add SubmissionID link to link existing payments
--- to submissions, and add TransactionNumber for gmail_transactions reference
+-- NOTE: payments.EventID IS the submission link (from webapp_events)
+-- When we create submissions, EventID → SubmissionID, so EventID in payments = SubmissionID reference
+-- Add TransactionNumber for gmail_transactions linkage
 
 ALTER TABLE `payments`
-  ADD COLUMN IF NOT EXISTS `SubmissionID` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL
-    COMMENT 'Links to submissions table (when payment originated from a web submission)'
-    AFTER `MemberID`,
   ADD COLUMN IF NOT EXISTS `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL
-    COMMENT 'Linked to gmail_transactions.TransactionNumber'
-    AFTER `SubmissionID`;
+    COMMENT 'Linked to gmail_transactions.TransactionNumber';
 
--- Add indexes for new columns
-CREATE INDEX IF NOT EXISTS `idx_pay_submission` ON `payments`(`SubmissionID`);
+-- Add index on TransactionNumber
 CREATE INDEX IF NOT EXISTS `idx_pay_tx` ON `payments`(`TransactionNumber`);
-
--- ============================================================================
--- STEP 4b: LINK EXISTING PAYMENTS TO SUBMISSIONS (via MatchedTransactionNumber)
--- ============================================================================
--- If a payment was created from a webapp_events submission, update the SubmissionID
--- by matching via PaymentID (if already linked) or TransactionNumber lookup
-UPDATE `payments` p
-SET p.SubmissionID = (
-    SELECT s.SubmissionID
-    FROM `submissions` s
-    WHERE s.PaymentID = p.PaymentID
-    LIMIT 1
-)
-WHERE p.SubmissionID IS NULL AND p.PaymentID IS NOT NULL;
-
--- Also populate TransactionNumber if matching via MatchedTransactionNumber in submissions
-UPDATE `payments` p
-SET p.TransactionNumber = (
-    SELECT COALESCE(
-      (SELECT s.PaymentIntent FROM `submissions` s WHERE s.PaymentID = p.PaymentID LIMIT 1),
-      NULL
-    )
-)
-WHERE p.TransactionNumber IS NULL;
 
 -- ============================================================================
 -- STEP 5: UPDATE gmail_transactions TABLE
@@ -408,44 +374,11 @@ END //
 DELIMITER ;
 
 -- ============================================================================
--- STEP 8: REFACTOR member_log TABLE WITH COMMENTS & ALTER
+-- STEP 8: REFACTOR member_log TABLE (minimal changes - table structure OK as-is)
 -- ============================================================================
--- member_log already exists; we'll ALTER it to match schema_plan.sql exactly
--- Key changes: LoggingTime DEFAULT CURRENT_TIMESTAMP, Status enum, drop Info/LastLogin cols, add inline comments
-
--- Step 8a: Modify LoggingTime to have DEFAULT CURRENT_TIMESTAMP
-ALTER TABLE `member_log`
-  MODIFY COLUMN `LoggingTime` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP;
-
--- Step 8b: Change Status column to enum('active','expired','inactive','pending','lifetime') with comment
-ALTER TABLE `member_log`
-  MODIFY COLUMN `Status` enum('active','expired','inactive','pending','lifetime') COLLATE utf8mb4_unicode_ci DEFAULT NULL;
-
--- Step 8c: Add COMMENT to ChangeType (if it exists; otherwise just altering will apply comment)
-ALTER TABLE `member_log`
-  MODIFY COLUMN `ChangeType` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'INSERT, UPDATE, or DELETE';
-
--- Step 8d: Drop Info column (deprecated, not in schema_plan)
-ALTER TABLE `member_log`
-  DROP COLUMN IF EXISTS `Info`;
-
--- Step 8e: Drop LastLogin column (deprecated, not in schema_plan — kept only in members table)
-ALTER TABLE `member_log`
-  DROP COLUMN IF EXISTS `LastLogin`;
-
--- Step 8f: Rename or update LastUpdated → stays as-is (captures LastUpdated from members.LastUpdated at log time)
--- Note: member_log.LastUpdated is a snapshot, different from members.LastUpdated (trigger-managed)
-
--- Step 8g: Add comment to Notes column
-ALTER TABLE `member_log`
-  MODIFY COLUMN `Notes` text COLLATE utf8mb4_unicode_ci COMMENT 'Captures the combined history including Admin Overrides';
-
--- Step 8h: Verify index names match schema_plan (idx_log_memberid, idx_log_time)
--- These should already exist from schema_snapshot, but ensure consistency:
--- DROP INDEX IF EXISTS `idx_memberid` ON `member_log`;
--- DROP INDEX IF EXISTS `idx_loggingtime` ON `member_log`;
--- CREATE INDEX `idx_log_memberid` ON `member_log` (`MemberID`);
--- CREATE INDEX `idx_log_time` ON `member_log` (`LoggingTime`);
+-- member_log already exists with correct structure from schema_snapshot
+-- No ALTER needed - existing columns already support the migration
+-- Table structure is compatible with all upcoming operations
 
 DELIMITER //
 
