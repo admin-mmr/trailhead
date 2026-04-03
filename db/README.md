@@ -43,6 +43,10 @@ After migrations, regenerate the canonical schema file:
 ```bash
 mysqldump --login-path=mmr --no-data mmrdb > db/schema_snapshot.sql
 ```
+or 
+```bash
+curl https://mmr-nyrr-viewer-e9gugyf4gqc4gmgv.swedencentral-01.azurewebsites.net/api/export-schema > db/schema_snapshot.sql
+```
 Commit this file to track schema history.
 
 ### Drift detection
