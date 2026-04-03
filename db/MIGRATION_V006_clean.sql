@@ -118,9 +118,7 @@ CREATE TABLE IF NOT EXISTS `admin_member_overrides` (
 -- STEP 3: ADD TransactionNumber COLUMN to payments
 -- ============================================================================
 
-ALTER TABLE `payments`
-  ADD COLUMN IF NOT EXISTS `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL
-    COMMENT 'Linked to gmail_transactions.TransactionNumber';
+ALTER TABLE `payments` ADD COLUMN IF NOT EXISTS `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Linked to gmail_transactions.TransactionNumber';
 
 CREATE INDEX IF NOT EXISTS `idx_pay_tx` ON `payments`(`TransactionNumber`);
 
