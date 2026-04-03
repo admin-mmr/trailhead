@@ -115,10 +115,22 @@ CREATE TABLE IF NOT EXISTS `admin_member_overrides` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- STEP 3: ADD TransactionNumber COLUMN to payments
+-- STEP 3: ADD TransactionNumber COLUMN to payments (if not already present)
 -- ============================================================================
 
-ALTER TABLE `payments` ADD COLUMN IF NOT EXISTS `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Linked to gmail_transactions.TransactionNumber';
+SET @col_check = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_NAME = 'payments' AND COLUMN_NAME = 'TransactionNumber'
+);
+
+SET @sql = IF(@col_check = 0,
+  'ALTER TABLE `payments` ADD COLUMN `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT "Linked to gmail_transactions.TransactionNumber"',
+  'SELECT "Column TransactionNumber already exists in payments"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 CREATE INDEX IF NOT EXISTS `idx_pay_tx` ON `payments`(`TransactionNumber`);
 
