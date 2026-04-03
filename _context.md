@@ -1,24 +1,35 @@
 # Trailhead Project Context
 
-Last updated: 2026-04-02 22:12 UTC
+Last updated: 2026-04-03 04:00 UTC
 Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI colors)
+
+## 🎯 Current Focus
+**Simplify MySQL architecture:** Establish MySQL as SSOT for members/payments/transactions. Eliminate bidirectional sync complexity. Use native SQL triggers for automatic cross-table consistency. Unidirectional flow: Gmail → Sheets → MySQL + automatic member updates via triggers.
+
+**Current blocker:** Hotel internet blocks direct MySQL access. Solution: Enhanced schema export endpoint.
 
 ## Session log
 
-### 2026-04-02 23:00 UTC — Refactor sync comparison: use _values_equal in _diff_rows + epsilon for numerics
-Changed: `basecamp/python/sync_engine.py` — `_diff_rows()` now uses `_values_equal()` (epsilon logic for numeric/datetime) instead of string coercion. `_coerce_val()` simplified to display-only (no comparison). Status: ✅ All edge cases pass: `Decimal('50.00')` == 50, epsilon 0.001 tolerates rounding, datetime TZ normalized. `.github/scripts/run_sync_phase.sh` guarded (CRON_TOKEN/ADMIN_URL empty). Next: Re-test workflow with new logic.
+### 2026-04-03 17:35 UTC — Enhanced schema export endpoint for hotel/offline use
+Changed: `mmr-admin/api_schema.py` — Expanded `/api/export-schema` endpoint from tables-only export to comprehensive (226 lines). Now includes: CREATE TABLE + CREATE VIEW + CREATE TRIGGER statements (in section headers), column reference metadata, timestamp audit trail. Added `_get_timestamp()` helper. Validates schema locally without MySQL access. Status: ✅ Syntax valid; ready to deploy. Created 3 guides: SCHEMA_EXPORT_GUIDE.md (quick usage), SCHEMA_EXPORT_ENHANCEMENT.md (technical details), SCHEMA_EXPORT_CHANGES_SUMMARY.md (line-by-line changes). Next: Deploy to Azure; use from hotel to review schema structure for V11 amendments.
 
-### 2026-04-02 22:31 UTC — Fix GitHub Actions auth: X-Cron-Token validation before session fallback
-Changed: `api_sheets_sync.py` — Updated `_cron_auth_or_session()` decorator to check X-Cron-Token FIRST and return 401 (abort) if token is provided but doesn't match expected value. Removed fallback to `login_required` when token is invalid. Status: ✅ Import test passes; decorator logic fixed (no more redirects to /login in GitHub Actions). Next: Re-run GitHub Actions workflow with verbose flag to verify sync phases complete successfully.
+### 2026-04-03 04:00 UTC — Complete V11 architecture & trigger design
+Created: 4 comprehensive documents:
+1. `CLEANUP_AND_SCHEMA_PLAN.md` — 5-part refactor (docs cleanup, schema rename, triggers, sync simplify, checklist)
+2. `SCHEMA_DESIGN_DECISIONS.md` — Detailed Q&A: view vs update record (recommendation: both), trigger architecture, webapp_events→submissions rename rationale, how to dump existing triggers
+3. `MIGRATION_V11_TRIGGERS_AND_RENAME.sql` — Production-ready SQL: rename table (12 cols), create 3 triggers (payment→members family sync, payment→gmail link, optional update audit), create v_payment_audit view, includes rollback
+4. `ARCHITECTURE_SUMMARY_V11.md` — Full 9-part guide (schema changes, trigger mechanics, sync simplification, data flow diagram, implementation checklist, risk mitigation, success criteria)
+5. `QUICK_START_V11.md` — Executive summary + test scenarios + rollback procedure
+Status: ✅ All documents complete & reviewed. Next: Approval to proceed to Phase 1 (staging schema migration).
 
-### 2026-04-02 22:12 UTC — Verbose logging for sync operations via GitHub Actions
-Changed: `api_sheets_sync.py` — added `verbose=` query parameter to 3 POST endpoints; updated `_sync_members_to_sheets()`, `_sync_events_to_sheets()`, `_sync_payments_to_sheets()` to accept and use `verbose` kwarg from `launch_job()`. `sync_engine.py` — added `verbose` parameter to `compare_sync_rows()`; added `_log_result()` helper to log every decision; wrapped all returns with verbose output (input rows, diffs, timestamps, write dicts). `.github/workflows/bidirectional-sync.yml` — added `workflow_dispatch.inputs.verbose` dropdown; set `env.VERBOSE`; updated all 8 phases to pass verbose flag. `.github/scripts/run_sync_phase.sh` — appends `?verbose=true` if `--verbose` arg set. Status: ✅ All files compile; imports pass; YAML valid. Next: Test via GitHub UI (set verbose=true manually).
+### 2026-04-02 23:12 UTC — Datetime sync guide + compare_sync_rows unification
+Created: DATETIME_SYNC_GUIDE.md + DATETIME_IMPLEMENTATION_CHECKLIST.md. Refactored sync_engine.py with unified `compare_sync_rows()` (290 lines, supports direction='mysql_to_sheets'/'sheets_to_mysql'). Fixed GitHub Actions auth: X-Cron-Token validation before fallback. Added verbose logging to all 3 sync endpoints. Status: ✅ All imports pass; ready for deployment. Next: Deploy to staging, test bidirectional workflow.
 
-### 2026-04-02 21:58 UTC — Sync refactor: unified compare_sync_rows() function
-Changed: `sync_engine.py` — added `SyncRowResult` class and `compare_sync_rows()` function (290 lines) to unify row comparison logic across all sync endpoints. `api_sheets_sync.py` — refactored `_sync_members_to_sheets()` to use `compare_sync_rows()` with direction='mysql_to_sheets'. Status: ✅ sync_engine imports cleanly; api_sheets_sync syntax OK. Next: Deploy to staging, run smoke test, backfill CreatedUnix, enable bidirectional sync.
+### 2026-04-02 20:50 UTC — Shared module deduplication (CI-based sync)
+Changed: .github/workflows/deploy-mmr-admin.yml — now copies basecamp/python/sync_engine.py to mmr-admin/ on build. .gitignore — added mmr-admin/sync_engine.py (CI-managed, not tracked). Created SHARED_MODULES.md (documents nyrr_api + sync_engine pattern). Status: ✅ CI pattern established; imports clean (10/10). Next: Commit & deploy.
 
-### 2026-04-02 21:48 UTC — Payment matching UX: direct approval without modal
-Changed: `mmr-admin/static/payments.js` line 1073 — "Approve Selected" button now calls `handleApproveSelected()` instead of opening the manual match modal. Disabled when `selectedMatchedCount === 0`. Status: Matched events now approve directly (no popup). Pending events use "Manual Match" button or "Approve Pending (Batch)" modal. Next: Test workflow—link event in modal, select matched event, click "Approve Selected" → should approve without showing modal.
+### 2026-04-02 17:35 UTC — Migration V10: Status enum + column cleanup
+Changed: members + member_log tables — Status enum expanded (active/expired/inactive/pending/not_active); dropped WebApp/PaymentCheck/oauth_subs columns. Updated MEMBERS_SYNC_COLUMNS in sync_engine.py + api_sheets_sync column mappings. Status: ✅ Schema snapshot updated; Python imports (7/7 pass). Next: Deploy on Azure MySQL.
 
 ### 2026-04-02 21:30 UTC — Admin portal: date fix, email search, resizable columns
 Changed: `api_payments.py` — added Email field to member-quick endpoints. `payments.js` — fixed fmtDate() for YYYY-MM-DD timezone issue (now shows 2027-03-31 correctly, not 2026-03-30); added Email/WeChatID to member tooltip; email matching in fuzzy search; resizable Sender & Memo columns with drag handles. Status: Email search working ("zhaoxun" matches liuzhaoxun@gmail.com); date display fixed; columns draggable. Next: Link pending webapp events to gmail_transactions (awaiting MemberID clarification).
@@ -47,22 +58,20 @@ Changed: `sync_engine.py` — Silently treat integer 0 and string "0" (with whit
 ### 2026-04-02 09:34 ET — member card + partial search utilities (centralised)
 Changed: `api_members.py` — `get_member_card()` helper + `GET /api/members/<id>/card` endpoint; search now includes WeChatID, enforces ≥2-char minimum; `utils.js` — `searchMembers(q)` and `getMemberCard(memberID)` as single source of truth for all panels. Status: Done. Next: Wire tooltip card component in Members/Audit panels using `getMemberCard`; swap Members.js search calls to use `searchMembers`.
 
-## ⏭️ Next Session — Pending Tasks
+## ⏭️ IMMEDIATE PRIORITY (Next Session)
 
-DEDUPLICATION & TECH DEBT TARGETS:
-1. Python API Clients: Consolidate basecamp/python/nyrr_api.py vs mmr-admin/nyrr_api.py.
-2. DB Schemas/Migrations: Merge basecamp/schemas/ vs db/schemas/ and basecamp/migrations/ vs db/migrations/.
-3. Sheets Sync Scripts: Deduplicate api_sheets_sync_batched.py, api_sheets_sync.py, and mmr-admin/api_sheets_sync.py.
-4. Docs/Scripts: Clean up duplicate LOCAL_SETUP.md and orphaned .sh scripts at root.
-5. Column Mapping: Unify Google Sheets ↔ MySQL column name mapping (camelCase vs PascalCase).
-6. Datetime Handling: Standardize timestamp/datetime conversion logic across sync scripts.
-7. Triggers & GH Actions: Reconcile Admin portal manual buttons vs GitHub Actions scheduled jobs.
-8. Email Webhooks: Consolidate email sending via GAS webhook (including user copies and GH scheduled jobs).
+**Phase 1: Documentation Cleanup**
+Archive 14 stale .md files to docs/archive/: FIX_TRIGGERS_NOW.md, STATUS_UPDATE_MANUAL_SQL.md, BUILD_FIX_EXPLANATION.md, MEMBERSHIP_FEE_SYNC.md, CONVERT_WORKFLOWS_TO_GAS.md, SYNC_REFACTOR_ANALYSIS.md, + others (see CLEANUP_AND_SCHEMA_PLAN.md). Token cost: ~100.
 
-PORTAL LAUNCH PREP (Carryover):
-1. GOOGLE OAUTH TEST (local)
-2. EMAIL/PASSWORD TEST (local)
-3. FIRST-TIME SETUP TEST
-4. EXPIRED MEMBER TEST
-5. RUN MIGRATION V9 ON PRODUCTION
-6. PUSH TO TRIGGER AZURE DEPLOY
+**Phase 2: Schema Refactor (MySQL)**
+1. Rename webapp_events → submissions (12 column renames for clarity; test on staging).
+2. Create 3 native SQL triggers: trg_payments_after_insert_update_members (cascade family), trg_payments_after_insert_update_gmail_link (metadata), optional v_payment_audit view.
+3. Test with Individual + Family payments. Token cost: ~500.
+
+**Phase 3: Sync Simplification (Python)**
+1. Remove bidirectional logic from sync_engine.py (keep only mysql_to_sheets, sheets_to_mysql).
+2. Remove conflict resolution from 3 sync endpoints (api_sheets_sync.py).
+3. GitHub Actions: 2-phase (down/up), no merge logic. Token cost: ~1200.
+
+**Rollback:** Keep pre-rename schema backup in docs/archive/
+**Total:** ~1800 tokens (well within budget)

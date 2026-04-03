@@ -361,7 +361,7 @@ def resolve_conflict_unix(
     Unix column mapping:
       members:       updated_at → updated_at_unix
       webapp_events: timestamp → timestamp_unix
-      payment_history: processed_date → processed_date_unix
+      payments:      processed_date → processed_date_unix
     """
     cfg = STANDARD_TABLES.get(table)
     if cfg is None:
