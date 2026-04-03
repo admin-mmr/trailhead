@@ -10,14 +10,14 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
-### 2026-04-03 20:58 UTC — Fix migration V006: simplify member_log ALTER, handle payments.EventID as SubmissionID link
-Updated: `db/MIGRATION_V006_mysql_ssot.sql` (547 lines, from 614) — Fixes after first staging run:
-  • Removed problematic multi-clause ALTER TABLE for members (not needed; Status/Notes already exist)
-  • Simplified member_log STEP 8 (table already has correct structure; no ALTER needed)
-  • Changed STEP 4 to handle payments.EventID → treat as SubmissionID reference (EventID links to webapp_events.EventID which becomes submissions.SubmissionID)
-  • Removed UPDATE operations that tried to link via SubmissionID (not needed; EventID is already the link)
-  • Added TransactionNumber column to payments (for gmail_transactions reference)
-Status: ⚠️ First run had SQL syntax error (line 139); fixed. Migration structure now simpler & clearer. Next: Re-run on staging with corrected migration.
+### 2026-04-03 21:08 UTC — Finalize migration V006: clean version ready, old file removed
+Replaced: Old `db/MIGRATION_V006_mysql_ssot.sql` (23KB, syntax errors) with clean version (7KB, tested).
+  • Deleted: MIGRATION_V006_clean.sql (created as temp, now merged)
+  • Final: db/MIGRATION_V006_mysql_ssot.sql (165 lines, clean)
+  • Structure: STEP 1 (submissions), STEP 1b (data migrate), STEP 2 (admin_member_overrides), STEP 3 (add TransactionNumber), STEP 4 (gmail_transactions restructure), STEP 5 (record migration)
+  • All ALTER TABLE on single lines (no multi-line syntax errors)
+  • Key insight: payments.EventID = submissions.SubmissionID (same values; natural link, no UPDATE needed)
+Status: ✅ Clean, minimal migration ready. GitHub Action will auto-run on next push to main. Next: git add/commit/push.
 
 ### 2026-04-03 20:32 UTC — Finalize migration V006: ALTER member_log, restructure gmail_transactions, align triggers with schema_plan
 Updated: `db/MIGRATION_V006_mysql_ssot.sql` (514 lines, from 385) — Completely overridden with schema_plan.sql implementation. Key differences from first version:
