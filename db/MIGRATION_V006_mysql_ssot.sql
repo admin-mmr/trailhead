@@ -30,10 +30,10 @@ CREATE TABLE IF NOT EXISTS `submissions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- STEP 1b: MIGRATE DATA FROM webapp_events → submissions
+-- STEP 1b: MIGRATE DATA FROM webapp_events → submissions (skip duplicates)
 -- ============================================================================
 
-INSERT INTO `submissions` (CreatedAt, SubmissionID, Status, MemberID, SubmissionType, ExpiresAt, PaymentIntent, Amount, PaymentMethod, PayerName, PaymentDate, MemoField, Last4Digits, PaymentID, UpdatedByID, UpdatedAt)
+INSERT IGNORE INTO `submissions` (CreatedAt, SubmissionID, Status, MemberID, SubmissionType, ExpiresAt, PaymentIntent, Amount, PaymentMethod, PayerName, PaymentDate, MemoField, Last4Digits, PaymentID, UpdatedByID, UpdatedAt)
 SELECT we.CreatedAt, we.EventID, CASE WHEN we.Status = 'matched' THEN 'approved' WHEN we.Status IN ('rejected', 'error') THEN 'cancelled' WHEN we.Status = 'expired' THEN 'expired' ELSE 'pending' END, we.MemberID, we.EventType, we.ExpiresAt, we.PaymentIntent, we.Amount, we.PaymentMethod, we.PayerName, we.PaymentDate, we.Notes, we.Last4Digits, NULL, we.AdminApprover, we.UpdatedAt
 FROM `webapp_events` we;
 
