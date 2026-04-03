@@ -113,8 +113,8 @@ CREATE TABLE IF NOT EXISTS `gmail_transactions` (
   PRIMARY KEY (`TransactionNumber`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `gmail_transactions` (TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate, PaymentMethod, MessageId, OriginalMemo, Notes, UpdatedAt)
-SELECT TransactionNumber, TimeStamp, Sender, Amount, Memo, TransactionDate, PaymentMethod, MessageId, OriginalMemo, Notes, SyncedAt FROM `gmail_transactions_backup`;
+INSERT IGNORE INTO `gmail_transactions` (TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate, PaymentMethod, MessageId, OriginalMemo, Notes, UpdatedAt)
+SELECT TransactionNumber, TimeStamp, Sender, Amount, Memo, TransactionDate, COALESCE(PaymentMethod, NULL), MessageId, OriginalMemo, COALESCE(Notes, NULL), NOW() FROM `gmail_transactions_backup`;
 
 DROP TABLE `gmail_transactions_backup`;
 
