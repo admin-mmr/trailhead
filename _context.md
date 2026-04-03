@@ -10,6 +10,9 @@ Last commit: 3480bee (feat: add unmatch button, membership filter, improved UI c
 
 ## Session log
 
+### 2026-04-03 19:35 UTC — Add documentation discipline + consolidate .md guidance
+Changed: `CLAUDE.md` — Added "Documentation discipline (CRITICAL)" section: avoid creating multiple .md files per task; prefer inline responses (max 30 lines) for analyses; create 1 SQL file only for migrations. Updated Database Changes section to clarify analysis vs implementation. Status: ✅ Rules committed. Next: Consolidate earlier markdown files into _context.md summary.
+
 ### 2026-04-03 17:35 UTC — Enhanced schema export endpoint for hotel/offline use
 Changed: `mmr-admin/api_schema.py` — Expanded `/api/export-schema` endpoint from tables-only export to comprehensive (226 lines). Now includes: CREATE TABLE + CREATE VIEW + CREATE TRIGGER statements (in section headers), column reference metadata, timestamp audit trail. Added `_get_timestamp()` helper. Validates schema locally without MySQL access. Status: ✅ Syntax valid; ready to deploy. Created 3 guides: SCHEMA_EXPORT_GUIDE.md (quick usage), SCHEMA_EXPORT_ENHANCEMENT.md (technical details), SCHEMA_EXPORT_CHANGES_SUMMARY.md (line-by-line changes). Next: Deploy to Azure; use from hotel to review schema structure for V11 amendments.
 
