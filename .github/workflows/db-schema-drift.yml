@@ -1,4 +1,4 @@
-name: 🗄️ DB Schema Drift Check
+name: MySQL - 🗄️ DB Schema Drift Check
 
 on:
   schedule:

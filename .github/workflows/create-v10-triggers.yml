@@ -1,4 +1,4 @@
-name: Create V10 Audit Triggers
+name: MySQL - Create V10 Audit Triggers
 
 on:
   workflow_dispatch:

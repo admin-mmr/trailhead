@@ -1,8 +1,9 @@
 name: Full Bidirectional Sync
 
 on:
-  schedule:
-    - cron: '0 2,8,14,20 * * *'   # 02:00 / 08:00 / 14:00 / 20:00 UTC
+  # disabled 
+  # schedule:
+  #  - cron: '0 2,8,14,20 * * *'   # 02:00 / 08:00 / 14:00 / 20:00 UTC
   workflow_dispatch:               # Manual trigger from GitHub UI
     inputs:
       verbose:
