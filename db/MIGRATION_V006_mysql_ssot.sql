@@ -8,7 +8,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- STEP 1: CREATE submissions TABLE (from webapp_events)
 -- ============================================================================
 
-CREATE TABLE `submissions` (
+CREATE TABLE IF NOT EXISTS `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
   `SubmissionID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'auto gen unique identifier',
   `Status` enum('pending','approved','cancelled','expired') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'Logic: once submitted=pending; matched payment=approved; past ExpiresAt=expired; user action=cancelled',
@@ -41,7 +41,7 @@ FROM `webapp_events` we;
 -- STEP 2: CREATE admin_member_overrides TABLE
 -- ============================================================================
 
-CREATE TABLE `admin_member_overrides` (
+CREATE TABLE IF NOT EXISTS `admin_member_overrides` (
   `OverrideID` int NOT NULL AUTO_INCREMENT,
   `AdminEmail` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Admin who performed the manual change',
   `TargetMemberID` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -66,9 +66,20 @@ CREATE INDEX `idx_pay_tx` ON `payments`(`TransactionNumber`);
 -- STEP 4: RESTRUCTURE gmail_transactions TABLE
 -- ============================================================================
 
-RENAME TABLE `gmail_transactions` TO `gmail_transactions_backup`;
+-- Only rename if table exists (if not, skip restructure)
+-- For idempotency, check before renaming
+SET @table_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'gmail_transactions' AND TABLE_SCHEMA = DATABASE());
 
-CREATE TABLE `gmail_transactions` (
+SET @sql = IF(@table_exists > 0,
+  'RENAME TABLE `gmail_transactions` TO `gmail_transactions_backup`',
+  'SELECT "gmail_transactions does not exist, skipping rename"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS `gmail_transactions` (
   `TransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `Timestamp` datetime DEFAULT NULL COMMENT 'From Sheets/GAS',
   `Sender` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
