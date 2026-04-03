@@ -131,7 +131,8 @@ DEALLOCATE PREPARE stmt_migrate;
 -- STEP 5: CREATE VIEWS
 -- ============================================================================
 
-CREATE VIEW IF NOT EXISTS `v_payment_details` AS
+DROP VIEW IF EXISTS `v_payment_details`;
+CREATE VIEW `v_payment_details` AS
 SELECT
     p.PaymentID,
     p.CreatedAt,
@@ -149,7 +150,8 @@ FROM payments p
 JOIN members m ON p.MemberID = m.MemberID
 LEFT JOIN submissions s ON p.SubmissionID = s.SubmissionID;
 
-CREATE VIEW IF NOT EXISTS `v_payment_splits` AS
+DROP VIEW IF EXISTS `v_payment_splits`;
+CREATE VIEW `v_payment_splits` AS
 SELECT
     gt.TransactionNumber,
     gt.Amount AS OriginalTotal,
@@ -157,7 +159,8 @@ SELECT
     gt.Amount - (SELECT IFNULL(SUM(p.Amount), 0) FROM payments p WHERE p.TransactionNumber = gt.TransactionNumber) AS RemainingBalance
 FROM gmail_transactions gt;
 
-CREATE VIEW IF NOT EXISTS `v_gmail_split_audit` AS
+DROP VIEW IF EXISTS `v_gmail_split_audit`;
+CREATE VIEW `v_gmail_split_audit` AS
 SELECT
     gt.TransactionNumber,
     gt.Amount AS Total,
@@ -172,9 +175,10 @@ GROUP BY gt.TransactionNumber;
 -- STEP 6: CREATE TRIGGERS
 -- ============================================================================
 
+DROP TRIGGER IF EXISTS `trg_payments_sync_membership_only`;
 DELIMITER //
 
-CREATE TRIGGER IF NOT EXISTS `trg_payments_sync_membership_only`
+CREATE TRIGGER `trg_payments_sync_membership_only`
 AFTER INSERT ON payments
 FOR EACH ROW
 BEGIN
@@ -196,7 +200,9 @@ BEGIN
     END IF;
 END; //
 
-CREATE TRIGGER IF NOT EXISTS `trg_payments_approve_submission`
+DROP TRIGGER IF EXISTS `trg_payments_approve_submission`;
+
+CREATE TRIGGER `trg_payments_approve_submission`
 AFTER INSERT ON payments
 FOR EACH ROW
 BEGIN
@@ -210,7 +216,9 @@ BEGIN
     END IF;
 END; //
 
-CREATE TRIGGER IF NOT EXISTS `trg_payments_auto_fill`
+DROP TRIGGER IF EXISTS `trg_payments_auto_fill`;
+
+CREATE TRIGGER `trg_payments_auto_fill`
 BEFORE INSERT ON payments
 FOR EACH ROW
 BEGIN
@@ -227,7 +235,9 @@ BEGIN
     END IF;
 END; //
 
-CREATE TRIGGER IF NOT EXISTS `trg_payments_limit_check_insert`
+DROP TRIGGER IF EXISTS `trg_payments_limit_check_insert`;
+
+CREATE TRIGGER `trg_payments_limit_check_insert`
 BEFORE INSERT ON payments
 FOR EACH ROW
 BEGIN
@@ -240,7 +250,9 @@ BEGIN
     END IF;
 END; //
 
-CREATE TRIGGER IF NOT EXISTS `trg_payments_limit_check_update`
+DROP TRIGGER IF EXISTS `trg_payments_limit_check_update`;
+
+CREATE TRIGGER `trg_payments_limit_check_update`
 BEFORE UPDATE ON payments
 FOR EACH ROW
 BEGIN
@@ -255,7 +267,9 @@ BEGIN
     END IF;
 END; //
 
-CREATE TRIGGER IF NOT EXISTS `members_before_update`
+DROP TRIGGER IF EXISTS `members_before_update`;
+
+CREATE TRIGGER `members_before_update`
 BEFORE UPDATE ON members
 FOR EACH ROW
 BEGIN
@@ -266,7 +280,9 @@ BEGIN
     END IF;
 END; //
 
-CREATE TRIGGER IF NOT EXISTS `trg_members_after_insert`
+DROP TRIGGER IF EXISTS `trg_members_after_insert`;
+
+CREATE TRIGGER `trg_members_after_insert`
 AFTER INSERT ON members FOR EACH ROW
 BEGIN
   INSERT INTO member_log (
@@ -283,7 +299,9 @@ BEGIN
   );
 END; //
 
-CREATE TRIGGER IF NOT EXISTS `trg_members_after_update`
+DROP TRIGGER IF EXISTS `trg_members_after_update`;
+
+CREATE TRIGGER `trg_members_after_update`
 AFTER UPDATE ON members FOR EACH ROW
 BEGIN
   INSERT INTO member_log (
@@ -306,9 +324,10 @@ DELIMITER ;
 -- STEP 7: CREATE PROCEDURES
 -- ============================================================================
 
+DROP PROCEDURE IF EXISTS `sp_admin_update_member_status`;
 DELIMITER //
 
-CREATE PROCEDURE IF NOT EXISTS `sp_admin_update_member_status`(
+CREATE PROCEDURE `sp_admin_update_member_status`(
     IN p_AdminEmail VARCHAR(255),
     IN p_MemberID VARCHAR(10),
     IN p_NewStatus VARCHAR(20),
@@ -355,7 +374,9 @@ BEGIN
     );
 END //
 
-CREATE PROCEDURE IF NOT EXISTS `sp_link_transaction`(
+DROP PROCEDURE IF EXISTS `sp_link_transaction`;
+
+CREATE PROCEDURE `sp_link_transaction`(
     IN p_TxNum VARCHAR(100),
     IN p_MemID VARCHAR(10),
     IN p_Type VARCHAR(50),
