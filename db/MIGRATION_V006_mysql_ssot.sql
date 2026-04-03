@@ -128,11 +128,260 @@ EXECUTE stmt_migrate;
 DEALLOCATE PREPARE stmt_migrate;
 
 -- ============================================================================
--- STEP 5: RECORD MIGRATION
+-- STEP 5: CREATE VIEWS
+-- ============================================================================
+
+CREATE VIEW IF NOT EXISTS `v_payment_details` AS
+SELECT
+    p.PaymentID,
+    p.CreatedAt,
+    m.MemberID,
+    CONCAT(m.FirstName, ' ', m.LastName) AS MemberFullName,
+    m.FamilyID,
+    p.PaymentType,
+    p.Amount,
+    p.PaymentDate,
+    p.TransactionNumber,
+    s.SubmissionType,
+    p.ProcessedBy,
+    p.Source
+FROM payments p
+JOIN members m ON p.MemberID = m.MemberID
+LEFT JOIN submissions s ON p.SubmissionID = s.SubmissionID;
+
+CREATE VIEW IF NOT EXISTS `v_payment_splits` AS
+SELECT
+    gt.TransactionNumber,
+    gt.Amount AS OriginalTotal,
+    (SELECT SUM(p.Amount) FROM payments p WHERE p.TransactionNumber = gt.TransactionNumber) AS TotalAllocated,
+    gt.Amount - (SELECT IFNULL(SUM(p.Amount), 0) FROM payments p WHERE p.TransactionNumber = gt.TransactionNumber) AS RemainingBalance
+FROM gmail_transactions gt;
+
+CREATE VIEW IF NOT EXISTS `v_gmail_split_audit` AS
+SELECT
+    gt.TransactionNumber,
+    gt.Amount AS Total,
+    IFNULL(SUM(p.Amount), 0) AS Allocated,
+    (gt.Amount - IFNULL(SUM(p.Amount), 0)) AS Balance,
+    gt.Notes AS SplitHistory
+FROM gmail_transactions gt
+LEFT JOIN payments p ON gt.TransactionNumber = p.TransactionNumber
+GROUP BY gt.TransactionNumber;
+
+-- ============================================================================
+-- STEP 6: CREATE TRIGGERS
+-- ============================================================================
+
+DELIMITER //
+
+CREATE TRIGGER IF NOT EXISTS `trg_payments_sync_membership_only`
+AFTER INSERT ON payments
+FOR EACH ROW
+BEGIN
+    DECLARE v_FamilyID VARCHAR(10);
+
+    IF NEW.PaymentType LIKE '%Membership%' THEN
+        SELECT FamilyID INTO v_FamilyID FROM members WHERE MemberID = NEW.MemberID;
+        SET @internal_proc = 1;
+        UPDATE members
+        SET
+            Status = 'active',
+            PaymentDate = NEW.PaymentDate,
+            PaymentTransaction = NEW.TransactionNumber,
+            MembershipFeePaid = NEW.Amount,
+            Expiration = DATE_ADD(NEW.PaymentDate, INTERVAL 1 YEAR)
+        WHERE (v_FamilyID IS NOT NULL AND FamilyID = v_FamilyID)
+           OR MemberID = NEW.MemberID;
+        SET @internal_proc = NULL;
+    END IF;
+END; //
+
+CREATE TRIGGER IF NOT EXISTS `trg_payments_approve_submission`
+AFTER INSERT ON payments
+FOR EACH ROW
+BEGIN
+    IF NEW.SubmissionID IS NOT NULL THEN
+        UPDATE submissions
+        SET
+            Status = 'approved',
+            PaymentID = NEW.PaymentID,
+            UpdatedByID = NEW.ProcessedBy
+        WHERE SubmissionID = NEW.SubmissionID;
+    END IF;
+END; //
+
+CREATE TRIGGER IF NOT EXISTS `trg_payments_auto_fill`
+BEFORE INSERT ON payments
+FOR EACH ROW
+BEGIN
+    IF NEW.TransactionNumber IS NOT NULL THEN
+        SELECT PaymentDate, PaymentMethod, Sender, Memo
+        INTO @d, @m, @p, @memo
+        FROM gmail_transactions
+        WHERE TransactionNumber = NEW.TransactionNumber
+        LIMIT 1;
+        SET NEW.PaymentDate = @d;
+        SET NEW.PaymentMethod = @m;
+        SET NEW.PayerName = @p;
+        SET NEW.MemoField = @memo;
+    END IF;
+END; //
+
+CREATE TRIGGER IF NOT EXISTS `trg_payments_limit_check_insert`
+BEFORE INSERT ON payments
+FOR EACH ROW
+BEGIN
+    DECLARE v_max DECIMAL(10,2);
+    DECLARE v_used DECIMAL(10,2);
+    SELECT Amount INTO v_max FROM gmail_transactions WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;
+    SELECT IFNULL(SUM(Amount), 0) INTO v_used FROM payments WHERE TransactionNumber = NEW.TransactionNumber;
+    IF (v_used + NEW.Amount) > v_max THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Split Error: Total payments exceed Gmail Transaction amount.';
+    END IF;
+END; //
+
+CREATE TRIGGER IF NOT EXISTS `trg_payments_limit_check_update`
+BEFORE UPDATE ON payments
+FOR EACH ROW
+BEGIN
+    DECLARE v_max DECIMAL(10,2);
+    DECLARE v_used_by_others DECIMAL(10,2);
+    SELECT Amount INTO v_max FROM gmail_transactions WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;
+    SELECT IFNULL(SUM(Amount), 0) INTO v_used_by_others
+    FROM payments
+    WHERE TransactionNumber = NEW.TransactionNumber AND PaymentID <> OLD.PaymentID;
+    IF (v_used_by_others + NEW.Amount) > v_max THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Update Error: New amount exceeds remaining Gmail Transaction balance.';
+    END IF;
+END; //
+
+CREATE TRIGGER IF NOT EXISTS `members_before_update`
+BEFORE UPDATE ON members
+FOR EACH ROW
+BEGIN
+    IF NEW.Expiration <> OLD.Expiration THEN
+        IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';
+        END IF;
+    END IF;
+END; //
+
+CREATE TRIGGER IF NOT EXISTS `trg_members_after_insert`
+AFTER INSERT ON members FOR EACH ROW
+BEGIN
+  INSERT INTO member_log (
+    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
+    NYRRRunnerName, YearBorn
+  )
+  VALUES (
+    UUID(), NOW(), NEW.MemberID, 'INSERT', NEW.Status, NEW.Created, NEW.Expiration,
+    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
+    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
+    NEW.NYRRRunnerName, NEW.YearBorn
+  );
+END; //
+
+CREATE TRIGGER IF NOT EXISTS `trg_members_after_update`
+AFTER UPDATE ON members FOR EACH ROW
+BEGIN
+  INSERT INTO member_log (
+    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
+    NYRRRunnerName, YearBorn
+  )
+  VALUES (
+    UUID(), NOW(), NEW.MemberID, 'UPDATE', NEW.Status, NEW.Created, NEW.Expiration,
+    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
+    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
+    NEW.NYRRRunnerName, NEW.YearBorn
+  );
+END; //
+
+DELIMITER ;
+
+-- ============================================================================
+-- STEP 7: CREATE PROCEDURES
+-- ============================================================================
+
+DELIMITER //
+
+CREATE PROCEDURE IF NOT EXISTS `sp_admin_update_member_status`(
+    IN p_AdminEmail VARCHAR(255),
+    IN p_MemberID VARCHAR(10),
+    IN p_NewStatus VARCHAR(20),
+    IN p_NewExpiration DATE,
+    IN p_NewNotes TEXT
+)
+BEGIN
+    DECLARE v_FamilyID VARCHAR(10);
+    DECLARE v_OldStatus VARCHAR(20);
+    DECLARE v_ImpactedIDs TEXT;
+    DECLARE v_CalculatedAction VARCHAR(50);
+
+    SELECT Status, FamilyID INTO v_OldStatus, v_FamilyID FROM members WHERE MemberID = p_MemberID;
+
+    SET v_CalculatedAction = CASE
+        WHEN p_NewStatus = 'lifetime' THEN 'LIFETIME_SET'
+        WHEN v_OldStatus = 'expired' AND p_NewStatus = 'inactive' THEN 'INACTIVE_SET'
+        WHEN p_NewExpiration IS NOT NULL THEN 'EXPIRATION_OVERRIDE'
+        ELSE 'STATUS_CHANGE'
+    END;
+
+    IF v_FamilyID IS NOT NULL THEN
+        SELECT GROUP_CONCAT(MemberID) INTO v_ImpactedIDs FROM members WHERE FamilyID = v_FamilyID;
+    ELSE
+        SET v_ImpactedIDs = p_MemberID;
+    END IF;
+
+    SET @internal_proc = 1;
+
+    UPDATE members
+    SET
+        Status = IFNULL(p_NewStatus, Status),
+        Expiration = IFNULL(p_NewExpiration, Expiration),
+        Notes = CONCAT(IFNULL(Notes, ''), '\n--- Admin Override (', p_AdminEmail, ' ', NOW(), ') ---\n', p_NewNotes)
+    WHERE (v_FamilyID IS NOT NULL AND FamilyID = v_FamilyID) OR MemberID = p_MemberID;
+
+    SET @internal_proc = NULL;
+
+    INSERT INTO admin_member_overrides (
+        AdminEmail, TargetMemberID, ImpactedMemberIDs, ActionType, OldValue, NewValue, AdminNotes
+    )
+    VALUES (
+        p_AdminEmail, p_MemberID, v_ImpactedIDs, v_CalculatedAction, v_OldStatus, IFNULL(p_NewStatus, v_OldStatus), p_NewNotes
+    );
+END //
+
+CREATE PROCEDURE IF NOT EXISTS `sp_link_transaction`(
+    IN p_TxNum VARCHAR(100),
+    IN p_MemID VARCHAR(10),
+    IN p_Type VARCHAR(50),
+    IN p_Amt DECIMAL(10,2),
+    IN p_Admin VARCHAR(255),
+    IN p_SubID VARCHAR(50)
+)
+BEGIN
+    INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
+    VALUES (UUID(), p_MemID, p_TxNum, p_Amt, p_SubID, p_Type, p_Admin);
+
+    UPDATE gmail_transactions
+    SET
+        UpdatedAt = NOW(),
+        Notes = CONCAT(IFNULL(Notes, ''), '\n[', NOW(), '] Linked: ', p_MemID, ' (', p_Type, ') $', p_Amt)
+    WHERE TransactionNumber = p_TxNum;
+END //
+
+DELIMITER ;
+
+-- ============================================================================
+-- STEP 6: RECORD MIGRATION
 -- ============================================================================
 
 INSERT INTO `schema_migrations` (version, description, executed_at)
-VALUES ('006', 'MySQL SSOT: submissions (from webapp_events), admin_member_overrides, gmail_transactions restructure, TransactionNumber added to payments', NOW())
+VALUES ('006', 'MySQL SSOT: submissions (from webapp_events), admin_member_overrides, gmail_transactions restructure, TransactionNumber added to payments, views, triggers, procedures', NOW())
 ON DUPLICATE KEY UPDATE executed_at = NOW();
 
 SET FOREIGN_KEY_CHECKS = 1;
