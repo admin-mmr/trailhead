@@ -101,14 +101,28 @@ def _export_via_connector():
             cursor.execute(f"SHOW CREATE TABLE `{table}`")
             sql_lines.append(cursor.fetchone()[1] + ';\n\n')
 
-        # 2. VIEWS (Index 2)
-        cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = %s", (database,))
+        # 2. VIEWS (Using a more reliable fetch)
+        sql_lines.append('-- ==========================================\n-- VIEWS\n-- ==========================================\n')
+        cursor.execute("""
+            SELECT TABLE_NAME 
+            FROM INFORMATION_SCHEMA.TABLES 
+            WHERE TABLE_SCHEMA = %s AND TABLE_TYPE = 'VIEW'
+            ORDER BY TABLE_NAME
+        """, (database,))
         views = [row[0] for row in cursor.fetchall()]
-        sql_lines.append('-- VIEWS\n')
-        for view in views:
-            cursor.execute(f"SHOW CREATE VIEW `{view}`")
-            # Index 2 is 'Create View'
-            sql_lines.append(cursor.fetchone()[2] + ';\n\n')
+        
+        if not views:
+            sql_lines.append('-- No views found or insufficient permissions (SHOW VIEW required).\n\n')
+        else:
+            for view in views:
+                try:
+                    cursor.execute(f"SHOW CREATE VIEW `{view}`")
+                    res = cursor.fetchone()
+                    # Index 2 is the 'Create View' string in MySQL 8.0+
+                    sql_lines.append(f"DROP VIEW IF EXISTS `{view}`;\n")
+                    sql_lines.append(res[2] + ';\n\n')
+                except mysql.connector.Error as err:
+                    sql_lines.append(f"-- Error exporting view {view}: {err.msg}\n\n")
 
         # 3. PROCEDURES (Index 2)
         cursor.execute("SELECT ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = %s AND ROUTINE_TYPE = 'PROCEDURE'", (database,))
