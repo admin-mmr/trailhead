@@ -861,7 +861,7 @@ function handleWriteRange(payload: any): GoogleAppsScript.Content.TextOutput {
  */
 function handleReadRange(payload: any): GoogleAppsScript.Content.TextOutput {
   console.log('[webhook] read_range: source sheet =', payload.sheetName);
-  const { sheetName, columns } = payload;
+  const { sheetName, columns, existingIds, keyField } = payload;
 
   if (!sheetName || !Array.isArray(columns)) {
     return jsonResponse({ ok: false, error: 'sheetName and columns array required' });
@@ -901,8 +901,22 @@ function handleReadRange(payload: any): GoogleAppsScript.Content.TextOutput {
       result.push(row);
     }
 
-    console.log(`[webhook] read_range: read ${result.length} rows from "${sheetName}"`);
-    return jsonResponse({ ok: true, data: result });
+    // Filter by existingIds if provided (for import_members: return only NEW rows)
+    let filtered = result;
+    if (existingIds && Array.isArray(existingIds) && existingIds.length > 0) {
+      const pk = keyField || 'MemberID';  // Default to MemberID for members sheet
+      const existingSet = new Set(existingIds);
+
+      filtered = result.filter(row => {
+        const rowId = String(row[pk]);  // Convert to string for comparison
+        return rowId && !existingSet.has(rowId);
+      });
+
+      console.log(`[webhook] read_range: filtered ${result.length} rows → ${filtered.length} new (existingIds=${existingIds.length}, pk=${pk})`);
+    }
+
+    console.log(`[webhook] read_range: returning ${filtered.length} rows from "${sheetName}"`);
+    return jsonResponse({ ok: true, data: filtered });
   } catch (err: any) {
     console.error('[webhook] read_range error:', err);
     return jsonResponse({ ok: false, error: err.message || String(err) });
