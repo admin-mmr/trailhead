@@ -2,7 +2,7 @@
 """
 Schema export endpoint for complete database structure backup.
 
-**Purpose:** Download full MySQL schema (DDL: tables, views, triggers, procedures, functions).
+**Purpose:** Download full MySQL schema (DDL: tables, views, triggers, procedures, functions, events).
 Works on Azure (no binary deps) and local dev environments.
 
 **Includes:**
@@ -11,6 +11,7 @@ Works on Azure (no binary deps) and local dev environments.
 - CREATE TRIGGER statements (if any triggers exist)
 - CREATE PROCEDURE statements (if any procedures exist)
 - CREATE FUNCTION statements (if any functions exist)
+- CREATE EVENT statements (if any events exist)
 - Column reference comments (for V11 schema redesign)
 - Timestamp of export for audit trail
 
@@ -199,7 +200,29 @@ def _export_via_connector():
         else:
             sql_lines.append('-- No functions defined\n\n')
 
-        # 6. Column metadata (informational comment for reference)
+        # 6. Export EVENTS (if any)
+        sql_lines.append('-- ============================================================================\n')
+        sql_lines.append('-- EVENTS\n')
+        sql_lines.append('-- ============================================================================\n\n')
+
+        cursor.execute("""
+            SELECT EVENT_NAME FROM INFORMATION_SCHEMA.EVENTS
+            WHERE EVENT_SCHEMA = %s ORDER BY EVENT_NAME
+        """, (database,))
+        events = [row[0] for row in cursor.fetchall()]
+
+        if events:
+            for event_name in events:
+                cursor.execute(f"SHOW CREATE EVENT `{event_name}`")
+                event_result = cursor.fetchone()
+                if event_result:
+                    # SHOW CREATE EVENT returns: (database, event_name, time_zone, CREATE_EVENT_statement, charset)
+                    create_statement = event_result[3]
+                    sql_lines.append(create_statement + ';\n\n')
+        else:
+            sql_lines.append('-- No events defined\n\n')
+
+        # 7. Column metadata (informational comment for reference)
         sql_lines.append('-- ============================================================================\n')
         sql_lines.append('-- COLUMN REFERENCE (for schema design)\n')
         sql_lines.append('-- ============================================================================\n\n')
