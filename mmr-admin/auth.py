@@ -97,25 +97,35 @@ def require_role(min_role: str):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            import logging
+            logger = logging.getLogger(__name__)
+
             if DEV_BYPASS_AUTH:
                 return f(*args, **kwargs)
 
             user = session.get('user', {})
             email = user.get('email')
             if not email:
+                logger.warning(f'[REQUIRE_ROLE] No email in session for {min_role} check')
                 return json_response({'ok': False, 'error': 'Unauthorized'}, 403)
 
             # Always re-query DB so stale session roles don't block legitimate admins
             user_role = get_user_role(email) or 'none'
+            logger.info(f'[REQUIRE_ROLE] email={email}, user_role={user_role}, min_role={min_role}')
+
             session['user'] = {**user, 'role': user_role}
 
             role_order = {'super_admin': 2, 'admin': 1, 'none': 0}
             user_level = role_order.get(user_role, 0)
             min_level = role_order.get(min_role, 0)
 
+            logger.info(f'[REQUIRE_ROLE] user_level={user_level}, min_level={min_level}')
+
             if user_level < min_level:
+                logger.error(f'[REQUIRE_ROLE] DENIED: {email} needs {min_role} but only has {user_role}')
                 return json_response({'ok': False, 'error': 'Insufficient permissions'}, 403)
 
+            logger.info(f'[REQUIRE_ROLE] ALLOWED: {email} ({user_role}) accessing {min_role} endpoint')
             return f(*args, **kwargs)
         return decorated_function
     return decorator

@@ -9,10 +9,15 @@ Blueprint: query_bp
 Prefix: /api/query
 """
 
+import logging
+import uuid
+from datetime import datetime
 from flask import Blueprint, request, session, render_template
 from auth import login_required, require_role
-from db import query, execute
+from db import query, execute, db_cursor
 from helpers import json_response
+
+logger = logging.getLogger(__name__)
 
 query_bp = Blueprint('query', __name__)
 
@@ -28,7 +33,39 @@ def _is_super_admin(email: str) -> bool:
 
 def _is_select_query(sql: str) -> bool:
     """Quick check: does the query start with SELECT (case-insensitive)?"""
-    return sql.strip().upper().startswith('SELECT')
+    upper = sql.strip().upper()
+    return upper.startswith('SELECT') or upper.startswith('CALL')
+
+
+def _is_call_statement(sql: str) -> bool:
+    """Check if SQL is a CALL to a stored procedure."""
+    return sql.strip().upper().startswith('CALL')
+
+
+def _log_api_error(error_msg: str, sql_snippet: str, user_email: str) -> None:
+    """Log API/query errors to error_context table (best-effort, doesn't fail if logging fails)."""
+    try:
+        with db_cursor() as cur:
+            error_id = str(uuid.uuid4())
+            cur.execute("""
+                INSERT INTO error_context (
+                    ErrorContextID, ErrorCode, ErrorMessage, TableName, ColumnName,
+                    Severity, Status, DetectedAt, DetectedBy, Notes
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                error_id,
+                'API_ERROR',
+                error_msg[:500],
+                'api_query',
+                None,
+                'ERROR',
+                'NEW',
+                datetime.now(),
+                user_email,
+                f'Query: {sql_snippet}'
+            ))
+    except Exception as e:
+        logger.warning(f'[QUERY] Failed to log error to error_context: {e}')
 
 
 # ---------------------------------------------------------------------------
@@ -87,11 +124,16 @@ def api_execute_query():
     try:
         # Detect query type
         is_select = _is_select_query(sql)
+        is_call = _is_call_statement(sql)
+        query_type = 'CALL' if is_call else ('SELECT' if is_select else 'INSERT/UPDATE/DELETE')
+        logger.info(f'[QUERY] Executing {query_type} from {user_email}')
+        logger.debug(f'[QUERY] SQL: {sql[:200]}...')
 
-        if is_select:
-            # SELECT: use query() → returns list of dicts
+        if is_select or is_call:
+            # SELECT or CALL stored procedure: use query() → returns list of dicts
             rows = query(sql)
             columns = list(rows[0].keys()) if rows else []
+            logger.info(f'[QUERY] {query_type} returned {len(rows)} rows')
             return json_response({
                 'ok': True,
                 'rows': rows,
@@ -101,6 +143,7 @@ def api_execute_query():
         else:
             # INSERT/UPDATE/DELETE: use execute() → returns affected row count
             affected = execute(sql)
+            logger.info(f'[QUERY] Non-SELECT affected {affected} rows')
             return json_response({
                 'ok': True,
                 'affected': affected,
@@ -109,6 +152,8 @@ def api_execute_query():
 
     except Exception as e:
         error_msg = str(e)[:500]
+        logger.exception(f'[QUERY] Exception executing {query_type} from {user_email}: {error_msg}')
+        _log_api_error(error_msg, sql[:100], user_email)
         return json_response({
             'ok': False,
             'error': error_msg,
