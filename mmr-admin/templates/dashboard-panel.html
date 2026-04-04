@@ -1,4 +1,3 @@
-<script type="text/babel">
 initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
   const [stats, setStats] = useState(null);
   const [events, setEvents] = useState([]);
@@ -648,4 +647,4 @@ window.EventDetail = ({ eventId, onBack }) => {
 if (!window.EventDetail) window.EventDetail = EventDetail;
 // Register Dashboard as DashboardPanel alias
 if (!window.DashboardPanel) window.DashboardPanel = window.Dashboard;
-</script>
+
