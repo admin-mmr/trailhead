@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from typing import List, Dict, Any, Optional
 from db import query
-from api_sheets_sync import _call_gas_webhook
+from sync_runners import _call_gas_webhook
 import traceback
 
 
