@@ -88,11 +88,23 @@ def login_required(f):
     return decorated_function
 
 
+def _is_hardcoded_super_admin(email: str) -> bool:
+    """Check if user is in the hardcoded super_admin list (for query/data endpoints)."""
+    super_admins = [
+        'admin@mmrunners.org',
+        'cathy.lin@mmrunners.org',
+    ]
+    return email in super_admins
+
+
 def require_role(min_role: str):
     """
     Decorator to require a minimum role.
     min_role: 'admin' or 'super_admin'
     Returns 403 JSON if insufficient.
+
+    IMPORTANT: Hardcoded super_admins bypass DB role check for query/admin endpoints.
+    This allows quick access without needing DB entries.
     """
     def decorator(f):
         @wraps(f)
@@ -109,7 +121,13 @@ def require_role(min_role: str):
                 logger.warning(f'[REQUIRE_ROLE] No email in session for {min_role} check')
                 return json_response({'ok': False, 'error': 'Unauthorized'}, 403)
 
-            # Always re-query DB so stale session roles don't block legitimate admins
+            # Check hardcoded super_admin list first (no DB query needed)
+            if _is_hardcoded_super_admin(email):
+                logger.info(f'[REQUIRE_ROLE] ALLOWED: {email} (hardcoded super_admin)')
+                session['user'] = {**user, 'role': 'super_admin'}
+                return f(*args, **kwargs)
+
+            # Fallback: query DB for user role
             user_role = get_user_role(email) or 'none'
             logger.info(f'[REQUIRE_ROLE] email={email}, user_role={user_role}, min_role={min_role}')
 
