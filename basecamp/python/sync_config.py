@@ -139,7 +139,11 @@ def _log_sync_batch(
     rows_skipped: int = 0,
     error_msg: str = None
 ) -> None:
-    """Log a batch to sheets_sync_log for resume capability."""
+    """Log a batch to sheets_sync_log for resume capability.
+
+    Note: Batch logging is optional and won't fail the sync if the job_id
+    doesn't exist in sync_jobs table (e.g., in test/ad-hoc environments).
+    """
     try:
         sql = """
             INSERT INTO sheets_sync_log
@@ -160,7 +164,11 @@ def _log_sync_batch(
         ])
         logger.debug(f"Logged batch {batch_num} for {job_id}")
     except Exception as e:
-        logger.warning(f"Failed to log sync batch: {str(e)}")
+        # Foreign key constraint error is expected if job_id doesn't exist in sync_jobs
+        if '23000' in str(e) or 'foreign key' in str(e).lower():
+            logger.debug(f"Batch logging skipped (job {job_id} not in sync_jobs): {str(e)}")
+        else:
+            logger.warning(f"Failed to log sync batch: {str(e)}")
 
 
 def _get_last_successful_batch(db_query, job_id: str, config_key: str) -> int:
@@ -265,6 +273,38 @@ def _batch_insert_rows(
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper Functions (must be defined before generic_sync_runner)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _convert_iso_to_mysql_datetime(value: Any) -> Any:
+    """
+    Convert ISO 8601 datetime strings to MySQL datetime format (YYYY-MM-DD HH:MM:SS).
+
+    Handles formats like:
+    - 2026-04-04T11:57:01.000Z
+    - 2026-04-04T11:57:01Z
+    - 2026-04-04T11:57:01
+
+    Returns original value if not a datetime string.
+    """
+    if not isinstance(value, str):
+        return value
+
+    # Check if it looks like an ISO 8601 datetime
+    if 'T' not in value:
+        return value
+
+    try:
+        # Parse ISO 8601 format
+        if value.endswith('Z'):
+            # Remove Z and parse
+            dt = datetime.fromisoformat(value[:-1])
+        else:
+            dt = datetime.fromisoformat(value)
+        # Return MySQL format: YYYY-MM-DD HH:MM:SS
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, AttributeError):
+        # Not a datetime, return as-is
+        return value
+
 
 def _normalize_sheet_rows(raw_rows: List, cols: List[str]) -> List[Dict[str, Any]]:
     """
@@ -553,7 +593,7 @@ def generic_sync_runner(
                 result = gas_webhook(gas_payload)
                 logger.debug(f"GAS response type: {type(result)}, value: {result}")
                 if isinstance(result, list):
-                    logger.error(f"GAS returned raw list (not wrapped dict): {result[:100]}")
+                    logger.error(f"GAS returned raw list (not wrapped dict) first row sample: {result[:1]}")
                     raw_rows = result
                 else:
                     raw_rows = result.get('data', []) if result.get('ok') else []
@@ -587,12 +627,17 @@ def generic_sync_runner(
                 }
 
             # Apply field mappings (e.g., Source → PaymentMethod)
+            # Also convert ISO 8601 datetimes to MySQL format
             mapped_rows = []
             for row in rows:
                 mapped_row = {}
                 for col in cols:
                     sql_col = cfg.get('map_fields', {}).get(col, col)
-                    mapped_row[sql_col] = row.get(col)
+                    value = row.get(col)
+                    # Convert ISO 8601 strings to MySQL datetime format
+                    if sql_col in ('Timestamp', 'TransactionDate', 'PaymentDate', 'CreatedAt', 'UpdatedAt'):
+                        value = _convert_iso_to_mysql_datetime(value)
+                    mapped_row[sql_col] = value
                 mapped_rows.append(mapped_row)
 
             action_verb = "Inserting" if sync_mode == 'insert_only' else "Upserting"
