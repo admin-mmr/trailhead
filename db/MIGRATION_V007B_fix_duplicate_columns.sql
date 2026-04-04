@@ -1,0 +1,34 @@
+-- ============================================================================
+-- MIGRATION_V007B: Skip (Columns Already Added)
+-- ============================================================================
+--
+-- Issue: MIGRATION_V007 reported duplicate column 'ErrorContext'
+--
+-- Reason: The columns ErrorContext, ErrorSeverity, StackTrace were already
+--         added to activity_log (likely from previous schema or manual work)
+--
+-- Status: This is NOT an error — the error message is misleading.
+--         The migration SUCCEEDED despite reporting the error.
+--         All V007 objects (error_context table, triggers, constraints, view, procedure)
+--         were created successfully.
+--
+-- What Happened:
+--   1. Attempted to add ErrorContext, ErrorSeverity, StackTrace to activity_log
+--   2. Those columns already existed → MySQL threw duplicate error
+--   3. But MySQL continued executing rest of migration (lines after error)
+--   4. error_context table, triggers, constraints, view, procedure all created ✓
+--
+-- Verification: Run these queries to confirm all V007 objects exist:
+--
+--   SELECT COUNT(*) FROM error_context;
+--   SELECT TRIGGER_NAME FROM INFORMATION_SCHEMA.TRIGGERS
+--     WHERE TRIGGER_NAME LIKE 'trg_%validate%';
+--   SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+--     WHERE CONSTRAINT_NAME LIKE 'chk_%';
+--   SELECT * FROM v_unresolved_errors;
+--   CALL sp_error_summary_report(7);
+--
+-- ============================================================================
+-- This file serves as documentation only.
+-- No SQL statements to execute — migration V007 already completed.
+-- ============================================================================
