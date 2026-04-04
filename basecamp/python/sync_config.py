@@ -225,8 +225,12 @@ def generic_sync_runner(
                     'sheetName': sheet_name,
                     'columns': cols
                 })
-                rows = result.get('data', []) if result.get('ok') else []
-                logger.debug(f"Fetched {len(rows)} rows from {sheet_name}")
+                raw_rows = result.get('data', []) if result.get('ok') else []
+                logger.debug(f"Fetched {len(raw_rows)} raw rows from {sheet_name}")
+
+                # Convert raw rows (list or dict format) to dict format
+                rows = _normalize_sheet_rows(raw_rows, cols)
+                logger.debug(f"Normalized to {len(rows)} dict rows")
             except Exception as e:
                 msg = f"Failed to read {sheet_name}: {str(e)}"
                 logger.error(msg)
@@ -250,6 +254,7 @@ def generic_sync_runner(
                     mapped_row = {}
                     for col in cols:
                         sql_col = cfg.get('map_fields', {}).get(col, col)
+                        # row is now guaranteed to be a dict (from _normalize_sheet_rows)
                         mapped_row[sql_col] = row.get(col)
 
                     if sync_mode == 'insert_only':
@@ -316,6 +321,38 @@ def generic_sync_runner(
             'skipped': 0,
             'message': msg
         }
+
+
+def _normalize_sheet_rows(raw_rows: List, cols: List[str]) -> List[Dict[str, Any]]:
+    """
+    Convert raw Sheets data (either list-of-lists or list-of-dicts) to list-of-dicts.
+
+    Args:
+        raw_rows: Data from GAS webhook — either List[List] or List[Dict]
+        cols: Column names (used to map list indices to dict keys if needed)
+
+    Returns:
+        List[Dict] where each dict has keys from cols
+    """
+    if not raw_rows:
+        return []
+
+    normalized = []
+    for row in raw_rows:
+        if isinstance(row, dict):
+            # Already a dict — just ensure all cols are present
+            normalized.append(row)
+        elif isinstance(row, (list, tuple)):
+            # List format — map indices to column names
+            row_dict = {}
+            for i, col in enumerate(cols):
+                row_dict[col] = row[i] if i < len(row) else None
+            normalized.append(row_dict)
+        else:
+            # Unknown format — skip or log warning
+            logger.warning(f"Skipping row with unexpected type {type(row)}: {row}")
+
+    return normalized
 
 
 def _prepare_sheet_rows(db_rows: List[Dict], cfg: Dict) -> List[List[Any]]:

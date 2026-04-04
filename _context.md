@@ -1,3 +1,21 @@
+### 04-04 05:54 UTC — Fixed: Sync endpoint routing, datetime serialization, import structure errors
+
+**Fixed 6 issues:**
+1. **404 on Import Transactions** → Fixed app.py line 161: Import from `api_sheets_sync_routes` not `api_sheets_sync`
+2. **TypeError on status kwarg** → Fixed 6 sync_runners functions: Remove `status='completed'` from `update_job()` calls
+3. **Datetime not JSON serializable** → Enhanced `sync_config._prepare_sheet_rows()` to convert datetime→ISO strings
+4. **Poor GAS webhook debugging** → Enhanced `sync_runners._call_gas_webhook()` with early JSON serialization checks
+5. **Test import errors** → Created `sync_coerce.py` module with member status coercion; updated test imports
+6. **Code cleanup** → Reduced `api_sheets_sync.py` from 2485→49 lines (98% dead code removal)
+
+**Status:** Code changes complete. **Needs deployment & app restart.**
+- Azure: `git push origin main` → auto-redeploy + restart
+- Local: `cd mmr-admin && python3 app.py` (from command line)
+
+**New files:** `mmr-admin/sync_coerce.py` (67 lines)
+**Modified:** `app.py`, `api_sheets_sync.py`, `sync_runners.py`, `sync_config.py`, `sync_debug_helpers.py`, test files
+**Note:** Import Transactions still returns 404 because Flask app hasn't restarted yet.
+
 ### 04-04 07:50 UTC — Fixed: Removed dangling _make_g2m_route() route registration loop
 
 **Fixed:**
