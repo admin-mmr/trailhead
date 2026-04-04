@@ -551,7 +551,12 @@ def generic_sync_runner(
             # Fetch from Sheets
             try:
                 result = gas_webhook(gas_payload)
-                raw_rows = result.get('data', []) if result.get('ok') else []
+                logger.debug(f"GAS response type: {type(result)}, value: {result}")
+                if isinstance(result, list):
+                    logger.error(f"GAS returned raw list (not wrapped dict): {result[:100]}")
+                    raw_rows = result
+                else:
+                    raw_rows = result.get('data', []) if result.get('ok') else []
                 logger.debug(f"Fetched {len(raw_rows)} raw rows from {sheet_name}")
 
                 # Convert raw rows (list or dict format) to dict format
