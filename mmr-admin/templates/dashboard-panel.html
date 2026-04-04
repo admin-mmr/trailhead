@@ -232,12 +232,12 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
       />
     </div>
   );
-};
+});
 
 // ═══════════════════════════════════════════════════
 // Event detail view
 // ═══════════════════════════════════════════════════
-window.EventDetail = ({ eventId, onBack }) => {
+initComponent('EventDetail', ({ eventId, onBack }) => {
   const [event, setEvent] = useState(null);
   const [runners, setRunners] = useState([]);
   const [filter, setFilter] = useState({ q: '', team: '', matched: '', unmatched: '' });
@@ -641,10 +641,4 @@ window.EventDetail = ({ eventId, onBack }) => {
       )}
     </div>
   );
-};
-
-// Register EventDetail separately (different component)
-if (!window.EventDetail) window.EventDetail = EventDetail;
-// Register Dashboard as DashboardPanel alias
-if (!window.DashboardPanel) window.DashboardPanel = window.Dashboard;
-
+});
