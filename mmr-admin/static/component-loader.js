@@ -14,5 +14,5 @@ const initComponent = (componentName, componentFn) => {
   window[componentName] = componentFn;
 };
 
-// Make React hooks globally available for all component files
-const { useState, useEffect, useCallback, useRef } = React;
+// Note: React hooks are already declared globally in index.html
+// No need to redeclare them here — this avoids "Identifier has already been declared" errors

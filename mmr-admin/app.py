@@ -118,6 +118,13 @@ def index():
     return send_file(template_path, mimetype='text/html')
 
 
+@app.route('/templates/<path:filename>')
+def serve_template(filename):
+    """Serve React component templates (html files loaded via Babel)."""
+    template_path = os.path.join(os.path.dirname(__file__), 'templates', filename)
+    return send_file(template_path, mimetype='text/html')
+
+
 @app.route('/favicon.ico')
 def favicon():
     return '', 204
