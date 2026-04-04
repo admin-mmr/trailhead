@@ -293,9 +293,11 @@ CREATE TABLE `payments` (
   `TransactionNumber` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Linked to gmail_transactions.TransactionNumber',
   `SubmissionID` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Optional: Link to the user submission that started this',
   `PaymentType` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Set at creation (e.g., Membership, Donation)',
+  `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Last modified timestamp for incremental sync',
   PRIMARY KEY (`PaymentID`),
   KEY `idx_payments_memberid` (`MemberID`),
   KEY `idx_payments_paymentdate` (`PaymentDate`),
+  KEY `idx_payments_updated_at` (`UpdatedAt`),
   KEY `idx_pay_tx` (`TransactionNumber`),
   CONSTRAINT `fk_payments_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL,
   CONSTRAINT `chk_payments_amount_nonnegative` CHECK ((`Amount` >= 0))
