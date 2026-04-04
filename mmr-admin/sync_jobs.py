@@ -26,6 +26,7 @@ from __future__ import annotations
 import threading
 import time
 import logging
+import json
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -142,7 +143,11 @@ def update_job(job_id: str, **fields) -> None:
                 params.append(fields['progress'])
             if 'result' in fields:
                 set_clauses.append('Result = %s')
-                params.append(fields['result'])
+                # Convert dict to JSON string if needed
+                result_val = fields['result']
+                if isinstance(result_val, dict):
+                    result_val = json.dumps(result_val)
+                params.append(result_val)
 
             if set_clauses:
                 set_clauses.append('UpdatedAt = NOW()')

@@ -627,7 +627,7 @@ def generic_sync_runner(
                 }
 
             # Apply field mappings (e.g., Source → PaymentMethod)
-            # Also convert ISO 8601 datetimes to MySQL format
+            # Also convert ISO 8601 datetimes to MySQL format and coerce empty strings to None
             mapped_rows = []
             for row in rows:
                 mapped_row = {}
@@ -637,6 +637,9 @@ def generic_sync_runner(
                     # Convert ISO 8601 strings to MySQL datetime format
                     if sql_col in ('Timestamp', 'TransactionDate', 'PaymentDate', 'CreatedAt', 'UpdatedAt'):
                         value = _convert_iso_to_mysql_datetime(value)
+                    # Coerce empty strings to None for numeric/decimal columns
+                    if value == '' and sql_col in ('Amount', 'PaymentAmount', 'Price', 'Balance', 'MembershipFeePaid'):
+                        value = None
                     mapped_row[sql_col] = value
                 mapped_rows.append(mapped_row)
 
