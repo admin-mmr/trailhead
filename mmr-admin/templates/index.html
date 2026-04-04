@@ -220,12 +220,12 @@ const App = () => {
         if (r.data.role === 'none') {
           setView('restricted');
         } else {
-          setView('dashboard');
+          setView('payments');
         }
       } else if (r.status === 401 || r.status === 403 || r.redirect) {
         window.location = '/login';
       } else {
-        setView('dashboard');
+        setView('payments');
       }
     });
   }, []);
