@@ -7,10 +7,8 @@ set -e
 echo "🔄 Converting GitHub Actions workflows to use GAS webhook..."
 
 WORKFLOWS=(
-  ".github/workflows/auto-guess-payments.yml"
   ".github/workflows/bidirectional-sync.yml"
   ".github/workflows/db-schema-drift.yml"
-  ".github/workflows/update-member-status.yml"
 )
 
 for workflow in "${WORKFLOWS[@]}"; do
