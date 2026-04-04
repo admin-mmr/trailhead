@@ -161,6 +161,7 @@ def api_payments_dashboard():
         logger.info(f'[DASHBOARD] Errors (7d): {errors}')
 
         result = {
+            'ok': True,
             'pending': pending[0]['cnt'],
             'matched': matched[0]['cnt'],
             'unmatched_gmail': unmatched_gmail[0]['cnt'],

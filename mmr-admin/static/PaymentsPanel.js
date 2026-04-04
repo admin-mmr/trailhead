@@ -22,21 +22,31 @@ const PaymentsPanel = () => {
       return;
     }
 
+    console.log('[PaymentsPanel] Calling /api/payments/dashboard...');
     window.api('/api/payments/dashboard')
       .then(r => {
-        console.log('[PaymentsPanel] Dashboard API response:', r);
-        if (r && r.ok) {
+        console.log('[PaymentsPanel] Raw API response:', r);
+        console.log('[PaymentsPanel] Response type:', typeof r);
+        console.log('[PaymentsPanel] Response keys:', Object.keys(r || {}));
+
+        // Check if response has ok property or has expected data fields
+        const hasData = r && (r.pending !== undefined || r.ok === true);
+        const hasError = r && r.error !== undefined && r.ok === false;
+
+        if (hasData && !hasError) {
           console.log('[PaymentsPanel] Dashboard data received:', r);
           setDashboard(r);
           setLoading(false);
         } else {
           console.error('[PaymentsPanel] Response not ok:', r);
-          setError(`API error: ${r?.error || 'Unknown error'}`);
+          console.error('[PaymentsPanel] Error message:', r?.error);
+          setError(`API error: ${r?.error || 'Unknown error (check console)'}`);
           setLoading(false);
         }
       })
       .catch(e => {
         console.error('[PaymentsPanel] API call failed:', e);
+        console.error('[PaymentsPanel] Error stack:', e.stack);
         setError(`Fetch error: ${e.message}`);
         setLoading(false);
       });
