@@ -1,0 +1,195 @@
+<script type="text/babel">
+const JobCard = ({ jobId, job }) => {
+  const res = job.result || {};
+  const statParts = [
+    res.inserted !== undefined ? `+${res.inserted} inserted` : null,
+    res.updated  !== undefined ? `${res.updated} updated`   : null,
+    res.skipped  !== undefined ? `${res.skipped} skipped`   : null,
+    (() => { const ec = res.errors_count ?? (typeof res.errors === 'number' ? res.errors : (Array.isArray(res.errors) ? res.errors.length : 0)); return ec > 0 ? `${ec} errors` : null; })(),
+  ].filter(Boolean);
+  const statLine = statParts.length ? statParts.join(' · ') : null;
+  const logText = res.log || (typeof res === 'string' ? res : null);
+
+  return (
+    <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', fontSize: 13 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <span style={{ fontWeight: 600 }}>
+          {job.jobName || '—'}
+          {job.actionType ? <span style={{ color: 'var(--text2)', fontWeight: 400, marginLeft: 6 }}>· {job.actionType}</span> : null}
+        </span>
+        <span className={`badge ${
+          job.status === 'done'    ? 'badge-green' :
+          job.status === 'error'   ? 'badge-red'   :
+          job.status === 'running' ? 'badge-blue'  :
+          'badge-yellow'
+        }`}>
+          {job.status}
+        </span>
+      </div>
+      <div style={{ color: 'var(--text2)', fontSize: 12, marginBottom: 6, fontFamily: 'monospace' }}>{jobId.slice(0, 12)}…</div>
+      <div style={{ marginBottom: 6 }}>{job.message}</div>
+      {job.status === 'error' && res.error && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 4, padding: '6px 8px', marginBottom: 6, color: '#b91c1c', fontSize: 12 }}>
+          {res.error}
+        </div>
+      )}
+      {statLine && <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>{statLine}</div>}
+      {job.progress !== undefined && (
+        <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+          <div style={{ height: '100%', background: 'var(--accent)', width: `${job.progress}%`, transition: 'width 0.3s' }} />
+        </div>
+      )}
+      {(logText || (job.status === 'done' || job.status === 'error')) && (
+        <details style={{ marginTop: 6, color: 'var(--text2)', fontSize: 12 }}>
+          <summary style={{ cursor: 'pointer' }}>View Log</summary>
+          <pre style={{
+            background: 'var(--bg)',
+            padding: 8,
+            borderRadius: 4,
+            marginTop: 6,
+            overflow: 'auto',
+            maxHeight: 240,
+            fontSize: 11,
+            whiteSpace: 'pre-wrap',
+          }}>
+            {logText || '(No log available)'}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+};
+
+initComponent('SyncPanel', () => {
+  const [subTab, setSubTab] = useState('mysql-to-google');
+  const [subTab2, setSubTab2] = useState('members-fees');
+  const [jobs, setJobs] = useState({});
+  const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    api('/api/sync/jobs').then(r => {
+      if (r && r.ok && r.jobs) setJobs(r.jobs);
+    }).catch(() => {});
+  }, []);
+
+  const triggerSync = async (jobName, actionType, endpoint) => {
+    setToast(`Starting ${jobName}…`);
+    try {
+      const r = await api(endpoint, { method: 'POST' });
+      if (r.ok) {
+        const jobId = r.job_id;
+        setJobs(j => ({ ...j, [jobId]: { status: 'running', message: 'Running…', progress: 0, jobName, actionType } }));
+        pollJobStatus(jobId);
+        setToast(`${jobName} started (Job: ${jobId.slice(0, 8)}…)`);
+      } else {
+        setToast(`❌ Failed to start ${jobName}: ${r.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      setToast(`❌ Error: ${e.message}`);
+    }
+  };
+
+  const pollJobStatus = (jobId) => {
+    const poll = setInterval(async () => {
+      try {
+        const r = await api(`/api/sync/status/${jobId}`);
+        const job = r.data || r.job;
+
+        if (r.ok && job) {
+          setJobs(j => ({ ...j, [jobId]: { ...j[jobId], ...job } }));
+
+          if (job.status === 'done' || job.status === 'error') {
+            clearInterval(poll);
+            setToast(job.status === 'done' ? `✅ ${job.message}` : `❌ ${job.message}`);
+            console.log(`[POLL-STOP] Job ${jobId} finished with status: ${job.status}`);
+          }
+        } else if (!r.ok) {
+          console.warn(`[POLL-STOP] Job ${jobId} not found or error: ${r.error || 'unknown'}`);
+          clearInterval(poll);
+        }
+      } catch (e) {
+        console.error(`[POLL-ERROR] Job ${jobId}: ${e.message}`);
+      }
+    }, 1000);
+
+    return poll;
+  };
+
+  const jobsList = Object.entries(jobs).sort((a, b) => b[0].localeCompare(a[0]));
+
+  const RecentJobs = ({ label = 'Recent Jobs', filterFn }) => {
+    const filtered = filterFn ? jobsList.filter(([, job]) => filterFn(job)) : jobsList;
+    return filtered.length === 0 ? null : (
+      <div style={{ marginTop: 20 }}>
+        <h3 style={{ fontSize: 14, marginBottom: 12 }}>{label}</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {filtered.map(([jobId, job]) => <JobCard key={jobId} jobId={jobId} job={job} />)}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div className="tabs" style={{ marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+        <button className={`tab ${subTab === 'mysql-to-google' ? 'active' : ''}`} onClick={() => setSubTab('mysql-to-google')}>📤 MySQL → Google</button>
+        <button className={`tab ${subTab === 'google-to-mysql' ? 'active' : ''}`} onClick={() => setSubTab('google-to-mysql')}>📥 Google → MySQL</button>
+        <button className={`tab ${subTab === 'full-sync' ? 'active' : ''}`} onClick={() => setSubTab('full-sync')}>🔄 Full Sync</button>
+      </div>
+
+      {subTab === 'mysql-to-google' && (
+        <div>
+          <h2 style={{ fontSize: 18, marginBottom: 16 }}>MySQL → Google Sheets (SQL_* tabs)</h2>
+          <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
+            Export MySQL data to Google Sheets SQL_* destination tabs. New records are appended to SQL Members, SQL Payments, and SQL Submissions tabs.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+            <button className="btn btn-primary" onClick={() => triggerSync('Export Members', 'MySQL → Sheets', '/api/sync/export/members')}>👥 Export Members</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Export Submissions', 'MySQL → Sheets', '/api/sync/export/submissions')}>📋 Export Submissions</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Export Payments', 'MySQL → Sheets', '/api/sync/export/payments')}>💳 Export Payments</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Export Transactions', 'MySQL → Sheets', '/api/sync/export/transaction-meta')}>📧 Export Transactions (Notes & UpdatedAt)</button>
+          </div>
+          <RecentJobs filterFn={job => ['Export Members', 'Export Submissions', 'Export Payments', 'Export Transactions'].includes(job.jobName)} />
+        </div>
+      )}
+
+      {subTab === 'google-to-mysql' && (
+        <div>
+          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Google Sheets → MySQL</h2>
+          <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
+            Import and sync data from Google Sheets to MySQL. Operations are safe and support insert-only (no overwrites) or upsert modes.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+            <button className="btn btn-primary" onClick={() => triggerSync('Import Transactions', 'Google → MySQL', '/api/sync/import/transactions')}>📧 Import Transactions</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Insert Members', 'Google → MySQL', '/api/sync/import/members')}>👥 Insert Members (new only)</button>
+          </div>
+          <RecentJobs filterFn={job => ['Import Transactions', 'Insert Members'].includes(job.jobName)} />
+        </div>
+      )}
+
+      {subTab === 'full-sync' && (
+        <div>
+          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Full Sync (All Operations)</h2>
+          <p style={{ color: 'var(--text2)', marginBottom: 8, fontSize: 14 }}>
+            Runs all 5 export and import operations in batch:
+          </p>
+          <ol style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 20, paddingLeft: 20 }}>
+            <li>Export Members (MySQL → Google Sheets)</li>
+            <li>Export Payments (MySQL → Google Sheets)</li>
+            <li>Export Submissions (MySQL → Google Sheets)</li>
+            <li>Export Transactions metadata (MySQL → Google Sheets, Notes & UpdatedAt only)</li>
+            <li>Import Transactions (Google Sheets → MySQL)</li>
+          </ol>
+          <p style={{ color: 'var(--text2)', fontSize: 12, marginBottom: 16 }}>
+            ⚠️ Live batch operation — writes to both MySQL and Google Sheets. All operations run sequentially.
+          </p>
+          <button className="btn btn-primary" onClick={() => triggerSync('Full Sync', 'All Operations', '/api/sync/full-sync')}>🔄 Run Full Sync</button>
+          <RecentJobs filterFn={job => job.jobName === 'Full Sync'} />
+        </div>
+      )}
+
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+});
+</script>

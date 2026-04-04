@@ -1,0 +1,252 @@
+<script type="text/babel">
+initComponent('PythonCodeEditor', () => {
+  const [code, setCode] = useState(`# Example: Query the database
+results = query("SELECT COUNT(*) as cnt FROM webapp_events")
+print(f"Total events: {results[0]['cnt']}")
+
+# Available helpers:
+# - query(sql) — Execute SELECT, returns list of dicts
+# - execute(sql, params) — Execute INSERT/UPDATE/DELETE
+# - datetime — Python datetime module
+# - json — JSON module
+# - traceback — For error handling
+`);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState('');
+
+  const runCode = async () => {
+    setLoading(true);
+    setResult(null);
+
+    const r = await api('/api/py-exec/code', {
+      method: 'POST',
+      body: JSON.stringify({ code })
+    });
+
+    setLoading(false);
+
+    if (r.status === 'ok' || r.status === 'error') {
+      setResult(r);
+      setToast(r.status === 'ok' ? '✓ Executed' : '✗ Error');
+    } else {
+      setToast('❌ Request failed');
+      setResult(r);
+    }
+  };
+
+  const downloadResult = () => {
+    if (!result) return;
+    const text = `# Code:\n${code}\n\n# Result:\n${result.output || ''}\n${result.error ? `\n# Error:\n${result.error}\n${result.traceback}` : ''}`;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `python-${new Date().toISOString()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const clearCode = () => {
+    if (confirm('Clear all code?')) {
+      setCode('');
+    }
+  };
+
+  const insertExample = (example) => {
+    setCode(prev => prev + '\n\n' + example);
+  };
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: 16 }}>Python Code Editor</h2>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 20 }}>
+        <p style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 8 }}>
+          Write and execute Python code with access to the database.
+        </p>
+        <p style={{ color: 'var(--text2)', fontSize: 12, fontStyle: 'italic' }}>
+          Available: query(sql), execute(sql, params), datetime, json, traceback
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, marginBottom: 20 }}>
+        {/* Editor */}
+        <div>
+          <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Code</h3>
+            <button className="btn btn-sm btn-outline" onClick={clearCode}>Clear</button>
+            <button className="btn btn-sm btn-primary" onClick={runCode} disabled={loading}>
+              {loading ? '⏳ Running...' : '▶ Run'}
+            </button>
+          </div>
+          <textarea
+            value={code}
+            onChange={e => setCode(e.target.value)}
+            style={{
+              width: '100%',
+              height: 400,
+              background: 'var(--bg)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              padding: 12,
+              borderRadius: 'var(--radius)',
+              fontFamily: 'monospace',
+              fontSize: 12,
+              outline: 'none',
+              resize: 'vertical'
+            }}
+            spellCheck="false"
+          />
+        </div>
+
+        {/* Examples Sidebar */}
+        <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: 12, border: '1px solid var(--border)', height: 'fit-content' }}>
+          <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 12, textTransform: 'uppercase' }}>Examples</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button
+              className="btn btn-sm btn-outline"
+              style={{ fontSize: 11, textAlign: 'left', justifyContent: 'flex-start' }}
+              onClick={() => insertExample(`# Count all events
+results = query("SELECT COUNT(*) as cnt FROM webapp_events")
+print(f"Total events: {results[0]['cnt']}")`)}
+            >
+              Count Events
+            </button>
+            <button
+              className="btn btn-sm btn-outline"
+              style={{ fontSize: 11, textAlign: 'left', justifyContent: 'flex-start' }}
+              onClick={() => insertExample(`# List recent syncs
+results = query("""
+  SELECT id, action, status, inserted, updated
+  FROM sync_log
+  ORDER BY created_at DESC
+  LIMIT 10
+""")
+for row in results:
+  print(f"{row['action']}: {row['status']} ({row['inserted']} ins, {row['updated']} upd)")`)}
+            >
+              Recent Syncs
+            </button>
+            <button
+              className="btn btn-sm btn-outline"
+              style={{ fontSize: 11, textAlign: 'left', justifyContent: 'flex-start' }}
+              onClick={() => insertExample(`# Find duplicate transactions
+results = query("""
+  SELECT bib_id, transaction_date, COUNT(*) as cnt
+  FROM transactions
+  WHERE deleted_at IS NULL
+  GROUP BY bib_id, transaction_date
+  HAVING cnt > 1
+  LIMIT 20
+""")
+print(f"Found {len(results)} duplicate groups")`)}
+            >
+              Transaction Dups
+            </button>
+            <button
+              className="btn btn-sm btn-outline"
+              style={{ fontSize: 11, textAlign: 'left', justifyContent: 'flex-start' }}
+              onClick={() => insertExample(`# Check NULL values
+results = query("""
+  SELECT
+    'NULL bib_id' as issue, COUNT(*) as cnt
+  FROM transactions WHERE bib_id IS NULL
+  UNION ALL
+  SELECT 'NULL amount' as issue, COUNT(*) as cnt
+  FROM transactions WHERE amount IS NULL
+""")
+for row in results:
+  print(f"{row['issue']}: {row['cnt']}")`)}
+            >
+              NULL Checks
+            </button>
+            <button
+              className="btn btn-sm btn-outline"
+              style={{ fontSize: 11, textAlign: 'left', justifyContent: 'flex-start' }}
+              onClick={() => insertExample(`# Pretty print results
+import json
+results = query("SELECT * FROM webapp_events LIMIT 1")
+print(json.dumps(results, indent=2, default=str))`)}
+            >
+              Pretty Print
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Results */}
+      {result && (
+        <div style={{ background: 'var(--surface2)', padding: 16, borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h4 style={{ fontSize: 13, fontWeight: 600 }}>
+              {result.status === 'ok' ? '✅ Success' : '❌ Error'}
+            </h4>
+            <button className="btn btn-sm btn-outline" onClick={downloadResult}>
+              📥 Download
+            </button>
+          </div>
+
+          {result.output && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6 }}>Output:</div>
+              <pre style={{
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                padding: 12,
+                borderRadius: 4,
+                fontSize: 12,
+                overflow: 'auto',
+                maxHeight: 300,
+                color: 'var(--green)',
+                fontFamily: 'monospace'
+              }}>
+                {result.output}
+              </pre>
+            </div>
+          )}
+
+          {result.error && (
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6 }}>Error:</div>
+              <pre style={{
+                background: 'var(--bg)',
+                border: '1px solid var(--red)',
+                padding: 12,
+                borderRadius: 4,
+                fontSize: 11,
+                overflow: 'auto',
+                maxHeight: 300,
+                color: 'var(--red)',
+                fontFamily: 'monospace'
+              }}>
+                {result.error}
+              </pre>
+              {result.traceback && (
+                <details style={{ marginTop: 8, color: 'var(--text2)', fontSize: 11 }}>
+                  <summary style={{ cursor: 'pointer' }}>Full Traceback</summary>
+                  <pre style={{
+                    background: 'var(--bg)',
+                    padding: 8,
+                    borderRadius: 4,
+                    marginTop: 6,
+                    overflow: 'auto',
+                    maxHeight: 200,
+                    fontSize: 10,
+                    fontFamily: 'monospace'
+                  }}>
+                    {result.traceback}
+                  </pre>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+};
+
+});
+</script>

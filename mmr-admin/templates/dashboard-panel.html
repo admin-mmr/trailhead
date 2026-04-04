@@ -1,0 +1,651 @@
+<script type="text/babel">
+initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
+  const [stats, setStats] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [years, setYears] = useState([]);
+  const [filter, setFilter] = useState({ status: '', year: '', q: '' });
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState('');
+  const [loadingIds, setLoadingIds] = useState({});
+  const [dbError, setDbError] = useState(false);
+  const [progressModal, setProgressModal] = useState({ isOpen: false, eventCode: null });
+
+  const loadStats = () => api('/api/stats').then(r => {
+    if (r.db_error) setDbError(true);
+    else { setDbError(false); if (r.ok) setStats(r.data); }
+  });
+  const loadYears = () => api('/api/stats/years').then(r => r.ok && setYears(r.data));
+
+  const loadEvents = useCallback(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.year) params.set('year', filter.year);
+    if (filter.q) params.set('q', filter.q);
+    api(`/api/events?${params}`).then(r => {
+      if (r.db_error) setDbError(true);
+      else if (r.ok) { setDbError(false); setEvents(r.data); }
+      setLoading(false);
+    });
+  }, [filter]);
+
+  useEffect(() => { loadStats(); loadYears(); }, []);
+  useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  if (dbError) {
+    return (
+      <div className="empty" style={{ paddingTop: 80 }}>
+        <div className="big" style={{ fontSize: 48 }}>⚡</div>
+        <h2 style={{ marginBottom: 8 }}>Not Connected to Database</h2>
+        <p style={{ color: 'var(--text2)', marginBottom: 20, maxWidth: 400, margin: '0 auto 20px' }}>
+          Connect to your Azure MySQL database to start browsing NYRR events and loading runner data.
+        </p>
+        <button className="btn btn-primary" style={{ fontSize: 15, padding: '10px 24px' }} onClick={onGoSettings}>
+          Open Settings
+        </button>
+      </div>
+    );
+  }
+
+  const triggerLoad = async (eventId, eventCode) => {
+    setLoadingIds(prev => ({ ...prev, [eventId]: true }));
+    setProgressModal({ isOpen: true, eventCode });
+
+    try {
+      const r = await api(`/api/load/${eventId}`, {
+        method: 'POST',
+        body: JSON.stringify({ force_reload: true }),
+      });
+
+      if (!r.ok) {
+        setToast(r.error || 'Load failed');
+        setProgressModal({ isOpen: false, eventCode: null });
+      }
+      // Modal polling will auto-close when status becomes 'done' or 'error'
+    } catch (e) {
+      setToast('Load error: ' + e.message);
+      setProgressModal({ isOpen: false, eventCode: null });
+    } finally {
+      setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
+      // Refresh events/stats after modal closes
+      setTimeout(() => {
+        loadEvents();
+        loadStats();
+      }, 1500);
+    }
+  };
+
+  const discoverEvents = async () => {
+    const year = filter.year || new Date().getFullYear();
+    setToast(`Discovering events for ${year}...`);
+    const r = await api('/api/discover', { method: 'POST', body: JSON.stringify({ year: parseInt(year) }) });
+    if (r.ok) {
+      setToast(`Found ${r.api_total} events, ${r.new_inserted} new inserted.`);
+      loadEvents();
+      loadStats();
+      loadYears();
+    } else {
+      setToast(r.error || 'Discovery failed');
+    }
+  };
+
+  const discoverUpcoming = async () => {
+    setToast('Fetching upcoming events from NYRR...');
+    const r = await api('/api/discover-upcoming', { method: 'POST' });
+    if (r.ok) {
+      setToast(`Found ${r.api_total} upcoming events, ${r.new_inserted} new inserted.`);
+      loadEvents();
+      loadStats();
+      loadYears();
+    } else {
+      setToast(r.error || 'Failed to fetch upcoming events');
+    }
+  };
+
+  return (
+    <div>
+
+      {stats && (
+        <div className="stats-grid">
+          <div className="stat-card"><div className="label">Total Events</div><div className="value accent">{stats.total_events}</div></div>
+          <div className="stat-card"><div className="label">Completed</div><div className="value green">{stats.completed}</div></div>
+          <div className="stat-card"><div className="label">Pending</div><div className="value yellow">{stats.pending}</div></div>
+          <div className="stat-card"><div className="label">Errors</div><div className="value red">{stats.errors}</div></div>
+          <div className="stat-card"><div className="label">MMR Runners</div><div className="value">{stats.total_mmr_runners}</div></div>
+          <div className="stat-card"><div className="label">Matched</div><div className="value green">{stats.total_matched}</div></div>
+          <div className="stat-card"><div className="label">Upcoming</div><div className="value accent">{stats.upcoming_events}</div></div>
+        </div>
+      )}
+
+      <div className="toolbar">
+        <input placeholder="Search events..." value={filter.q} onChange={e => setFilter(f => ({ ...f, q: e.target.value }))} />
+        <select value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}>
+          <option value="">All statuses</option>
+          <option value="Pending">Pending</option>
+          <option value="InProgress">In Progress</option>
+          <option value="Completed">Completed</option>
+          <option value="Error">Error</option>
+        </select>
+        <select value={filter.year} onChange={e => setFilter(f => ({ ...f, year: e.target.value }))}>
+          <option value="">All years</option>
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <button className="btn btn-primary" onClick={discoverEvents}>Discover New Events</button>
+        <button className="btn btn-outline" onClick={discoverUpcoming}>Discover Upcoming</button>
+      </div>
+
+      <div className="panel">
+        <div className="table-wrap">
+          {(() => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const upcoming = events.filter(ev => ev.event_date && new Date(ev.event_date) >= today);
+            const past = events.filter(ev => !ev.event_date || new Date(ev.event_date) < today);
+
+            const renderTable = (tableEvents, title, isPast) => (
+              <>
+                {tableEvents.length > 0 && <h3 style={{ marginTop: 20, marginBottom: 8, fontSize: 16, fontWeight: 600 }}>{title} ({tableEvents.length})</h3>}
+                {tableEvents.length > 0 && (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Event</th>
+                        <th>Date</th>
+                        <th>Distance</th>
+                        <th>Status</th>
+                        <th>MMR Runners</th>
+                        <th>All Runners</th>
+                        <th>Matched</th>
+                        <th>Match %</th>
+                        {isPast && <th>Action</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableEvents.map(ev => (
+                <tr key={ev.id}>
+                  <td>
+                    <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id); }} style={{ fontWeight: 600 }}>{ev.event_name}</a>
+                    <div style={{ color: 'var(--text2)', fontSize: 11 }}>
+                      {ev.event_code}
+                      {ev.event_url && (
+                        <a href={ev.event_url} target="_blank" rel="noopener noreferrer"
+                          style={{ marginLeft: 6, color: 'var(--accent)', textDecoration: 'none' }}
+                          title="View on NYRR">↗ NYRR</a>
+                      )}
+                    </div>
+                  </td>
+                  <td>{ev.event_date ? new Date(ev.event_date).toLocaleDateString() : '—'}</td>
+                  <td>{ev.distance || '—'}</td>
+                  <td><StatusBadge status={ev.processing_status} /></td>
+                  <td>{ev.mmr_runner_count || 0}</td>
+                  <td style={{ color: ev.result_count > 0 ? 'var(--text)' : 'var(--text2)' }}>{ev.result_count || 0}</td>
+                  <td>{ev.mmr_matched_count || 0}</td>
+                  <td><MatchBar pct={ev.match_pct || 0} /></td>
+                  {isPast && (
+                    <td>
+                      {(() => {
+                        const busy = !!loadingIds[ev.id];
+                        return (
+                          <button
+                            className={`btn btn-sm btn-green`}
+                            disabled={busy}
+                            onClick={() => triggerLoad(ev.id, ev.event_code)}
+                          >
+                            {busy
+                              ? <><span className="spinner" /> Loading…</>
+                              : <>▶ Load</>}
+                          </button>
+                        );
+                      })()}
+                    </td>
+                  )}
+                </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            );
+
+            return (
+              <>
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: 40 }}>
+                    <span className="spinner" /> Loading events...
+                  </div>
+                ) : events.length === 0 ? (
+                  <div className="empty" style={{ padding: 40 }}><div className="big">-</div>No events found</div>
+                ) : (
+                  <>
+                    {renderTable(past, '📦 Past Events', true)}
+                  </>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      </div>
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+      <SimpleProgressModal
+        isOpen={progressModal.isOpen}
+        eventCode={progressModal.eventCode}
+        onClose={() => setProgressModal({ isOpen: false, eventCode: null })}
+      />
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════
+// Event detail view
+// ═══════════════════════════════════════════════════
+window.EventDetail = ({ eventId, onBack }) => {
+  const [event, setEvent] = useState(null);
+  const [runners, setRunners] = useState([]);
+  const [filter, setFilter] = useState({ q: '', team: '', matched: '', unmatched: '' });
+  const [colFilters, setColFilters] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [visibleCols, setVisibleCols] = useState(
+    JSON.parse(localStorage.getItem('mmr_runner_cols')) || {
+      place: true, bib: true, name: true, age: true, gender: true,
+      time: true, pace: true, team: true, mmrMatch: true, method: true, runnerId: true
+    }
+  );
+  const [showColSelector, setShowColSelector] = useState(false);
+  const [toast, setToast] = useState('');
+  const [matchModal, setMatchModal] = useState(null); // runner row being matched
+  const [runnerPage, setRunnerPage] = useState(1);
+  const [runnerPerPage, setRunnerPerPage] = useState(100);
+
+  useEffect(() => {
+    api(`/api/events/${eventId}`).then(r => r.ok && setEvent(r.data));
+    const saved = localStorage.getItem(`mmr_runner_colfilters_${eventId}`);
+    if (saved) setColFilters(JSON.parse(saved));
+  }, [eventId]);
+
+  useEffect(() => {
+    setLoading(true);
+    const p = new URLSearchParams();
+    if (filter.q) p.set('q', filter.q);
+    if (filter.team) p.set('team', filter.team);
+    if (filter.matched) p.set('matched', '1');
+    if (filter.unmatched) p.set('unmatched', '1');
+    api(`/api/events/${eventId}/runners?${p}`).then(r => {
+      if (r.ok) setRunners(r.data);
+      setLoading(false);
+      setRunnerPage(1);
+    });
+  }, [eventId, filter]);
+
+  useEffect(() => {
+    localStorage.setItem('mmr_runner_cols', JSON.stringify(visibleCols));
+  }, [visibleCols]);
+
+  useEffect(() => {
+    localStorage.setItem(`mmr_runner_colfilters_${eventId}`, JSON.stringify(colFilters));
+  }, [colFilters, eventId]);
+
+  // ── Hooks must all come before any early return (Rules of Hooks) ──────────
+
+  const handleMatchDone = useCallback((runnerRowId, member, updatedRunner) => {
+    setRunners(prev => prev.map(r =>
+      r.id === runnerRowId ? { ...r, ...updatedRunner } : r
+    ));
+    api(`/api/events/${eventId}`).then(res => res.ok && setEvent(res.data));
+    setToast(`Matched to ${member.first_name} ${member.last_name} (${member.member_id})`);
+  }, [eventId]);
+
+  const handleAutoMatch = useCallback(async () => {
+    setToast('Running auto-match…');
+    const res = await api(`/api/events/${eventId}/automatch`, { method: 'POST' });
+    if (res.ok) {
+      setToast(res.message || `Auto-matched ${res.matched} runner(s).`);
+      const p = new URLSearchParams();
+      if (filter.q) p.set('q', filter.q);
+      if (filter.team) p.set('team', filter.team);
+      if (filter.matched) p.set('matched', '1');
+      if (filter.unmatched) p.set('unmatched', '1');
+      api(`/api/events/${eventId}/runners?${p}`).then(r => r.ok && setRunners(r.data));
+      api(`/api/events/${eventId}`).then(r => r.ok && setEvent(r.data));
+    } else {
+      setToast(res.error || 'Auto-match failed');
+    }
+  }, [eventId, filter]);
+
+  const handleUnmatch = useCallback(async (runner) => {
+    // Optimistic update — rolls back on API error
+    setRunners(prev => prev.map(r =>
+      r.id === runner.id
+        ? { ...r, mmr_member_id: null, match_method: 'unmatched', matched_by: null, matched_at: null }
+        : r
+    ));
+    const res = await api(`/api/runners/${runner.id}/match`, { method: 'DELETE' });
+    if (res.ok) {
+      api(`/api/events/${eventId}`).then(r => r.ok && setEvent(r.data));
+      setToast('Match removed');
+    } else {
+      setRunners(prev => prev.map(r => r.id === runner.id ? runner : r));
+      setToast(res.error || 'Failed to remove match');
+    }
+  }, [eventId]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  if (!event) return <div className="loading"><span className="spinner" /> Loading...</div>;
+
+  const mmr = event.mmr_runner_count || 0;
+  const matched = event.mmr_matched_count || 0;
+  const pct = mmr > 0 ? Math.round(matched / mmr * 100) : 0;
+
+  // Apply column filters
+  let filtered = runners;
+  if (Object.keys(colFilters).length > 0) {
+    filtered = runners.filter(r => {
+      if (colFilters.place && colFilters.place.trim()) {
+        const range = colFilters.place.trim();
+        const place = parseInt(r.overall_place);
+        if (range.includes('-')) {
+          const [from, to] = range.split('-').map(x => parseInt(x.trim()));
+          if (place < from || place > to) return false;
+        } else {
+          if (place !== parseInt(range)) return false;
+        }
+      }
+      if (colFilters.name && colFilters.name.trim()) {
+        if (!r.runner_name.toLowerCase().includes(colFilters.name.toLowerCase())) return false;
+      }
+      if (colFilters.age && colFilters.age.trim()) {
+        if (r.age !== parseInt(colFilters.age)) return false;
+      }
+      if (colFilters.gender && colFilters.gender.trim()) {
+        if (r.gender !== colFilters.gender.toUpperCase()) return false;
+      }
+      if (colFilters.team && colFilters.team.trim()) {
+        if (r.team_code !== colFilters.team.toUpperCase()) return false;
+      }
+      if (colFilters.mmrMatch && colFilters.mmrMatch.trim()) {
+        const val = colFilters.mmrMatch.toLowerCase();
+        const isMatched = !!r.mmr_member_id;
+        if ((val === 'matched' && !isMatched) || (val === 'unmatched' && isMatched)) return false;
+      }
+      return true;
+    });
+  }
+
+  const handleExportCSV = () => {
+    if (filtered.length === 0) {
+      setToast('No runners to export');
+      return;
+    }
+    const cols = ['place', 'bib', 'name', 'age', 'gender', 'time', 'pace', 'team', 'mmrMatch', 'method', 'runnerId']
+      .filter(c => visibleCols[c]);
+    const header = ['Place', 'Bib', 'Name', 'Age', 'Gender', 'Time', 'Pace', 'Team', 'MMR Match', 'Method', 'Runner ID']
+      .filter((_, i) => visibleCols[['place', 'bib', 'name', 'age', 'gender', 'time', 'pace', 'team', 'mmrMatch', 'method', 'runnerId'][i]])
+      .join(',');
+    const rows = filtered.map(r => {
+      const vals = [
+        r.overall_place || '', r.bib_number || '', r.runner_name || '',
+        r.age || '', r.gender || '', r.finish_time || '', r.pace || '',
+        r.team_code || '', r.mmr_member_id || '', r.match_method || '', r.nyrr_runner_id || ''
+      ];
+      return vals.filter((_, i) => visibleCols[['place', 'bib', 'name', 'age', 'gender', 'time', 'pace', 'team', 'mmrMatch', 'method', 'runnerId'][i]])
+        .map(v => `"${String(v).replace(/"/g, '""')}"`)
+        .join(',');
+    });
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${event.event_code}_runners.csv`;
+    link.click();
+    setToast('CSV exported');
+  };
+
+  const hasActiveColFilters = Object.values(colFilters).some(v => v && v.trim());
+
+  // Client-side pagination
+  const totalRunnerPages = Math.max(1, Math.ceil(filtered.length / runnerPerPage));
+  const safePage = Math.min(runnerPage, totalRunnerPages);
+  const pagedRunners = filtered.slice((safePage - 1) * runnerPerPage, safePage * runnerPerPage);
+
+  return (
+    <div>
+      <button className="back-btn" onClick={onBack}>← Back to events</button>
+      <h2 style={{ marginBottom: 4 }}>{event.event_name}</h2>
+      <div style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 16 }}>{event.event_code} · {event.location}</div>
+
+      <div className="detail-grid">
+        <div className="detail-item"><div className="label">Date</div><div className="val">{event.event_date ? new Date(event.event_date).toLocaleDateString() : '—'}</div></div>
+        <div className="detail-item"><div className="label">Distance</div><div className="val">{event.distance || '—'}</div></div>
+        <div className="detail-item"><div className="label">Status</div><div className="val"><StatusBadge status={event.processing_status} /></div></div>
+        <div className="detail-item"><div className="label">Total Runners</div><div className="val">{event.result_count || 0}</div></div>
+        <div className="detail-item"><div className="label">MMR Runners</div><div className="val">{mmr}</div></div>
+        <div className="detail-item"><div className="label">Matched</div><div className="val">{matched} / {mmr} ({pct}%)</div></div>
+        <div className="detail-item"><div className="label">Processed</div><div className="val" style={{ fontSize: 13 }}>{event.processed_at || '—'}</div></div>
+        <div className="detail-item"><div className="label">NYRR Results</div><div className="val" style={{ fontSize: 13 }}>{event.event_url ? <a href={event.event_url} target="_blank" rel="noreferrer">View on NYRR ↗</a> : '—'}</div></div>
+      </div>
+
+      {event.notes && (
+        <div style={{
+          background: event.processing_status === 'Error' ? 'rgba(239,68,68,0.12)' : 'var(--surface)',
+          border: event.processing_status === 'Error' ? '1px solid rgba(239,68,68,0.3)' : 'none',
+          padding: 12, borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 13,
+          color: event.processing_status === 'Error' ? 'var(--red, #ef4444)' : 'var(--text2)'
+        }}>
+          <strong>{event.processing_status === 'Error' ? '⚠ Error:' : 'Notes:'}</strong> {event.notes}
+        </div>
+      )}
+
+      <div className="toolbar">
+        <input placeholder="Search runners..." value={filter.q} onChange={e => setFilter(f => ({ ...f, q: e.target.value }))} />
+        <select value={filter.team} onChange={e => setFilter(f => ({ ...f, team: e.target.value }))}>
+          <option value="">All teams</option>
+          <option value="MMR">MMR only</option>
+        </select>
+        <label style={{ fontSize: 13, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" checked={!!filter.matched} onChange={e => setFilter(f => ({ ...f, matched: e.target.checked ? '1' : '', unmatched: '' }))} /> Matched
+        </label>
+        <label style={{ fontSize: 13, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" checked={!!filter.unmatched} onChange={e => setFilter(f => ({ ...f, unmatched: e.target.checked ? '1' : '', matched: '' }))} /> Unmatched
+        </label>
+        <button className="btn btn-sm btn-outline" onClick={handleAutoMatch} title="Re-run auto-match by NYRRRunnerName">Auto-match</button>
+        <span style={{ color: 'var(--text2)', fontSize: 13, marginLeft: 'auto' }}>{filtered.length} runners</span>
+        <div className="column-selector">
+          <button className="btn btn-sm btn-outline" onClick={() => setShowColSelector(!showColSelector)}>Columns ▾</button>
+          {showColSelector && (
+            <div className="column-selector-panel">
+              {['place', 'bib', 'name', 'age', 'gender', 'time', 'pace', 'team', 'mmrMatch', 'method', 'runnerId'].map(col => (
+                <div key={col} className="column-check">
+                  <input
+                    type="checkbox"
+                    checked={visibleCols[col]}
+                    onChange={e => setVisibleCols(prev => ({ ...prev, [col]: e.target.checked }))}
+                  />
+                  <span>{col === 'mmrMatch' ? 'MMR Match' : col === 'runnerId' ? 'Runner ID' : col.charAt(0).toUpperCase() + col.slice(1)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>Export CSV</button>
+      </div>
+
+      <div className="panel">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {visibleCols.place && <th>Place</th>}
+                {visibleCols.bib && <th>Bib</th>}
+                {visibleCols.name && <th>Name</th>}
+                {visibleCols.age && <th>Age</th>}
+                {visibleCols.gender && <th>Gender</th>}
+                {visibleCols.time && <th>Time</th>}
+                {visibleCols.pace && <th>Pace</th>}
+                {visibleCols.team && <th>Team</th>}
+                {visibleCols.mmrMatch && <th>MMR Match</th>}
+                {visibleCols.method && <th>Method</th>}
+                {visibleCols.runnerId && <th>Runner ID</th>}
+              </tr>
+              <tr className="filter-row">
+                {visibleCols.place && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="e.g. 1-50"
+                      value={colFilters.place || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, place: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.bib && <th />}
+                {visibleCols.name && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="e.g. Lu"
+                      value={colFilters.name || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.age && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="Age"
+                      value={colFilters.age || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, age: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.gender && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="M/W/X"
+                      value={colFilters.gender || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, gender: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.time && <th />}
+                {visibleCols.pace && <th />}
+                {visibleCols.team && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="MMR"
+                      value={colFilters.team || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, team: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.mmrMatch && (
+                  <th>
+                    <input
+                      type="text"
+                      placeholder="matched/unmatched"
+                      value={colFilters.mmrMatch || ''}
+                      onChange={e => setColFilters(prev => ({ ...prev, mmrMatch: e.target.value }))}
+                    />
+                  </th>
+                )}
+                {visibleCols.method && <th />}
+                {visibleCols.runnerId && <th />}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length} className="loading"><span className="spinner" /> Loading runners...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length} className="empty"><div className="big">-</div>No runners found</td></tr>
+              ) : pagedRunners.map(r => (
+                <tr key={r.id}>
+                  {visibleCols.place && <td>{r.overall_place || '—'}</td>}
+                  {visibleCols.bib && <td>{r.bib_number || '—'}</td>}
+                  {visibleCols.name && <td style={{ fontWeight: 500 }}>{r.runner_name}</td>}
+                  {visibleCols.age && <td>{r.age || '—'}</td>}
+                  {visibleCols.gender && <td>{r.gender || '—'}</td>}
+                  {visibleCols.time && <td style={{ fontFamily: 'monospace' }}>{r.finish_time || '—'}</td>}
+                  {visibleCols.pace && <td style={{ fontFamily: 'monospace' }}>{r.pace || '—'}</td>}
+                  {visibleCols.team && <td>{r.team_code === 'MMR' ? <span className="badge badge-purple">MMR</span> : (r.team_code || '—')}</td>}
+                  {visibleCols.mmrMatch && (
+                    <td>
+                      {r.mmr_member_id ? (
+                        <div className="match-cell">
+                          <span className="badge badge-green" title={`Status: ${r.member_status || 'unknown'}`}>
+                            {r.mmr_member_id}
+                          </span>
+                          <button className="btn-unmatch" onClick={() => handleUnmatch(r)} title="Remove this match">
+                            ↩ Unmatch
+                          </button>
+                        </div>
+                      ) : (
+                        <button className="btn-match" onClick={() => setMatchModal(r)}>
+                          + Match
+                        </button>
+                      )}
+                    </td>
+                  )}
+                  {visibleCols.method && <td><span style={{ fontSize: 11, color: 'var(--text2)' }}>{r.match_method || ''}</span></td>}
+                  {visibleCols.runnerId && (
+                    <td>
+                      {r.nyrr_runner_id ? (
+                        <a href={`https://results.nyrr.org/runner/${r.nyrr_runner_id}/races`} target="_blank" rel="noreferrer">
+                          {r.nyrr_runner_id} ↗
+                        </a>
+                      ) : (
+                        <span style={{ color: 'var(--text2)' }}>—</span>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {filtered.length > runnerPerPage && (
+        <div className="pagination">
+          <button className="btn btn-sm btn-outline" disabled={safePage <= 1} onClick={() => setRunnerPage(1)}>«</button>
+          <button className="btn btn-sm btn-outline" disabled={safePage <= 1} onClick={() => setRunnerPage(p => p - 1)}>‹</button>
+          <span className="page-info">Page {safePage} of {totalRunnerPages}</span>
+          <button className="btn btn-sm btn-outline" disabled={safePage >= totalRunnerPages} onClick={() => setRunnerPage(p => p + 1)}>›</button>
+          <button className="btn btn-sm btn-outline" disabled={safePage >= totalRunnerPages} onClick={() => setRunnerPage(totalRunnerPages)}>»</button>
+          <span style={{ marginLeft: 12, fontSize: 13, color: 'var(--text2)' }}>Show</span>
+          <select
+            value={runnerPerPage}
+            onChange={e => { setRunnerPerPage(Number(e.target.value)); setRunnerPage(1); }}
+            style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)' }}
+          >
+            {[50, 100, 200, 500, 1000].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 13, color: 'var(--text2)' }}>per page</span>
+        </div>
+      )}
+      {hasActiveColFilters && (
+        <div style={{ marginTop: 12, fontSize: 13 }}>
+          <a href="#" onClick={e => { e.preventDefault(); setColFilters({}); }} style={{ color: 'var(--accent)' }}>Clear filters</a>
+        </div>
+      )}
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+
+      {/* Match modal — rendered outside the table so it's not clipped */}
+      {matchModal && (
+        <MatchModal
+          runner={matchModal}
+          onClose={() => setMatchModal(null)}
+          onMatched={handleMatchDone}
+        />
+      )}
+    </div>
+  );
+};
+
+// Register EventDetail separately (different component)
+if (!window.EventDetail) window.EventDetail = EventDetail;
+// Register Dashboard as DashboardPanel alias
+if (!window.DashboardPanel) window.DashboardPanel = window.Dashboard;
+</script>

@@ -1,0 +1,193 @@
+<script type="text/babel">
+initComponent('MatchModal', ({ runner, onClose, onMatched }) => {
+  const [query, setQuery] = useState(runner.runner_name || '');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [confirming, setConfirming] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const genderMatch = (runnerGender, memberGender) => {
+    if (!runnerGender || !memberGender) return null;
+    const rg = runnerGender.toUpperCase()[0];
+    const mg = memberGender.toLowerCase()[0];
+    if (rg === 'M') return mg === 'm';
+    if (rg === 'W') return mg === 'f' || mg === 'w';
+    return null;
+  };
+
+  const getConfidence = (member) => {
+    const rName = (runner.runner_name || '').trim().toLowerCase();
+    const mName = `${member.first_name} ${member.last_name}`.trim().toLowerCase();
+    const nyrrName = (member.nyrr_runner_name || '').trim().toLowerCase();
+    const exactName = rName === mName || rName === nyrrName;
+    const gm = genderMatch(runner.gender, member.gender);
+    if (exactName && gm === true)  return { label: 'Strong match', cls: 'badge-green' };
+    if (exactName && gm === null)  return { label: 'Name match',   cls: 'badge-blue' };
+    if (exactName && gm === false) return { label: 'Name ⚠ gender', cls: 'badge-yellow' };
+    return { label: 'Partial', cls: '' };
+  };
+
+  const doSearch = async (q) => {
+    if (!q.trim()) { setResults([]); return; }
+    setSearching(true);
+    setError('');
+    const r = await api(`/api/members/search?q=${encodeURIComponent(q.trim())}`);
+    if (r.ok) setResults(r.data);
+    else setError(r.error || 'Search failed');
+    setSearching(false);
+  };
+
+  useEffect(() => { doSearch(query); }, []);
+
+  const handleConfirm = async () => {
+    if (!confirming) return;
+    setSaving(true);
+    setError('');
+    const r = await api(`/api/runners/${runner.id}/match`, {
+      method: 'POST',
+      body: JSON.stringify({ member_id: confirming.member_id }),
+    });
+    setSaving(false);
+    if (r.ok) {
+      onMatched(runner.id, confirming, r.data);
+      onClose();
+    } else {
+      setError(r.error || 'Failed to save match');
+      setConfirming(null);
+    }
+  };
+
+  const runnerNameLc = (runner.runner_name || '').trim().toLowerCase();
+  const exactDupes = results.filter(m =>
+    `${m.first_name} ${m.last_name}`.trim().toLowerCase() === runnerNameLc ||
+    (m.nyrr_runner_name || '').trim().toLowerCase() === runnerNameLc
+  );
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal">
+        <div className="modal-header">
+          <div>
+            <h3>Match runner to member</h3>
+            <div className="modal-runner-info">
+              <strong style={{ color: 'var(--text)' }}>{runner.runner_name}</strong>
+              {runner.age ? <span> · Age {runner.age}</span> : null}
+              {runner.gender ? <span> · {runner.gender === 'W' ? 'Female' : runner.gender === 'M' ? 'Male' : runner.gender}</span> : null}
+              {runner.bib_number ? <span> · Bib {runner.bib_number}</span> : null}
+              {runner.finish_time ? <span> · {runner.finish_time}</span> : null}
+            </div>
+          </div>
+          <button className="btn-close" onClick={onClose} title="Close">×</button>
+        </div>
+
+        <div className="modal-body">
+          {exactDupes.length > 1 && (
+            <div className="modal-warn">
+              ⚠ {exactDupes.length} members share the name "{runner.runner_name}" — verify age / birth year before matching.
+            </div>
+          )}
+
+          {confirming && (
+            <div className="modal-confirm">
+              <h4>Confirm match?</h4>
+              <div className="detail">
+                Link <strong style={{ color: 'var(--text)' }}>{runner.runner_name}</strong>
+                {' → '}
+                <strong style={{ color: 'var(--text)' }}>{confirming.first_name} {confirming.last_name}</strong>
+                {' '}
+                <span style={{ color: 'var(--text2)', fontSize: 12 }}>({confirming.member_id} · {confirming.email})</span>
+              </div>
+              {genderMatch(runner.gender, confirming.gender) === false && (
+                <div className="gender-warn">⚠ Gender mismatch: runner is {runner.gender}, member is {confirming.gender}</div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary btn-sm" onClick={handleConfirm} disabled={saving}>
+                  {saving ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Saving…</> : 'Confirm'}
+                </button>
+                <button className="btn btn-outline btn-sm" onClick={() => setConfirming(null)} disabled={saving}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          <div className="modal-search">
+            <input
+              type="text"
+              placeholder="Search by name…"
+              value={query}
+              autoFocus
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && doSearch(query)}
+            />
+            <button className="btn btn-primary btn-sm" onClick={() => doSearch(query)} disabled={searching}>
+              {searching ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Search'}
+            </button>
+          </div>
+
+          {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+
+          {searching ? (
+            <div className="loading"><span className="spinner" /> Searching…</div>
+          ) : results.length === 0 && query.trim() ? (
+            <div style={{ color: 'var(--text2)', fontSize: 13 }}>No members found for "{query}"</div>
+          ) : results.length > 0 ? (
+            <div className="panel">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Member</th>
+                      <th>Gender</th>
+                      <th>Born</th>
+                      <th>NYRR Name</th>
+                      <th>Status</th>
+                      <th>Confidence</th>
+                      <th style={{ width: 70 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map(m => {
+                      const conf = getConfidence(m);
+                      return (
+                        <tr key={m.member_id}>
+                          <td>
+                            <div style={{ fontWeight: 500 }}>{m.first_name} {m.last_name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text2)' }}>{m.member_id} · {m.email}</div>
+                          </td>
+                          <td style={{ fontSize: 13 }}>{m.gender || '—'}</td>
+                          <td style={{ fontSize: 13 }}>{m.year_born || '—'}</td>
+                          <td style={{ fontSize: 12, color: 'var(--text2)' }}>{m.nyrr_runner_name || '—'}</td>
+                          <td>
+                            <span className={`badge ${m.status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{m.status}</span>
+                          </td>
+                          <td>
+                            {conf.cls
+                              ? <span className={`badge ${conf.cls}`}>{conf.label}</span>
+                              : <span style={{ color: 'var(--text2)', fontSize: 11 }}>{conf.label}</span>}
+                          </td>
+                          <td>
+                            <button
+                              className="btn btn-sm btn-primary"
+                              style={{ padding: '4px 12px', fontSize: 12 }}
+                              onClick={() => setConfirming(m)}
+                              disabled={!!confirming}
+                            >
+                              Select
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+});
+</script>

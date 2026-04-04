@@ -1,0 +1,149 @@
+<script type="text/babel">
+initComponent('PythonExecPanel', () => {
+  const [functions, setFunctions] = useState([]);
+  const [selectedFn, setSelectedFn] = useState(null);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    api('/api/py-exec/list').then(r => {
+      if (r && r.functions && Array.isArray(r.functions)) {
+        setFunctions(r.functions);
+        if (r.functions.length > 0) setSelectedFn(r.functions[0].name);
+      } else {
+        console.warn('Failed to load functions:', r);
+      }
+    }).catch(err => {
+      console.error('API error:', err);
+    });
+  }, []);
+
+  const runFunction = async () => {
+    if (!selectedFn) return;
+    setLoading(true);
+    setResult(null);
+
+    const r = await api(`/api/py-exec/run/${selectedFn}`, {
+      method: 'POST',
+      body: JSON.stringify({ kwargs: {} })
+    });
+
+    setLoading(false);
+    if (r.ok || r.function) {
+      setResult(r);
+      setToast('✓ Execution complete');
+    } else {
+      setToast('✗ Execution failed');
+      setResult(r);
+    }
+  };
+
+  const downloadResult = () => {
+    if (!result) return;
+    const json = JSON.stringify(result, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `py-exec-${selectedFn}-${new Date().toISOString()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: 16 }}>Python Execution Engine</h2>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 20 }}>
+        <p style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 8 }}>
+          Run diagnostic functions to inspect data sync, transactions, and database state.
+        </p>
+        <p style={{ color: 'var(--text2)', fontSize: 12, fontStyle: 'italic' }}>
+          All functions are read-only and safe to execute in Azure.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16, marginBottom: 20 }}>
+        {/* Function List */}
+        <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+          <div style={{ padding: 12, borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 13 }}>Functions</div>
+          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            {functions.map(fn => (
+              <button
+                key={fn.name}
+                onClick={() => setSelectedFn(fn.name)}
+                style={{
+                  width: '100%',
+                  padding: 10,
+                  textAlign: 'left',
+                  background: selectedFn === fn.name ? 'var(--accent)' : 'transparent',
+                  color: selectedFn === fn.name ? 'var(--bg)' : 'var(--text)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  borderBottom: '1px solid var(--surface2)',
+                  fontWeight: selectedFn === fn.name ? 600 : 400,
+                }}
+              >
+                {fn.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Main Panel */}
+        <div>
+          {selectedFn && (
+            <>
+              <div style={{ background: 'var(--surface)', padding: 16, borderRadius: 'var(--radius)', marginBottom: 16, border: '1px solid var(--border)' }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{selectedFn}</h3>
+                <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+                  {functions.find(f => f.name === selectedFn)?.description || 'No description'}
+                </p>
+                <button
+                  className="btn btn-primary"
+                  onClick={runFunction}
+                  disabled={loading}
+                >
+                  {loading ? '⏳ Running...' : '▶ Execute'}
+                </button>
+              </div>
+
+              {/* Results */}
+              {result && (
+                <div style={{ background: 'var(--surface2)', padding: 16, borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <h4 style={{ fontSize: 13, fontWeight: 600 }}>
+                      {result.status === 'ok' ? '✅ Success' : '❌ Error'}
+                    </h4>
+                    <button className="btn btn-sm btn-outline" onClick={downloadResult}>
+                      📥 Download JSON
+                    </button>
+                  </div>
+                  <pre style={{
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    padding: 12,
+                    borderRadius: 4,
+                    fontSize: 11,
+                    overflow: 'auto',
+                    maxHeight: 400,
+                    color: 'var(--text)',
+                    fontFamily: 'monospace'
+                  }}>
+                    {JSON.stringify(result, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+};
+
+});
+</script>

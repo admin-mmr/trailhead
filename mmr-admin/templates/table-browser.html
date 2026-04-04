@@ -1,0 +1,285 @@
+<script type="text/babel">
+const DEFAULT_HIDDEN_COLUMNS = {
+  members: [
+    'password_hash', 'google_sub', 'microsoft_sub', 'apple_sub',
+    'yahoo_sub', 'facebook_sub', 'CreatedAt', 'UpdatedAt',
+    'WebApp', 'PaymentCheck', 'Info', 'LastUpdated',
+    'MembershipFeePaid', 'PaymentDate', 'PaymentTransaction', 'Notes',
+  ],
+};
+
+initComponent('TableBrowser', () => {
+  const [tables, setTables] = useState([]);
+  const [selectedTable, setSelectedTable] = useState('');
+  const [tableData, setTableData] = useState(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
+  const [sort, setSort] = useState({ col: '', order: 'asc' });
+  const [loading, setLoading] = useState(false);
+  const [colFilters, setColFilters] = useState({});
+  const [activeFilters, setActiveFilters] = useState({});
+  const [showColSelector, setShowColSelector] = useState(false);
+  const [visibleCols, setVisibleCols] = useState({});
+  const [toast, setToast] = useState('');
+  const [savingCols, setSavingCols] = useState(false);
+  const filterTimerRef = React.useRef(null);
+
+  useEffect(() => {
+    api('/api/tables').then(r => r.ok && setTables(r.data));
+  }, []);
+
+  const applyFiltersNow = React.useCallback(() => {
+    if (filterTimerRef.current) { clearTimeout(filterTimerRef.current); filterTimerRef.current = null; }
+    const newActive = {};
+    Object.entries(colFilters).forEach(([k, v]) => { if (v && v.trim()) newActive[k] = v.trim(); });
+    setActiveFilters(prev => {
+      const oldKeys = Object.keys(prev).sort().join(',');
+      const newKeys = Object.keys(newActive).sort().join(',');
+      const oldVals = Object.values(prev).sort().join(',');
+      const newVals = Object.values(newActive).sort().join(',');
+      if (oldKeys !== newKeys || oldVals !== newVals) { setPage(1); return newActive; }
+      return prev;
+    });
+  }, [colFilters]);
+
+  useEffect(() => {
+    if (filterTimerRef.current) clearTimeout(filterTimerRef.current);
+    filterTimerRef.current = setTimeout(applyFiltersNow, 800);
+    return () => { if (filterTimerRef.current) clearTimeout(filterTimerRef.current); };
+  }, [colFilters]);
+
+  useEffect(() => {
+    if (!selectedTable) return;
+    setLoading(true);
+    const p = new URLSearchParams({ page, per_page: perPage });
+    if (sort.col) { p.set('sort', sort.col); p.set('order', sort.order); }
+    Object.entries(activeFilters).forEach(([col, val]) => {
+      if (val) p.set(`filter[${col}]`, val);
+    });
+    api(`/api/tables/${selectedTable}?${p}`).then(r => {
+      if (r.ok) setTableData(r);
+      setLoading(false);
+    });
+  }, [selectedTable, page, perPage, sort, activeFilters]);
+
+  useEffect(() => {
+    if (!selectedTable || !tableData) return;
+    const allColNames = (tableData.columns || []).map(c => c.COLUMN_NAME);
+    api(`/api/user-settings/${selectedTable}`).then(r => {
+      if (r.ok && r.visible_columns && r.visible_columns.length > 0) {
+        const savedSet = new Set(r.visible_columns);
+        setVisibleCols(allColNames.reduce((acc, col) => ({ ...acc, [col]: savedSet.has(col) }), {}));
+      } else {
+        const lsSaved = JSON.parse(localStorage.getItem(`mmr_table_cols_${selectedTable}`) || '[]');
+        if (lsSaved.length > 0) {
+          const savedSet = new Set(lsSaved);
+          setVisibleCols(allColNames.reduce((acc, col) => ({ ...acc, [col]: savedSet.has(col) }), {}));
+        } else {
+          const hidden = new Set((DEFAULT_HIDDEN_COLUMNS[selectedTable] || []).map(c => c.toLowerCase()));
+          setVisibleCols(allColNames.reduce((acc, col) => ({
+            ...acc,
+            [col]: !hidden.has(col.toLowerCase()),
+          }), {}));
+        }
+      }
+    });
+  }, [selectedTable, tableData?.table]);
+
+  const toggleSort = (col) => {
+    setSort(prev => ({
+      col,
+      order: prev.col === col && prev.order === 'asc' ? 'desc' : 'asc',
+    }));
+    setPage(1);
+  };
+
+  const saveColumnVisibility = (newVisibleCols) => {
+    if (!selectedTable) return;
+    const visibleList = Object.keys(newVisibleCols).filter(k => newVisibleCols[k]);
+    localStorage.setItem(`mmr_table_cols_${selectedTable}`, JSON.stringify(visibleList));
+    setSavingCols(true);
+    api(`/api/user-settings/${selectedTable}`, {
+      method: 'PUT',
+      body: JSON.stringify({ visible_columns: visibleList }),
+    }).finally(() => setSavingCols(false));
+  };
+
+  const toggleColumn = (colName, checked) => {
+    const updated = { ...visibleCols, [colName]: checked };
+    setVisibleCols(updated);
+    saveColumnVisibility(updated);
+  };
+
+  const selectAllCols = () => {
+    const all = (tableData?.columns || []).reduce((acc, c) => ({ ...acc, [c.COLUMN_NAME]: true }), {});
+    setVisibleCols(all);
+    saveColumnVisibility(all);
+  };
+
+  const selectNoneCols = () => {
+    const none = (tableData?.columns || []).reduce((acc, c) => ({ ...acc, [c.COLUMN_NAME]: false }), {});
+    setVisibleCols(none);
+    saveColumnVisibility(none);
+  };
+
+  const handleExportCSV = () => {
+    const data = tableData?.data || [];
+    if (data.length === 0) {
+      setToast('No data to export');
+      return;
+    }
+    const visibleColNames = (tableData?.columns || [])
+      .map(c => c.COLUMN_NAME)
+      .filter(c => visibleCols[c]);
+    const header = visibleColNames.join(',');
+    const rows = data.map(row =>
+      visibleColNames.map(col => {
+        const val = row[col];
+        return `"${String(val === null ? '' : val).replace(/"/g, '""')}"`;
+      }).join(',')
+    );
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${selectedTable}_page${page}.csv`;
+    link.click();
+    setToast('CSV exported');
+  };
+
+  const hasActiveFilters = Object.values(activeFilters).some(v => v);
+
+  return (
+    <div>
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+        {tables.map(t => (
+          <div
+            key={t.TABLE_NAME}
+            className="stat-card"
+            style={{ cursor: 'pointer', border: selectedTable === t.TABLE_NAME ? '1px solid var(--accent)' : '1px solid transparent' }}
+            onClick={() => { setSelectedTable(t.TABLE_NAME); setPage(1); setSort({ col: '', order: 'asc' }); setColFilters({}); setActiveFilters({}); }}
+          >
+            <div className="label" style={{ wordBreak: 'break-all' }}>{t.TABLE_NAME}</div>
+            <div className="value" style={{ fontSize: 20 }}>{t.TABLE_ROWS ?? '?'}</div>
+            <div style={{ color: 'var(--text2)', fontSize: 11 }}>{t.DATA_LENGTH ? `${(t.DATA_LENGTH / 1024).toFixed(0)} KB` : ''}</div>
+          </div>
+        ))}
+      </div>
+
+      {selectedTable && tableData && (
+        <div className="panel">
+          <div className="panel-header">
+            <h3>{selectedTable}</h3>
+            <div className="panel-header-actions">
+              <div className="column-selector">
+                <button className="btn btn-sm btn-outline" onClick={() => setShowColSelector(!showColSelector)}>
+                  Columns ▾ {savingCols && '⏳'}
+                </button>
+                {showColSelector && (
+                  <div className="column-selector-panel">
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
+                      <button className="btn btn-sm btn-outline" onClick={selectAllCols} style={{ fontSize: 11 }}>All</button>
+                      <button className="btn btn-sm btn-outline" onClick={selectNoneCols} style={{ fontSize: 11 }}>None</button>
+                    </div>
+                    {(tableData.columns || []).map(c => (
+                      <div key={c.COLUMN_NAME} className="column-check">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[c.COLUMN_NAME] || false}
+                          onChange={e => toggleColumn(c.COLUMN_NAME, e.target.checked)}
+                        />
+                        <span>{c.COLUMN_NAME}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>Export CSV</button>
+              <span style={{ color: 'var(--text2)', fontSize: 13 }}>
+                {tableData.pagination?.total} {hasActiveFilters ? 'matching' : 'rows total'}
+              </span>
+              {hasActiveFilters && (
+                <button className="btn btn-sm btn-outline" onClick={() => { setColFilters({}); setActiveFilters({}); }} style={{ color: 'var(--accent)' }}>
+                  Clear filters
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="table-wrap table-wrap-scrollable" style={{ maxWidth: '100%' }}>
+            {loading ? (
+              <div className="loading"><span className="spinner" /> Loading...</div>
+            ) : (
+              <table style={{ minWidth: 'max-content' }}>
+                <thead>
+                  <tr>
+                    {(tableData.columns || [])
+                      .filter(c => visibleCols[c.COLUMN_NAME])
+                      .map(c => (
+                        <th key={c.COLUMN_NAME} onClick={() => toggleSort(c.COLUMN_NAME)}>
+                          {c.COLUMN_NAME}
+                          {c.COLUMN_KEY === 'PRI' && ' 🔑'}
+                          {sort.col === c.COLUMN_NAME && (sort.order === 'asc' ? ' ↑' : ' ↓')}
+                        </th>
+                      ))}
+                  </tr>
+                  <tr className="filter-row">
+                    {(tableData.columns || [])
+                      .filter(c => visibleCols[c.COLUMN_NAME])
+                      .map(c => (
+                        <th key={c.COLUMN_NAME}>
+                          <input
+                            type="text"
+                            placeholder={`Filter ${c.COLUMN_NAME}`}
+                            value={colFilters[c.COLUMN_NAME] || ''}
+                            onChange={e => setColFilters(prev => ({ ...prev, [c.COLUMN_NAME]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applyFiltersNow(); } }}
+                          />
+                        </th>
+                      ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(tableData.data || []).length === 0 ? (
+                    <tr><td colSpan={(tableData.columns || []).filter(c => visibleCols[c.COLUMN_NAME]).length} className="empty">No data</td></tr>
+                  ) : (tableData.data || []).map((row, i) => (
+                    <tr key={i}>
+                      {(tableData.columns || [])
+                        .filter(c => visibleCols[c.COLUMN_NAME])
+                        .map(c => (
+                          <td key={c.COLUMN_NAME} style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {row[c.COLUMN_NAME] === null ? <span style={{ color: 'var(--text2)', fontStyle: 'italic' }}>NULL</span> : String(row[c.COLUMN_NAME])}
+                          </td>
+                        ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          {tableData.pagination && (
+            <div className="pagination" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-sm btn-outline" disabled={page <= 1} onClick={() => setPage(1)}>«</button>
+              <button className="btn btn-sm btn-outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</button>
+              <span className="page-info">Page {page} of {tableData.pagination.pages}</span>
+              <button className="btn btn-sm btn-outline" disabled={page >= tableData.pagination.pages} onClick={() => setPage(p => p + 1)}>›</button>
+              <button className="btn btn-sm btn-outline" disabled={page >= tableData.pagination.pages} onClick={() => setPage(tableData.pagination.pages)}>»</button>
+              <span style={{ marginLeft: 12, fontSize: 13, color: 'var(--text2)' }}>Show</span>
+              <select
+                value={perPage}
+                onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)' }}
+              >
+                {[25, 50, 100, 200, 500].map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <span style={{ fontSize: 13, color: 'var(--text2)' }}>per page</span>
+            </div>
+          )}
+        </div>
+      )}
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+});
+</script>

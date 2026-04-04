@@ -105,6 +105,44 @@ CALL sp_error_summary_report(7);    -- Error trends (last 7 days)
 SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL 24 HOUR GROUP BY Severity;
 ```
 
+## MMR ADMIN UI — FULL SPLIT + OPTIMIZATION COMPLETE (04-04, PHASES 1-4 + Optimization)
+**Refactored:** `mmr-admin/templates/index.html` extracted 9 components + CSS + component loader (2085 lines → external files).
+- **Before:** `index.html` 2600 lines, 37K tokens
+- **After:** `index.html` 370 lines | 9 external .html components | 1 external .css file | 1 component loader .js | Total: 2628 lines (-3% footprint vs. original, -60% index.html)
+
+**Architecture Changes (04-04):**
+1. Payments | 2. Members (sub-tabs: Members, Members by District, 🔍 Renewal Audit) | 3. Sync with Google | 4. Admins (sub-tabs: Admins, Sync Log, Python Exec, Data Query) | 5. Data Browser | 6. NYRR Todos
+
+**Extracted Components (Phases 1, 2, 3 & 4):**
+- `dashboard-panel.html` (653 lines) — NYRR Todos: Dashboard + EventDetail views, event discovery, runner matching, column filters, CSV export
+- `python-code-editor.html` (256 lines) — Python Code Editor: code input, execution, result display, example templates
+- `python-exec-panel.html` (152 lines) — Python Exec: function list, execution, result display
+- `table-browser.html` (292 lines) — Data Browser: table explorer, column visibility, sorting, filtering, CSV export
+- `match-modal.html` (196 lines) — Event runner matching: search, confirm, duplicate detection
+- `admin-panel.html` (199 lines) — Admin management: user list, role assignment, refresh/auto-guess triggers
+- `settings-panel.html` (95 lines) — Database settings: connection config, presets, custom connection
+- `sync-panel.html` (202 lines) — Sync orchestration: MySQL↔Google exports, Google↔MySQL imports, full sync with job polling + JobCard sub-component
+- `processing-log.html` (52 lines) — Sync log viewer: job history table with timestamp, event, status, rows, trigger, error details
+- **`styles.css` (180 lines)** — All CSS removed from inline `<style>` tag. Single source of truth for theming.
+
+**Remaining embedded (shared utilities only):**
+- StatusBadge, MatchBar, Toast, SimpleProgressModal — UI helpers (70 lines total)
+- App shell: auth, version check, tab routing, view state (299 lines)
+
+**File pattern:**
+- External components registered with `window.ComponentName`, loaded via `<script type="text/babel" src="/templates/component.html">`
+- CSS linked in `<head>`: `<link rel="stylesheet" href="/static/styles.css">`
+- Components rendered via `window.Component && React.createElement(window.Component, props)`
+- All shared utilities and CSS centralized for maintainability
+
+**Optimization (Component Loader):**
+- Created `/static/component-loader.js` (18 lines) — eliminates boilerplate across all components
+- Each component refactored: `initComponent('Name', () => { ... })` instead of `const Name = () => { ... }; window.Name = Name;`
+- All 9 components refactored (dashboard-panel, python-code-editor, python-exec-panel, table-browser, match-modal, admin-panel, settings-panel, sync-panel, processing-log)
+- **Footprint savings:** 4247 → 2628 lines (-1619 lines, -38% reduction)
+- **Component loader also exports React hooks globally** — no need to redeclare `useState`, `useEffect`, etc. in each file
+- Cleaner, DRY approach — single source of truth for component registration and React API
+
 ## QUICK REFS
 **Key files:** `db/schema_snapshot.sql`, `load-env.sh`, `mmr-admin/api_*.py`, `mmr-admin/test_imports.py`.
 **Azure:** `mmr-mysql-v4` (Sweden Central), use `mysql-mmr` alias.

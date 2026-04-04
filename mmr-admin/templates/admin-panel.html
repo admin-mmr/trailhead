@@ -1,0 +1,196 @@
+<script type="text/babel">
+initComponent('AdminPanel', ({ userRole, userEmail }) => {
+  const [admins, setAdmins] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newRole, setNewRole] = useState('admin');
+  const [loadingDelete, setLoadingDelete] = useState(null);
+  const [refreshingSheets, setRefreshingSheets] = useState(false);
+  const [runningAutoGuess, setRunningAutoGuess] = useState(false);
+
+  const isSuperAdmin = userRole === 'super_admin';
+
+  const handleRefreshSheets = async () => {
+    setRefreshingSheets(true);
+    const r = await api('/api/admin/refresh-sheets', { method: 'POST' });
+    setRefreshingSheets(false);
+    setToast(r.ok ? (r.message || 'Sync triggered') : (r.error || 'Failed to trigger sync'));
+  };
+
+  const handleAutoGuess = async (dryRun = false) => {
+    setRunningAutoGuess(true);
+    const r = await api('/api/admin/auto-guess', {
+      method: 'POST',
+      body: JSON.stringify({ dry_run: dryRun }),
+    });
+    setRunningAutoGuess(false);
+    setToast(r.ok ? (r.message || 'Auto-Guess triggered') : (r.error || 'Failed to trigger'));
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    api('/api/admins').then(r => {
+      if (r.ok) setAdmins(r.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleAddAdmin = async () => {
+    if (!newEmail.trim()) {
+      setToast('Email is required');
+      return;
+    }
+    const r = await api('/api/admins', {
+      method: 'POST',
+      body: JSON.stringify({ email: newEmail, role: newRole }),
+    });
+    if (r.ok) {
+      setToast('Admin added successfully');
+      setNewEmail('');
+      setNewRole('admin');
+      const resp = await api('/api/admins');
+      if (resp.ok) setAdmins(resp.data);
+    } else {
+      setToast(r.error || 'Failed to add admin');
+    }
+  };
+
+  const handleDeleteAdmin = async (email) => {
+    setLoadingDelete(email);
+    const r = await api(`/api/admins/${email}`, { method: 'DELETE' });
+    setLoadingDelete(null);
+    if (r.ok) {
+      setToast('Admin removed successfully');
+      const resp = await api('/api/admins');
+      if (resp.ok) setAdmins(resp.data);
+    } else {
+      setToast(r.error || 'Failed to remove admin');
+    }
+  };
+
+  const handleChangeRole = async (email, newRole) => {
+    const r = await api('/api/admins', {
+      method: 'POST',
+      body: JSON.stringify({ email, role: newRole }),
+    });
+    if (r.ok) {
+      setToast(`Role updated to ${newRole}`);
+      const resp = await api('/api/admins');
+      if (resp.ok) setAdmins(resp.data);
+    } else {
+      setToast(r.error || 'Failed to update role');
+    }
+  };
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: 16 }}>Admin Management</h2>
+
+      <div className="panel" style={{ marginBottom: 24, padding: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Data Refresh</h3>
+        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+          Trigger a full sync from Google Sheets to MySQL: gmail_transactions → payments → webapp_events → members (~5 min).
+        </p>
+        <button className="btn btn-primary" onClick={handleRefreshSheets} disabled={refreshingSheets}>
+          {refreshingSheets ? 'Triggering…' : 'Refresh from Sheets'}
+        </button>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 24, padding: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Auto-Guess Payment Matching</h3>
+        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+          Scan unprocessed Gmail payments ($30/$50) and auto-match to members by MemberID in memo. Also runs automatically after every Sheets sync.
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary" onClick={() => handleAutoGuess(false)} disabled={runningAutoGuess}>
+            {runningAutoGuess ? 'Triggering…' : 'Run Auto-Guess'}
+          </button>
+          <button className="btn btn-outline" onClick={() => handleAutoGuess(true)} disabled={runningAutoGuess}>
+            Dry Run
+          </button>
+        </div>
+      </div>
+
+      <div className="admin-note">
+        Super admins can manage this list. Admins have read-only access.
+      </div>
+
+      {isSuperAdmin && (
+        <div className="admin-form">
+          <input
+            type="email"
+            placeholder="Email address"
+            value={newEmail}
+            onChange={e => setNewEmail(e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <select value={newRole} onChange={e => setNewRole(e.target.value)}>
+            <option value="admin">Admin</option>
+            <option value="super_admin">Super Admin</option>
+          </select>
+          <button className="btn btn-primary" onClick={handleAddAdmin}>Add Admin</button>
+        </div>
+      )}
+
+      <div className="panel">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Created At</th>
+                {isSuperAdmin && <th style={{ width: 60 }}>Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={isSuperAdmin ? 4 : 3} className="loading"><span className="spinner" /> Loading...</td></tr>
+              ) : admins.length === 0 ? (
+                <tr><td colSpan={isSuperAdmin ? 4 : 3} className="empty"><div className="big">-</div>No admins found</td></tr>
+              ) : admins.map(admin => (
+                <tr key={admin.email}>
+                  <td>{admin.email}</td>
+                  <td>
+                    {isSuperAdmin && admin.email !== userEmail ? (
+                      <select
+                        value={admin.role}
+                        onChange={e => handleChangeRole(admin.email, e.target.value)}
+                        style={{
+                          background: 'var(--surface2)', border: '1px solid var(--border)',
+                          color: 'var(--text)', borderRadius: 6, padding: '3px 8px', fontSize: 12, cursor: 'pointer'
+                        }}
+                      >
+                        <option value="admin">admin</option>
+                        <option value="super_admin">super_admin</option>
+                      </select>
+                    ) : (
+                      <span className={`badge ${admin.role === 'super_admin' ? 'badge-purple' : 'badge-blue'}`}>{admin.role}</span>
+                    )}
+                  </td>
+                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{admin.created_at ? new Date(admin.created_at).toLocaleDateString() : '—'}</td>
+                  {isSuperAdmin && (
+                    <td>
+                      <button
+                        className="btn-delete"
+                        disabled={loadingDelete === admin.email || admin.email === userEmail}
+                        onClick={() => handleDeleteAdmin(admin.email)}
+                      >
+                        {loadingDelete === admin.email ? '...' : '×'}
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {toast && <Toast message={toast} onClose={() => setToast('')} />}
+    </div>
+  );
+};
+
+});
+</script>

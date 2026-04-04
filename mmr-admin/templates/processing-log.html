@@ -1,0 +1,47 @@
+<script type="text/babel">
+initComponent('ProcessingLog', () => {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api('/api/log?limit=100').then(r => {
+      if (r.ok) setLogs(r.data);
+      setLoading(false);
+    });
+  }, []);
+
+  return (
+    <div className="panel">
+      <div className="panel-header"><h3>Processing Log</h3></div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Event</th>
+              <th>Status</th>
+              <th>Rows Written</th>
+              <th>Triggered By</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={6} className="loading"><span className="spinner" /> Loading...</td></tr>
+            ) : logs.map(l => (
+              <tr key={l.id}>
+                <td style={{ fontSize: 12, fontFamily: 'monospace' }}>{l.run_timestamp}</td>
+                <td>{l.event_name || l.event_code || '—'}<div style={{ color: 'var(--text2)', fontSize: 11 }}>{l.event_code}</div></td>
+                <td><StatusBadge status={l.run_status === 'Success' ? 'Completed' : l.run_status === 'Failed' ? 'Error' : l.run_status} /></td>
+                <td>{l.rows_written}</td>
+                <td>{l.triggered_by}</td>
+                <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--red)' }}>{l.error_details || ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+});
+</script>

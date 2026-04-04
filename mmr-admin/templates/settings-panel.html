@@ -1,0 +1,92 @@
+<script type="text/babel">
+initComponent('Settings', ({ onClose }) => {
+  const [config, setConfig] = useState(null);
+  const [presets, setPresets] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState('');
+  const [customConfig, setCustomConfig] = useState({ host: '', user: '', password: '', database: '', ssl_disabled: false });
+
+  useEffect(() => {
+    Promise.all([
+      api('/api/connection/config').then(r => r.ok && setConfig(r.config)),
+      api('/api/connection/presets').then(r => r.ok && setPresets(r.presets)),
+    ]).then(() => setLoading(false));
+  }, []);
+
+  const applyPreset = async (preset) => {
+    const r = await api('/api/connection/set', { method: 'POST', body: JSON.stringify({ preset }) });
+    if (r.ok) {
+      setToast(r.message);
+      setTimeout(() => { window.location.reload(); }, 1000);
+    } else {
+      setToast(r.error || 'Failed to apply preset');
+    }
+  };
+
+  const applyCustom = async () => {
+    const r = await api('/api/connection/set', { method: 'POST', body: JSON.stringify(customConfig) });
+    if (r.ok) {
+      setToast(r.message);
+      setTimeout(() => { window.location.reload(); }, 1000);
+    } else {
+      setToast(r.error || 'Failed to connect');
+    }
+  };
+
+  return (
+    <div>
+      <button className="back-btn" onClick={onClose}>← Back</button>
+      <h2 style={{ marginBottom: 16 }}>Database Connection Settings</h2>
+
+      {loading ? (
+        <div className="loading"><span className="spinner" /> Loading...</div>
+      ) : (
+        <>
+          <div style={{ background: 'var(--surface)', padding: 16, borderRadius: 'var(--radius)', marginBottom: 20 }}>
+            <h3 style={{ fontSize: 14, marginBottom: 12 }}>Current Connection</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, fontSize: 13 }}>
+              <div><span style={{ color: 'var(--text2)' }}>Host:</span> {config?.host}</div>
+              <div><span style={{ color: 'var(--text2)' }}>Database:</span> {config?.database}</div>
+              <div><span style={{ color: 'var(--text2)' }}>User:</span> {config?.user}</div>
+              <div><span style={{ color: 'var(--text2)' }}>SSL:</span> {config?.ssl_disabled ? 'Disabled' : 'Enabled'}</div>
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: 14, marginBottom: 12 }}>Quick Connect — Presets</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginBottom: 24 }}>
+            {Object.entries(presets).map(([name, info]) => (
+              <div key={name} style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, textTransform: 'capitalize' }}>{name}</div>
+                <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8 }}>
+                  <div>{info.host}</div>
+                  <div>{info.user} @ {info.database}</div>
+                </div>
+                <button className="btn btn-sm btn-primary" onClick={() => applyPreset(name)}>Connect</button>
+              </div>
+            ))}
+          </div>
+
+          <h3 style={{ fontSize: 14, marginBottom: 12 }}>Custom Connection</h3>
+          <div style={{ background: 'var(--surface)', padding: 16, borderRadius: 'var(--radius)', marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <input placeholder="Host" value={customConfig.host} onChange={e => setCustomConfig(c => ({ ...c, host: e.target.value }))} />
+              <input placeholder="User" value={customConfig.user} onChange={e => setCustomConfig(c => ({ ...c, user: e.target.value }))} />
+              <input placeholder="Password" type="password" value={customConfig.password} onChange={e => setCustomConfig(c => ({ ...c, password: e.target.value }))} />
+              <input placeholder="Database" value={customConfig.database} onChange={e => setCustomConfig(c => ({ ...c, database: e.target.value }))} />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+              <input type="checkbox" checked={customConfig.ssl_disabled} onChange={e => setCustomConfig(c => ({ ...c, ssl_disabled: e.target.checked }))} />
+              Disable SSL (for local dev)
+            </label>
+            <button className="btn btn-primary" onClick={applyCustom}>Test & Connect</button>
+          </div>
+
+          {toast && <Toast message={toast} onClose={() => setToast('')} />}
+        </>
+      )}
+    </div>
+  );
+};
+
+});
+</script>
