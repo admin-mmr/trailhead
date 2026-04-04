@@ -134,7 +134,6 @@ CREATE TABLE `member_log` (
   `PaymentTransaction` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `JoinYear` smallint DEFAULT NULL,
   `PhoneNumber` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `LastLogin` datetime DEFAULT NULL,
   `Notes` text COLLATE utf8mb4_unicode_ci,
   `NYRRRunnerName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `YearBorn` smallint DEFAULT NULL,
@@ -828,14 +827,6 @@ CREATE TRIGGER `trg_submissions_insert_validate` BEFORE INSERT ON `submissions` 
   END IF;
 END;
 
-CREATE TRIGGER `members_insert_lastlogin_unix` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
-  IF NEW.LastLogin IS NOT NULL THEN
-    SET NEW.last_login_unix = UNIX_TIMESTAMP(NEW.LastLogin);
-  ELSE
-    SET NEW.last_login_unix = 0;
-  END IF;
-END;
-
 CREATE TRIGGER `members_insert_created_unix` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
   IF NEW.Created IS NOT NULL THEN
     SET NEW.created_at_unix = UNIX_TIMESTAMP(NEW.Created);
@@ -891,15 +882,6 @@ CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH
       'ERROR'
     );
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-END;
-
-CREATE TRIGGER `members_update_lastlogin_unix` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
-  IF NEW.LastLogin <> OLD.LastLogin OR
-     (NEW.LastLogin IS NULL AND OLD.LastLogin IS NOT NULL) OR
-     (NEW.LastLogin IS NOT NULL AND OLD.LastLogin IS NULL)
-  THEN
-    SET NEW.last_login_unix = IF(NEW.LastLogin IS NULL, 0, UNIX_TIMESTAMP(NEW.LastLogin));
   END IF;
 END;
 
