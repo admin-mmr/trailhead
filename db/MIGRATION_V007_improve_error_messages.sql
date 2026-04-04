@@ -229,19 +229,9 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- submissions.PaymentDate
-SET @constraint_exists = (
-  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submissions' AND CONSTRAINT_NAME = 'chk_submissions_payment_date_reasonable'
-);
-
-SET @sql = IF(@constraint_exists = 0,
-  'ALTER TABLE `submissions` ADD CONSTRAINT chk_submissions_payment_date_reasonable CHECK (`PaymentDate` IS NULL OR (`PaymentDate` >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) AND `PaymentDate` <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)))',
-  'SELECT "chk_submissions_payment_date_reasonable already exists"'
-);
-
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+-- NOTE: Cannot use CHECK constraint with CURDATE() - MySQL doesn't allow dynamic functions in CHECK constraints
+-- Validation of reasonable PaymentDate must be done in application code (before INSERT)
+-- Example validation logic: PaymentDate should be within ±1 year (past) / ±30 days (future)
 
 -- members.Email
 SET @constraint_exists = (

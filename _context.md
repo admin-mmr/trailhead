@@ -39,7 +39,7 @@
 - Test import_members: POST /api/sync/import/members
 - Verify duplicate MemberIDs are skipped (INSERT IGNORE behavior)
 
-### 04-04 04:15 UTC — V007 Made Idempotent: Checks INFORMATION_SCHEMA before ALTER TABLE
+### 04-04 04:20 UTC — V007 Final: Idempotent + Removed CURDATE() from CHECK constraint
 
 **Status: ✅ V007 IDEMPOTENT + SAFE TO RE-RUN**
 
@@ -69,4 +69,14 @@ Root Cause:
 - sp_error_summary_report(days) procedure ✓
 - activity_log enhanced: ErrorContext, ErrorSeverity, StackTrace ✓
 
-**Next:** Re-run corrected V007 - will skip existing objects, add missing ones
+**Issue #2: CURDATE() in CHECK constraint (MySQL limitation)**
+  - MySQL doesn't allow dynamic functions (CURDATE, NOW, etc.) in CHECK constraints
+  - Error: "An expression of a check constraint contains disallowed function: curdate"
+  - Solution: Removed chk_submissions_payment_date_reasonable constraint
+  - Validation moved to application code (before INSERT, user input validation)
+
+**Final Status: ✅ V007 READY FOR PRODUCTION**
+  - All idempotent checks working
+  - 8 CHECK constraints deployed (removed dynamic date constraint)
+  - All other features working: error_context table, 3 triggers, views, procedures
+  - Can be re-run safely without errors
