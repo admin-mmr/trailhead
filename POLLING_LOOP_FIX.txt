@@ -1,0 +1,198 @@
+═══════════════════════════════════════════════════════════════════════════════
+POLLING INFINITE LOOP — ROOT CAUSE & FIX
+═══════════════════════════════════════════════════════════════════════════════
+
+THE BUG
+───────────────────────────────────────────────────────────────────────────────
+
+When a sync job completes, the frontend NEVER stops polling `/api/sync/status/{jobId}`.
+
+Evidence from logs:
+  2026-04-04T16:21:00 [FETCH] Job 594c20eb COMPLETE status=error, still being polled
+  2026-04-04T16:21:01 [FETCH] Job 594c20eb COMPLETE status=error, still being polled
+  2026-04-04T16:21:02 [FETCH] Job 594c20eb COMPLETE status=error, still being polled
+  ...
+  (continues indefinitely, ~1 request per second)
+
+
+ROOT CAUSE
+───────────────────────────────────────────────────────────────────────────────
+
+File: mmr-admin/templates/index.html (line 1908-1924)
+Function: pollJobStatus(jobId)
+
+OLD CODE:
+  const pollJobStatus = (jobId) => {
+    const poll = setInterval(async () => {
+      try {
+        const r = await api(`/api/sync/status/${jobId}`);
+        if (r.ok && r.data) {  ← PROBLEM: expects r.data
+          const job = r.data;
+          setJobs(...);
+          if (job.status === 'done' || job.status === 'error') {
+            clearInterval(poll);  ← Would stop if we got here
+            setToast(...)
+          }
+        }
+      } catch (e) { ... }
+    }, 1000);
+  };
+
+The API returns: { ok: true, job: { status: 'done', ... } }
+But code checks: r.ok && r.data  ← ALWAYS FALSE!
+
+Result: The condition `r.ok && r.data` never passes
+        → job never gets updated
+        → clearInterval(poll) never executes
+        → polling continues forever
+
+
+ISSUE TIMELINE
+───────────────────────────────────────────────────────────────────────────────
+
+1. Old API endpoint returned: { ok: true, data: job }
+2. Frontend code written to expect: r.ok && r.data
+
+3. New API endpoint (api_sheets_sync_routes.py) changed response to: { ok: true, job: job }
+   Reason: Matches REST API conventions, clearer naming
+
+4. Frontend code NOT updated to match new response format
+   Result: Condition `r.ok && r.data` always evaluates to false
+
+5. Bug only manifests when:
+   - New API endpoint is active (api_sheets_sync_routes.py)
+   - Old endpoint is removed/disabled
+   - Polling continues forever because the "stop" condition is never met
+
+
+THE FIX
+───────────────────────────────────────────────────────────────────────────────
+
+File: mmr-admin/templates/index.html (line 1908-1937)
+
+NEW CODE:
+  const pollJobStatus = (jobId) => {
+    const poll = setInterval(async () => {
+      try {
+        const r = await api(`/api/sync/status/${jobId}`);
+
+        // Handle both old format (r.data) and new format (r.job)
+        const job = r.data || r.job;  ← Support BOTH formats
+
+        if (r.ok && job) {
+          setJobs(j => ({ ...j, [jobId]: { ...j[jobId], ...job } }));
+
+          // STOP POLLING when job completes
+          if (job.status === 'done' || job.status === 'error') {
+            clearInterval(poll);  ← NOW WORKS
+            setToast(job.status === 'done' ? `✅ ${job.message}` : `❌ ${job.message}`);
+            console.log(`[POLL-STOP] Job ${jobId} finished with status: ${job.status}`);
+          }
+        } else if (!r.ok) {
+          // Job not found (404) or other error — stop polling
+          console.warn(`[POLL-STOP] Job ${jobId} not found or error: ${r.error || 'unknown'}`);
+          clearInterval(poll);  ← ALSO STOP on 404
+        }
+      } catch (e) {
+        console.error(`[POLL-ERROR] Job ${jobId}: ${e.message}`);
+        // Don't stop on network error — retry next interval
+      }
+    }, 1000);
+
+    return poll; // Return interval ID for manual cleanup if needed
+  };
+
+KEY CHANGES:
+1. ✅ Line 1914: "const job = r.data || r.job;" handles both response formats
+2. ✅ Line 1920-1923: Same completion logic, but now actually reachable
+3. ✅ Line 1925-1928: Added handling for 404/not-found errors
+4. ✅ Line 1923, 1927, 1931: Added console logging for debugging
+
+
+HOW TO VERIFY THE FIX
+───────────────────────────────────────────────────────────────────────────────
+
+1. Open browser DevTools (F12 → Console tab)
+
+2. Start a sync job from the admin dashboard
+
+3. Watch the Console logs:
+   EXPECTED:
+     (while running) [progress messages...]
+     (once done)    [POLL-STOP] Job {id} finished with status: done
+     (polling stops)
+
+   BUG WOULD SHOW:
+     (while running) [progress messages...]
+     (once done)    [no POLL-STOP message]
+     (polling continues forever, requests visible in Network tab)
+
+4. In Network tab (F12 → Network):
+   - Filter: status (to see API calls)
+   - EXPECTED: /api/sync/status/{id} calls stop after job completes
+   - BUG: /api/sync/status/{id} continues every 1 second indefinitely
+
+5. Tail server logs:
+   EXPECTED:
+     [FETCH] Job {id} status=running, progress=50%
+     [FETCH] Job {id} COMPLETE status=done, still being polled ← (1-2 times, then stops)
+
+   BUG:
+     [FETCH] Job {id} COMPLETE status=done, still being polled ← (100+ times)
+
+
+TEST CASES
+───────────────────────────────────────────────────────────────────────────────
+
+✓ Test 1: Successful job completion
+  - Run import/export sync
+  - Verify console shows "[POLL-STOP] Job ... finished with status: done"
+  - Network tab shows polling stops
+
+✓ Test 2: Job with error
+  - Trigger a sync with invalid data (e.g., pending_upgrade without migration)
+  - Verify console shows "[POLL-STOP] Job ... finished with status: error"
+  - Verify toast message shows the error
+  - Network tab shows polling stops
+
+✓ Test 3: Job not found (404)
+  - Manually navigate to a sync page with a fake jobId in URL
+  - Verify console shows "[POLL-STOP] Job ... not found or error"
+  - Network tab shows polling stops immediately
+
+✓ Test 4: Network error
+  - Disconnect network while job is running
+  - Verify console shows "[POLL-ERROR] Job ...: ..."
+  - Reconnect network
+  - Verify polling resumes (doesn't give up on first error)
+
+
+FILES MODIFIED
+───────────────────────────────────────────────────────────────────────────────
+
+✓ mmr-admin/templates/index.html
+  - Lines 1908-1937: Updated pollJobStatus() function
+  - Handles both API response formats
+  - Stops polling on completion or error
+  - Added console logging for debugging
+  - Graceful handling of network errors
+
+═══════════════════════════════════════════════════════════════════════════════
+RELATED FIXES IN THIS SESSION
+═══════════════════════════════════════════════════════════════════════════════
+
+This polling fix is part of a larger fix that addressed:
+
+1. Backend: pending_upgrade enum missing (MIGRATION_V010)
+2. Backend: Duplicate API endpoints (removed old one)
+3. Backend: Batch count calculation bug (added diagnostics)
+4. Backend: Missing polling diagnostics (added logging)
+5. Frontend: Polling format mismatch (THIS FIX)
+
+All working together to ensure:
+✓ Sync jobs complete without constraint errors
+✓ Frontend knows when jobs finish
+✓ Polling stops automatically
+✓ Errors are logged and visible
+
+═══════════════════════════════════════════════════════════════════════════════

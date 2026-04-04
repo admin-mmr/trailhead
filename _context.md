@@ -1,14 +1,26 @@
-### 04-04 16:25 UTC — Fixed: pending_upgrade enum + duplicate endpoints + polling infinite loop
+### 04-04 16:32 UTC — Fixed: Frontend polling loop + API response format mismatch
 
-**Fixes:**
-1. **pending_upgrade Status** — Created MIGRATION_V010_add_pending_upgrade_status.sql to update members table ENUM & CHECK constraint. Live DB was missing this value even though schema_snapshot shows it.
-2. **Duplicate endpoints** — Found two `/api/sync/status/<id>` handlers (api_sheets_sync.py + api_sheets_sync_routes.py). Commented out old one in api_sheets_sync.py to ensure diagnostic version is used.
-3. **Batch count bug** — Added diagnostic logging in sync_config.py to check pre-existing keys and calculate inserts/updates correctly (not "rough estimate").
-4. **Polling diagnostics** — All `/api/sync/status/<id>` requests now log user-agent + completion status. Will show `[FETCH] Job COMPLETE, still being polled` if frontend doesn't stop after job finishes.
+**Root Cause Found:** Frontend `pollJobStatus()` was checking `r.data` but new API returns `r.job`.
+Result: Condition `r.ok && r.data` always false → loop never stops.
 
-**Status:** Ready to test. Run migration, test import, monitor logs for batch diagnostics + polling detection.
+**Fixes Applied:**
+1. **mmr-admin/templates/index.html (line 1908)** — Updated `pollJobStatus()` to:
+   - Accept both old format `r.data` and new format `r.job`
+   - Stop polling when `job.status === 'done' || 'error'` (was already there, just wasn't being reached)
+   - Stop polling on 404 errors (job not found)
+   - Log `[POLL-STOP]` and `[POLL-ERROR]` to browser console for debugging
 
-**Next:** Run full-sync, verify DIAGNOSTIC logs show correct insert/update counts, check if polling stops after job.status='done'.
+2. **Also updated earlier:** pending_upgrade enum, duplicate endpoints, batch counting bug, backend diagnostics.
+
+**How Polling Now Works:**
+```
+Poll every 1 second → fetch /api/sync/status/{jobId}
+  ✓ If status='done' or 'error' → clearInterval(poll) + show toast
+  ✓ If 404/error response → clearInterval(poll) + log warning
+  ✗ Network error → keep retrying (don't give up)
+```
+
+**Status:** ✅ All fixes complete. Ready to test full workflow.
 
 ### 04-04 12:15 UTC — BATCH SYNC COMPLETE: 50x faster imports + resume capability + GAS webhook update
 

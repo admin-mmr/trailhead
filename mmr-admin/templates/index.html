@@ -1909,18 +1909,31 @@ const SyncPanel = () => {
     const poll = setInterval(async () => {
       try {
         const r = await api(`/api/sync/status/${jobId}`);
-        if (r.ok && r.data) {
-          const job = r.data;
+
+        // Handle both old format (r.data) and new format (r.job)
+        const job = r.data || r.job;
+
+        if (r.ok && job) {
           setJobs(j => ({ ...j, [jobId]: { ...j[jobId], ...job } }));
+
+          // STOP POLLING when job completes
           if (job.status === 'done' || job.status === 'error') {
             clearInterval(poll);
             setToast(job.status === 'done' ? `✅ ${job.message}` : `❌ ${job.message}`);
+            console.log(`[POLL-STOP] Job ${jobId} finished with status: ${job.status}`);
           }
+        } else if (!r.ok) {
+          // Job not found (404) or other error — stop polling
+          console.warn(`[POLL-STOP] Job ${jobId} not found or error: ${r.error || 'unknown'}`);
+          clearInterval(poll);
         }
       } catch (e) {
-        console.error('Poll error:', e);
+        console.error(`[POLL-ERROR] Job ${jobId}: ${e.message}`);
+        // Don't stop on network error — retry next interval
       }
     }, 1000);
+
+    return poll; // Return interval ID for manual cleanup if needed
   };
 
   const jobsList = Object.entries(jobs).sort((a, b) => b[0].localeCompare(a[0]));
