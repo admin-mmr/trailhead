@@ -19,6 +19,15 @@ else
     exit 1
 fi
 
+# Copy sync_config
+if [ -f basecamp/python/sync_config.py ]; then
+    cp basecamp/python/sync_config.py mmr-admin/sync_config.py
+    echo "✅ Copied: basecamp/python/sync_config.py → mmr-admin/sync_config.py"
+else
+    echo "❌ Error: basecamp/python/sync_config.py not found"
+    exit 1
+fi
+
 # Copy nyrr_api
 if [ -f basecamp/python/nyrr_api.py ]; then
     cp basecamp/python/nyrr_api.py mmr-admin/nyrr_api.py

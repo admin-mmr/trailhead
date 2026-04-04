@@ -32,8 +32,26 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 ## COMMON TASKS
 **GitHub Actions:** Check `.github/workflows/` + `git status/diff/log` → identify issues → suggest fixes + commit.
 **Photo Manager:** Check `process_photos.py`/`bib_analyzer.py` → data flow (Drive → download → process → output.json → Blob) → optimize.
-**Database:** `db/schema_snapshot.sql` = source of truth. Migrations: inline recommendation (max 30 lines) OR 1 MIGRATION_V*.sql file only (no analysis docs). Use `mysql-mmr` alias. Schema export via `/api/export-schema` endpoint.
+**Database:** `db/schema_snapshot.sql` = source of truth. **Migrations MUST use `MIGRATION_V*.sql` format** (GitHub Actions auto-runs on push to main). Rename any `MIGRATION_*.sql` files that don't match pattern. Use `mysql-mmr` alias. Schema export via `/api/export-schema` endpoint.
 **Web App:** `web-apps/mmr-webapp/` (Next.js) → review TS types, API routes, UI, NextAuth, i18n.
+
+## DATABASE SCHEMA & VALIDATION
+**Schema Validation Tools:**
+- `validate_schema.py`: Automated validator detects NULL violations, FK orphans, ENUM mismatches, missing PKs, duplicate uniques. Run: `python3 db/validate_schema.py`
+- `MIGRATION_V006_mysql_ssot.sql`: MySQL 5.7+ compatible migrations (single-statement ALTERs only)
+- `MIGRATION_V007_improve_error_messages.sql`: Adds error_context table + triggers + CHECK constraints for submissions/members/payments
+
+**Error Messaging System (V007):**
+1. **error_context table**: Logs all constraint violations with ErrorCode, ErrorMessage, TechnicalMessage, SuggestedFix, ProblematicValue, AllowedRange, occurrence tracking
+2. **Triggers**: Auto-log violations BEFORE INSERT (trg_submissions_insert_validate, trg_members_insert_validate, trg_payments_insert_validate)
+3. **Error Codes**: SUBM_NULL_ID, SUBM_FK_INVALID_MEMBER, SUBM_INVALID_STATUS, MEM_INVALID_EMAIL, PAY_NEGATIVE_AMOUNT, etc.
+4. **Views & Procedures**: v_unresolved_errors (priority-sorted), sp_error_summary_report(days)
+5. **CHECK Constraints**: Status enums, Amount ≥ 0, ExpiresAt > CreatedAt, Email format, PaymentDate reasonable
+
+**Monitoring:**
+- Daily check: `SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL 24 HOUR GROUP BY Severity`
+- Unresolved errors: `SELECT * FROM v_unresolved_errors`
+- Error trends: `CALL sp_error_summary_report(7)` (last 7 days)
 
 ## QUICK REFS
 **Key files:** `db/schema_snapshot.sql`, `load-env.sh`, `mmr-admin/api_*.py`, `mmr-admin/test_imports.py`.
@@ -48,7 +66,7 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 **Response caps:** Simple ≤10 lines. Code change ≤30 lines. Architecture ≤60 lines (ask before more). Never >80 lines without user asking.
 **Tool discipline:** Max 1 file read per cycle (state WHY/WHAT first). Don't re-read unless edited. Chain shell commands: `cd && cat && grep` = 1 call.
 **Output discipline:** No preamble/recap/unsolicited suggestions. Show ONLY changed lines. The edit tool shows your changes.
-**Docs discipline:** No multiple .md files per task. Update CLAUDE.md or _context.md instead. One-off analyses → inline (no .md). Examples: ❌ 3 separate docs ✅ consolidate to _context.md + CLAUDE.md note.
+**Docs discipline:** HARD RULE — Do NOT create standalone .md files. All documentation goes into CLAUDE.md (permanent notes) or _context.md (session notes). One-off analyses → inline (no .md). Never create: REFACTOR_SUMMARY.md, INTEGRATION_GUIDE.md, ROUTES_REFERENCE.md, etc. Consolidate instead. Examples: ❌ Create 3 .md docs ✅ Add 1-2 sections to CLAUDE.md + entry in _context.md.
 **Context updates:** 3 lines max (`### MM-DD HH:MM UTC — title` + `Changed: X. Status: Y. Next: Z.`). Insert at top. No re-reads; use str_replace. Trim to 3 sessions; move excess to `_context_archive.md`.
 **Efficiency:** Don't read files you don't need. Batch edits. Use grep/glob, not bash find. Cache knowledge. Never cat large files; use `head`/`sed`/`grep`. Error message first before source code. Diff-first edits. Chain shell commands. Always `python3`/`pip3`.
 

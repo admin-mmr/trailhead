@@ -1,0 +1,172 @@
+"""
+api_sheets_sync_routes.py — Simplified Flask routes using generic_sync_runner.
+
+All routes use the centralized SYNC_CONFIG and generic_sync_runner helpers
+to eliminate code duplication and maintain a single source of truth.
+
+Routes:
+  POST /api/sync/export/members
+  POST /api/sync/export/payments
+  POST /api/sync/export/submissions
+  POST /api/sync/export/transaction-meta
+  POST /api/sync/import/transactions
+  POST /api/sync/jobs
+  GET  /api/sync/status/<job_id>
+"""
+
+from __future__ import annotations
+
+import logging
+from flask import Blueprint, request, jsonify
+from helpers import json_response
+from auth import login_required
+from sync_jobs import launch_job, get_job, list_jobs as list_sync_jobs
+
+# Import simplified sync runners
+from sync_runners import (
+    sync_export_members,
+    sync_export_payments,
+    sync_export_submissions,
+    sync_export_transaction_meta,
+    sync_import_transactions,
+)
+
+logger = logging.getLogger(__name__)
+sheets_sync_bp = Blueprint('sheets_sync', __name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Export Routes (MySQL → Google Sheets)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@sheets_sync_bp.route('/api/sync/export/members', methods=['POST'])
+@login_required
+def api_export_members():
+    """
+    Export members from MySQL to Google Sheets.
+
+    Returns:
+        {ok: true, job_id: str}
+    """
+    job_id = launch_job(sync_export_members, initial_message='Exporting members...')
+    return json_response({'ok': True, 'job_id': job_id})
+
+
+@sheets_sync_bp.route('/api/sync/export/payments', methods=['POST'])
+@login_required
+def api_export_payments():
+    """
+    Export payments from MySQL to Google Sheets.
+
+    Returns:
+        {ok: true, job_id: str}
+    """
+    job_id = launch_job(sync_export_payments, initial_message='Exporting payments...')
+    return json_response({'ok': True, 'job_id': job_id})
+
+
+@sheets_sync_bp.route('/api/sync/export/submissions', methods=['POST'])
+@login_required
+def api_export_submissions():
+    """
+    Export submissions from MySQL to Google Sheets.
+
+    Returns:
+        {ok: true, job_id: str}
+    """
+    job_id = launch_job(sync_export_submissions, initial_message='Exporting submissions...')
+    return json_response({'ok': True, 'job_id': job_id})
+
+
+@sheets_sync_bp.route('/api/sync/export/transaction-meta', methods=['POST'])
+@login_required
+def api_export_transaction_meta():
+    """
+    Export transaction metadata (Notes, UpdatedAt) from MySQL to Google Sheets.
+
+    Returns:
+        {ok: true, job_id: str}
+    """
+    job_id = launch_job(
+        sync_export_transaction_meta,
+        initial_message='Exporting transaction metadata...'
+    )
+    return json_response({'ok': True, 'job_id': job_id})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Import Routes (Google Sheets → MySQL)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@sheets_sync_bp.route('/api/sync/import/transactions', methods=['POST'])
+@login_required
+def api_import_transactions():
+    """
+    Import transactions from Google Sheets to MySQL.
+
+    Field mappings:
+      Source (Sheet) → PaymentMethod (MySQL)
+
+    Returns:
+        {ok: true, job_id: str}
+    """
+    job_id = launch_job(sync_import_transactions, initial_message='Importing transactions...')
+    return json_response({'ok': True, 'job_id': job_id})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Job Management Routes
+# ═══════════════════════════════════════════════════════════════════════════
+
+@sheets_sync_bp.route('/api/sync/jobs', methods=['GET'])
+@login_required
+def api_list_sync_jobs():
+    """
+    Return all known sync jobs (newest first) so the UI can restore state on mount.
+
+    Returns:
+        {
+            ok: true,
+            jobs: [
+                {
+                    id: str,
+                    status: 'queued' | 'running' | 'completed' | 'error',
+                    message: str,
+                    progress: int (0-100),
+                    started_at: ISO timestamp,
+                    completed_at: ISO timestamp | null
+                }
+            ]
+        }
+    """
+    jobs = list_sync_jobs()
+    return json_response({
+        'ok': True,
+        'jobs': jobs
+    })
+
+
+@sheets_sync_bp.route('/api/sync/status/<job_id>', methods=['GET'])
+@login_required
+def api_sync_status(job_id: str):
+    """
+    Get the status of a specific sync job.
+
+    Returns:
+        {
+            ok: true,
+            job: {
+                id: str,
+                status: 'queued' | 'running' | 'completed' | 'error',
+                message: str,
+                progress: int (0-100),
+                started_at: ISO timestamp,
+                completed_at: ISO timestamp | null
+            }
+        }
+    """
+    job = get_job(job_id)
+    if not job:
+        return json_response({'ok': False, 'error': 'Job not found'}, 404)
+
+    return json_response({'ok': True, 'job': job})
