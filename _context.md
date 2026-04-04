@@ -1,3 +1,12 @@
+### 04-04 15:22 UTC — Fixed: Production sync errors (datetime format + job FK constraint)
+
+**Fixes:**
+1. **DateTime conversion** — Added _convert_iso_to_mysql_datetime() to convert ISO 8601 (GAS format) → MySQL datetime. Fixes `Incorrect datetime value: 2026-04-04T11:57:01.000Z` errors.
+2. **Job persistence** — sync_jobs.py now INSERTs/UPDATEs MySQL sync_jobs table on launch_job()/update_job(). Fixes FK constraint failure on batch logging.
+3. **Graceful batch logging** — FK errors no longer crash sync; logged as debug instead.
+
+**Status:** ✅ Both issues fixed & tested. Ready for production.
+
 ### 04-04 12:15 UTC — BATCH SYNC COMPLETE: 50x faster imports + resume capability + GAS webhook update
 
 **Changes:**
