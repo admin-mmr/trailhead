@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, date, time
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -126,21 +127,29 @@ def _normalize_sheet_rows(raw_rows: List, cols: List[str]) -> List[Dict[str, Any
     if not raw_rows:
         return []
 
-    normalized = []
-    for row in raw_rows:
-        if isinstance(row, dict):
-            # Already a dict — just ensure all cols are present
-            normalized.append(row)
-        elif isinstance(row, (list, tuple)):
-            # List format — map indices to column names
-            row_dict = {}
-            for i, col in enumerate(cols):
-                row_dict[col] = row[i] if i < len(row) else None
-            normalized.append(row_dict)
-        else:
-            # Unknown format — skip or log warning
-            logger.warning(f"Skipping row with unexpected type {type(row)}: {row}")
+    # Log first row type for debugging
+    if raw_rows:
+        logger.debug(f"First raw_row type: {type(raw_rows[0])}, value: {raw_rows[0]}")
 
+    normalized = []
+    for idx, row in enumerate(raw_rows):
+        try:
+            if isinstance(row, dict):
+                # Already a dict — just ensure all cols are present
+                normalized.append(row)
+            elif isinstance(row, (list, tuple)):
+                # List format — map indices to column names
+                row_dict = {}
+                for i, col in enumerate(cols):
+                    row_dict[col] = row[i] if i < len(row) else None
+                normalized.append(row_dict)
+            else:
+                # Unknown format — skip or log warning
+                logger.warning(f"Row {idx}: unexpected type {type(row)}, skipping")
+        except Exception as e:
+            logger.error(f"Error normalizing row {idx}: {str(e)}")
+
+    logger.debug(f"Normalized {len(normalized)} rows from {len(raw_rows)} raw rows")
     return normalized
 
 
@@ -175,6 +184,9 @@ def _prepare_sheet_rows(db_rows: List[Dict], cfg: Dict) -> List[List[Any]]:
             elif isinstance(val, time):
                 # Convert time to ISO format string (e.g., "05:42:53")
                 val = val.isoformat()
+            elif isinstance(val, Decimal):
+                # Convert Decimal to string or float (Decimal is not JSON serializable)
+                val = float(val)
             elif isinstance(val, (dict, list)):
                 # Convert dict/list to string representation
                 val = str(val)
