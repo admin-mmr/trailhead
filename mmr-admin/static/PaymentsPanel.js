@@ -8,26 +8,70 @@ const PaymentsPanel = () => {
 
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
-    api('/api/payments/dashboard').then(r => {
-      if (r.ok) {
-        setDashboard(r);
+    console.log('[PaymentsPanel] Mounting, fetching dashboard data...');
+    console.log('[PaymentsPanel] api function available?', typeof window.api);
+
+    if (typeof window.api !== 'function') {
+      console.error('[PaymentsPanel] ERROR: window.api is not a function!', window.api);
+      setError('API not available');
+      setLoading(false);
+      return;
+    }
+
+    window.api('/api/payments/dashboard')
+      .then(r => {
+        console.log('[PaymentsPanel] Dashboard API response:', r);
+        if (r && r.ok) {
+          console.log('[PaymentsPanel] Dashboard data received:', r);
+          setDashboard(r);
+          setLoading(false);
+        } else {
+          console.error('[PaymentsPanel] Response not ok:', r);
+          setError(`API error: ${r?.error || 'Unknown error'}`);
+          setLoading(false);
+        }
+      })
+      .catch(e => {
+        console.error('[PaymentsPanel] API call failed:', e);
+        setError(`Fetch error: ${e.message}`);
         setLoading(false);
-      } else {
-        setLoading(false);
-      }
-    });
+      });
   }, []);
 
+  if (error) {
+    console.error('[PaymentsPanel] Rendering error state:', error);
+    return (
+      <div style={{
+        background: '#fef2f2',
+        border: '1px solid #fca5a5',
+        borderRadius: 'var(--radius)',
+        padding: 16,
+        color: '#b91c1c',
+      }}>
+        <strong>❌ Error Loading Payments:</strong>
+        <p style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }}>{error}</p>
+        <p style={{ marginTop: 12, fontSize: 12, opacity: 0.8 }}>
+          Check browser console for more details.
+        </p>
+      </div>
+    );
+  }
+
   if (loading) {
+    console.log('[PaymentsPanel] Rendering loading state');
     return <div className="loading"><span className="spinner" /> Loading payments...</div>;
   }
 
   if (!dashboard) {
+    console.warn('[PaymentsPanel] No dashboard data after loading');
     return <div style={{ color: 'var(--text2)', padding: 16 }}>No data available</div>;
   }
+
+  console.log('[PaymentsPanel] Rendering with dashboard data:', dashboard);
 
   const stats = [
     { label: 'Pending Submissions', value: dashboard.pending, icon: '⏳', color: '#f59e0b' },

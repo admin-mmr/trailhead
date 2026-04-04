@@ -127,33 +127,52 @@ def is_within_renewal_period(payment_date) -> bool:
 @handle_api_errors
 def api_payments_dashboard():
     """Return counts for payments dashboard."""
-    pending = query("SELECT COUNT(*) as cnt FROM submissions WHERE Status = 'pending'")
-    matched = query("SELECT COUNT(*) as cnt FROM payments WHERE SubmissionID IS NOT NULL")
-    unmatched_gmail = query("""
-        SELECT COUNT(*) as cnt FROM gmail_transactions
-        WHERE Notes IS NULL OR UpdatedAt IS NULL
-    """)
-    approved_30d = query("""
-        SELECT COUNT(*) as cnt FROM submissions
-        WHERE Status = 'approved' AND UpdatedAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-    """)
-    rejected_30d = query("""
-        SELECT COUNT(*) as cnt FROM submissions
-        WHERE Status = 'cancelled' AND UpdatedAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-    """)
-    errors = query("""
-        SELECT COUNT(*) as cnt FROM error_context
-        WHERE Status IN ('NEW', 'ACKNOWLEDGED') AND DetectedAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-    """)
+    logger.info('[DASHBOARD] Fetching payment dashboard stats...')
 
-    return json_response({
-        'pending': pending[0]['cnt'],
-        'matched': matched[0]['cnt'],
-        'unmatched_gmail': unmatched_gmail[0]['cnt'],
-        'approved_30d': approved_30d[0]['cnt'],
-        'rejected_30d': rejected_30d[0]['cnt'],
-        'errors': errors[0]['cnt'],
-    })
+    try:
+        pending = query("SELECT COUNT(*) as cnt FROM submissions WHERE Status = 'pending'")
+        logger.info(f'[DASHBOARD] Pending submissions: {pending}')
+
+        matched = query("SELECT COUNT(*) as cnt FROM payments WHERE SubmissionID IS NOT NULL")
+        logger.info(f'[DASHBOARD] Matched payments: {matched}')
+
+        unmatched_gmail = query("""
+            SELECT COUNT(*) as cnt FROM gmail_transactions
+            WHERE Notes IS NULL OR UpdatedAt IS NULL
+        """)
+        logger.info(f'[DASHBOARD] Unmatched gmail: {unmatched_gmail}')
+
+        approved_30d = query("""
+            SELECT COUNT(*) as cnt FROM submissions
+            WHERE Status = 'approved' AND UpdatedAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        """)
+        logger.info(f'[DASHBOARD] Approved (30d): {approved_30d}')
+
+        rejected_30d = query("""
+            SELECT COUNT(*) as cnt FROM submissions
+            WHERE Status = 'cancelled' AND UpdatedAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        """)
+        logger.info(f'[DASHBOARD] Rejected (30d): {rejected_30d}')
+
+        errors = query("""
+            SELECT COUNT(*) as cnt FROM error_context
+            WHERE Status IN ('NEW', 'ACKNOWLEDGED') AND DetectedAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        """)
+        logger.info(f'[DASHBOARD] Errors (7d): {errors}')
+
+        result = {
+            'pending': pending[0]['cnt'],
+            'matched': matched[0]['cnt'],
+            'unmatched_gmail': unmatched_gmail[0]['cnt'],
+            'approved_30d': approved_30d[0]['cnt'],
+            'rejected_30d': rejected_30d[0]['cnt'],
+            'errors': errors[0]['cnt'],
+        }
+        logger.info(f'[DASHBOARD] Returning response: {result}')
+        return json_response(result)
+    except Exception as e:
+        logger.exception(f'[DASHBOARD] Exception in dashboard endpoint: {e}')
+        raise
 
 
 # ============================================================================
