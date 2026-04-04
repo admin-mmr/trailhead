@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T16:28:10.188815 UTC
+-- Timestamp: 2026-04-04T16:36:57.901345 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -331,7 +331,7 @@ CREATE TABLE `sheets_sync_log` (
   KEY `idx_status` (`Status`),
   KEY `idx_started_at` (`StartedAt`),
   CONSTRAINT `fk_sheets_sync_log_jobid` FOREIGN KEY (`JobID`) REFERENCES `sync_jobs` (`JobID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=52 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
+) ENGINE=InnoDB AUTO_INCREMENT=53 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
 
 CREATE TABLE `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
@@ -825,56 +825,6 @@ CREATE TRIGGER `trg_submissions_insert_validate` BEFORE INSERT ON `submissions` 
   END IF;
 END;
 
-CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
-  DECLARE error_context_id VARCHAR(50);
-  DECLARE error_msg TEXT;
-
-  SET error_context_id = UUID();
-
-  IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN
-    SET error_msg = CONCAT(
-      'Invalid email format: "', NEW.`Email`, '". Must contain @. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `ValidValueExamples`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, 'MEM_INVALID_EMAIL',
-      CONCAT('Email format invalid: ', NEW.`Email`),
-      'Email validation failed: missing @ symbol',
-      'members', 'Email', NEW.`Email`,
-      '["john@example.com", "jane.doe@company.org"]',
-      'Verify email address format matches standard email pattern (user@domain.com)',
-      'WARNING'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-
-  IF NEW.`Status` NOT IN ('active','expired','inactive','pending') THEN
-    SET error_msg = CONCAT(
-      'Invalid Status: "', NEW.`Status`, '". ',
-      'Allowed: active, expired, inactive, pending. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `AllowedRange`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, 'MEM_INVALID_STATUS',
-      CONCAT('Invalid member status: ', NEW.`Status`),
-      'Status enum constraint violated on members table',
-      'members', 'Status', NEW.`Status`,
-      'active | expired | inactive | pending',
-      'Status must be one of: active (paying), expired (may renew), inactive (left), pending (awaiting payment)',
-      'ERROR'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-END;
-
 CREATE TRIGGER `members_before_update` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
     IF NEW.Expiration <> OLD.Expiration THEN
         IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
@@ -941,6 +891,56 @@ CREATE TRIGGER `trg_members_after_update` AFTER UPDATE ON `members` FOR EACH ROW
     NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
     NEW.NYRRRunnerName, NEW.YearBorn
   );
+END;
+
+CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
+  DECLARE error_context_id VARCHAR(50);
+  DECLARE error_msg TEXT;
+
+  SET error_context_id = UUID();
+
+  IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN
+    SET error_msg = CONCAT(
+      'Invalid email format: "', NEW.`Email`, '". Must contain @. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `ValidValueExamples`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'MEM_INVALID_EMAIL',
+      CONCAT('Email format invalid: ', NEW.`Email`),
+      'Email validation failed: missing @ symbol',
+      'members', 'Email', NEW.`Email`,
+      '["john@example.com", "jane.doe@company.org"]',
+      'Verify email address format matches standard email pattern (user@domain.com)',
+      'WARNING'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`Status` NOT IN ('active','expired','inactive','pending', 'pending_upgrade', 'lifetime') THEN
+    SET error_msg = CONCAT(
+      'Invalid Status: "', NEW.`Status`, '". ',
+      'Allowed: active, expired, inactive, pending, pending_upgrade, lifetime. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'MEM_INVALID_STATUS',
+      CONCAT('Invalid member status: ', NEW.`Status`),
+      'Status enum constraint violated on members table',
+      'members', 'Status', NEW.`Status`,
+      'active | expired | inactive | pending | pending_upgrade | lifetime',
+      'Status must be one of: active (paying), expired (may renew), inactive (left), pending (awaiting payment), pending_upgrade (upgrading to family), lifetime (lifetime member)',
+      'ERROR'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
 END;
 
 -- EVENTS

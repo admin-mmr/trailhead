@@ -10,9 +10,9 @@
 
 -- Step 1: Modify the Status column ENUM to include pending_upgrade
 -- (MySQL requires full ENUM list when changing)
-ALTER TABLE members MODIFY Status ENUM('active','expired','inactive','pending','pending_upgrade')
+ALTER TABLE members MODIFY Status ENUM('active','expired','inactive','pending','pending_upgrade','lifetime')
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending'
-  COMMENT 'active=paying; expired=may renew; inactive=left; pending=awaiting payment; pending_upgrade=upgrading to family';
+  COMMENT 'active=paying; expired=may renew; inactive=left; pending=awaiting payment; pending_upgrade=upgrading to family; lifetime=lifetime member';
 
 -- Step 2: Drop the old CHECK constraint (if it exists without pending_upgrade)
 -- Note: Only drop if it doesn't already include pending_upgrade
@@ -29,7 +29,7 @@ ALTER TABLE members MODIFY Status ENUM('active','expired','inactive','pending','
 -- ALTER TABLE members ADD CONSTRAINT chk_members_status_valid_v2
 --   CHECK (Status IN ('active','expired','inactive','pending','pending_upgrade'));
 
--- For MySQL 5.7 compatibility: Add self-registration to schema_migrations
-INSERT INTO schema_migrations (migration_name, version, applied_at, status)
-VALUES ('MIGRATION_V010_add_pending_upgrade_status', 'V010', NOW(), 'completed')
-ON DUPLICATE KEY UPDATE applied_at=NOW(), status='completed';
+-- For MySQL 5.7 compatibility: Register migration in schema_migrations
+INSERT INTO schema_migrations (version, description, executed_at)
+VALUES ('V010', 'Add pending_upgrade to members Status enum + constraint', NOW())
+ON DUPLICATE KEY UPDATE executed_at=NOW();
