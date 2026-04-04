@@ -256,29 +256,20 @@ def init_tables() -> None:
 
 
 def _init_viewer_admins_table():
-    """Create viewer_admins table if it doesn't exist and seed a super_admin."""
-    try:
-        execute("""
-            CREATE TABLE IF NOT EXISTS viewer_admins (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                email VARCHAR(255) NOT NULL UNIQUE,
-                role ENUM('admin','super_admin') NOT NULL DEFAULT 'admin',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-    except Exception as e:
-        print(f'Warning: Could not create viewer_admins table: {e}')
-        return
+    """Check if admin_users table exists; seed super_admin if needed.
 
+    Note: admin_users table is created by MIGRATION_V008. This function
+    only ensures the super_admin exists after migration.
+    """
     try:
-        rows = query("SELECT COUNT(*) as cnt FROM viewer_admins")
+        rows = query("SELECT COUNT(*) as cnt FROM admin_users")
         if rows and rows[0]['cnt'] == 0:
             execute("""
-                INSERT IGNORE INTO viewer_admins (email, role)
+                INSERT IGNORE INTO admin_users (email, role)
                 VALUES (%s, %s)
             """, ('admin@mmrunners.org', 'super_admin'))
     except Exception as e:
-        print(f'Warning: Could not seed viewer_admins: {e}')
+        print(f'Warning: Could not seed admin_users: {e}')
 
 
 def _init_viewer_user_settings_table():

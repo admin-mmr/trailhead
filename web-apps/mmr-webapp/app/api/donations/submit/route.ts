@@ -29,35 +29,39 @@ export async function POST(req: NextRequest) {
 
     const d = parsed.data
 
-    // Generate unique event ID (e.g. DON-20260325-ABC12)
+    // Generate unique submission ID (e.g. SUB-20260325-ABC12)
     const today   = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const eventId = `DON-${today}-${nanoid(5).toUpperCase()}`
+    const submissionId = `SUB-${today}-${nanoid(5).toUpperCase()}`
 
-    // Insert webapp_events row with EventType='donation'
+    // Calculate expiration date (7 days for donations)
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 7)
+
+    // Insert submissions row with SubmissionType='donation'
     const conn = await pool.getConnection()
     try {
       await conn.execute(
-        `INSERT INTO webapp_events
-          (EventID, EventType, MemberID, Email, PaymentIntent, Amount, PaymentMethod,
-           PayerName, PaymentDate, MemoField, Last4Digits, Status)
-         VALUES (?, 'donation', ?, ?, 'Donation', ?, ?, ?, ?, ?, ?, 'pending')`,
+        `INSERT INTO submissions
+          (SubmissionID, MemberID, SubmissionType, PaymentIntent, Amount, PaymentMethod,
+           PayerName, PaymentDate, MemoField, Last4Digits, ExpiresAt, Status)
+         VALUES (?, ?, 'donation', 'Donation', ?, ?, ?, ?, ?, ?, ?, 'pending')`,
         [
-          eventId,
+          submissionId,
           d.memberId ?? null,
-          d.email,
           d.amount,
           d.paymentMethod,
           d.payerName,
           d.paymentDate,
           d.memoField ?? null,
           d.last4     ?? null,
+          expiresAt,
         ]
       )
     } finally {
       conn.release()
     }
 
-    return NextResponse.json({ eventId, email: d.email }, { status: 201 })
+    return NextResponse.json({ submissionId, email: d.email }, { status: 201 })
   } catch (err) {
     console.error('[donations/submit] Error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

@@ -8,75 +8,73 @@ export const SUPER_ADMIN_EMAIL = 'admin@mmrunners.org'
 export interface AdminRecord {
   id:       number
   email:    string
+  role:     string   // 'admin' or 'super_admin'
   addedBy:  string
   addedAt:  string   // ISO date
 }
 
 /**
- * Ensure the admins table exists. Called lazily on first use.
- * Uses CREATE TABLE IF NOT EXISTS so it's safe to call multiple times.
+ * Check if admin_users table exists. Called lazily on first use.
+ * The table is created by MIGRATION_V008; this function just verifies it exists.
  */
 let tableEnsured = false
 async function ensureTable(): Promise<void> {
   if (tableEnsured) return
   const db = getDb()
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS admins (
-      id        INT AUTO_INCREMENT PRIMARY KEY,
-      email     VARCHAR(255) NOT NULL UNIQUE,
-      added_by  VARCHAR(255) NOT NULL DEFAULT 'system',
-      added_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `)
-  // Ensure the super admin always exists
-  await db.execute(
-    `INSERT IGNORE INTO admins (email, added_by) VALUES (?, 'system')`,
-    [SUPER_ADMIN_EMAIL]
-  )
-  tableEnsured = true
+  try {
+    // Verify admin_users table exists by querying it
+    await db.execute(`SELECT 1 FROM admin_users LIMIT 1`)
+    tableEnsured = true
+  } catch (err) {
+    // Table doesn't exist yet — this shouldn't happen after migration V008
+    console.error('admin_users table not found. Run MIGRATION_V008 first.', err)
+    throw err
+  }
 }
 
 /**
- * Check whether a given email has admin privileges.
+ * Check whether a given email has admin privileges (any role in admin_users table).
  */
 export async function isAdmin(email: string): Promise<boolean> {
   await ensureTable()
   const db = getDb()
   const [rows] = await db.execute<any[]>(
-    `SELECT 1 FROM admins WHERE email = ? LIMIT 1`,
+    `SELECT 1 FROM admin_users WHERE email = ? LIMIT 1`,
     [email.toLowerCase()]
   )
   return rows.length > 0
 }
 
 /**
- * List all admins.
+ * List all admins from admin_users table.
  */
 export async function listAdmins(): Promise<AdminRecord[]> {
   await ensureTable()
   const db = getDb()
   const [rows] = await db.execute<any[]>(
-    `SELECT id, email, added_by, added_at FROM admins ORDER BY added_at ASC`
+    `SELECT id, email, role, added_by, added_at FROM admin_users ORDER BY added_at ASC`
   )
   return rows.map((r: any) => ({
     id:      r.id,
     email:   r.email,
+    role:    r.role,
     addedBy: r.added_by,
     addedAt: r.added_at instanceof Date ? r.added_at.toISOString() : String(r.added_at),
   }))
 }
 
 /**
- * Add a new admin. Returns true if added, false if already exists.
+ * Add a new admin to admin_users table. Defaults to 'admin' role unless specified.
+ * Returns true if added, false if already exists.
  * Throws if the caller is not an admin themselves (checked at the API layer).
  */
-export async function addAdmin(email: string, addedBy: string): Promise<boolean> {
+export async function addAdmin(email: string, addedBy: string, role: string = 'admin'): Promise<boolean> {
   await ensureTable()
   const db = getDb()
   try {
     await db.execute(
-      `INSERT INTO admins (email, added_by) VALUES (?, ?)`,
-      [email.toLowerCase(), addedBy.toLowerCase()]
+      `INSERT INTO admin_users (email, role, added_by) VALUES (?, ?, ?)`,
+      [email.toLowerCase(), role, addedBy.toLowerCase()]
     )
     return true
   } catch (err: any) {
@@ -87,7 +85,7 @@ export async function addAdmin(email: string, addedBy: string): Promise<boolean>
 }
 
 /**
- * Remove an admin by email.
+ * Remove an admin from admin_users table.
  * The super admin (admin@mmrunners.org) cannot be removed.
  * Returns true if removed, false if not found or is super admin.
  */
@@ -98,7 +96,7 @@ export async function removeAdmin(email: string): Promise<{ removed: boolean; re
   await ensureTable()
   const db = getDb()
   const [result] = await db.execute<any>(
-    `DELETE FROM admins WHERE email = ?`,
+    `DELETE FROM admin_users WHERE email = ?`,
     [email.toLowerCase()]
   )
   return { removed: result.affectedRows > 0 }

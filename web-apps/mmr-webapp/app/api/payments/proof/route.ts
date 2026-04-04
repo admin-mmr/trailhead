@@ -8,15 +8,15 @@ const PROOF_FOLDER = 'payment-proofs'
 // ── POST /api/payments/proof ─────────────────────────────────────────────────
 // Accepts multipart/form-data with fields:
 //   proof  — image file (PNG, JPG, HEIC, etc.)
-//   eventId — the EVT-YYYYMMDD-XXXXX reference from /api/payments/submit
+//   submissionId — the SUB-YYYYMMDD-XXXXX reference from /api/payments/submit
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     const file = formData.get('proof') as File | null
-    const eventId = formData.get('eventId') as string | null
+    const submissionId = formData.get('submissionId') as string | null
 
-    if (!file || !eventId) {
-      return NextResponse.json({ error: 'Missing proof file or eventId' }, { status: 400 })
+    if (!file || !submissionId) {
+      return NextResponse.json({ error: 'Missing proof file or submissionId' }, { status: 400 })
     }
 
     // Validate file size (max 10 MB)
@@ -31,25 +31,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid file type. Please upload an image.' }, { status: 415 })
     }
 
-    // Verify event exists and is still Pending
+    // Verify submission exists and is still pending
     const conn = await pool.getConnection()
-    let eventRow: { event_id: string; status: string } | undefined
+    let submissionRow: { submission_id: string; status: string } | undefined
     try {
       const [rows] = await conn.execute(
-        'SELECT EventID AS event_id, Status AS status FROM webapp_events WHERE EventID = ? LIMIT 1',
-        [eventId]
-      ) as [{ event_id: string; status: string }[], unknown]
-      eventRow = rows[0]
+        'SELECT SubmissionID AS submission_id, Status AS status FROM submissions WHERE SubmissionID = ? LIMIT 1',
+        [submissionId]
+      ) as [{ submission_id: string; status: string }[], unknown]
+      submissionRow = rows[0]
     } finally {
       conn.release()
     }
 
-    if (!eventRow) {
-      return NextResponse.json({ error: 'Payment event not found' }, { status: 404 })
+    if (!submissionRow) {
+      return NextResponse.json({ error: 'Payment submission not found' }, { status: 404 })
     }
-    // Status enum values are lowercase: 'pending', 'approved', 'rejected'
-    if (eventRow.status === 'approved' || eventRow.status === 'rejected') {
-      return NextResponse.json({ error: `Payment already ${eventRow.status}` }, { status: 409 })
+    // Status enum values are lowercase: 'pending', 'approved', 'cancelled', 'expired'
+    if (submissionRow.status === 'approved' || submissionRow.status === 'cancelled' || submissionRow.status === 'expired') {
+      return NextResponse.json({ error: `Submission already ${submissionRow.status}` }, { status: 409 })
     }
 
     // Upload to Azure Blob Storage
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     const containerClient = blobService.getContainerClient(CONTAINER)
 
     const ext = file.name.split('.').pop() ?? 'jpg'
-    const blobName = `${PROOF_FOLDER}/${eventId}-${Date.now()}.${ext}`
+    const blobName = `${PROOF_FOLDER}/${submissionId}-${Date.now()}.${ext}`
     const blockBlobClient = containerClient.getBlockBlobClient(blobName)
 
     const buffer = Buffer.from(await file.arrayBuffer())
@@ -70,14 +70,14 @@ export async function POST(req: NextRequest) {
 
     const proofUrl = blockBlobClient.url
 
-    // Update webapp_events with proof URL
+    // Update submissions with proof URL
     const conn2 = await pool.getConnection()
     try {
       // ScreenshotFileId stores the Azure Blob proof URL (VARCHAR 255, fits all Azure URLs)
       // UpdatedAt auto-updates via DB trigger (on update CURRENT_TIMESTAMP)
       await conn2.execute(
-        'UPDATE webapp_events SET ScreenshotFileId = ? WHERE EventID = ?',
-        [proofUrl, eventId]
+        'UPDATE submissions SET ScreenshotFileId = ? WHERE SubmissionID = ?',
+        [proofUrl, submissionId]
       )
     } finally {
       conn2.release()

@@ -25,7 +25,7 @@ admin_bp = Blueprint('admin', __name__)
 def api_get_admins():
     """Get all admins. Requires admin or super_admin role."""
     try:
-        rows = query("SELECT id, email, role, created_at FROM viewer_admins ORDER BY created_at DESC")
+        rows = query("SELECT id, email, role, added_at as created_at FROM admin_users ORDER BY added_at DESC")
         return json_response({'ok': True, 'data': rows})
     except Exception as e:
         return json_response({'ok': False, 'error': str(e)[:300]}, 500)
@@ -48,7 +48,7 @@ def api_create_admin():
 
     try:
         execute("""
-            INSERT INTO viewer_admins (email, role)
+            INSERT INTO admin_users (email, role)
             VALUES (%s, %s)
             ON DUPLICATE KEY UPDATE role = %s
         """, (email, role, role))
@@ -67,7 +67,7 @@ def api_delete_admin(email):
         return json_response({'ok': False, 'error': 'Cannot delete yourself'}, 400)
 
     try:
-        execute("DELETE FROM viewer_admins WHERE email = %s", [email])
+        execute("DELETE FROM admin_users WHERE email = %s", [email])
         return json_response({'ok': True, 'message': f'Admin {email} deleted'})
     except Exception as e:
         return json_response({'ok': False, 'error': str(e)[:300]}, 500)

@@ -1,3 +1,45 @@
+### 04-04 05:10 UTC — V008: Drop webapp_events + Consolidate admin tables + Remove legacy sync tables
+
+**Changed:**
+1. **MIGRATION_V008_drop_webapp_events_consolidate_admins.sql** (CREATED) ✅
+   - Drop webapp_events table (replaced by submissions)
+   - Drop sync_changes, sync_snapshots, sync_metadata (legacy, unused)
+   - Keep sync_jobs table (actively used for job tracking)
+   - Rename admins → admin_users + merge viewer_admins into it
+   - Add role column (enum: 'admin', 'super_admin') + updated_at
+   - Add indexes on submissions (Status, ExpiresAt) for query optimization
+
+2. **webapp payment/donation routes updated** ✅
+   - /api/payments/submit: webapp_events → submissions (use SubmissionID instead of EventID)
+   - /api/payments/pending: Query submissions instead of webapp_events
+   - /api/payments/proof: Update table + field names for submissions
+   - /api/donations/submit: webapp_events → submissions
+   - No longer sync events to GAS (only members synced now)
+
+3. **mmr-admin auth + admin endpoints updated** ✅
+   - auth.py: get_user_role() queries admin_users instead of viewer_admins
+   - api_admin.py: All admin CRUD operations use admin_users table
+   - db.py: _init_viewer_admins_table() now just seeds super_admin in admin_users
+
+4. **mmr-webapp NextAuth admin checks updated** ✅
+   - lib/db/admins.ts: All queries use admin_users table
+   - addAdmin() now accepts optional role param (default 'admin')
+   - AdminRecord interface includes role field
+
+**Status:**
+- ✅ V008 migration is idempotent (uses INFORMATION_SCHEMA checks)
+- ✅ All code changes compile + imports verified
+- ✅ Single source of truth: admin_users replaces admins + viewer_admins
+- ✅ webapp_events removed (submissions handles both memberships + donations now)
+- ✅ Legacy sync tables removed (sync_jobs retained for active use)
+- Ready to execute: Run MIGRATION_V008, then push code changes
+
+**Next:**
+- Execute MIGRATION_V008 on production
+- Monitor admin auth in both mmr-admin + mmr-webapp
+- Verify payment/donation flows work with submissions table
+- Update frontend if eventId references change to submissionId
+
 ### 04-03 22:30 UTC — GAS webhook handlers for MySQL→Sheets write
 
 **Changed:**

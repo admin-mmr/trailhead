@@ -65,36 +65,40 @@ export async function POST(req: NextRequest) {
       nyrrRunnerName: d.nyrrRunnerName,
     })
 
-    // 2. Generate unique event ID (e.g. EVT-20250101-ABC12)
+    // 2. Generate unique submission ID (e.g. SUB-20250101-ABC12)
     const today   = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const eventId = `EVT-${today}-${nanoid(5).toUpperCase()}`
+    const submissionId = `SUB-${today}-${nanoid(5).toUpperCase()}`
 
-    // 3. Insert webapp_events row with Status='Pending'
+    // 3. Calculate expiration date (14 days from now)
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 14)
+
+    // 4. Insert submissions row with Status='pending'
     const conn = await pool.getConnection()
     try {
       await conn.execute(
-        `INSERT INTO webapp_events
-          (EventID, EventType, MemberID, Email, PaymentIntent, Amount, PaymentMethod,
-           PayerName, PaymentDate, MemoField, Last4Digits, Status)
-         VALUES (?, 'membership_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        `INSERT INTO submissions
+          (SubmissionID, MemberID, SubmissionType, Amount, PaymentIntent, PaymentMethod,
+           PayerName, PaymentDate, MemoField, Last4Digits, ExpiresAt, Status)
+         VALUES (?, ?, 'membership_payment', ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
         [
-          eventId,
+          submissionId,
           member.memberId,
-          d.email,
-          PLAN_INTENT[d.plan],
           d.amount,
+          PLAN_INTENT[d.plan],
           d.paymentMethod,
           d.payerName,
           d.paymentDate,
           d.memoField ?? null,
           d.last4     ?? null,
+          expiresAt,
         ]
       )
     } finally {
       conn.release()
     }
 
-    // 4. Send confirmation email to member
+    // 5. Send confirmation email to member
     try {
       await sendApplicationReceivedEmail({
         to:            d.email,
@@ -102,34 +106,22 @@ export async function POST(req: NextRequest) {
         planLabel:     PLAN_INTENT[d.plan],
         amount:        d.amount,
         paymentMethod: d.paymentMethod,
-        referenceId:   eventId,
+        referenceId:   submissionId,
       })
     } catch (emailErr) {
       // Non-fatal: log but don't fail the request
       console.error('[payments/submit] Email send failed:', emailErr)
     }
 
-    // 5. Sync to Google Sheets (non-fatal)
+    // 6. Sync to Google Sheets (non-fatal)
+    // Note: Only sync member; submissions are no longer synced to Sheets
     try {
       await syncMemberToSheets(member)
-      await syncEventToSheets({
-        eventId,
-        memberId:       member.memberId,
-        email:          d.email,
-        paymentIntent:  PLAN_INTENT[d.plan],
-        amount:         d.amount,
-        paymentMethod:  d.paymentMethod,
-        payerName:      d.payerName,
-        paymentDate:    d.paymentDate,
-        memoField:      d.memoField,
-        last4:          d.last4,
-        status:         'pending',
-      })
     } catch (sheetErr) {
       console.error('[payments/submit] Sheets sync failed:', sheetErr)
     }
 
-    return NextResponse.json({ eventId, memberId: member.memberId }, { status: 201 })
+    return NextResponse.json({ submissionId, memberId: member.memberId }, { status: 201 })
   } catch (err: any) {
     console.error('[payments/submit] Error:', err)
     // Detect common DB errors for better user feedback

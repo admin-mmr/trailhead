@@ -5,7 +5,7 @@ import { pool } from '@/lib/db/connection'
 export const dynamic = 'force-dynamic'
 
 // ── GET /api/payments/pending ─────────────────────────────────────────────────
-// Returns open (Pending) payment events for the currently logged-in member.
+// Returns open (pending) submissions for the currently logged-in member.
 // Used by DashboardClient on every portal load to derive "pending" state (PRDv4).
 export async function GET(req: NextRequest) {
   try {
@@ -18,14 +18,14 @@ export async function GET(req: NextRequest) {
     let events: unknown[]
     try {
       const [rows] = await conn.execute(
-        `SELECT EventID          AS event_id,
+        `SELECT SubmissionID      AS event_id,
                 PaymentIntent    AS payment_intent,
                 Amount           AS amount,
                 PaymentMethod    AS payment_method,
                 CreatedAt        AS created_at,
                 ScreenshotFileId AS proof_url
-         FROM webapp_events
-         WHERE Email = ? AND Status = 'pending'
+         FROM submissions
+         WHERE MemberID = (SELECT MemberID FROM members WHERE Email = ?) AND Status = 'pending'
          ORDER BY CreatedAt DESC
          LIMIT 10`,
         [session.email]

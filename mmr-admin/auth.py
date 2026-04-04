@@ -63,10 +63,10 @@ _MS_TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
 # ---------------------------------------------------------------------------
 
 def get_user_role(email: str) -> Optional[str]:
-    """Query viewer_admins table for user role. Returns 'super_admin', 'admin', or None."""
+    """Query admin_users table for user role. Returns 'super_admin', 'admin', or None."""
     try:
         rows = query(
-            "SELECT role FROM viewer_admins WHERE email = %s",
+            "SELECT role FROM admin_users WHERE email = %s",
             [email],
         )
         if rows:
