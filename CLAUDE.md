@@ -39,24 +39,22 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 **Schema Validation Tools:**
 - `validate_schema.py`: Automated validator detects NULL violations, FK orphans, ENUM mismatches, missing PKs, duplicate uniques. Run: `python3 db/validate_schema.py`
 
-**Error Messaging System (V007 + V007A):**
+**Error Messaging System (V007):**
 
-🚨 **IMPORTANT: Two-Step Migration Required**
-1. **MIGRATION_V007A_fix_constraint_violations.sql** (FIRST — data cleanup)
-   - Fixes ExpiresAt <= CreatedAt (set to NULL)
-   - Fixes negative Amount (set to NULL)
-   - Fixes invalid Status enums (set to 'pending'/'active')
-   - Fixes invalid email format (set to NULL)
-   - Fixes invalid PaymentDate (set to NULL)
-   - Duration: <1 min | GitHub Actions runs automatically
-
-2. **MIGRATION_V007_improve_error_messages.sql** (SECOND — add tracking system)
+✅ **DEPLOYED — Known Issue Fixed in V008**
+1. **MIGRATION_V007_improve_error_messages.sql** (DEPLOYED)
    - Creates error_context table (19 cols: value, constraint, suggestion, occurrence tracking)
    - Adds 3 validation triggers (submissions/members/payments) — auto-log violations
    - Adds 10 CHECK constraints (Status, Amount, Email, PaymentDate, etc.)
    - Creates v_unresolved_errors view + sp_error_summary_report(days) procedure
    - Enhances activity_log with ErrorContext, ErrorSeverity, StackTrace
-   - Duration: 2-3 min | ExpiresAt constraint commented out (optional, add after review)
+   - Known Issue: Reports duplicate column error if columns already exist (non-blocking)
+
+2. **MIGRATION_V008_fix_v007_duplicate_columns.sql** (OPTIONAL — idempotent fix)
+   - Checks INFORMATION_SCHEMA before adding columns
+   - Safe to re-run; skips columns that already exist
+   - Ensures V007 can be re-run without errors
+   - Duration: <1 min
 
 **Monitoring & Debugging:**
 ```sql

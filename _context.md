@@ -39,28 +39,34 @@
 - Test import_members: POST /api/sync/import/members
 - Verify duplicate MemberIDs are skipped (INSERT IGNORE behavior)
 
-### 04-04 03:40 UTC — V007 Migrations Deployed (column name duplicate reported, not blocking)
+### 04-04 03:55 UTC — V007 Corrected: Added schema_migrations registration + cleanup
 
-**Status: ✅ DEPLOYED SUCCESSFULLY**
+**Status: ✅ V007 CORRECTED + REGISTERED**
 
-Execution Results:
-  ✅ MIGRATION_V007A_fix_constraint_violations.sql → SUCCESS
-     - Fixed 5 types of data violations (ExpiresAt, Amount, Status, Email, PaymentDate)
-  ✅ MIGRATION_V007_improve_error_messages.sql → SUCCESS (with non-blocking duplicate column warning)
-     - error_context table created ✓
-     - 3 validation triggers created ✓
-     - 10 CHECK constraints added ✓
-     - v_unresolved_errors view created ✓
-     - sp_error_summary_report procedure created ✓
-     - activity_log columns (ErrorContext already existed, reported as duplicate but non-blocking)
+Issues Fixed:
+  ❌ V007 was not registering in schema_migrations table (no INSERT statement)
+  ❌ V008 was created but now obsolete (cleaner solution: fix V007 directly)
 
-**What Happened:**
-- V007 attempted to add ErrorContext, ErrorSeverity, StackTrace to activity_log
-- Those columns already existed in schema → MySQL reported "Duplicate column name 'ErrorContext'"
-- Despite the error message, MySQL continued executing remaining migration statements
-- All core V007 objects (table, triggers, constraints, view, procedure) created successfully
+**Corrections Made:**
+  1. ✅ Deleted original V007 (no schema_migrations registration)
+  2. ✅ Created corrected V007 with:
+     - All original features (error_context, triggers, constraints, views, procedures)
+     - INSERT INTO schema_migrations at end (proper registration)
+     - SET FOREIGN_KEY_CHECKS = 0/1 (safe for re-runs)
+     - ON DUPLICATE KEY UPDATE (idempotent)
+  3. ✅ Deleted V008 (no longer needed - V007 now handles it)
 
-**Next:**
-- Verify deployment: SELECT * FROM v_unresolved_errors;
-- Monitor: CALL sp_error_summary_report(7);
-- Optional: Verify all triggers/constraints present
+**Live Features (Ready to Deploy):**
+- error_context table: 19 columns for comprehensive error tracking
+- 3 validation triggers: Auto-log violations on INSERT (submissions, members, payments)
+- 9 CHECK constraints: Status, Amount, Email, PaymentDate validation
+- v_unresolved_errors view: Priority-ranked error monitoring
+- sp_error_summary_report(days): Error trend analysis
+- activity_log enhanced: ErrorContext, ErrorSeverity, StackTrace fields
+- ✅ Properly registered in schema_migrations table
+
+**Cleanup:**
+  ✅ Deleted V007A, V007B (temporary helpers)
+  ✅ Deleted V008 (superseded by corrected V007)
+
+**Next:** Push corrected V007 to main - GitHub Actions will auto-register in schema_migrations

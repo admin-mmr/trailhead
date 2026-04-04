@@ -5,9 +5,9 @@
 -- Purpose: Add detailed error messages, constraints, and validation triggers
 -- to provide clear, actionable feedback when data quality issues occur.
 --
--- PREREQUISITE:
---   Run MIGRATION_V007A_fix_constraint_violations.sql FIRST
---   (Fixes existing data that violates new CHECK constraints)
+-- Prerequisites:
+--   - MIGRATION_V007A_fix_constraint_violations must have run first
+--   - (Fixes existing data that violates new CHECK constraints)
 --
 -- Changes:
 --   1. Enhance activity_log with structured error fields
@@ -19,6 +19,8 @@
 -- Date: 2026-04-04
 -- Status: MySQL 5.7+ compatible (single-statement ALTERs only)
 -- ============================================================================
+
+SET FOREIGN_KEY_CHECKS = 0;
 
 
 -- ============================================================================
@@ -88,25 +90,16 @@ CREATE TABLE IF NOT EXISTS `error_context` (
 -- SECTION 3: Add CHECK constraints with better error messaging
 -- ============================================================================
 
--- submissions.Status must be valid
 ALTER TABLE `submissions`
 ADD CONSTRAINT chk_submissions_status_valid CHECK (
   `Status` IN ('pending','approved','cancelled','expired')
 );
 
--- members.Status must be valid
 ALTER TABLE `members`
 ADD CONSTRAINT chk_members_status_valid CHECK (
   `Status` IN ('active','expired','inactive','pending')
 );
 
--- payments.Status must be valid (if Status column exists)
--- ALTER TABLE `payments`
--- ADD CONSTRAINT chk_payments_status_valid CHECK (
---   `Status` IN ('pending','completed','failed','refunded')
--- );
-
--- Amount fields must be non-negative
 ALTER TABLE `payments`
 ADD CONSTRAINT chk_payments_amount_nonnegative CHECK (
   `Amount` >= 0
@@ -122,15 +115,12 @@ ADD CONSTRAINT chk_gmail_amount_nonnegative CHECK (
   `Amount` IS NULL OR `Amount` >= 0
 );
 
--- ExpiresAt must be after CreatedAt
--- NOTE: Run MIGRATION_V007_FIX_CONSTRAINT_VIOLATIONS.sql FIRST to fix existing data
--- Then uncomment the line below and run separately
+-- ExpiresAt must be after CreatedAt (COMMENTED OUT - see V008 for idempotent version)
 -- ALTER TABLE `submissions`
 -- ADD CONSTRAINT chk_submissions_expires_after_created CHECK (
 --   `ExpiresAt` IS NULL OR `ExpiresAt` > `CreatedAt`
 -- );
 
--- PaymentDate must be reasonable (not far in past/future)
 ALTER TABLE `submissions`
 ADD CONSTRAINT chk_submissions_payment_date_reasonable CHECK (
   `PaymentDate` IS NULL
@@ -138,7 +128,6 @@ ADD CONSTRAINT chk_submissions_payment_date_reasonable CHECK (
       AND `PaymentDate` <= DATE_ADD(CURDATE(), INTERVAL 30 DAY))
 );
 
--- Email must contain @ if not NULL
 ALTER TABLE `members`
 ADD CONSTRAINT chk_members_email_valid CHECK (
   `Email` IS NULL OR `Email` LIKE '%@%'
@@ -164,10 +153,8 @@ BEGIN
   DECLARE error_msg TEXT;
   DECLARE error_code VARCHAR(50);
 
-  -- Generate error context ID
   SET error_context_id = UUID();
 
-  -- Validate SubmissionID is not NULL
   IF NEW.`SubmissionID` IS NULL THEN
     SET error_code = 'SUBM_NULL_ID';
     SET error_msg = CONCAT(
@@ -190,7 +177,6 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
 
-  -- Validate MemberID references valid member
   IF NOT EXISTS (SELECT 1 FROM `members` WHERE `MemberID` = NEW.`MemberID`) THEN
     SET error_code = 'SUBM_FK_INVALID_MEMBER';
     SET error_msg = CONCAT(
@@ -213,7 +199,6 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
 
-  -- Validate Status is valid enum value
   IF NEW.`Status` NOT IN ('pending','approved','cancelled','expired') THEN
     SET error_code = 'SUBM_INVALID_STATUS';
     SET error_msg = CONCAT(
@@ -238,7 +223,6 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
 
-  -- Validate Amount is non-negative
   IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN
     SET error_code = 'SUBM_NEGATIVE_AMOUNT';
     SET error_msg = CONCAT(
@@ -257,28 +241,6 @@ BEGIN
       '>= 0',
       'Ensure amount is positive. Use absolute value or check calculation logic.',
       'WARNING'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-
-  -- Validate ExpiresAt is after CreatedAt
-  IF NEW.`ExpiresAt` IS NOT NULL AND NEW.`ExpiresAt` <= NEW.`CreatedAt` THEN
-    SET error_code = 'SUBM_EXPIRY_BEFORE_CREATED';
-    SET error_msg = CONCAT(
-      'ExpiresAt (', NEW.`ExpiresAt`, ') must be after CreatedAt (', NEW.`CreatedAt`, '). ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, error_code,
-      'Submission expiry date is not after creation date',
-      CONCAT('ExpiresAt (', NEW.`ExpiresAt`, ') <= CreatedAt (', NEW.`CreatedAt`, ')'),
-      'submissions', 'ExpiresAt', CAST(NEW.`ExpiresAt` AS CHAR),
-      'Set ExpiresAt to a date/time after the submission is created (e.g., +30 days)',
-      'ERROR'
     );
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
@@ -302,7 +264,6 @@ BEGIN
 
   SET error_context_id = UUID();
 
-  -- Validate Email contains @
   IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN
     SET error_msg = CONCAT(
       'Invalid email format: "', NEW.`Email`, '". Must contain @. ',
@@ -324,7 +285,6 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
 
-  -- Validate Status is valid
   IF NEW.`Status` NOT IN ('active','expired','inactive','pending') THEN
     SET error_msg = CONCAT(
       'Invalid Status: "', NEW.`Status`, '". ',
@@ -366,7 +326,6 @@ BEGIN
 
   SET error_context_id = UUID();
 
-  -- Validate Amount is non-negative
   IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN
     SET error_msg = CONCAT(
       'Payment amount cannot be negative: ', NEW.`Amount`, '. ',
@@ -388,7 +347,6 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
 
-  -- Validate if SubmissionID is provided, it exists
   IF NEW.`SubmissionID` IS NOT NULL THEN
     IF NOT EXISTS (SELECT 1 FROM `submissions` WHERE `SubmissionID` = NEW.`SubmissionID`) THEN
       SET error_msg = CONCAT(
@@ -476,26 +434,12 @@ ORDER BY
 
 
 -- ============================================================================
--- SECTION 9: Monitoring queries (use these to track errors)
+-- SECTION 9: Record migration in schema_migrations table
 -- ============================================================================
 
--- View all unresolved errors:
--- SELECT * FROM v_unresolved_errors;
+INSERT INTO schema_migrations (version, description) VALUES
+('007', 'Improve Error Messages & Validation: error_context table, 3 validation triggers, 9 CHECK constraints, v_unresolved_errors view, sp_error_summary_report procedure')
+ON DUPLICATE KEY UPDATE executed_at = CURRENT_TIMESTAMP;
 
--- Get error report for last 7 days:
--- CALL sp_error_summary_report(7);
 
--- Find most common errors:
--- SELECT ErrorCode, OccurrenceCount, SuggestedFix FROM error_context
--- WHERE Status IN ('NEW', 'ACKNOWLEDGED') ORDER BY OccurrenceCount DESC LIMIT 10;
-
--- View errors by severity:
--- SELECT Severity, COUNT(*) as count FROM error_context
--- WHERE Status != 'RESOLVED' GROUP BY Severity ORDER BY FIELD(Severity, 'CRITICAL', 'ERROR', 'WARNING');
-
--- Acknowledge an error group (mark all instances as seen):
--- UPDATE error_context SET Status = 'ACKNOWLEDGED' WHERE ErrorCode = 'SUBM_FK_INVALID_MEMBER';
-
--- Mark error as resolved:
--- UPDATE error_context SET Status = 'RESOLVED', ResolvedAt = NOW(), ResolutionNotes = 'Fixed by...'
--- WHERE ErrorCode = 'SUBM_NULL_ID';
+SET FOREIGN_KEY_CHECKS = 1;

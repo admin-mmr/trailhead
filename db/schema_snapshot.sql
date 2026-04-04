@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T02:58:25.593022 UTC
+-- Timestamp: 2026-04-04T03:57:34.316287 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -13,11 +13,16 @@ CREATE TABLE `activity_log` (
   `State` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ErrorCode` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ErrorMessage` text COLLATE utf8mb4_unicode_ci,
+  `ErrorContext` json DEFAULT NULL COMMENT 'Detailed error info: {field, value, constraint, suggestion}',
+  `ErrorSeverity` enum('INFO','WARNING','ERROR','CRITICAL') COLLATE utf8mb4_unicode_ci DEFAULT 'ERROR' COMMENT 'Error classification level',
+  `StackTrace` text COLLATE utf8mb4_unicode_ci COMMENT 'Python/Node stack trace if available',
   PRIMARY KEY (`LogID`),
   KEY `idx_actlog_memberid` (`MemberID`),
   KEY `idx_actlog_timestamp` (`Timestamp`),
   KEY `idx_actlog_action` (`Action`),
-  KEY `idx_actlog_sessionid` (`SessionID`)
+  KEY `idx_actlog_sessionid` (`SessionID`),
+  KEY `idx_error_code` (`ErrorCode`),
+  KEY `idx_error_severity` (`ErrorSeverity`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `admin_member_overrides` (
@@ -52,6 +57,38 @@ CREATE TABLE `config` (
   PRIMARY KEY (`ConfigKey`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `error_context` (
+  `ErrorContextID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'UUID for error tracking',
+  `ErrorCode` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Matches activity_log.ErrorCode',
+  `ErrorMessage` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'User-friendly error message',
+  `TechnicalMessage` text COLLATE utf8mb4_unicode_ci COMMENT 'Technical details for debugging',
+  `SuggestedFix` text COLLATE utf8mb4_unicode_ci COMMENT 'Recommended resolution action',
+  `TableName` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Which table had the issue',
+  `ColumnName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Which column (if applicable)',
+  `ConstraintName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Which constraint was violated',
+  `ProblematicValue` text COLLATE utf8mb4_unicode_ci COMMENT 'The actual value that caused error',
+  `ValidValueExamples` text COLLATE utf8mb4_unicode_ci COMMENT 'JSON array of valid example values',
+  `AllowedRange` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'If numeric: min-max; if enum: allowed values',
+  `OffendingRowID` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Row identifier (JSON for compound keys)',
+  `OffendingRowContext` json DEFAULT NULL COMMENT 'Full row data (sensitive fields masked)',
+  `DetectedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When error was first logged',
+  `FirstOccurrence` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'When this error first happened',
+  `LastOccurrence` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Most recent occurrence',
+  `OccurrenceCount` int DEFAULT '1' COMMENT 'How many times this error occurred',
+  `Severity` enum('INFO','WARNING','ERROR','CRITICAL') COLLATE utf8mb4_unicode_ci DEFAULT 'ERROR',
+  `Status` enum('NEW','ACKNOWLEDGED','IN_PROGRESS','RESOLVED','DUPLICATE','WONTFIX') COLLATE utf8mb4_unicode_ci DEFAULT 'NEW',
+  `AssignedTo` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Admin email responsible for fix',
+  `ResolutionNotes` text COLLATE utf8mb4_unicode_ci COMMENT 'How it was fixed',
+  `ResolvedAt` datetime DEFAULT NULL,
+  PRIMARY KEY (`ErrorContextID`),
+  KEY `idx_error_code` (`ErrorCode`),
+  KEY `idx_table_column` (`TableName`,`ColumnName`),
+  KEY `idx_constraint` (`ConstraintName`),
+  KEY `idx_severity_status` (`Severity`,`Status`),
+  KEY `idx_detected_at` (`DetectedAt`),
+  KEY `idx_status` (`Status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `gmail_transactions` (
   `TransactionNumber` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `Timestamp` datetime DEFAULT NULL COMMENT 'From Sheets/GAS',
@@ -65,7 +102,8 @@ CREATE TABLE `gmail_transactions` (
   `OriginalMemo` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'User friendly split summary',
   `UpdatedAt` datetime DEFAULT NULL COMMENT 'Last linked time',
-  PRIMARY KEY (`TransactionNumber`)
+  PRIMARY KEY (`TransactionNumber`),
+  CONSTRAINT `chk_gmail_amount_nonnegative` CHECK (((`Amount` is null) or (`Amount` >= 0)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `member_log` (
@@ -133,7 +171,8 @@ CREATE TABLE `members` (
   KEY `idx_status` (`Status`),
   KEY `idx_expiration` (`Expiration`),
   KEY `idx_family` (`FamilyID`),
-  KEY `idx_joinyear` (`JoinYear`)
+  KEY `idx_joinyear` (`JoinYear`),
+  CONSTRAINT `chk_members_status_valid` CHECK ((`Status` in (_utf8mb4'active',_utf8mb4'expired',_utf8mb4'inactive',_utf8mb4'pending')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `nyrr_event_runners` (
@@ -255,7 +294,8 @@ CREATE TABLE `payments` (
   KEY `idx_payments_memberid` (`MemberID`),
   KEY `idx_payments_paymentdate` (`PaymentDate`),
   KEY `idx_pay_tx` (`TransactionNumber`),
-  CONSTRAINT `fk_payments_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL
+  CONSTRAINT `fk_payments_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL,
+  CONSTRAINT `chk_payments_amount_nonnegative` CHECK ((`Amount` >= 0))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `schema_migrations` (
@@ -284,7 +324,9 @@ CREATE TABLE `submissions` (
   `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'trigger at update',
   PRIMARY KEY (`SubmissionID`),
   KEY `fk_submission_member` (`MemberID`),
-  CONSTRAINT `fk_submission_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE CASCADE
+  CONSTRAINT `fk_submission_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE CASCADE,
+  CONSTRAINT `chk_submissions_amount_nonnegative` CHECK (((`Amount` is null) or (`Amount` >= 0))),
+  CONSTRAINT `chk_submissions_status_valid` CHECK ((`Status` in (_utf8mb4'pending',_utf8mb4'approved',_utf8mb4'cancelled',_utf8mb4'expired')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `sync_changes` (
