@@ -5,6 +5,10 @@
 -- Purpose: Add detailed error messages, constraints, and validation triggers
 -- to provide clear, actionable feedback when data quality issues occur.
 --
+-- PREREQUISITE:
+--   Run MIGRATION_V007A_fix_constraint_violations.sql FIRST
+--   (Fixes existing data that violates new CHECK constraints)
+--
 -- Changes:
 --   1. Enhance activity_log with structured error fields
 --   2. Add CHECK constraints with descriptive names
@@ -119,10 +123,12 @@ ADD CONSTRAINT chk_gmail_amount_nonnegative CHECK (
 );
 
 -- ExpiresAt must be after CreatedAt
-ALTER TABLE `submissions`
-ADD CONSTRAINT chk_submissions_expires_after_created CHECK (
-  `ExpiresAt` IS NULL OR `ExpiresAt` > `CreatedAt`
-);
+-- NOTE: Run MIGRATION_V007_FIX_CONSTRAINT_VIOLATIONS.sql FIRST to fix existing data
+-- Then uncomment the line below and run separately
+-- ALTER TABLE `submissions`
+-- ADD CONSTRAINT chk_submissions_expires_after_created CHECK (
+--   `ExpiresAt` IS NULL OR `ExpiresAt` > `CreatedAt`
+-- );
 
 -- PaymentDate must be reasonable (not far in past/future)
 ALTER TABLE `submissions`

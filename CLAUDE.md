@@ -38,20 +38,32 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 ## DATABASE SCHEMA & VALIDATION
 **Schema Validation Tools:**
 - `validate_schema.py`: Automated validator detects NULL violations, FK orphans, ENUM mismatches, missing PKs, duplicate uniques. Run: `python3 db/validate_schema.py`
-- `MIGRATION_V006_mysql_ssot.sql`: MySQL 5.7+ compatible migrations (single-statement ALTERs only)
-- `MIGRATION_V007_improve_error_messages.sql`: Adds error_context table + triggers + CHECK constraints for submissions/members/payments
 
-**Error Messaging System (V007):**
-1. **error_context table**: Logs all constraint violations with ErrorCode, ErrorMessage, TechnicalMessage, SuggestedFix, ProblematicValue, AllowedRange, occurrence tracking
-2. **Triggers**: Auto-log violations BEFORE INSERT (trg_submissions_insert_validate, trg_members_insert_validate, trg_payments_insert_validate)
-3. **Error Codes**: SUBM_NULL_ID, SUBM_FK_INVALID_MEMBER, SUBM_INVALID_STATUS, MEM_INVALID_EMAIL, PAY_NEGATIVE_AMOUNT, etc.
-4. **Views & Procedures**: v_unresolved_errors (priority-sorted), sp_error_summary_report(days)
-5. **CHECK Constraints**: Status enums, Amount ≥ 0, ExpiresAt > CreatedAt, Email format, PaymentDate reasonable
+**Error Messaging System (V007 + V007A):**
 
-**Monitoring:**
-- Daily check: `SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL 24 HOUR GROUP BY Severity`
-- Unresolved errors: `SELECT * FROM v_unresolved_errors`
-- Error trends: `CALL sp_error_summary_report(7)` (last 7 days)
+🚨 **IMPORTANT: Two-Step Migration Required**
+1. **MIGRATION_V007A_fix_constraint_violations.sql** (FIRST — data cleanup)
+   - Fixes ExpiresAt <= CreatedAt (set to NULL)
+   - Fixes negative Amount (set to NULL)
+   - Fixes invalid Status enums (set to 'pending'/'active')
+   - Fixes invalid email format (set to NULL)
+   - Fixes invalid PaymentDate (set to NULL)
+   - Duration: <1 min | GitHub Actions runs automatically
+
+2. **MIGRATION_V007_improve_error_messages.sql** (SECOND — add tracking system)
+   - Creates error_context table (19 cols: value, constraint, suggestion, occurrence tracking)
+   - Adds 3 validation triggers (submissions/members/payments) — auto-log violations
+   - Adds 10 CHECK constraints (Status, Amount, Email, PaymentDate, etc.)
+   - Creates v_unresolved_errors view + sp_error_summary_report(days) procedure
+   - Enhances activity_log with ErrorContext, ErrorSeverity, StackTrace
+   - Duration: 2-3 min | ExpiresAt constraint commented out (optional, add after review)
+
+**Monitoring & Debugging:**
+```sql
+SELECT * FROM v_unresolved_errors;  -- Unresolved errors (priority-sorted)
+CALL sp_error_summary_report(7);    -- Error trends (last 7 days)
+SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL 24 HOUR GROUP BY Severity;
+```
 
 ## QUICK REFS
 **Key files:** `db/schema_snapshot.sql`, `load-env.sh`, `mmr-admin/api_*.py`, `mmr-admin/test_imports.py`.

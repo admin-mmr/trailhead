@@ -39,24 +39,29 @@
 - Test import_members: POST /api/sync/import/members
 - Verify duplicate MemberIDs are skipped (INSERT IGNORE behavior)
 
-### 04-04 03:25 UTC — Cleanup: Delete executed migrations, V007 is final
+### 04-04 03:35 UTC — V007 2-step migration: data cleanup + error tracking
 
 **Changed:**
-1. ✅ Deleted: MIGRATION_V006_mysql_ssot.sql (already executed on production)
-2. ✅ Deleted: MIGRATION_ADD_SUBJECT_TO_GMAIL_TRANSACTIONS.sql (already executed on production)
-3. ✅ Analyzed: SCHEMA_IMPROVEMENTS.sql vs MIGRATION_V007 — V007 is MORE comprehensive:
-   - V007 error_context: 19 cols (detailed) vs SCHEMA_IMPROVEMENTS schema_error_log: 8 cols
-   - V007 triggers: 3 (submissions/members/payments) vs SCHEMA_IMPROVEMENTS: 1 (NULL check only)
-   - V007 constraints: 10 CHECK vs SCHEMA_IMPROVEMENTS: 5 CHECK
-   - V007 includes: v_unresolved_errors view + activity_log enhancements
-   - SCHEMA_IMPROVEMENTS: Only useful for repair script examples (already in V007 comments)
+1. ✅ Deleted: MIGRATION_V006_mysql_ssot.sql (executed on production)
+2. ✅ Deleted: MIGRATION_ADD_SUBJECT_TO_GMAIL_TRANSACTIONS.sql (executed on production)
+3. ✅ Identified V007 failure: Line 122 CHECK constraint violated (ExpiresAt <= CreatedAt in existing data)
+4. ✅ Created: MIGRATION_V007A_fix_constraint_violations.sql (152 lines, 7 sections):
+   - Fixes ExpiresAt <= CreatedAt → set to NULL
+   - Fixes negative Amount → set to NULL
+   - Fixes invalid Status → set to 'pending'/'active'
+   - Fixes invalid Email → set to NULL
+   - Fixes invalid PaymentDate → set to NULL
+5. ✅ Updated: MIGRATION_V007_improve_error_messages.sql adds prerequisite note
+6. ✅ Created: MIGRATION_EXECUTION_GUIDE.md (step-by-step, verification, rollback)
 
 **Status:**
-- ✅ Only MIGRATION_V007_improve_error_messages.sql remains (the final, comprehensive version)
-- ✅ SCHEMA_IMPROVEMENTS.sql: Archive as reference, don't add to migrations (V007 superior)
-- ✅ validate_schema.py ready for offline schema validation
-- ✅ ERROR_MESSAGING_GUIDE.md & VALIDATION_GUIDE.md: Reference docs in db/
+- ✅ Two-step migration ready:
+  1. MIGRATION_V007A_fix_constraint_violations.sql (data cleanup, <1 min)
+  2. MIGRATION_V007_improve_error_messages.sql (error tracking, 2-3 min)
+- ✅ GitHub Actions will auto-run both in correct order (V007A before V007)
+- ✅ All documentation updated (CLAUDE.md, _context.md, guides)
 
 **Next:**
-- Push V007 to main; GitHub Actions auto-runs
-- Monitor error_context table post-deployment
+- Push both MIGRATION_V007*.sql to main
+- GitHub Actions executes V007A → V007 automatically
+- Verify with: SELECT * FROM v_unresolved_errors;

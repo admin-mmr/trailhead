@@ -413,6 +413,7 @@ def _send_sync_report(
     Returns:
         Dict with email_sent (bool), email_log (str), error (str or None)
     """
+    import html
     title = f"MMR Sync Report: {operation}"
     body = f"""
 {summary}
@@ -435,10 +436,12 @@ Generated: {datetime.now().isoformat()}
     email_log_lines.append(f"   Subject: {title}")
 
     try:
+        # Use html.escape to properly encode emojis and special characters
+        html_body = html.escape(body, quote=True).replace('\n', '<br>')
         email_result = send_generic_email(
             to=recipient,
             subject=title,
-            html_content=body.replace('\n', '<br>'),
+            html_content=f'<pre style="font-family: monospace; white-space: pre-wrap; word-wrap: break-word;">{html_body}</pre>',
         )
 
         # Log email result
