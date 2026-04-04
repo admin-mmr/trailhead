@@ -1854,7 +1854,7 @@ const JobCard = ({ jobId, job }) => {
           <div style={{ height: '100%', background: 'var(--accent)', width: `${job.progress}%`, transition: 'width 0.3s' }} />
         </div>
       )}
-      {logText && (
+      {(logText || (job.status === 'done' || job.status === 'error')) && (
         <details style={{ marginTop: 6, color: 'var(--text2)', fontSize: 12 }}>
           <summary style={{ cursor: 'pointer' }}>View Log</summary>
           <pre style={{
@@ -1867,7 +1867,7 @@ const JobCard = ({ jobId, job }) => {
             fontSize: 11,
             whiteSpace: 'pre-wrap',
           }}>
-            {logText}
+            {logText || '(No log available)'}
           </pre>
         </details>
       )}

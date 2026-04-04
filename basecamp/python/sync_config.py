@@ -23,7 +23,7 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 # Default batch size for sync operations
-BATCH_SIZE = 50  # Rows per batch (MySQL insert, GAS API call)
+BATCH_SIZE = 300  # Rows per batch (MySQL insert, GAS API call) — increased for faster syncs
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,7 +113,8 @@ SYNC_CONFIG = {
 
     'export_transaction_meta': {
         'table': 'gmail_transactions',
-        'sheet': 'Transactions',
+        'sheet': 'Active',
+        'spreadsheet': 'GMAIL',
         'key': 'TransactionNumber',
         'direction': 'mysql_to_sheet',
         'columns': ['Notes', 'UpdatedAt']  # Only sync back these two
