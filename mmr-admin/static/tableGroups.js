@@ -52,6 +52,20 @@ const TABLE_GROUPS = [
       { name: 'schema_migrations', type: 'Config', description: 'Database migration history' },
     ],
   },
+  {
+    domain: '🔍 Data Quality & Auditing',
+    color: '#ec4899', // pink
+    tables: [
+      { name: 'v_inconsistent_family_data', type: 'View', description: 'Families with inconsistent member statuses or expirations' },
+    ],
+  },
+  {
+    domain: '❓ Uncategorized',
+    color: '#9ca3af', // gray
+    tables: [
+      // Add new views here temporarily until they're categorized into a domain
+    ],
+  },
 ];
 
 // Export as global for use in table-browser.html
