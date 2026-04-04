@@ -10,7 +10,7 @@ import pytest
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from api_sheets_sync import _coerce_member_status, _MEMBER_STATUS_ENUM, _MEMBER_STATUS_MAP
+from sync_coerce import _coerce_member_status, _MEMBER_STATUS_ENUM, _MEMBER_STATUS_MAP
 
 
 VALID_MYSQL_STATUSES = {'active', 'not active', 'pending'}
