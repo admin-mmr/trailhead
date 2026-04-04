@@ -27,10 +27,7 @@ CREATE TABLE IF NOT EXISTS `sheets_sync_log` (
   KEY `idx_started_at` (`StartedAt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
 
--- Create index on sync_jobs.JobID for FK lookup if not exists
-CREATE INDEX IF NOT EXISTS idx_syncjob_jobid ON `sync_jobs`(`JobID`);
-
--- Optionally add foreign key constraint (comment out if sync_jobs.JobID is not a true PK)
+-- Add foreign key constraint (will auto-create index on sheets_sync_log.JobID)
 ALTER TABLE `sheets_sync_log` ADD CONSTRAINT `fk_sheets_sync_log_jobid`
   FOREIGN KEY (`JobID`) REFERENCES `sync_jobs`(`JobID`) ON DELETE CASCADE;
 
