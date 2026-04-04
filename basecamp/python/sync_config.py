@@ -708,10 +708,37 @@ def generic_sync_runner(
                             ON DUPLICATE KEY UPDATE {update_stmt}
                         """
                         res = db_execute(sql, all_values)
-                        # Approximate: res includes both inserts and updates
-                        batch_inserted = len(batch) // 2  # Rough estimate
-                        batch_updated = res - batch_inserted
-                        batch_skipped = 0
+                        # MySQL returns: 1 = inserted, 2 = updated (for ON DUPLICATE KEY UPDATE)
+                        # res = affected_rows from INSERT ... ON DUPLICATE KEY UPDATE
+                        logger.info(f"Batch {batch_num}: db_execute returned res={res}, batch_size={len(batch)}, pk='{pk}'")
+
+                        # For ON DUPLICATE KEY UPDATE, MySQL counts:
+                        # - Inserts as 1 affected row each
+                        # - Updates as 2 affected rows each (DELETE + INSERT)
+                        # So if res=280 and batch_size=280: could be all inserts or mix of both
+                        # We can't distinguish without querying, so log for inspection
+
+                        # DIAGNOSTIC: Check if we can determine inserts vs updates
+                        try:
+                            # Count pre-existing keys in this batch
+                            existing_count = 0
+                            for row in batch:
+                                pk_val = row[pk]
+                                check_sql = f"SELECT COUNT(*) as cnt FROM {table} WHERE {pk}=%s"
+                                check_res = db_query(check_sql, [pk_val])
+                                if check_res and check_res[0].get('cnt', 0) > 0:
+                                    existing_count += 1
+
+                            batch_updated = existing_count
+                            batch_inserted = len(batch) - existing_count
+                            batch_skipped = 0
+                            logger.info(f"Batch {batch_num}: DIAGNOSTIC — pre-existing keys={existing_count}, new={batch_inserted}, total_batch={len(batch)}")
+                        except Exception as diag_e:
+                            logger.warning(f"Batch {batch_num}: diagnostic check failed: {str(diag_e)}, falling back to res={res}")
+                            # Fallback: assume res is accurate count from MySQL
+                            batch_inserted = res
+                            batch_updated = 0
+                            batch_skipped = 0
 
                     inserted += batch_inserted
                     updated += batch_updated
@@ -724,7 +751,7 @@ def generic_sync_runner(
                         batch_num, len(batch), total_rows,
                         'success', batch_inserted, batch_updated, batch_skipped
                     )
-                    logger.debug(f"Batch {batch_num}: inserted {batch_inserted}, updated {batch_updated}, skipped {batch_skipped}")
+                    logger.info(f"Batch {batch_num}: SUMMARY inserted={batch_inserted}, updated={batch_updated}, skipped={batch_skipped}, affected_rows_from_db={res}")
 
                 except Exception as e:
                     batch_error = f"Batch {batch_num}: {str(e)}"

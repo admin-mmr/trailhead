@@ -205,8 +205,25 @@ def api_sync_status(job_id: str):
             }
         }
     """
+    # DIAGNOSTIC: Log all status fetch requests to detect polling loops
+    user_agent = request.headers.get('User-Agent', 'unknown')
+    referer = request.headers.get('Referer', 'unknown')
+
     job = get_job(job_id)
     if not job:
+        logger.warning(f"[FETCH] Job {job_id} not found — user_agent={user_agent}, referer={referer}")
         return json_response({'ok': False, 'error': 'Job not found'}, 404)
+
+    # Log all fetch requests with current job status
+    status = job.get('status', 'unknown')
+    progress = job.get('progress', 0)
+    message = job.get('message', '')[:50]  # Truncate for log brevity
+
+    if status not in ('done', 'error'):
+        # Still running — this is expected polling
+        logger.debug(f"[FETCH] Job {job_id} status={status}, progress={progress}%, message='{message}'")
+    else:
+        # Job is complete — log if still being polled after completion
+        logger.info(f"[FETCH] Job {job_id} COMPLETE status={status}, still being polled — user_agent={user_agent[:80]}")
 
     return json_response({'ok': True, 'job': job})
