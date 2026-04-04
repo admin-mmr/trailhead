@@ -169,14 +169,98 @@ def update_job(job_id: str, **fields) -> None:
 
 
 def get_job(job_id: str) -> Optional[Dict[str, Any]]:
-    """Return a copy of the job dict, or None if not found."""
+    """
+    Return a copy of the job dict.
+
+    First checks in-memory cache (_jobs).
+    If not found, falls back to MySQL sync_jobs table for durability
+    (handles process restarts, cross-process lookups).
+    """
+    # Check in-memory cache first
     with _lock:
         job = _jobs.get(job_id)
-        return dict(job) if job else None
+        if job:
+            return dict(job)
+
+    # Fall back to MySQL database
+    db_query = None
+    try:
+        from db import query as db_query_fn
+        db_query = db_query_fn
+    except ImportError:
+        pass
+
+    if db_query:
+        try:
+            rows = db_query(
+                "SELECT JobID, Operation, Status, Message, Progress, Result, StartedAt, UpdatedAt, CompletedAt FROM sync_jobs WHERE JobID = %s",
+                [job_id]
+            )
+            if rows:
+                row = rows[0]
+                # Convert MySQL row dict → in-memory job dict format
+                job_from_db = {
+                    'jobId': row['JobID'],
+                    'status': row['Status'],
+                    'message': row['Message'],
+                    'progress': row['Progress'] or 0,
+                    'startedAt': row['StartedAt'].timestamp() if row['StartedAt'] else 0,
+                    'updatedAt': row['UpdatedAt'].timestamp() if row['UpdatedAt'] else 0,
+                    'completedAt': row['CompletedAt'].timestamp() if row['CompletedAt'] else None,
+                    'result': row['Result'],
+                }
+                logger.debug(f"get_job({job_id}): found in MySQL, status={row['Status']}")
+                return job_from_db
+        except Exception as e:
+            logger.warning(f"get_job({job_id}): MySQL fallback failed: {str(e)}")
+
+    return None
 
 
 def list_jobs() -> list:
-    """Return a list of all job dicts, newest first."""
+    """
+    Return a list of all job dicts, newest first.
+
+    Includes both in-memory jobs and recent jobs from MySQL database.
+    (Handles process restarts and cross-process visibility.)
+    """
+    # Start with in-memory jobs
     with _lock:
-        jobs = list(_jobs.values())
-    return sorted(jobs, key=lambda j: j['startedAt'], reverse=True)
+        jobs_in_memory = {job['jobId']: job for job in _jobs.values()}
+
+    # Also fetch recent jobs from MySQL (last 50, last 24 hours)
+    db_query = None
+    try:
+        from db import query as db_query_fn
+        db_query = db_query_fn
+    except ImportError:
+        pass
+
+    jobs_from_db = {}
+    if db_query:
+        try:
+            rows = db_query("""
+                SELECT JobID, Operation, Status, Message, Progress, Result, StartedAt, UpdatedAt, CompletedAt
+                FROM sync_jobs
+                WHERE StartedAt >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                ORDER BY StartedAt DESC
+                LIMIT 50
+            """)
+            for row in rows:
+                job_from_db = {
+                    'jobId': row['JobID'],
+                    'status': row['Status'],
+                    'message': row['Message'],
+                    'progress': row['Progress'] or 0,
+                    'startedAt': row['StartedAt'].timestamp() if row['StartedAt'] else 0,
+                    'updatedAt': row['UpdatedAt'].timestamp() if row['UpdatedAt'] else 0,
+                    'completedAt': row['CompletedAt'].timestamp() if row['CompletedAt'] else None,
+                    'result': row['Result'],
+                }
+                jobs_from_db[row['JobID']] = job_from_db
+        except Exception as e:
+            logger.warning(f"list_jobs(): MySQL query failed: {str(e)}")
+
+    # Merge: in-memory jobs take precedence (more up-to-date)
+    all_jobs = {**jobs_from_db, **jobs_in_memory}
+    return sorted(all_jobs.values(), key=lambda j: j['startedAt'], reverse=True)

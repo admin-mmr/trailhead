@@ -245,6 +245,11 @@ def convert_datetime_to_mysql(value: str, date_only: bool = False) -> Optional[s
     if not value:
         return None
 
+    # ── Check for zero-date patterns (Google Sheets blank date exports) ──
+    # Blank expiration dates from Sheets may come as '0000-00-00' or similar
+    if re.match(r'^0+[-/]0+[-/]0+', value):
+        return None  # Treat zero-date as blank/NULL
+
     dt = None
 
     try:
@@ -590,28 +595,30 @@ class SheetSyncer:
                                     if converted:
                                         col_value_clean = converted
                                     else:
-                                        logger.debug(f'Skipping unparseable date in {col_name}: {col_value_clean}')
-                                        continue
+                                        logger.debug(f'Unparseable/zero date in {col_name}: {col_value_clean} → NULL')
+                                        col_value_clean = None  # UPDATE to NULL for unparseable dates
 
-                                if 'enum' in col_type_lower:
-                                    validated = validate_enum_value(str(col_value_clean), col_type)
-                                    if validated is None:
+                                # Skip further validation if value is already None (NULL from date parsing)
+                                if col_value_clean is not None:
+                                    if 'enum' in col_type_lower:
+                                        validated = validate_enum_value(str(col_value_clean), col_type)
+                                        if validated is None:
+                                            logger.warning(
+                                                f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
+                                                f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                            )
+                                            continue
+                                        col_value_clean = validated
+
+                                    # Handle numeric type validation (int, decimal, float, etc.)
+                                    validated_num = validate_numeric(str(col_value_clean), col_type)
+                                    if validated_num is None:
                                         logger.warning(
-                                            f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
-                                            f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                            f'Skipping non-numeric value for {col_name}={col_value_clean!r} '
+                                            f'(expected {col_type}) in {self.table_name} {key_field}={key_value!r}'
                                         )
                                         continue
-                                    col_value_clean = validated
-
-                                # Handle numeric type validation (int, decimal, float, etc.)
-                                validated_num = validate_numeric(str(col_value_clean), col_type)
-                                if validated_num is None:
-                                    logger.warning(
-                                        f'Skipping non-numeric value for {col_name}={col_value_clean!r} '
-                                        f'(expected {col_type}) in {self.table_name} {key_field}={key_value!r}'
-                                    )
-                                    continue
-                                col_value_clean = validated_num
+                                    col_value_clean = validated_num
 
                                 # Compare against existing value — skip if unchanged
                                 existing_val = existing.get(col_name)
@@ -707,30 +714,32 @@ class SheetSyncer:
                                 if converted:
                                     col_value_clean = converted
                                 else:
-                                    logger.debug(f'Skipping unparseable date in {col_name}: {col_value_clean}')
-                                    continue
+                                    logger.debug(f'Unparseable/zero date in {col_name}: {col_value_clean} → NULL')
+                                    col_value_clean = None  # INSERT NULL for unparseable dates
 
-                            # Handle ENUM validation generically (Status, Source, etc.)
-                            if 'enum' in col_type_lower:
-                                validated = validate_enum_value(str(col_value_clean), col_type)
-                                if validated is None:
+                            # Skip further validation if value is already None (NULL from date parsing)
+                            if col_value_clean is not None:
+                                # Handle ENUM validation generically (Status, Source, etc.)
+                                if 'enum' in col_type_lower:
+                                    validated = validate_enum_value(str(col_value_clean), col_type)
+                                    if validated is None:
+                                        logger.warning(
+                                            f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
+                                            f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                        )
+                                        continue  # skip this column; it's NULL-able so omit it
+                                    col_value_clean = validated
+
+                                # Handle numeric type validation (int, decimal, float, etc.)
+                                validated_num = validate_numeric(str(col_value_clean), col_type)
+                                if validated_num is None:
                                     logger.warning(
-                                        f'Skipping invalid ENUM value for {col_name}={col_value_clean!r} '
-                                        f'in {self.table_name} (allowed: {parse_enum_values(col_type)})'
+                                        f'Skipping non-numeric value for {col_name}={col_value_clean!r} '
+                                        f'(expected {col_type}) in {self.table_name} {key_field}={key_value!r}'
                                     )
-                                    continue  # skip this column; it's NULL-able so omit it
-                                col_value_clean = validated
+                                    continue  # skip this column; leave it NULL
 
-                            # Handle numeric type validation (int, decimal, float, etc.)
-                            validated_num = validate_numeric(str(col_value_clean), col_type)
-                            if validated_num is None:
-                                logger.warning(
-                                    f'Skipping non-numeric value for {col_name}={col_value_clean!r} '
-                                    f'(expected {col_type}) in {self.table_name} {key_field}={key_value!r}'
-                                )
-                                continue  # skip this column; leave it NULL
-
-                            col_value_clean = validated_num
+                                col_value_clean = validated_num
 
                             insert_cols.append(col_name)
                             insert_vals.append('%s')

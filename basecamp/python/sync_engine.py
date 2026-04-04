@@ -145,6 +145,11 @@ def parse_datetime(value: Any, silent: bool = False) -> Optional[datetime]:
     if not s:
         return None
 
+    # ── Check for zero-date patterns (Google Sheets blank date exports) ──
+    # Blank expiration dates from Sheets may come as '0000-00-00' or similar
+    if re.match(r'^0+[-/]0+[-/]0+', s):
+        return None  # Treat zero-date as blank/NULL
+
     # ── JS Date.toString() with GMT offset ───────────────────────────────
     # 'Tue Mar 31 2026 15:51:18 GMT-0400 (Eastern Daylight Time)'
     if 'GMT' in s:

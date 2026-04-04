@@ -112,6 +112,7 @@ def _call_gas_webhook(payload: Dict) -> Dict:
 def sync_export_members(job_id: str):
     """Sync members: MySQL → Google Sheets."""
     logger.info(f"[{job_id}] Starting export_members")
+    update_job(job_id, status='running', message='Reading members from MySQL...')
     result = generic_sync_runner(
         job_id=job_id,
         config_key='export_members',
@@ -129,6 +130,7 @@ def sync_export_members(job_id: str):
 def sync_export_payments(job_id: str):
     """Sync payments: MySQL → Google Sheets."""
     logger.info(f"[{job_id}] Starting export_payments")
+    update_job(job_id, status='running', message='Reading payments from MySQL...')
     result = generic_sync_runner(
         job_id=job_id,
         config_key='export_payments',
@@ -146,6 +148,7 @@ def sync_export_payments(job_id: str):
 def sync_export_submissions(job_id: str):
     """Sync submissions: MySQL → Google Sheets."""
     logger.info(f"[{job_id}] Starting export_submissions")
+    update_job(job_id, status='running', message='Reading submissions from MySQL...')
     result = generic_sync_runner(
         job_id=job_id,
         config_key='export_submissions',
@@ -163,6 +166,7 @@ def sync_export_submissions(job_id: str):
 def sync_export_transaction_meta(job_id: str):
     """Sync transaction metadata: MySQL → Google Sheets (Notes, UpdatedAt only)."""
     logger.info(f"[{job_id}] Starting export_transaction_meta")
+    update_job(job_id, status='running', message='Reading transaction metadata from MySQL...')
     result = generic_sync_runner(
         job_id=job_id,
         config_key='export_transaction_meta',
@@ -180,6 +184,7 @@ def sync_export_transaction_meta(job_id: str):
 def sync_import_members(job_id: str):
     """Import members (insert-only): Google Sheets Main → MySQL members."""
     logger.info(f"[{job_id}] Starting import_members (insert-only mode)")
+    update_job(job_id, status='running', message='Fetching members from Google Sheets...')
     result = generic_sync_runner(
         job_id=job_id,
         config_key='import_members',
@@ -198,6 +203,7 @@ def sync_import_members(job_id: str):
 def sync_import_transactions(job_id: str):
     """Import transactions (upsert): Google Sheets → MySQL."""
     logger.info(f"[{job_id}] Starting import_transactions")
+    update_job(job_id, status='running', message='Fetching transactions from Google Sheets...')
     result = generic_sync_runner(
         job_id=job_id,
         config_key='import_transactions',

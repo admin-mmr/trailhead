@@ -1,23 +1,20 @@
-### 04-04 16:32 UTC — Fixed: Frontend polling loop + API response format mismatch
+### 04-04 16:50 UTC — Fixed: Job status 404 + stuck 'Running' state
 
-**Root Cause Found:** Frontend `pollJobStatus()` was checking `r.data` but new API returns `r.job`.
-Result: Condition `r.ok && r.data` always false → loop never stops.
+**Root Causes:**
+1. **Job lookup only checked in-memory cache** (`_jobs` dict). When Azure process recycled or job created in different thread, lookup failed with 404.
+2. **Status never marked as 'running'** — stayed 'queued' from start → UI shows "Running" but job state was stale.
+3. **`list_jobs()` was in-memory only** — couldn't restore state after restart.
 
 **Fixes Applied:**
-1. **mmr-admin/templates/index.html (line 1908)** — Updated `pollJobStatus()` to:
-   - Accept both old format `r.data` and new format `r.job`
-   - Stop polling when `job.status === 'done' || 'error'` (was already there, just wasn't being reached)
-   - Stop polling on 404 errors (job not found)
-   - Log `[POLL-STOP]` and `[POLL-ERROR]` to browser console for debugging
+1. **sync_jobs.py `get_job()`** — Now falls back to MySQL if not in memory. Handles restarts + cross-process visibility.
+2. **sync_jobs.py `list_jobs()`** — Now queries MySQL for last 24h jobs. Merges in-memory + DB state.
+3. **sync_runners.py all workers** — Each worker now calls `update_job(job_id, status='running', message='...')` at start. 6 functions updated:
+   - sync_export_members, sync_export_payments, sync_export_submissions, sync_export_transaction_meta, sync_import_members, sync_import_transactions
 
-2. **Also updated earlier:** pending_upgrade enum, duplicate endpoints, batch counting bug, backend diagnostics.
-
-**How Polling Now Works:**
-```
-Poll every 1 second → fetch /api/sync/status/{jobId}
-  ✓ If status='done' or 'error' → clearInterval(poll) + show toast
-  ✓ If 404/error response → clearInterval(poll) + log warning
-  ✗ Network error → keep retrying (don't give up)
+**Result:**
+- Job status now persists across process restarts ✓
+- UI polling won't get 404 for valid jobs ✓
+- Status transitions: queued → running → done/error (visible) ✓
 ```
 
 **Status:** ✅ All fixes complete. Ready to test full workflow.
