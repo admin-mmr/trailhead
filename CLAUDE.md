@@ -14,7 +14,7 @@
 ## WORKING STYLE
 - **Before major work:** Clarify ambiguities → AskUserQuestion + TodoWrite + read SKILL.md files.
 - **Code reviews:** Strengths + issues + diffs. **Debugging:** Error message first → git status/log → config → test.
-- **File creation:** Save to `/sessions/brave-trusting-fermi/mnt/trailhead/` (workspace). No standalone .md docs; update CLAUDE.md or _context.md instead.
+- **File creation:** Save to `/sessions/zen-vibrant-galileo/mnt/trailhead/` (workspace). No standalone .md docs; update CLAUDE.md or _context.md instead. **NEVER create standalone docs automatically—ask first.**
 
 ## CODE HEALTH
 **Hard rule:** Flag files >400 lines (Python >400, TS/React >300, SQL >200). At task end: `📏 file.py is now N lines — recommend splitting. Want me to do it?` Then split with todo list + test via `test_imports.py`.
@@ -80,4 +80,4 @@ SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL
 **Context updates:** 3 lines max (`### MM-DD HH:MM UTC — title` + `Changed: X. Status: Y. Next: Z.`). Insert at top. No re-reads; use str_replace. Trim to 3 sessions; move excess to `_context_archive.md`.
 **Efficiency:** Don't read files you don't need. Batch edits. Use grep/glob, not bash find. Cache knowledge. Never cat large files; use `head`/`sed`/`grep`. Error message first before source code. Diff-first edits. Chain shell commands. Always `python3`/`pip3`.
 
-April 3, 2026
+**Last updated:** April 4, 2026

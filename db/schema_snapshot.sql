@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T05:04:32.038425 UTC
+-- Timestamp: 2026-04-04T13:16:24.983512 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -311,6 +311,31 @@ CREATE TABLE `schema_migrations` (
   PRIMARY KEY (`version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `sheets_sync_log` (
+  `SyncLogID` int NOT NULL AUTO_INCREMENT,
+  `JobID` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Foreign key to sync_jobs.JobID',
+  `ConfigKey` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Sync config key (e.g., export_members, import_transactions)',
+  `Direction` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'sheet_to_mysql or mysql_to_sheet',
+  `BatchNumber` int NOT NULL COMMENT 'Batch sequence (0, 1, 2, ...)',
+  `BatchSize` int NOT NULL COMMENT 'Number of rows in this batch',
+  `TotalRows` int NOT NULL COMMENT 'Total rows in entire sync operation',
+  `StartedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When batch processing started',
+  `CompletedAt` datetime DEFAULT NULL COMMENT 'When batch processing completed',
+  `Status` enum('pending','processing','success','error') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `ErrorMessage` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'Error details if Status=error',
+  `RowsProcessed` int NOT NULL DEFAULT '0' COMMENT 'Rows attempted in this batch',
+  `RowsInserted` int NOT NULL DEFAULT '0' COMMENT 'Rows successfully inserted',
+  `RowsUpdated` int NOT NULL DEFAULT '0' COMMENT 'Rows successfully updated',
+  `RowsSkipped` int NOT NULL DEFAULT '0' COMMENT 'Rows skipped (duplicates, validation failures)',
+  PRIMARY KEY (`SyncLogID`),
+  UNIQUE KEY `uk_job_batch` (`JobID`,`BatchNumber`),
+  KEY `idx_jobid` (`JobID`),
+  KEY `idx_config_key` (`ConfigKey`),
+  KEY `idx_status` (`Status`),
+  KEY `idx_started_at` (`StartedAt`),
+  CONSTRAINT `fk_sheets_sync_log_jobid` FOREIGN KEY (`JobID`) REFERENCES `sync_jobs` (`JobID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
+
 CREATE TABLE `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
   `SubmissionID` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'auto gen unique identifier (migrated from EventID)',
@@ -397,6 +422,18 @@ FROM (`gmail_transactions` `gt`
 LEFT JOIN `payments` `p` on((`gt`.`TransactionNumber` = `p`.`TransactionNumber`)))
 GROUP BY `gt`.`TransactionNumber`;
 
+DROP VIEW IF EXISTS `v_last_successful_batch`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_last_successful_batch` AS 
+SELECT 
+    `sheets_sync_log`.`JobID` AS `JobID`,
+   `sheets_sync_log`.`ConfigKey` AS `ConfigKey`,
+   max(`sheets_sync_log`.`BatchNumber`) AS `LastSuccessfulBatch`,
+   max(`sheets_sync_log`.`StartedAt`) AS `LastSyncTime`
+FROM `sheets_sync_log`
+WHERE (`sheets_sync_log`.`Status` = 'success')
+GROUP BY `sheets_sync_log`.`JobID`,
+   `sheets_sync_log`.`ConfigKey`;
+
 DROP VIEW IF EXISTS `v_payment_details`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_payment_details` AS 
 SELECT 
@@ -430,6 +467,22 @@ WHERE (`p`.`TransactionNumber` = `gt`.`TransactionNumber`)) AS `TotalAllocated`,
 FROM `payments` `p`
 WHERE (`p`.`TransactionNumber` = `gt`.`TransactionNumber`))) AS `RemainingBalance`
 FROM `gmail_transactions` `gt`;
+
+DROP VIEW IF EXISTS `v_sync_summary`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_sync_summary` AS 
+SELECT 
+    `sheets_sync_log`.`JobID` AS `JobID`,
+   `sheets_sync_log`.`ConfigKey` AS `ConfigKey`,
+   count(0) AS `TotalBatches`,
+   sum(`sheets_sync_log`.`RowsInserted`) AS `TotalInserted`,
+   sum(`sheets_sync_log`.`RowsUpdated`) AS `TotalUpdated`,
+   sum(`sheets_sync_log`.`RowsSkipped`) AS `TotalSkipped`,
+   sum((case when (`sheets_sync_log`.`Status` = 'success') then 1 else 0 end)) AS `SuccessfulBatches`,
+   sum((case when (`sheets_sync_log`.`Status` = 'error') then 1 else 0 end)) AS `FailedBatches`,
+   max(`sheets_sync_log`.`CompletedAt`) AS `LastCompletedAt`
+FROM `sheets_sync_log`
+GROUP BY `sheets_sync_log`.`JobID`,
+   `sheets_sync_log`.`ConfigKey`;
 
 DROP VIEW IF EXISTS `v_unresolved_errors`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_unresolved_errors` AS 
