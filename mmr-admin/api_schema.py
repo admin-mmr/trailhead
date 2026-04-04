@@ -125,8 +125,8 @@ def _export_via_connector():
                 cursor.execute(f"SHOW CREATE VIEW `{view}`")
                 view_result = cursor.fetchone()
                 if view_result:
-                    # SHOW CREATE VIEW returns: (database, view_name, charset, CREATE_VIEW_statement)
-                    create_statement = view_result[3]
+                    # SHOW CREATE VIEW returns: (database, view_name, CREATE_VIEW_statement, character_set_client, collation_connection)
+                    create_statement = view_result[2]
                     sql_lines.append(create_statement + ';\n\n')
         else:
             sql_lines.append('-- No views defined\n\n')
@@ -170,8 +170,8 @@ def _export_via_connector():
                 cursor.execute(f"SHOW CREATE PROCEDURE `{proc_name}`")
                 proc_result = cursor.fetchone()
                 if proc_result:
-                    # SHOW CREATE PROCEDURE returns: (database, procedure_name, charset, CREATE_PROCEDURE_statement)
-                    create_statement = proc_result[3]
+                    # SHOW CREATE PROCEDURE returns: (database, procedure_name, type, sql_mode, CREATE_PROCEDURE_statement)
+                    create_statement = proc_result[4]
                     sql_lines.append(create_statement + ';\n\n')
         else:
             sql_lines.append('-- No procedures defined\n\n')
@@ -193,8 +193,8 @@ def _export_via_connector():
                 cursor.execute(f"SHOW CREATE FUNCTION `{func_name}`")
                 func_result = cursor.fetchone()
                 if func_result:
-                    # SHOW CREATE FUNCTION returns: (database, function_name, charset, CREATE_FUNCTION_statement)
-                    create_statement = func_result[3]
+                    # SHOW CREATE FUNCTION returns: (database, function_name, type, sql_mode, CREATE_FUNCTION_statement)
+                    create_statement = func_result[4]
                     sql_lines.append(create_statement + ';\n\n')
         else:
             sql_lines.append('-- No functions defined\n\n')
