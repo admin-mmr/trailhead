@@ -1,650 +1,520 @@
 """
-Payment reconciliation routes for mmr-admin.
+Payment Reconciliation API — MySQL-backed, no Sheets sync.
 
 Blueprint: payments_bp
 Prefix: /api/payments
 
-Implements the 2-step async payment workflow:
-  1. View pending events & unmatched gmail transactions
-  2. Match (manual or auto) → Approve → Fulfill (category-specific)
+Dashboard, listing, autoguess, manual approval, and admin operations.
+
+Flow:
+  1. Dashboard: Counts (pending submissions, unmatched gmail_transactions, approved/rejected/errors)
+  2. List endpoints:
+     - /pending-submissions: pending submissions needing payment match
+     - /unmatched-gmail: gmail_transactions with Notes=NULL or UpdatedAt=NULL
+  3. Autoguess: Scan unmatched gmail → check membership renew logic → attempt match
+  4. Manual approval: Admin selects memberID + gmail_transaction → create payment
+  5. DB triggers handle: member status updates, submission approvals, gmail Notes sync
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta
+from decimal import Decimal
 from flask import Blueprint, request, session
 
 from auth import login_required, require_role
 from db import query, execute
 from helpers import json_response, handle_api_errors
-from query_builder import add_search
-from payment_actions import (
-    approve_event,
-    reject_event,
-    manual_match,
-    admin_create_payment,
-    run_auto_match,
-    get_member,
-    get_family_member_ids,
-    get_config,
-    _extract_member_id,
-    _name_match,
-)
-from sync_engine import to_mysql_datetime as _engine_to_mysql_dt
 
 logger = logging.getLogger(__name__)
 
 payments_bp = Blueprint('payments', __name__)
 
 
-# ---------------------------------------------------------------------------
-# Dashboard stats
-# ---------------------------------------------------------------------------
+# ============================================================================
+# HELPERS: Member & Config Lookups
+# ============================================================================
 
-@payments_bp.route('/api/payments/dashboard')
+def get_member_by_id(member_id: str) -> dict | None:
+    """Fetch member record by MemberID."""
+    rows = query(
+        "SELECT * FROM members WHERE MemberID = %s",
+        (member_id,)
+    )
+    return rows[0] if rows else None
+
+
+def get_pending_submissions_for_member(member_id: str) -> list[dict]:
+    """Fetch pending submissions for a given memberID."""
+    return query("""
+        SELECT * FROM submissions
+        WHERE MemberID = %s AND Status = 'pending'
+        ORDER BY CreatedAt DESC
+    """, (member_id,))
+
+
+def get_config(key: str) -> str | None:
+    """Fetch config value from config table."""
+    rows = query("SELECT ConfigValue FROM config WHERE ConfigKey = %s", (key,))
+    return rows[0]['ConfigValue'] if rows else None
+
+
+def get_renewal_period():
+    """Get renewal period (start, end) from config as (start_date, end_date)."""
+    start = get_config('renewal_start_date')
+    end = get_config('renewal_end_date')
+    return start, end
+
+
+def parse_member_id_from_memo(memo: str) -> str | None:
+    """Extract memberID from memo (e.g., 'A0001', 'Member: A0001')."""
+    if not memo:
+        return None
+    import re
+    # Look for pattern like A0001, A0002, etc.
+    match = re.search(r'\bA\d{4}\b', memo)
+    return match.group(0) if match else None
+
+
+def partial_name_match(submission_memberid: str, gmail_sender: str, gmail_memo: str) -> bool:
+    """
+    Check if pending submission's member name can be partially matched
+    in Gmail sender or memo fields.
+    """
+    member = get_member_by_id(submission_memberid)
+    if not member:
+        return False
+
+    name = f"{member['FirstName']} {member['LastName']}".lower()
+    first_name = member['FirstName'].lower()
+    last_name = member['LastName'].lower()
+
+    sender_lower = (gmail_sender or "").lower()
+    memo_lower = (gmail_memo or "").lower()
+
+    # Exact name or first+last in sender/memo
+    return (
+        name in sender_lower or name in memo_lower or
+        (first_name in sender_lower and last_name in sender_lower) or
+        (first_name in memo_lower and last_name in memo_lower)
+    )
+
+
+def is_within_renewal_period(payment_date) -> bool:
+    """Check if payment_date falls within renewal period from config."""
+    start_str, end_str = get_renewal_period()
+    if not start_str or not end_str:
+        return False
+    try:
+        start = datetime.strptime(start_str, '%Y-%m-%d').date()
+        end = datetime.strptime(end_str, '%Y-%m-%d').date()
+        if isinstance(payment_date, str):
+            payment_date = datetime.strptime(payment_date, '%Y-%m-%d').date()
+        return start <= payment_date <= end
+    except (ValueError, TypeError):
+        return False
+
+
+# ============================================================================
+# DASHBOARD
+# ============================================================================
+
+@payments_bp.route('/dashboard', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
 def api_payments_dashboard():
-    """Return counts for the payments dashboard cards."""
-    pending = query("""
-        SELECT COUNT(*) as cnt FROM submissions
-        WHERE Status = 'pending' AND EventCategory = 'payment'
-    """)
-    matched = query("""
-        SELECT COUNT(*) as cnt FROM submissions
-        WHERE Status = 'matched' AND EventCategory = 'payment'
-    """)
+    """Return counts for payments dashboard."""
+    pending = query("SELECT COUNT(*) as cnt FROM submissions WHERE Status = 'pending'")
+    matched = query("SELECT COUNT(*) as cnt FROM payments WHERE SubmissionID IS NOT NULL")
     unmatched_gmail = query("""
         SELECT COUNT(*) as cnt FROM gmail_transactions
-        WHERE ProcessedTime IS NULL AND IsArchived = FALSE
+        WHERE Notes IS NULL OR UpdatedAt IS NULL
     """)
-    recent_approved = query("""
+    approved_30d = query("""
         SELECT COUNT(*) as cnt FROM submissions
-        WHERE Status = 'approved' AND EventCategory = 'payment'
-          AND ApprovalDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        WHERE Status = 'approved' AND UpdatedAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
     """)
-    recent_rejected = query("""
+    rejected_30d = query("""
         SELECT COUNT(*) as cnt FROM submissions
-        WHERE Status = 'rejected' AND EventCategory = 'payment'
-          AND ApprovalDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        WHERE Status = 'cancelled' AND UpdatedAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
     """)
-    error_count = query("""
-        SELECT COUNT(*) as cnt FROM submissions
-        WHERE Status = 'error' AND EventCategory = 'payment'
+    errors = query("""
+        SELECT COUNT(*) as cnt FROM error_context
+        WHERE Status IN ('NEW', 'ACKNOWLEDGED') AND DetectedAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
     """)
 
-    return json_response({'ok': True, 'data': {
-        'pending':          pending[0]['cnt'],
-        'matched':          matched[0]['cnt'],
-        'unmatched_gmail':  unmatched_gmail[0]['cnt'],
-        'approved_30d':     recent_approved[0]['cnt'],
-        'rejected_30d':     recent_rejected[0]['cnt'],
-        'errors':           error_count[0]['cnt'],
-    }})
+    return json_response({
+        'pending': pending[0]['cnt'],
+        'matched': matched[0]['cnt'],
+        'unmatched_gmail': unmatched_gmail[0]['cnt'],
+        'approved_30d': approved_30d[0]['cnt'],
+        'rejected_30d': rejected_30d[0]['cnt'],
+        'errors': errors[0]['cnt'],
+    })
 
 
-# ---------------------------------------------------------------------------
-# Pending events (Step 1 view)
-# ---------------------------------------------------------------------------
+# ============================================================================
+# LIST ENDPOINTS
+# ============================================================================
 
-@payments_bp.route('/api/payments/pending-events')
+@payments_bp.route('/pending-submissions', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
-def api_pending_events():
+def api_pending_submissions():
     """
-    List all pending/matched submissions with member info.
-    Supports ?status=pending|matched and ?search= filters.
+    List all pending submissions.
+    Query params: ?skip=0&limit=50&search=
     """
-    status_filter = request.args.get('status', '')
-    search = request.args.get('q', '').strip()
+    skip = int(request.args.get('skip', 0))
+    limit = int(request.args.get('limit', 50))
+    search = request.args.get('search', '').strip()
 
     sql = """
-        SELECT we.*,
-               m.FirstName, m.LastName, m.Email as MemberEmail,
-               m.Type as CurrentType, m.Expiration as CurrentExpiration,
-               m.FamilyID, m.Status as MemberStatus
-        FROM submissions we
-        LEFT JOIN members m ON we.MemberID = m.MemberID
-        WHERE we.EventCategory = 'payment'
-          AND we.Status IN ('pending', 'matched')
+        SELECT s.SubmissionID, s.MemberID, s.SubmissionType, s.Amount, s.CreatedAt,
+               s.Status, s.ExpiresAt,
+               m.FirstName, m.LastName, m.Email, m.Type as MemberType
+        FROM submissions s
+        JOIN members m ON s.MemberID = m.MemberID
+        WHERE s.Status = 'pending'
     """
     params = []
 
-    if status_filter in ('pending', 'matched'):
-        sql += " AND we.Status = %s"
-        params.append(status_filter)
+    if search:
+        sql += " AND (m.FirstName LIKE %s OR m.LastName LIKE %s OR m.Email LIKE %s OR s.MemberID LIKE %s)"
+        params.extend([f"%{search}%"] * 4)
 
-    sql, params = add_search(sql, params, search, [
-        'we.MemberID', 'we.Email', 'we.PayerName', 'we.SubmissionID',
-        'm.FirstName', 'm.LastName',
-    ])
-    sql += " ORDER BY we.Timestamp DESC LIMIT 200"
+    sql += " ORDER BY s.CreatedAt DESC LIMIT %s OFFSET %s"
+    params.extend([limit, skip])
 
-    rows = query(sql, params)
-    return json_response({'ok': True, 'data': rows})
+    rows = query(sql, tuple(params))
+    return json_response({'submissions': rows})
 
 
-# ---------------------------------------------------------------------------
-# Unmatched gmail transactions
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/unmatched-gmail')
+@payments_bp.route('/unmatched-gmail', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
 def api_unmatched_gmail():
     """
-    List all unprocessed gmail_transactions (potential payment sources).
-    Supports ?search= filter on sender, memo, amount.
+    List all unmatched Gmail transactions (Notes IS NULL or UpdatedAt IS NULL).
+    Query params: ?skip=0&limit=50&search=
     """
-    search = request.args.get('q', '').strip()
-
-    sql    = "SELECT * FROM gmail_transactions WHERE ProcessedTime IS NULL AND IsArchived = FALSE"
-    params = []
-
-    sql, params = add_search(sql, params, search, [
-        'Sender', 'Memo', 'TransactionNumber', 'Subject', 'CAST(Amount AS CHAR)',
-    ])
-    sql += " ORDER BY TransactionDate DESC LIMIT 200"
-
-    rows = query(sql, params)
-    return json_response({'ok': True, 'data': rows})
-
-
-# ---------------------------------------------------------------------------
-# Manual match
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/manual-match', methods=['POST'])
-@login_required
-@require_role('admin')
-def api_manual_match():
-    """
-    Manually link a pending event to a gmail transaction.
-    Body: { eventId, messageId }
-    """
-    data = request.json or {}
-    event_id = data.get('eventId', '').strip()
-    message_id = data.get('messageId', '').strip()
-
-    if not event_id or not message_id:
-        return json_response({'ok': False, 'error': 'eventId and messageId required'}, 400)
-
-    admin_email = session.get('user', {}).get('email', 'unknown')
-    result = manual_match(event_id, message_id, admin_email)
-
-    status = 200 if result.get('ok') else 400
-    return json_response(result, status)
-
-
-# ---------------------------------------------------------------------------
-# Auto-match
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/auto-match', methods=['POST'])
-@login_required
-@require_role('admin')
-@handle_api_errors
-def api_auto_match():
-    """
-    Run the auto-match heuristic on all pending events.
-    Returns stats: { matched, skipped, errors, details }.
-    """
-    admin_email = session.get('user', {}).get('email', 'unknown')
-    logger.info('[api_auto_match] called by %s', admin_email)
-    try:
-        stats = run_auto_match()
-    except Exception as e:
-        logger.error('[api_auto_match] EXCEPTION: %s', e, exc_info=True)
-        raise
-    logger.info('[api_auto_match] result: matched=%s skipped=%s errors=%s details=%s',
-                stats.get('matched'), stats.get('skipped'), stats.get('errors'),
-                stats.get('details'))
-    return json_response({'ok': True, 'data': stats})
-
-
-# ---------------------------------------------------------------------------
-# Approve / Reject
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/approve/<event_id>', methods=['POST'])
-@login_required
-@require_role('admin')
-def api_approve(event_id):
-    """
-    Approve a pending/matched event → create payment record → fulfill actions.
-    Body (optional): { notes }
-    """
-    data = request.json or {}
-    notes = data.get('notes', '')
-    admin_email = session.get('user', {}).get('email', 'unknown')
-
-    result = approve_event(event_id, admin_email, notes)
-    status = 200 if result.get('ok') else 400
-    return json_response(result, status)
-
-
-@payments_bp.route('/api/payments/reject/<event_id>', methods=['POST'])
-@login_required
-@require_role('admin')
-def api_reject(event_id):
-    """
-    Reject a pending/matched event.
-    Body: { notes } (required — reason for rejection)
-    """
-    data = request.json or {}
-    notes = data.get('notes', '').strip()
-    if not notes:
-        return json_response({'ok': False, 'error': 'Rejection reason (notes) required'}, 400)
-
-    admin_email = session.get('user', {}).get('email', 'unknown')
-    result = reject_event(event_id, admin_email, notes)
-    status = 200 if result.get('ok') else 400
-    return json_response(result, status)
-
-
-# ---------------------------------------------------------------------------
-# Admin-create payment (for unmatched gmail with no webapp event)
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/admin-create', methods=['POST'])
-@login_required
-@require_role('admin')
-def api_admin_create():
-    """
-    Admin creates a payment directly from an unmatched gmail transaction.
-    Body: { memberId, messageId, paymentIntent, notes? }
-    """
-    data = request.json or {}
-    member_id = data.get('memberId', '').strip()
-    message_id = data.get('messageId', '').strip()
-    payment_intent = data.get('paymentIntent', '').strip()
-    notes = data.get('notes', '')
-
-    if not member_id or not message_id or not payment_intent:
-        return json_response({
-            'ok': False,
-            'error': 'memberId, messageId, and paymentIntent required',
-        }, 400)
-
-    admin_email = session.get('user', {}).get('email', 'unknown')
-    result = admin_create_payment(member_id, message_id, payment_intent, admin_email, notes)
-    status = 200 if result.get('ok') else 400
-    return json_response(result, status)
-
-
-# ---------------------------------------------------------------------------
-# Payment history
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/history')
-@login_required
-@require_role('admin')
-@handle_api_errors
-def api_payment_history():
-    """
-    Recent payment history with optional filters.
-    Supports ?days=30, ?memberId=, ?search=
-    """
-    days      = request.args.get('days', 90, type=int)
-    member_id = request.args.get('memberId', '').strip()
-    search    = request.args.get('q', '').strip()
+    skip = int(request.args.get('skip', 0))
+    limit = int(request.args.get('limit', 50))
+    search = request.args.get('search', '').strip()
 
     sql = """
-        SELECT p.*,
-               m.FirstName, m.LastName, m.Email as MemberEmail,
-               m.Type as CurrentType, m.Expiration as CurrentExpiration
-        FROM payments p
-        LEFT JOIN members m ON p.MemberID = m.MemberID
-        WHERE p.PaymentDate >= DATE_SUB(NOW(), INTERVAL %s DAY)
-    """
-    params = [days]
-
-    if member_id:
-        sql += " AND p.MemberID = %s"
-        params.append(member_id)
-
-    sql, params = add_search(sql, params, search, [
-        'p.MemberID', 'p.PayerName', 'p.PaymentIntent', 'p.PaymentID',
-        'm.FirstName', 'm.LastName',
-    ])
-    sql += " ORDER BY p.PaymentDate DESC LIMIT 200"
-
-    rows = query(sql, params)
-    return json_response({'ok': True, 'data': rows})
-
-
-# ---------------------------------------------------------------------------
-# Member summary (for admin review before approval)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Gmail candidates for a given event (matched + fuzzy candidates, incl. processed)
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/gmail-candidates/<event_id>')
-@login_required
-@require_role('admin')
-@handle_api_errors
-def api_gmail_candidates(event_id):
-    """
-    Return the already-matched gmail row (if any) plus all fuzzy-match candidates
-    for a given webapp_event, including already-processed rows.
-    Used by the side-by-side reconcile view when an event row is focused.
-
-    MatchContext field on each row:
-      'matched'   — this is the row linked via MatchedMessageId
-      'candidate' — amount+date+identifier match, not yet linked
-    """
-    events = query("SELECT * FROM submissions WHERE SubmissionID = %s", [event_id])
-    if not events:
-        return json_response({'ok': False, 'error': 'Event not found'}, 404)
-    event = events[0]
-
-    amount        = float(event.get('Amount') or 0)
-    ts            = event.get('Timestamp')
-    member_id     = (event.get('MemberID') or '').strip().upper()
-    payer         = (event.get('PayerName') or '').strip()
-    last4         = (event.get('Last4Digits') or '').strip()
-    matched_msg_id = (event.get('MatchedMessageId') or '').strip()
-
-    # Fetch all gmail rows within ±7 days and amount match (including processed)
-    rows = query("""
-        SELECT *,
-          CASE WHEN MessageId = %s THEN 'matched' ELSE 'candidate' END AS MatchContext
+        SELECT TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate,
+               PaymentMethod, Notes, UpdatedAt
         FROM gmail_transactions
-        WHERE
-          MessageId = %s
-          OR (
-            ABS(COALESCE(Amount, -9999) - %s) < 0.01
-            AND (TransactionDate IS NULL
-                 OR ABS(DATEDIFF(TransactionDate, DATE(%s))) <= 7)
-          )
-        ORDER BY
-          CASE WHEN MessageId = %s THEN 0 ELSE 1 END,
-          ProcessedTime IS NOT NULL,
-          TransactionDate DESC
-        LIMIT 100
-    """, [matched_msg_id, matched_msg_id, amount, ts, matched_msg_id])
+        WHERE (Notes IS NULL OR UpdatedAt IS NULL)
+    """
+    params = []
 
-    # Post-filter candidates: require at least one identifier signal
-    result = []
-    for row in rows:
-        if row.get('MatchContext') == 'matched':
-            result.append(row)
-            continue
-        gmail_tx_num = (row.get('TransactionNumber') or '').strip()
-        memo         = (row.get('Memo') or '') + ' ' + (row.get('OriginalMemo') or '')
-        sender       = (row.get('Sender') or '').strip()
+    if search:
+        sql += " AND (Sender LIKE %s OR Memo LIKE %s OR TransactionNumber LIKE %s)"
+        params.extend([f"%{search}%"] * 3)
 
-        id_match = (
-            (last4 and gmail_tx_num.endswith(last4))
-            or (member_id and _extract_member_id(memo) == member_id)
-            or (payer and _name_match(payer, sender))
-        )
-        if id_match:
-            result.append(row)
+    sql += " ORDER BY TransactionDate DESC LIMIT %s OFFSET %s"
+    params.extend([limit, skip])
 
-    return json_response({'ok': True, 'data': result})
+    rows = query(sql, tuple(params))
+    return json_response({'transactions': rows})
 
 
-# ---------------------------------------------------------------------------
-# Lightweight member lookup for hover tooltip + fuzzy search
-# ---------------------------------------------------------------------------
+# ============================================================================
+# AUTOGUESS LOGIC
+# ============================================================================
 
-@payments_bp.route('/api/payments/member-quick/all', methods=['GET'])
+@payments_bp.route('/autoguess-all', methods=['POST'])
 @login_required
 @require_role('admin')
 @handle_api_errors
-def api_member_quick_all():
+def api_autoguess_all():
     """
-    Fetch all members for fuzzy search in Quick Approve popover.
-    Includes all statuses (active, inactive, pending) since payments can renew expired memberships.
-    Returns: MemberID, FirstName, LastName, Email, Expiration, District, Type, WeChatID
-    Used for real-time filtering as user types.
+    Scan all unmatched Gmail transactions and attempt autoguess.
+
+    Logic:
+      1. If memberID in memo + amount matches ($30 individual, $50 family) +
+         within renewal period + pending membership submission exists
+         → create payment with submissionID
+      2. If no memberID but pending submission member name matches sender/memo
+         + amount matches → create payment with submissionID
+      3. If no submission matches, create payment with just transactionNumber
     """
-    # Fetch ALL members (no status filter) — payments can renew inactive members
-    rows = query(
-        "SELECT MemberID, FirstName, LastName, Email, Expiration, District, Type, WeChatID "
-        "FROM members "
-        "ORDER BY LastName, FirstName, MemberID"
-    )
-
-    # Debug: log fetch count
-    if rows:
-        logger.info(f'member-quick/all: returning {len(rows)} members')
-        # Log first few for debugging
-        for i, r in enumerate(rows[:5]):
-            logger.debug(f'  [{i+1}] {r.get("MemberID")} {r.get("FirstName")} {r.get("LastName")}')
-
-    return json_response({'ok': True, 'data': rows or []})
-
-
-@payments_bp.route('/api/payments/member-quick/<member_id>')
-@login_required
-@require_role('admin')
-@handle_api_errors
-def api_member_quick(member_id):
-    """
-    Lightweight member data for the hover tooltip.
-    Returns name, email, expiration, type, gender, district.
-    """
-    rows = query(
-        "SELECT MemberID, FirstName, LastName, Email, Expiration, Type, Gender, District, WeChatID "
-        "FROM members WHERE MemberID = %s",
-        [member_id]
-    )
-    if not rows:
-        return json_response({'ok': False, 'error': 'Not found'}, 404)
-    return json_response({'ok': True, 'data': rows[0]})
-
-
-# ---------------------------------------------------------------------------
-# Member summary (for admin review before approval)
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/member/<member_id>')
-@login_required
-@require_role('admin')
-@handle_api_errors
-def api_member_summary(member_id):
-    """
-    Get member details + family members + recent payment history.
-    Used by admin before approving a payment.
-    """
-    member = get_member(member_id)
-    if not member:
-        return json_response({'ok': False, 'error': f'Member {member_id} not found'}, 404)
-
-    # Family members
-    family_members = []
-    if member.get('FamilyID'):
-        family_ids = get_family_member_ids(member['FamilyID'])
-        if family_ids:
-            placeholders = ','.join(['%s'] * len(family_ids))
-            family_members = query(
-                f"SELECT MemberID, FirstName, LastName, Email, Type, Expiration, Status "
-                f"FROM members WHERE MemberID IN ({placeholders})",
-                family_ids,
-            )
-
-    # Recent payments for this member
-    recent_payments = query("""
-        SELECT PaymentID, PaymentDate, Amount, PaymentIntent, Source, ProcessedBy
-        FROM payments WHERE MemberID = %s
-        ORDER BY PaymentDate DESC LIMIT 10
-    """, [member_id])
-
-    # Pending events for this member
-    pending_events = query("""
-        SELECT SubmissionID, EventType, Status, Timestamp, Amount, PaymentIntent, PaymentMethod
-        FROM submissions WHERE MemberID = %s AND Status IN ('pending', 'matched')
-        ORDER BY Timestamp DESC
-    """, [member_id])
-
-    return json_response({'ok': True, 'data': {
-        'member': member,
-        'family_members': family_members,
-        'recent_payments': recent_payments,
-        'pending_events': pending_events,
-    }})
-
-
-# ---------------------------------------------------------------------------
-# Manual event-to-transaction matching (admin approval workflow)
-# ---------------------------------------------------------------------------
-
-@payments_bp.route('/api/payments/pending-events-with-matches', methods=['GET'])
-@login_required
-@require_role('admin')
-@handle_api_errors
-def api_pending_events_with_matches():
-    """
-    Get pending events (MatchedMessageId IS NULL) with suggested gmail_transaction matches.
-
-    Match suggestions grouped by likelihood:
-      1. Most likely: amount match + memberID in memo
-      2. More likely: name match (no memberID in memo)
-      3. Recently matched: payment date ±2 days, already matched, amount match
-    """
-    # Fetch all pending events that need matching
-    pending = query("""
-        SELECT SubmissionID, MemberID, PayerName, Email, Amount, MemoField,
-               Timestamp, PaymentIntent, Status
-        FROM submissions
-        WHERE MatchedMessageId IS NULL
-          AND Status IN ('pending', 'matched')
-          AND EventCategory = 'payment'
-        ORDER BY Timestamp DESC
+    unmatched = query("""
+        SELECT TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate,
+               PaymentMethod, Notes
+        FROM gmail_transactions
+        WHERE Notes IS NULL OR UpdatedAt IS NULL
     """)
 
-    result = []
-    for event in pending:
-        event_id = event['SubmissionID']
-        member_id = event['MemberID']
-        amount = event['Amount']
-        payer_name = event['PayerName'] or ''
-        timestamp = event['Timestamp']
+    created_count = 0
+    skipped_count = 0
+    errors = []
 
-        # Find matching gmail transactions
-        most_likely = []
-        more_likely = []
-        recently_matched = []
+    for tx in unmatched:
+        try:
+            result = _autoguess_single_transaction(tx)
+            if result['created']:
+                created_count += 1
+            else:
+                skipped_count += 1
+        except Exception as e:
+            errors.append({'transactionNumber': tx['TransactionNumber'], 'error': str(e)})
 
-        # Most likely: amount match + memberID in memo
-        if member_id and amount:
-            most_likely = query("""
-                SELECT MessageId, TransactionNumber, TimeStamp, Sender, Amount,
-                       Memo, TransactionDate, Subject
-                FROM gmail_transactions
-                WHERE Amount = %s
-                  AND (Memo LIKE %s OR OriginalMemo LIKE %s)
-                  AND IsArchived = 0
-                ORDER BY TimeStamp DESC
-                LIMIT 5
-            """, [amount, f'%{member_id}%', f'%{member_id}%'])
-
-        # More likely: name match (no memberID requirement)
-        if amount and payer_name:
-            more_likely = query("""
-                SELECT MessageId, TransactionNumber, TimeStamp, Sender, Amount,
-                       Memo, TransactionDate, Subject
-                FROM gmail_transactions
-                WHERE Amount = %s
-                  AND (Sender LIKE %s OR Memo LIKE %s)
-                  AND MessageId NOT IN (SELECT MessageId FROM gmail_transactions
-                                        WHERE Memo LIKE %s OR OriginalMemo LIKE %s)
-                  AND IsArchived = 0
-                ORDER BY TimeStamp DESC
-                LIMIT 5
-            """, [amount, f'%{payer_name}%', f'%{payer_name}%',
-                   f'%{member_id}%', f'%{member_id}%'])
-
-        # Recently matched: payment date ±2 days, already matched, amount match
-        if timestamp and amount:
-            date_min = timestamp - timedelta(days=2)
-            date_max = timestamp + timedelta(days=2)
-            recently_matched = query("""
-                SELECT MessageId, TransactionNumber, TimeStamp, Sender, Amount,
-                       Memo, TransactionDate, Subject
-                FROM gmail_transactions
-                WHERE Amount = %s
-                  AND TimeStamp BETWEEN %s AND %s
-                  AND ProcessedTime IS NOT NULL
-                  AND IsArchived = 0
-                ORDER BY TimeStamp DESC
-                LIMIT 5
-            """, [amount, date_min, date_max])
-
-        result.append({
-            'event': event,
-            'most_likely': most_likely,
-            'more_likely': more_likely,
-            'recently_matched': recently_matched,
-        })
-
-    return json_response({'ok': True, 'data': result})
+    return json_response({
+        'created': created_count,
+        'skipped': skipped_count,
+        'errors': errors,
+    })
 
 
-@payments_bp.route('/api/payments/approve-event-match', methods=['POST'])
-@login_required
-@require_role('admin')
-@handle_api_errors
-def api_approve_event_match():
+def _autoguess_single_transaction(tx: dict) -> dict:
     """
-    Admin selects a gmail_transaction to match with an event.
-    Updates submissions with: MatchedMessageId, MatchedTransactionNumber, AdminApprover,
-    ApprovalDate, PaymentDate, and sets Status='approved'.
+    Attempt to match a single unmatched Gmail transaction.
+    Returns {'created': bool, 'reason': str}
     """
-    body = request.get_json() or {}
-    event_id = body.get('eventId')
-    message_id = body.get('messageId')
-    transaction_number = body.get('transactionNumber')
-    notes = body.get('notes', '')
+    tx_num = tx['TransactionNumber']
+    sender = tx['Sender'] or ''
+    memo = tx['Memo'] or ''
+    amount = Decimal(str(tx['Amount'])) if tx['Amount'] else None
+    tx_date = tx['TransactionDate']
 
-    if not event_id or not message_id:
-        return json_response({'ok': False, 'error': 'Missing eventId or messageId'}, status=400)
+    # Step 1: Try to extract memberID from memo
+    member_id = parse_member_id_from_memo(memo)
 
-    # Fetch event and gmail transaction details
-    event = query("""
-        SELECT * FROM submissions WHERE SubmissionID = %s
-    """, [event_id])
-    if not event:
-        return json_response({'ok': False, 'error': f'Event {event_id} not found'}, status=404)
-    event = event[0]
+    if member_id:
+        member = get_member_by_id(member_id)
+        if member:
+            # Check amount matches renewal fee
+            expected_amt = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
+            if amount != expected_amt:
+                return {'created': False, 'reason': f'Amount mismatch: {amount} vs expected {expected_amt}'}
 
-    gmail = query("""
-        SELECT * FROM gmail_transactions WHERE MessageId = %s
-    """, [message_id])
-    if not gmail:
-        return json_response({'ok': False, 'error': f'Gmail transaction {message_id} not found'}, status=404)
-    gmail = gmail[0]
+            # Check within renewal period
+            if not is_within_renewal_period(tx_date):
+                return {'created': False, 'reason': 'Outside renewal period'}
 
-    # Update submissions
-    admin_email = session.get('user_email', 'unknown')
-    approval_date = _engine_to_mysql_dt(datetime.utcnow())
-    payment_date = gmail.get('TransactionDate')
+            # Check if pending membership submission exists
+            pending_subs = query("""
+                SELECT SubmissionID FROM submissions
+                WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
+                LIMIT 1
+            """, (member_id,))
+
+            if pending_subs:
+                # Case 1a: Create payment with submissionID
+                return _create_payment_from_autoguess(
+                    tx_num, member_id, amount, tx_date, tx['PaymentMethod'],
+                    sender, memo, 'Membership', 'admin_autoguess',
+                    submission_id=pending_subs[0]['SubmissionID']
+                )
+            else:
+                # Case 1b: Create payment without submissionID
+                return _create_payment_from_autoguess(
+                    tx_num, member_id, amount, tx_date, tx['PaymentMethod'],
+                    sender, memo, 'Membership', 'admin_autoguess'
+                )
+
+    # Step 2: No memberID in memo; try to match by name
+    pending_subs = query("""
+        SELECT s.SubmissionID, s.MemberID FROM submissions s
+        WHERE s.Status = 'pending' AND s.SubmissionType LIKE '%Membership%'
+    """)
+
+    for sub in pending_subs:
+        member = get_member_by_id(sub['MemberID'])
+        if not member:
+            continue
+
+        expected_amt = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
+        if amount != expected_amt:
+            continue
+
+        if not is_within_renewal_period(tx_date):
+            continue
+
+        # Partial name match
+        if partial_name_match(sub['MemberID'], sender, memo):
+            return _create_payment_from_autoguess(
+                tx_num, sub['MemberID'], amount, tx_date, tx['PaymentMethod'],
+                sender, memo, 'Membership', 'admin_autoguess',
+                submission_id=sub['SubmissionID']
+            )
+
+    return {'created': False, 'reason': 'No match found'}
+
+
+def _create_payment_from_autoguess(
+    tx_num: str, member_id: str, amount: Decimal, payment_date,
+    payment_method: str, payer_name: str, memo: str, payment_type: str,
+    processed_by: str, submission_id: str | None = None
+) -> dict:
+    """Create a payment record and call sp_link_transaction."""
+    payment_id = str(uuid.uuid4())
 
     try:
         execute("""
-            UPDATE submissions
-            SET MatchedMessageId = %s,
-                MatchedTransactionNumber = %s,
-                AdminApprover = %s,
-                ApprovalDate = %s,
-                PaymentDate = %s,
-                Notes = IF(%s = '', Notes, %s),
-                Status = 'approved'
-            WHERE SubmissionID = %s
-        """, [message_id, transaction_number, admin_email, approval_date,
-              payment_date, notes, notes, event_id])
+            CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)
+        """, (tx_num, member_id, payment_type, amount, processed_by, submission_id))
 
-        # Note: Sheets sync happens via scheduled sync jobs (not real-time webhooks)
-
-        return json_response({'ok': True, 'message': f'Event {event_id} approved and linked to {message_id}'})
+        return {'created': True, 'reason': f'Created payment {payment_id}'}
     except Exception as e:
-        logger.error(f'Error approving event match: {e}')
-        return json_response({'ok': False, 'error': str(e)}, status=500)
+        logger.error(f'Error creating payment for {tx_num}: {e}')
+        raise
+
+
+# ============================================================================
+# MANUAL APPROVAL
+# ============================================================================
+
+@payments_bp.route('/manual-approve', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_manual_approve():
+    """
+    Admin approves a Gmail transaction by selecting memberID.
+
+    Request body:
+    {
+      "transactionNumber": "tx_abc123",
+      "memberID": "A0001"
+    }
+
+    Logic:
+      1. Verify member exists
+      2. Check if there are any pending submissions for this member
+      3. If yes, link to first pending membership submission
+      4. If no, create payment with blank submissionID
+      5. Call sp_link_transaction to create payment + update gmail_transactions
+    """
+    data = request.json or {}
+    tx_num = data.get('transactionNumber', '').strip()
+    member_id = data.get('memberID', '').strip()
+
+    if not tx_num or not member_id:
+        return json_response({'error': 'Missing transactionNumber or memberID'}, status=400)
+
+    # Fetch Gmail transaction
+    tx_rows = query(
+        "SELECT * FROM gmail_transactions WHERE TransactionNumber = %s",
+        (tx_num,)
+    )
+    if not tx_rows:
+        return json_response({'error': 'Gmail transaction not found'}, status=404)
+
+    tx = tx_rows[0]
+
+    # Verify member exists
+    member = get_member_by_id(member_id)
+    if not member:
+        return json_response({'error': 'Member not found'}, status=404)
+
+    # Check for pending membership submissions
+    pending_subs = query("""
+        SELECT SubmissionID FROM submissions
+        WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
+        ORDER BY CreatedAt DESC
+        LIMIT 1
+    """, (member_id,))
+
+    submission_id = pending_subs[0]['SubmissionID'] if pending_subs else None
+    admin_email = session.get('email', 'admin')
+
+    try:
+        execute("""
+            CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)
+        """, (tx_num, member_id, 'Membership', tx['Amount'], admin_email, submission_id))
+
+        return json_response({
+            'ok': True,
+            'transactionNumber': tx_num,
+            'memberID': member_id,
+            'submissionID': submission_id,
+        })
+    except Exception as e:
+        logger.error(f'Error in manual_approve: {e}')
+        return json_response({'error': str(e)}, status=500)
+
+
+# ============================================================================
+# SUBMISSION SEARCH & FILTERING
+# ============================================================================
+
+@payments_bp.route('/submissions-for-member/<member_id>', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_submissions_for_member(member_id: str):
+    """Get all pending submissions for a specific member."""
+    subs = query("""
+        SELECT SubmissionID, SubmissionType, Amount, Status, CreatedAt, ExpiresAt
+        FROM submissions
+        WHERE MemberID = %s AND Status = 'pending'
+        ORDER BY CreatedAt DESC
+    """, (member_id,))
+    return json_response({'submissions': subs})
+
+
+@payments_bp.route('/gmail-matching-candidates/<member_id>', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_gmail_matching_candidates(member_id: str):
+    """
+    Get unmatched Gmail transactions that could match this member.
+    Filters by partial name/email match and amount.
+    """
+    member = get_member_by_id(member_id)
+    if not member:
+        return json_response({'error': 'Member not found'}, status=404)
+
+    first_name = member['FirstName']
+    last_name = member['LastName']
+    email = member['Email']
+
+    candidates = query("""
+        SELECT TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate,
+               PaymentMethod, Notes, UpdatedAt
+        FROM gmail_transactions
+        WHERE (Notes IS NULL OR UpdatedAt IS NULL)
+          AND (Sender LIKE %s OR Sender LIKE %s OR Memo LIKE %s OR Memo LIKE %s)
+        ORDER BY TransactionDate DESC
+        LIMIT 20
+    """, (f"%{first_name}%", f"%{last_name}%", f"%{first_name}%", f"%{last_name}%"))
+
+    return json_response({'candidates': candidates})
+
+
+# ============================================================================
+# MEMBER SEARCH
+# ============================================================================
+
+@payments_bp.route('/search-members', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_search_members():
+    """
+    Search members by name, email, or memberID.
+    Query param: ?q=search_term
+    """
+    q = request.args.get('q', '').strip()
+    if len(q) < 2:
+        return json_response({'error': 'Search term too short'}, status=400)
+
+    results = query("""
+        SELECT MemberID, FirstName, LastName, Email, Type, Status, Expiration
+        FROM members
+        WHERE FirstName LIKE %s OR LastName LIKE %s OR Email LIKE %s OR MemberID LIKE %s
+        ORDER BY FirstName, LastName
+        LIMIT 20
+    """, (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"))
+
+    return json_response({'members': results})

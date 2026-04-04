@@ -45,7 +45,29 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 - `generate_member_id()` — Auto-generate sequential IDs on member create
 - `sp_admin_update_member_status()` — Admin override with audit trail
 - `sp_error_summary_report(days_back)` — Error dashboard trends
-- `sp_link_transaction()` — Link gmail_transactions to members
+- `sp_link_transaction(tx, memberID, type, amount, admin, submissionID)` — Creates payment + updates gmail_transactions
+
+## PAYMENT API (api_payments.py) — REBUILT 04-04
+**Architecture:** Pure MySQL, no Sheets sync. Three action modes: autoguess, manual approval, admin operations.
+- `GET /api/payments/dashboard` — Counts (pending submissions, unmatched gmail, approved/rejected/errors)
+- `GET /api/payments/pending-submissions` — List pending submissions (with search)
+- `GET /api/payments/unmatched-gmail` — List unmatched Gmail transactions
+- `POST /api/payments/autoguess-all` — Scan unmatched → attempt auto-match (membership renewal logic)
+- `POST /api/payments/manual-approve` — Admin picks memberID + gmail_tx → create payment
+- `GET /api/payments/submissions-for-member/<memberID>` — Pending submissions for member
+- `GET /api/payments/gmail-matching-candidates/<memberID>` — Filtered gmail matches by name
+- `GET /api/payments/search-members?q=` — Search members by name/email/ID
+
+**Autoguess Logic:**
+1. Extract memberID from gmail memo (regex: `\bA\d{4}\b`)
+2. If found: Check renewal period (config table) + amount matches ($30 indiv, $50 family) + pending membership submission exists
+3. If no memberID: Try partial name match against all pending membership submissions
+4. Create payment via `sp_link_transaction(tx, memberID, 'Membership', amount, admin, submissionID|NULL)`
+5. Triggers auto-update: members (status→active, expiration+1yr), submissions (status→approved), gmail_transactions (notes synced)
+
+**Manual Approval:** Admin enters memberID + select gmail_tx → create payment with auto-linked submission (if pending membership exists)
+
+**Renewal Period:** Stored in config table (`renewal_start_date`, `renewal_end_date`). Set before running autoguess.
 
 **Batch Sizing:** BATCH_SIZE=300 (MySQL inserts, GAS API calls). Configurable in `sync_config.py` line 26.
 
