@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T16:36:57.901345 UTC
+-- Timestamp: 2026-04-04T19:07:32.086548 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -142,7 +142,7 @@ CREATE TABLE `member_log` (
 
 CREATE TABLE `members` (
   `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `Status` enum('active','expired','inactive','pending','pending_upgrade') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'active=paying; expired=may renew; inactive=left; pending=awaiting payment; pending_upgrade=upgrading to family',
+  `Status` enum('active','expired','inactive','pending','pending_upgrade','lifetime') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'active=paying; expired=may renew; inactive=left; pending=awaiting payment; pending_upgrade=upgrading to family; lifetime=lifetime member',
   `Created` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `Expiration` date DEFAULT NULL,
   `Email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -297,8 +297,8 @@ CREATE TABLE `payments` (
   PRIMARY KEY (`PaymentID`),
   KEY `idx_payments_memberid` (`MemberID`),
   KEY `idx_payments_paymentdate` (`PaymentDate`),
-  KEY `idx_payments_updated_at` (`UpdatedAt`),
   KEY `idx_pay_tx` (`TransactionNumber`),
+  KEY `idx_payments_updated_at` (`UpdatedAt`),
   CONSTRAINT `fk_payments_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL,
   CONSTRAINT `chk_payments_amount_nonnegative` CHECK ((`Amount` >= 0))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -333,7 +333,7 @@ CREATE TABLE `sheets_sync_log` (
   KEY `idx_status` (`Status`),
   KEY `idx_started_at` (`StartedAt`),
   CONSTRAINT `fk_sheets_sync_log_jobid` FOREIGN KEY (`JobID`) REFERENCES `sync_jobs` (`JobID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=53 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
+) ENGINE=InnoDB AUTO_INCREMENT=113 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
 
 CREATE TABLE `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
@@ -604,131 +604,48 @@ BEGIN
     WHERE TransactionNumber = p_TxNum;
 END;
 
+CREATE PROCEDURE `sp_search_members_advanced`(
+    IN p_search_string VARCHAR(255),
+    IN p_limit INT
+)
+BEGIN
+    DECLARE v_done INT DEFAULT 0;
+    DECLARE v_term VARCHAR(255);
+    DECLARE v_where_clause TEXT DEFAULT '1=1';
+    DECLARE v_remaining_query VARCHAR(255);
+    
+    SET v_remaining_query = TRIM(p_search_string);
+    WHILE CHAR_LENGTH(v_remaining_query) > 0 AND v_done = 0 DO
+        SET v_term = SUBSTRING_INDEX(v_remaining_query, ' ', 1);
+        IF LOCATE(' ', v_remaining_query) > 0 THEN
+            SET v_remaining_query = TRIM(SUBSTRING(v_remaining_query, LOCATE(' ', v_remaining_query) + 1));
+        ELSE
+            SET v_remaining_query = '';
+            SET v_done = 1;
+        END IF;
+        SET v_where_clause = CONCAT(v_where_clause, ' AND (',
+            'FirstName LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR LastName LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR Email LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR Notes LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR NYRRunnerName LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR WeChatID LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR MemberID LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ')');
+    END WHILE;
+    SET @final_query = CONCAT(
+        'SELECT MemberID, FirstName, LastName, Email, Type, Status, Expiration, WeChatID, Notes, NYRRRunnerName ',
+        'FROM members ',
+        'WHERE ', v_where_clause, ' ',
+        'ORDER BY FirstName, LastName ',
+        'LIMIT ', p_limit
+    );
+    PREPARE stmt FROM @final_query;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END;
+
 -- TRIGGERS
-CREATE TRIGGER `trg_payments_auto_fill` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
-    IF NEW.TransactionNumber IS NOT NULL THEN
-        SELECT PaymentDate, PaymentMethod, Sender, Memo
-        INTO @d, @m, @p, @memo
-        FROM gmail_transactions
-        WHERE TransactionNumber = NEW.TransactionNumber
-        LIMIT 1;
-        SET NEW.PaymentDate = @d;
-        SET NEW.PaymentMethod = @m;
-        SET NEW.PayerName = @p;
-        SET NEW.MemoField = @memo;
-    END IF;
-END;
-
-CREATE TRIGGER `trg_payments_limit_check_insert` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
-    DECLARE v_max DECIMAL(10,2);
-    DECLARE v_used DECIMAL(10,2);
-    SELECT Amount INTO v_max FROM gmail_transactions WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;
-    SELECT IFNULL(SUM(Amount), 0) INTO v_used FROM payments WHERE TransactionNumber = NEW.TransactionNumber;
-    IF (v_used + NEW.Amount) > v_max THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Split Error: Total payments exceed Gmail Transaction amount.';
-    END IF;
-END;
-
-CREATE TRIGGER `trg_payments_limit_check_update` BEFORE UPDATE ON `payments` FOR EACH ROW BEGIN
-    DECLARE v_max_total DECIMAL(10,2);
-DECLARE v_used_others DECIMAL(10,2);
-DECLARE v_rem DECIMAL(10,2);
-DECLARE v_msg VARCHAR(128);
-SELECT Amount INTO v_max_total 
-    FROM gmail_transactions 
-    WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;
-SELECT IFNULL(SUM(Amount), 0) INTO v_used_others 
-    FROM payments 
-    WHERE TransactionNumber = NEW.TransactionNumber AND PaymentID <> OLD.PaymentID;
-SET v_rem = v_max_total - v_used_others;
-IF NEW.Amount > v_rem THEN
-        SET v_msg = CONCAT('Limit Exceeded: Try $', NEW.Amount, ', but only $', v_rem, ' left on TX: ', LEFT(NEW.TransactionNumber, 20));
-SIGNAL SQLSTATE '45000' 
-        SET MESSAGE_TEXT = v_msg;
-END IF;
-END;
-
-CREATE TRIGGER `trg_payments_sync_membership_only` AFTER INSERT ON `payments` FOR EACH ROW BEGIN
-    DECLARE v_FamilyID VARCHAR(10);
-
-    IF NEW.PaymentType LIKE '%Membership%' THEN
-        SELECT FamilyID INTO v_FamilyID FROM members WHERE MemberID = NEW.MemberID;
-        SET @internal_proc = 1;
-        UPDATE members
-        SET
-            Status = 'active',
-            PaymentDate = NEW.PaymentDate,
-            PaymentTransaction = NEW.TransactionNumber,
-            MembershipFeePaid = NEW.Amount,
-            Expiration = DATE_ADD(NEW.PaymentDate, INTERVAL 1 YEAR)
-        WHERE (v_FamilyID IS NOT NULL AND FamilyID = v_FamilyID)
-           OR MemberID = NEW.MemberID;
-        SET @internal_proc = NULL;
-    END IF;
-END;
-
-CREATE TRIGGER `trg_payments_approve_submission` AFTER INSERT ON `payments` FOR EACH ROW BEGIN
-    IF NEW.SubmissionID IS NOT NULL THEN
-        UPDATE submissions
-        SET
-            Status = 'approved',
-            PaymentID = NEW.PaymentID,
-            UpdatedByID = NEW.ProcessedBy
-        WHERE SubmissionID = NEW.SubmissionID;
-    END IF;
-END;
-
-CREATE TRIGGER `trg_payments_insert_validate` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
-  DECLARE error_context_id VARCHAR(50);
-  DECLARE error_msg TEXT;
-
-  SET error_context_id = UUID();
-
-  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN
-    SET error_msg = CONCAT(
-      'Payment amount cannot be negative: ', NEW.`Amount`, '. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `AllowedRange`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, 'PAY_NEGATIVE_AMOUNT',
-      'Payment amount is negative',
-      CONCAT('Amount validation failed: ', NEW.`Amount`),
-      'payments', 'Amount', CAST(NEW.`Amount` AS CHAR),
-      '>= 0',
-      'Check payment amount calculation. Use absolute value if needed.',
-      'WARNING'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-
-  IF NEW.`SubmissionID` IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM `submissions` WHERE `SubmissionID` = NEW.`SubmissionID`) THEN
-      SET error_msg = CONCAT(
-        'SubmissionID "', NEW.`SubmissionID`, '" does not exist. ',
-        'Error: ', error_context_id
-      );
-      INSERT INTO `error_context` (
-        `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-        `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,
-        `SuggestedFix`, `Severity`
-      ) VALUES (
-        error_context_id, 'PAY_FK_INVALID_SUBMISSION',
-        CONCAT('Referenced submission not found: ', NEW.`SubmissionID`),
-        'Foreign key validation failed on payments.SubmissionID',
-        'payments', 'SubmissionID', 'fk_payments_submissions',
-        NEW.`SubmissionID`,
-        'Verify SubmissionID exists before linking payment. Or leave NULL if payment is standalone.',
-        'WARNING'
-      );
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-    END IF;
-  END IF;
-END;
-
 CREATE TRIGGER `trg_submissions_insert_validate` BEFORE INSERT ON `submissions` FOR EACH ROW BEGIN
   DECLARE error_context_id VARCHAR(50);
   DECLARE error_msg TEXT;
@@ -827,6 +744,56 @@ CREATE TRIGGER `trg_submissions_insert_validate` BEFORE INSERT ON `submissions` 
   END IF;
 END;
 
+CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
+  DECLARE error_context_id VARCHAR(50);
+  DECLARE error_msg TEXT;
+
+  SET error_context_id = UUID();
+
+  IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN
+    SET error_msg = CONCAT(
+      'Invalid email format: "', NEW.`Email`, '". Must contain @. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `ValidValueExamples`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'MEM_INVALID_EMAIL',
+      CONCAT('Email format invalid: ', NEW.`Email`),
+      'Email validation failed: missing @ symbol',
+      'members', 'Email', NEW.`Email`,
+      '["john@example.com", "jane.doe@company.org"]',
+      'Verify email address format matches standard email pattern (user@domain.com)',
+      'WARNING'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`Status` NOT IN ('active','expired','inactive','pending', 'pending_upgrade', 'lifetime') THEN
+    SET error_msg = CONCAT(
+      'Invalid Status: "', NEW.`Status`, '". ',
+      'Allowed: active, expired, inactive, pending, pending_upgrade, lifetime. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'MEM_INVALID_STATUS',
+      CONCAT('Invalid member status: ', NEW.`Status`),
+      'Status enum constraint violated on members table',
+      'members', 'Status', NEW.`Status`,
+      'active | expired | inactive | pending | pending_upgrade | lifetime',
+      'Status must be one of: active (paying), expired (may renew), inactive (left), pending (awaiting payment), pending_upgrade (upgrading to family), lifetime (lifetime member)',
+      'ERROR'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+END;
+
 CREATE TRIGGER `members_before_update` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
     IF NEW.Expiration <> OLD.Expiration THEN
         IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
@@ -895,37 +862,39 @@ CREATE TRIGGER `trg_members_after_update` AFTER UPDATE ON `members` FOR EACH ROW
   );
 END;
 
-CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
+CREATE TRIGGER `trg_payments_auto_fill` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
+    IF NEW.TransactionNumber IS NOT NULL THEN
+        SELECT PaymentDate, PaymentMethod, Sender, Memo
+        INTO @d, @m, @p, @memo
+        FROM gmail_transactions
+        WHERE TransactionNumber = NEW.TransactionNumber
+        LIMIT 1;
+        SET NEW.PaymentDate = @d;
+        SET NEW.PaymentMethod = @m;
+        SET NEW.PayerName = @p;
+        SET NEW.MemoField = @memo;
+    END IF;
+END;
+
+CREATE TRIGGER `trg_payments_limit_check_insert` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
+    DECLARE v_max DECIMAL(10,2);
+    DECLARE v_used DECIMAL(10,2);
+    SELECT Amount INTO v_max FROM gmail_transactions WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;
+    SELECT IFNULL(SUM(Amount), 0) INTO v_used FROM payments WHERE TransactionNumber = NEW.TransactionNumber;
+    IF (v_used + NEW.Amount) > v_max THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Split Error: Total payments exceed Gmail Transaction amount.';
+    END IF;
+END;
+
+CREATE TRIGGER `trg_payments_insert_validate` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
   DECLARE error_context_id VARCHAR(50);
   DECLARE error_msg TEXT;
 
   SET error_context_id = UUID();
 
-  IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN
+  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN
     SET error_msg = CONCAT(
-      'Invalid email format: "', NEW.`Email`, '". Must contain @. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `ValidValueExamples`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, 'MEM_INVALID_EMAIL',
-      CONCAT('Email format invalid: ', NEW.`Email`),
-      'Email validation failed: missing @ symbol',
-      'members', 'Email', NEW.`Email`,
-      '["john@example.com", "jane.doe@company.org"]',
-      'Verify email address format matches standard email pattern (user@domain.com)',
-      'WARNING'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-
-  IF NEW.`Status` NOT IN ('active','expired','inactive','pending', 'pending_upgrade', 'lifetime') THEN
-    SET error_msg = CONCAT(
-      'Invalid Status: "', NEW.`Status`, '". ',
-      'Allowed: active, expired, inactive, pending, pending_upgrade, lifetime. ',
+      'Payment amount cannot be negative: ', NEW.`Amount`, '. ',
       'Error: ', error_context_id
     );
     INSERT INTO `error_context` (
@@ -933,16 +902,132 @@ CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH
       `TableName`, `ColumnName`, `ProblematicValue`,
       `AllowedRange`, `SuggestedFix`, `Severity`
     ) VALUES (
-      error_context_id, 'MEM_INVALID_STATUS',
-      CONCAT('Invalid member status: ', NEW.`Status`),
-      'Status enum constraint violated on members table',
-      'members', 'Status', NEW.`Status`,
-      'active | expired | inactive | pending | pending_upgrade | lifetime',
-      'Status must be one of: active (paying), expired (may renew), inactive (left), pending (awaiting payment), pending_upgrade (upgrading to family), lifetime (lifetime member)',
-      'ERROR'
+      error_context_id, 'PAY_NEGATIVE_AMOUNT',
+      'Payment amount is negative',
+      CONCAT('Amount validation failed: ', NEW.`Amount`),
+      'payments', 'Amount', CAST(NEW.`Amount` AS CHAR),
+      '>= 0',
+      'Check payment amount calculation. Use absolute value if needed.',
+      'WARNING'
     );
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
+
+  IF NEW.`SubmissionID` IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM `submissions` WHERE `SubmissionID` = NEW.`SubmissionID`) THEN
+      SET error_msg = CONCAT(
+        'SubmissionID "', NEW.`SubmissionID`, '" does not exist. ',
+        'Error: ', error_context_id
+      );
+      INSERT INTO `error_context` (
+        `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+        `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,
+        `SuggestedFix`, `Severity`
+      ) VALUES (
+        error_context_id, 'PAY_FK_INVALID_SUBMISSION',
+        CONCAT('Referenced submission not found: ', NEW.`SubmissionID`),
+        'Foreign key validation failed on payments.SubmissionID',
+        'payments', 'SubmissionID', 'fk_payments_submissions',
+        NEW.`SubmissionID`,
+        'Verify SubmissionID exists before linking payment. Or leave NULL if payment is standalone.',
+        'WARNING'
+      );
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+    END IF;
+  END IF;
+END;
+
+CREATE TRIGGER `trg_payments_limit_check_update` BEFORE UPDATE ON `payments` FOR EACH ROW BEGIN
+    DECLARE v_max_total DECIMAL(10,2);
+DECLARE v_used_others DECIMAL(10,2);
+DECLARE v_rem DECIMAL(10,2);
+DECLARE v_msg VARCHAR(128);
+SELECT Amount INTO v_max_total 
+    FROM gmail_transactions 
+    WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;
+SELECT IFNULL(SUM(Amount), 0) INTO v_used_others 
+    FROM payments 
+    WHERE TransactionNumber = NEW.TransactionNumber AND PaymentID <> OLD.PaymentID;
+SET v_rem = v_max_total - v_used_others;
+IF NEW.Amount > v_rem THEN
+        SET v_msg = CONCAT('Limit Exceeded: Try $', NEW.Amount, ', but only $', v_rem, ' left on TX: ', LEFT(NEW.TransactionNumber, 20));
+SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = v_msg;
+END IF;
+END;
+
+CREATE TRIGGER `trg_payments_sync_membership_only` AFTER INSERT ON `payments` FOR EACH ROW BEGIN
+    DECLARE v_FamilyID VARCHAR(10);
+
+    IF NEW.PaymentType LIKE '%Membership%' THEN
+        SELECT FamilyID INTO v_FamilyID FROM members WHERE MemberID = NEW.MemberID;
+        SET @internal_proc = 1;
+        UPDATE members
+        SET
+            Status = 'active',
+            PaymentDate = NEW.PaymentDate,
+            PaymentTransaction = NEW.TransactionNumber,
+            MembershipFeePaid = NEW.Amount,
+            Expiration = DATE_ADD(NEW.PaymentDate, INTERVAL 1 YEAR)
+        WHERE (v_FamilyID IS NOT NULL AND FamilyID = v_FamilyID)
+           OR MemberID = NEW.MemberID;
+        SET @internal_proc = NULL;
+    END IF;
+END;
+
+CREATE TRIGGER `trg_payments_approve_submission` AFTER INSERT ON `payments` FOR EACH ROW BEGIN
+    IF NEW.SubmissionID IS NOT NULL THEN
+        UPDATE submissions
+        SET
+            Status = 'approved',
+            PaymentID = NEW.PaymentID,
+            UpdatedByID = NEW.ProcessedBy
+        WHERE SubmissionID = NEW.SubmissionID;
+    END IF;
+END;
+
+CREATE TRIGGER `trg_payments_sync_to_gmail_on_change` AFTER UPDATE ON `payments` FOR EACH ROW BEGIN
+    DECLARE v_new_notes TEXT;
+    DECLARE v_old_notes TEXT;
+    DECLARE v_latest_update DATETIME;
+    SELECT 
+        GROUP_CONCAT(CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')') SEPARATOR '; '),
+        MAX(UpdatedAt)
+    INTO v_new_notes, v_latest_update
+    FROM payments
+    WHERE TransactionNumber = NEW.TransactionNumber;
+    SELECT Notes INTO v_old_notes 
+    FROM gmail_transactions 
+    WHERE TransactionNumber = NEW.TransactionNumber;
+    IF v_old_notes IS NULL OR v_new_notes <> v_old_notes THEN
+        UPDATE gmail_transactions
+        SET 
+            Notes = v_new_notes,
+            UpdatedAt = v_latest_update
+        WHERE TransactionNumber = NEW.TransactionNumber;
+    END IF;
+END;
+
+CREATE TRIGGER `trg_payments_sync_to_gmail_on_change_after_payment_insert` AFTER INSERT ON `payments` FOR EACH ROW BEGIN
+    DECLARE v_new_notes TEXT;
+    DECLARE v_old_notes TEXT;
+    DECLARE v_latest_update DATETIME;
+    SELECT 
+        GROUP_CONCAT(CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')') SEPARATOR '; '),
+        MAX(UpdatedAt)
+    INTO v_new_notes, v_latest_update
+    FROM payments
+    WHERE TransactionNumber = NEW.TransactionNumber;
+    SELECT Notes INTO v_old_notes 
+    FROM gmail_transactions 
+    WHERE TransactionNumber = NEW.TransactionNumber;
+    IF v_old_notes IS NULL OR v_new_notes <> v_old_notes THEN
+        UPDATE gmail_transactions
+        SET 
+            Notes = v_new_notes,
+            UpdatedAt = v_latest_update
+        WHERE TransactionNumber = NEW.TransactionNumber;
+    END IF;
 END;
 
 -- EVENTS
