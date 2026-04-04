@@ -37,6 +37,7 @@ SYNC_CONFIG = {
     'import_members': {
         'table': 'members',
         'sheet': 'Main',
+        'spreadsheet': 'MEMBERSHIP',
         'key': 'MemberID',
         'direction': 'sheet_to_mysql',
         'mode': 'insert_only',  # Only insert new; GAS returns new MemberIDs only
@@ -52,7 +53,8 @@ SYNC_CONFIG = {
 
     'import_transactions': {
         'table': 'gmail_transactions',
-        'sheet': 'Transactions',
+        'sheet': 'Active',
+        'spreadsheet': 'GMAIL',
         'key': 'MessageId',
         'direction': 'sheet_to_mysql',
         'mode': 'upsert',  # Default: insert or update
@@ -70,6 +72,7 @@ SYNC_CONFIG = {
     'export_members': {
         'table': 'members',
         'sheet': 'SQL Members',
+        'spreadsheet': 'MEMBERSHIP',
         'key': 'MemberID',
         'direction': 'mysql_to_sheet',
         'columns': [
@@ -84,6 +87,7 @@ SYNC_CONFIG = {
     'export_payments': {
         'table': 'payments',
         'sheet': 'SQL Payments',
+        'spreadsheet': 'MEMBERSHIP',
         'key': 'PaymentID',
         'direction': 'mysql_to_sheet',
         'columns': [
@@ -96,6 +100,7 @@ SYNC_CONFIG = {
     'export_submissions': {
         'table': 'submissions',
         'sheet': 'SQL Submissions',
+        'spreadsheet': 'MEMBERSHIP',
         'key': 'SubmissionID',
         'direction': 'mysql_to_sheet',
         'columns': [
@@ -473,8 +478,10 @@ def generic_sync_runner(
                     result = gas_webhook({
                         'action': 'write_range',
                         'sheetName': sheet_name,
+                        'spreadsheetId': cfg.get('spreadsheet', 'MEMBERSHIP'),  # Which workbook to write to
                         'rows': batch_data,
-                        'overwrite': False
+                        'overwrite': False,
+                        'keyField': cfg.get('key', 'MemberID')  # Use configured key for upsert
                     })
 
                     if result.get('ok'):
@@ -528,6 +535,7 @@ def generic_sync_runner(
             gas_payload = {
                 'action': 'read_range',
                 'sheetName': sheet_name,
+                'spreadsheetId': cfg.get('spreadsheet', 'MEMBERSHIP'),  # Which workbook to read from
                 'columns': cols
             }
 

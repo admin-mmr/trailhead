@@ -1,0 +1,92 @@
+🚀 DEPLOYMENT CHECKLIST: MySQL→Sheets Upsert Fix
+================================================
+
+CHANGES MADE:
+═════════════
+
+1. web-apps/gas/membership/src/webhook.ts
+   ✓ Lines 792-906: Updated handleWriteRange() with upsert logic
+   ✓ Detects keyField parameter
+   ✓ Matches rows by key (column 0) 
+   ✓ Updates in-place if found, appends if new
+   ✓ TypeScript compiles with no errors
+
+2. basecamp/python/sync_config.py
+   ✓ Lines 473-479: Added keyField parameter to gas_webhook call
+   ✓ Passes cfg.get('key') to enable upsert mode
+   ✓ Falls back to 'MemberID' if not defined
+   ✓ Python syntax validated
+
+
+DEPLOYMENT STEPS:
+═════════════════
+
+STEP 1: Commit to git
+   cd /sessions/zen-tender-hypatia/mnt/trailhead
+   git add web-apps/gas/membership/src/webhook.ts basecamp/python/sync_config.py
+   git commit -m "fix: implement key-based upsert for MySQL→Sheets sync (export/members)"
+   git push origin main
+
+STEP 2: Deploy GAS webhook
+   1. Go to script.google.com → Select "MMR Membership"
+   2. Click "Deploy" → Manage deployments
+   3. Select existing deployment (Head)
+   4. Click edit → New version → Deploy
+   5. Copy new deployment URL if it changed
+   6. If URL changed: Update MySQL config table (SheetsWebhookUrl)
+
+STEP 3: Verify Python is deployed
+   ✓ basecamp/python/sync_config.py is source of truth
+   ✓ No separate build needed
+   ✓ Changes take effect on next sync job run
+
+
+TESTING:
+════════
+
+After deployment, run a test sync:
+
+  python3 mmr-admin/run_sync.py export_members
+
+Expected log output:
+  ✓ "[webhook] write_range: upsert mode, keyField="MemberID""
+  ✓ "[webhook] Updated existing row: MemberID="A0001" at row 2"  (for existing)
+  ✓ "[webhook] Appended new row: MemberID="A0999""  (for new)
+  ✓ "inserted=N, updated=M" in final log
+
+Verify in Sheets:
+  ✓ "SQL Members" sheet has NO duplicate MemberIDs
+  ✓ Updated member fields are current (not appended as new rows)
+
+
+ROLLBACK PLAN:
+══════════════
+
+If needed, revert to append-only mode:
+
+1. In basecamp/python/sync_config.py, remove keyField parameter:
+   result = gas_webhook({
+       'action': 'write_range',
+       'sheetName': sheet_name,
+       'rows': batch_data,
+       'overwrite': False
+       # 'keyField': cfg.get('key', 'MemberID')  ← REMOVE THIS
+   })
+
+2. Re-deploy GAS webhook (handles both modes gracefully)
+
+3. This reverts to backward-compat append-only behavior
+
+
+MONITORING:
+═══════════
+
+After each sync job, check:
+  1. GAS Execution logs for errors
+  2. SQL Members sheet for duplicate rows
+  3. sync_log table for job status
+  4. Compare inserted vs updated counts with previous runs
+
+Expected behavior change:
+  - Before: export_members created 1000+ rows (duplicates)
+  - After: export_members creates/updates correct number of rows

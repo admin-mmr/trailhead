@@ -22,6 +22,33 @@
 // ============================================================
 
 /**
+ * Helper: Get the correct spreadsheet ID based on identifier from Python payload
+ * Python sends 'spreadsheetId' as either 'GMAIL' or 'MEMBERSHIP' (or omits for backward compat)
+ */
+function getSpreadsheetId(spreadsheetIdParam?: string): string {
+  if (spreadsheetIdParam === 'GMAIL') {
+    return GMAIL_SPREADSHEET_ID;
+  }
+  // Default: MEMBERSHIP spreadsheet (backward compatible if not specified)
+  return MEMBERSHIP_SPREADSHEET_ID;
+}
+
+/**
+ * Helper: Get sheet from specified spreadsheet
+ * @param name Sheet name (e.g., 'Main', 'Active', 'SQL Members')
+ * @param spreadsheetId Which workbook ('GMAIL' or 'MEMBERSHIP', defaults to MEMBERSHIP)
+ */
+function getSheetFromSpreadsheet(name: string, spreadsheetId?: string): GoogleAppsScript.Spreadsheet.Sheet {
+  const ssId = getSpreadsheetId(spreadsheetId);
+  const ss = SpreadsheetApp.openById(ssId);
+  const sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    throw new Error(`Sheet not found: "${name}" in spreadsheet ${ssId}`);
+  }
+  return sheet;
+}
+
+/**
  * Map from Python field names (sent by sync_member_to_sheets)
  * to MM_COL indices. This is the single source of truth for
  * the Python↔Sheets field mapping.
@@ -797,41 +824,110 @@ function handlePaymentApproved(payload: any): GoogleAppsScript.Content.TextOutpu
  *     action: 'write_range',
  *     sheetName: 'SQL Members' | 'SQL Payments' | 'SQL Submissions',
  *     rows: [[col1, col2, ...], [col1, col2, ...], ...],
- *     overwrite: false  // false = append, true = replace all
+ *     overwrite: false,    // false = upsert (match by key), true = replace all
+ *     keyField: 'MemberID' // For upsert mode, which field is the key (column 0)
  *   }
+ *
+ * Behavior:
+ *   - overwrite=true: Clear all existing rows (keep header), append all new rows
+ *   - overwrite=false + keyField: UPSERT mode (match by keyField, update existing or append new)
+ *   - overwrite=false + no keyField: Backward compat (append-only, may create duplicates)
  */
 function handleWriteRange(payload: any): GoogleAppsScript.Content.TextOutput {
   console.log('[webhook] write_range: target sheet =', payload.sheetName);
-  const { sheetName, rows, overwrite } = payload;
+  const { sheetName, rows, overwrite, keyField, spreadsheetId } = payload;
 
   if (!sheetName || !Array.isArray(rows)) {
     return jsonResponse({ ok: false, error: 'sheetName and rows array required' });
   }
 
   try {
-    const sheet = getSheet(sheetName);
+    // Use spreadsheetId if provided (GMAIL or MEMBERSHIP), otherwise use default getSheet
+    const sheet = spreadsheetId
+      ? getSheetFromSpreadsheet(sheetName, spreadsheetId)
+      : getSheet(sheetName);
 
     if (overwrite) {
-      // Clear all data and write fresh
+      // OVERWRITE MODE: Clear all existing data and append fresh
+      console.log(`[webhook] write_range: overwrite=true, clearing existing data`);
       const lastRow = sheet.getLastRow();
-      const lastCol = sheet.getLastColumn();
       if (lastRow > 1) {
         sheet.deleteRows(2, lastRow - 1); // Keep header
       }
+
+      let inserted = 0;
+      for (const row of rows) {
+        if (Array.isArray(row)) {
+          sheet.appendRow(row);
+          inserted++;
+        }
+      }
+
+      console.log(`[webhook] write_range: overwrote ${inserted} rows to "${sheetName}"`);
+      return jsonResponse({ ok: true, data: { inserted, updated: 0 } });
     }
+
+    // UPSERT MODE (overwrite=false or not set)
+    // Match rows by key field, update existing or append new
+    if (!keyField) {
+      // If no keyField provided, default to append-only behavior (backward compat)
+      console.log(`[webhook] write_range: no keyField, defaulting to append-only`);
+      let inserted = 0;
+      for (const row of rows) {
+        if (Array.isArray(row)) {
+          sheet.appendRow(row);
+          inserted++;
+        }
+      }
+      console.log(`[webhook] write_range: appended ${inserted} rows to "${sheetName}"`);
+      return jsonResponse({ ok: true, data: { inserted, updated: 0 } });
+    }
+
+    // UPSERT: Match by keyField (always in column 0)
+    console.log(`[webhook] write_range: upsert mode, keyField="${keyField}"`);
+    const data = sheet.getDataRange().getValues();
 
     let inserted = 0;
     let updated = 0;
 
-    // Append each row
-    for (const row of rows) {
-      if (Array.isArray(row)) {
-        sheet.appendRow(row);
+    for (const newRow of rows) {
+      if (!Array.isArray(newRow) || newRow.length === 0) {
+        console.warn('[webhook] Skipping invalid row');
+        continue;
+      }
+
+      const keyValue = String(newRow[0] || '').trim(); // Key is always column 0
+      if (!keyValue) {
+        console.warn(`[webhook] Skipping row with empty key field "${keyField}"`);
+        continue;
+      }
+
+      let found = false;
+
+      // Search for existing row by key (column 0)
+      for (let i = 1; i < data.length; i++) {
+        const existingKeyValue = String(data[i][0] || '').trim();
+        if (existingKeyValue === keyValue) {
+          // FOUND: Update existing row in-place
+          for (let j = 0; j < newRow.length; j++) {
+            sheet.getRange(i + 1, j + 1).setValue(newRow[j]);
+          }
+          console.log(`[webhook] Updated existing row: ${keyField}="${keyValue}" at row ${i + 1}`);
+          updated++;
+          found = true;
+          break;
+        }
+      }
+
+      // NOT FOUND: Append as new row
+      if (!found) {
+        sheet.appendRow(newRow);
+        console.log(`[webhook] Appended new row: ${keyField}="${keyValue}"`);
         inserted++;
       }
     }
 
-    console.log(`[webhook] write_range: wrote ${inserted} rows to "${sheetName}"`);
+    console.log(`[webhook] write_range: inserted=${inserted}, updated=${updated} in "${sheetName}"`);
     return jsonResponse({ ok: true, data: { inserted, updated } });
   } catch (err: any) {
     console.error('[webhook] write_range error:', err);
@@ -861,14 +957,17 @@ function handleWriteRange(payload: any): GoogleAppsScript.Content.TextOutput {
  */
 function handleReadRange(payload: any): GoogleAppsScript.Content.TextOutput {
   console.log('[webhook] read_range: source sheet =', payload.sheetName);
-  const { sheetName, columns, existingIds, keyField } = payload;
+  const { sheetName, columns, existingIds, keyField, spreadsheetId } = payload;
 
   if (!sheetName || !Array.isArray(columns)) {
     return jsonResponse({ ok: false, error: 'sheetName and columns array required' });
   }
 
   try {
-    const sheet = getSheet(sheetName);
+    // Use spreadsheetId if provided (GMAIL or MEMBERSHIP), otherwise use default getSheet
+    const sheet = spreadsheetId
+      ? getSheetFromSpreadsheet(sheetName, spreadsheetId)
+      : getSheet(sheetName);
     const data = sheet.getDataRange().getValues();
 
     if (data.length < 1) {
