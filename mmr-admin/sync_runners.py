@@ -15,12 +15,15 @@ from typing import Any, Dict
 from db import query, execute
 from sync_jobs import update_job
 
-# Import the generic runner and config
+# Import the generic runner and config from basecamp (source of truth)
 try:
-    from sync_config import generic_sync_runner, SYNC_CONFIG
-except ImportError:
-    # Fallback for development/testing
     from basecamp.python.sync_config import generic_sync_runner, SYNC_CONFIG
+except ImportError:
+    # Fallback if basecamp path unavailable (e.g., in test environment)
+    try:
+        from sync_config import generic_sync_runner, SYNC_CONFIG
+    except ImportError:
+        raise ImportError("Cannot import sync_config from basecamp.python or local path")
 
 logger = logging.getLogger(__name__)
 
