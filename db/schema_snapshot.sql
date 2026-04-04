@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T01:40:26.709534 UTC
+-- Timestamp: 2026-04-04T02:22:53.083381 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -409,16 +409,16 @@ CREATE TABLE `webapp_events` (
 -- VIEWS
 -- ==========================================
 DROP VIEW IF EXISTS `v_family_members`;
-utf8mb4;
+CREATE ALGORITHM=UNDEFINED DEFINER=`mmradmin`@`%` SQL SECURITY DEFINER VIEW `v_family_members` AS select `m`.`FamilyID` AS `FamilyID`,min(`m`.`MemberID`) OVER (PARTITION BY `m`.`FamilyID` )  AS `primary_member_id`,`m`.`MemberID` AS `member_id`,`m`.`FirstName` AS `FirstName`,`m`.`LastName` AS `LastName`,`m`.`Email` AS `Email`,`m`.`Status` AS `Status`,`m`.`Expiration` AS `Expiration`,`m`.`Type` AS `Type` from `members` `m` where (`m`.`FamilyID` is not null);
 
 DROP VIEW IF EXISTS `v_gmail_split_audit`;
-utf8mb4;
+CREATE ALGORITHM=UNDEFINED DEFINER=`mmradmin`@`%` SQL SECURITY DEFINER VIEW `v_gmail_split_audit` AS select `gt`.`TransactionNumber` AS `TransactionNumber`,`gt`.`Amount` AS `Total`,ifnull(sum(`p`.`Amount`),0) AS `Allocated`,(`gt`.`Amount` - ifnull(sum(`p`.`Amount`),0)) AS `Balance`,`gt`.`Notes` AS `SplitHistory` from (`gmail_transactions` `gt` left join `payments` `p` on((`gt`.`TransactionNumber` = `p`.`TransactionNumber`))) group by `gt`.`TransactionNumber`;
 
 DROP VIEW IF EXISTS `v_payment_details`;
-utf8mb4;
+CREATE ALGORITHM=UNDEFINED DEFINER=`mmradmin`@`%` SQL SECURITY DEFINER VIEW `v_payment_details` AS select `p`.`PaymentID` AS `PaymentID`,`p`.`CreatedAt` AS `CreatedAt`,`m`.`MemberID` AS `MemberID`,concat(`m`.`FirstName`,' ',`m`.`LastName`) AS `MemberFullName`,`m`.`FamilyID` AS `FamilyID`,`p`.`PaymentType` AS `PaymentType`,`p`.`Amount` AS `Amount`,`p`.`PaymentDate` AS `PaymentDate`,`p`.`TransactionNumber` AS `TransactionNumber`,`s`.`SubmissionType` AS `SubmissionType`,`p`.`ProcessedBy` AS `ProcessedBy`,`p`.`Source` AS `Source` from ((`payments` `p` join `members` `m` on((`p`.`MemberID` = `m`.`MemberID`))) left join `submissions` `s` on((`p`.`SubmissionID` = `s`.`SubmissionID`)));
 
 DROP VIEW IF EXISTS `v_payment_splits`;
-utf8mb4;
+CREATE ALGORITHM=UNDEFINED DEFINER=`mmradmin`@`%` SQL SECURITY DEFINER VIEW `v_payment_splits` AS select `gt`.`TransactionNumber` AS `TransactionNumber`,`gt`.`Amount` AS `OriginalTotal`,(select sum(`p`.`Amount`) from `payments` `p` where (`p`.`TransactionNumber` = `gt`.`TransactionNumber`)) AS `TotalAllocated`,(`gt`.`Amount` - (select ifnull(sum(`p`.`Amount`),0) from `payments` `p` where (`p`.`TransactionNumber` = `gt`.`TransactionNumber`))) AS `RemainingBalance` from `gmail_transactions` `gt`;
 
 -- PROCEDURES
 CREATE DEFINER=`mmradmin`@`%` PROCEDURE `generate_member_id`(OUT new_id VARCHAR(10))

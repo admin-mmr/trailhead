@@ -28,6 +28,8 @@ Works on Azure (no binary deps) and local dev environments.
 **Note:** This endpoint is NOT guarded by authentication—keep it private or remove after use.
 """
 
+import re
+
 from flask import Blueprint, Response
 import subprocess
 import os
@@ -126,10 +128,19 @@ def _export_via_connector():
                     
                     # LOGIC: Find the first item in the list that starts with 'CREATE'
                     create_sql = next((item for item in res if isinstance(item, str) and item.strip().upper().startswith('CREATE')), None)
-                    
+                    create_sql = re.sub(r'DEFINER=`.*?`@`.*?` ', '', create_sql)
                     if create_sql:
+                        # Basic beautification: inject newlines at key SQL keywords
+                        beautified_sql = (create_sql
+                            .replace(" AS select ", " AS \nSELECT \n    ")
+                            .replace(",", ",\n   ")
+                            .replace(" from ", "\nFROM ")
+                            .replace(" where ", "\nWHERE ")
+                            .replace(" left join ", "\nLEFT JOIN ")
+                            .replace(" group by ", "\nGROUP BY ")
+                        )
                         sql_lines.append(f"DROP VIEW IF EXISTS `{view}`;\n")
-                        sql_lines.append(create_sql + ';\n\n')
+                        sql_lines.append(beautified_sql + ';\n\n')                    
                     else:
                         sql_lines.append(f"-- Could not find SQL for view {view} in result set.\n\n")
                         
@@ -142,8 +153,10 @@ def _export_via_connector():
         sql_lines.append('-- PROCEDURES\n')
         for proc in procs:
             cursor.execute(f"SHOW CREATE PROCEDURE `{proc}`")
+            create_sql = cursor.fetchone()[2]
+            create_sql = re.sub(r'DEFINER=`.*?`@`.*?` ', '', create_sql)
             # Index 2 is 'Create Procedure'
-            sql_lines.append(cursor.fetchone()[2] + ';\n\n')
+            sql_lines.append(+ ';\n\n')
 
         # 4. TRIGGERS (Index 2)
         cursor.execute("SELECT TRIGGER_NAME FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA = %s", (database,))
@@ -152,7 +165,9 @@ def _export_via_connector():
         for trig in triggers:
             cursor.execute(f"SHOW CREATE TRIGGER `{trig}`")
             # Index 2 is 'SQL Original Statement'
-            sql_lines.append(cursor.fetchone()[2] + ';\n\n')
+            create_sql = cursor.fetchone()[2]
+            create_sql = re.sub(r'DEFINER=`.*?`@`.*?` ', '', create_sql)
+            sql_lines.append(create_sql + ';\n\n')
 
         # 5. EVENTS (Index 3)
         cursor.execute("SELECT EVENT_NAME FROM INFORMATION_SCHEMA.EVENTS WHERE EVENT_SCHEMA = %s", (database,))
@@ -161,7 +176,9 @@ def _export_via_connector():
         for event in events:
             cursor.execute(f"SHOW CREATE EVENT `{event}`")
             # Index 3 is 'Create Event'
-            sql_lines.append(cursor.fetchone()[3] + ';\n\n')
+            create_sql = cursor.fetchone()[3]
+            create_sql = re.sub(r'DEFINER=`.*?`@`.*?` ', '', create_sql)
+            sql_lines.append(create_sql + ';\n\n')
 
         return ''.join(sql_lines)
 
