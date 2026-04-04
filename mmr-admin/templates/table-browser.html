@@ -148,21 +148,157 @@ initComponent('TableBrowser', () => {
 
   const hasActiveFilters = Object.values(activeFilters).some(v => v);
 
+  // Find table config from TABLE_GROUPS
+  const findTableConfig = (tableName) => {
+    for (const group of (window.TABLE_GROUPS || [])) {
+      const found = group.tables.find(t => t.name === tableName);
+      if (found) return { group: group.domain, color: group.color, ...found };
+    }
+    return null;
+  };
+
+  const selectedTableInfo = selectedTable ? tables.find(t => t.TABLE_NAME === selectedTable) : null;
+  const selectedTableConfig = selectedTable ? findTableConfig(selectedTable) : null;
+  const [showGroupMenu, setShowGroupMenu] = useState(null);
+
   return (
     <div>
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-        {tables.map(t => (
-          <div
-            key={t.TABLE_NAME}
-            className="stat-card"
-            style={{ cursor: 'pointer', border: selectedTable === t.TABLE_NAME ? '1px solid var(--accent)' : '1px solid transparent' }}
-            onClick={() => { setSelectedTable(t.TABLE_NAME); setPage(1); setSort({ col: '', order: 'asc' }); setColFilters({}); setActiveFilters({}); }}
-          >
-            <div className="label" style={{ wordBreak: 'break-all' }}>{t.TABLE_NAME}</div>
-            <div className="value" style={{ fontSize: 20 }}>{t.TABLE_ROWS ?? '?'}</div>
-            <div style={{ color: 'var(--text2)', fontSize: 11 }}>{t.DATA_LENGTH ? `${(t.DATA_LENGTH / 1024).toFixed(0)} KB` : ''}</div>
+      {/* Table Selector Dropdown with Groups */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+          <label style={{ fontWeight: 600, color: 'var(--text)' }}>Select Table:</label>
+          <div style={{ position: 'relative', minWidth: 300 }}>
+            <button
+              className="btn btn-outline"
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 12px',
+                borderColor: selectedTableConfig?.color || 'var(--border)',
+                background: selectedTable ? 'rgba(0,0,0,0.2)' : 'transparent',
+              }}
+              onClick={() => setShowGroupMenu(!showGroupMenu)}
+            >
+              <span>
+                {selectedTableConfig ? (
+                  <>
+                    <span style={{ color: selectedTableConfig.color, marginRight: 8 }}>●</span>
+                    {selectedTable}
+                    <span style={{ fontSize: 12, color: 'var(--text2)', marginLeft: 8 }}>
+                      {selectedTableConfig.type}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ color: 'var(--text2)' }}>Choose a table...</span>
+                )}
+              </span>
+              <span>{showGroupMenu ? '▲' : '▼'}</span>
+            </button>
+
+            {showGroupMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  marginTop: 4,
+                  maxHeight: 500,
+                  overflowY: 'auto',
+                  zIndex: 100,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                }}
+              >
+                {(window.TABLE_GROUPS || []).map((group) => (
+                  <div key={group.domain}>
+                    {/* Group Header */}
+                    <div
+                      style={{
+                        padding: '12px 12px',
+                        fontWeight: 600,
+                        fontSize: 13,
+                        color: group.color,
+                        borderBottom: '1px solid var(--border)',
+                        background: 'rgba(0,0,0,0.1)',
+                      }}
+                    >
+                      {group.domain}
+                    </div>
+
+                    {/* Tables in Group */}
+                    {group.tables.map((table) => {
+                      const tableStats = tables.find(t => t.TABLE_NAME === table.name);
+                      return (
+                        <div
+                          key={table.name}
+                          onClick={() => {
+                            setSelectedTable(table.name);
+                            setPage(1);
+                            setSort({ col: '', order: 'asc' });
+                            setColFilters({});
+                            setActiveFilters({});
+                            setShowGroupMenu(false);
+                          }}
+                          style={{
+                            padding: '10px 16px',
+                            cursor: 'pointer',
+                            borderBottom: '1px solid var(--border)',
+                            background: selectedTable === table.name ? 'rgba(100,150,255,0.1)' : 'transparent',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            transition: 'background 0.2s',
+                          }}
+                          onMouseOver={e => (e.currentTarget.style.background = 'rgba(100,150,255,0.15)')}
+                          onMouseOut={e => (e.currentTarget.style.background = selectedTable === table.name ? 'rgba(100,150,255,0.1)' : 'transparent')}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 500, fontSize: 13 }}>
+                              {table.name}
+                              <span style={{ fontSize: 11, color: 'var(--text2)', marginLeft: 8 }}>
+                                [{table.type}]
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+                              {table.description}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--text2)', marginLeft: 16, whiteSpace: 'nowrap' }}>
+                            <div>{tableStats?.TABLE_ROWS ?? '?'} rows</div>
+                            <div>{tableStats?.DATA_LENGTH ? `${(tableStats.DATA_LENGTH / 1024).toFixed(0)} KB` : ''}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        ))}
+        </div>
+
+        {selectedTableConfig && (
+          <div
+            style={{
+              padding: 12,
+              background: `rgba(100,150,255,0.05)`,
+              borderLeft: `3px solid ${selectedTableConfig.color}`,
+              borderRadius: 'var(--radius)',
+              fontSize: 13,
+            }}
+          >
+            <strong style={{ color: selectedTableConfig.color }}>{selectedTableConfig.group}</strong>
+            <div style={{ color: 'var(--text2)', marginTop: 4 }}>
+              {selectedTableConfig.description}
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedTable && tableData && (
