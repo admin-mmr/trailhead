@@ -32,7 +32,7 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 ## COMMON TASKS
 **GitHub Actions:** Check `.github/workflows/` + `git status/diff/log` → identify issues → suggest fixes + commit.
 **Photo Manager:** Check `process_photos.py`/`bib_analyzer.py` → data flow (Drive → download → process → output.json → Blob) → optimize.
-**Database:** `db/schema_snapshot.sql` = source of truth. **Migrations MUST use `MIGRATION_V*.sql` format** (GitHub Actions auto-runs on push to main). Rename any `MIGRATION_*.sql` files that don't match pattern. Use `mysql-mmr` alias. Schema export via `/api/export-schema` endpoint.
+**Database:** `db/schema_snapshot.sql` = source of truth. **Migrations MUST use `MIGRATION_V*.sql` format** (GitHub Actions auto-runs on push to main). Rename any `MIGRATION_*.sql` files that don't match pattern. Use `mysql-mmr` alias. Schema export via `/api/export-schema` endpoint. **CRITICAL:** Each migration MUST END with self-registration in schema_versions table: `INSERT INTO schema_versions (version, applied_at) VALUES ('V###', NOW()) ON DUPLICATE KEY UPDATE applied_at=NOW();` (ensures audit trail + prevents re-runs).
 **Web App:** `web-apps/mmr-webapp/` (Next.js) → review TS types, API routes, UI, NextAuth, i18n.
 
 ## DATABASE SCHEMA & VALIDATION
