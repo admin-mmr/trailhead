@@ -122,7 +122,8 @@ def sync_export_members(job_id: str):
         direction='mysql_to_sheet'
     )
     logger.info(f"[{job_id}] Result: {result}")
-    update_job(job_id, **result)
+    status = 'done' if result['status'] == 'success' else 'error'
+    update_job(job_id, status=status, message=result.get('message', ''), result=result)
 
 
 def sync_export_payments(job_id: str):
@@ -138,7 +139,8 @@ def sync_export_payments(job_id: str):
         direction='mysql_to_sheet'
     )
     logger.info(f"[{job_id}] Result: {result}")
-    update_job(job_id, **result)
+    status = 'done' if result['status'] == 'success' else 'error'
+    update_job(job_id, status=status, message=result.get('message', ''), result=result)
 
 
 def sync_export_submissions(job_id: str):
@@ -154,7 +156,8 @@ def sync_export_submissions(job_id: str):
         direction='mysql_to_sheet'
     )
     logger.info(f"[{job_id}] Result: {result}")
-    update_job(job_id, **result)
+    status = 'done' if result['status'] == 'success' else 'error'
+    update_job(job_id, status=status, message=result.get('message', ''), result=result)
 
 
 def sync_export_transaction_meta(job_id: str):
@@ -170,7 +173,8 @@ def sync_export_transaction_meta(job_id: str):
         direction='mysql_to_sheet'
     )
     logger.info(f"[{job_id}] Result: {result}")
-    update_job(job_id, **result)
+    status = 'done' if result['status'] == 'success' else 'error'
+    update_job(job_id, status=status, message=result.get('message', ''), result=result)
 
 
 def sync_import_members(job_id: str):
@@ -186,7 +190,9 @@ def sync_import_members(job_id: str):
         direction='sheet_to_mysql'
     )
     logger.info(f"[{job_id}] Result: {result}")
-    update_job(job_id, **result)
+    # Map sync result to job fields (ignore unknown keys)
+    status = 'done' if result['status'] == 'success' else 'error'
+    update_job(job_id, status=status, message=result.get('message', ''), result=result)
 
 
 def sync_import_transactions(job_id: str):
@@ -202,7 +208,8 @@ def sync_import_transactions(job_id: str):
         direction='sheet_to_mysql'
     )
     logger.info(f"[{job_id}] Result: {result}")
-    update_job(job_id, **result)
+    status = 'done' if result['status'] == 'success' else 'error'
+    update_job(job_id, status=status, message=result.get('message', ''), result=result)
 
 
 def full_sync_all_operations(job_id: str):
