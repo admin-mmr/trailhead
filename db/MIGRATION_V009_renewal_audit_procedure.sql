@@ -101,12 +101,14 @@ BEGIN
   SET txn.member_id = m.MemberID, txn.traced = TRUE
   WHERE txn.traced = FALSE AND txn.transaction_number IS NOT NULL;
 
-  -- Step 4: PATH 3 - Trace via MessageId → submissions → members
+  -- Step 4: PATH 3 - Trace via TransactionNumber → submissions → members
+  -- (submissions link to payments via SubmissionID in payments table)
   UPDATE tmp_matching_txns txn
-  INNER JOIN submissions s ON txn.message_id = s.MatchedMessageId
+  INNER JOIN payments p ON txn.transaction_number = p.TransactionNumber AND p.SubmissionID IS NOT NULL
+  INNER JOIN submissions s ON p.SubmissionID = s.SubmissionID
   INNER JOIN members m ON s.MemberID = m.MemberID
   SET txn.member_id = m.MemberID, txn.traced = TRUE
-  WHERE txn.traced = FALSE;
+  WHERE txn.traced = FALSE AND txn.transaction_number IS NOT NULL;
 
   -- Step 5: Build audit results with member info and expiration check
   INSERT INTO tmp_audit_results (
@@ -135,12 +137,14 @@ BEGIN
         SELECT 1 FROM payments p
         WHERE p.TransactionNumber = txn.transaction_number
           AND p.MemberID = txn.member_id
+          AND p.SubmissionID IS NULL
       ) THEN 'payments.TransactionNumber → members'
       WHEN EXISTS (
-        SELECT 1 FROM submissions s
-        WHERE s.MatchedMessageId = txn.message_id
+        SELECT 1 FROM payments p
+        INNER JOIN submissions s ON p.SubmissionID = s.SubmissionID
+        WHERE p.TransactionNumber = txn.transaction_number
           AND s.MemberID = txn.member_id
-      ) THEN 'submissions.MatchedMessageId → members'
+      ) THEN 'payments.TransactionNumber → submissions → members'
       ELSE 'UNKNOWN'
     END AS trace_route
   FROM tmp_matching_txns txn
