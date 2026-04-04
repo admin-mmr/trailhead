@@ -155,6 +155,6 @@ END //
 DELIMITER ;
 
 -- Register this migration
-INSERT INTO schema_migrations (version, applied_at)
+INSERT INTO schema_migrations (version, executed_at)
 VALUES ('V009', NOW())
-ON DUPLICATE KEY UPDATE applied_at = NOW();
+ON DUPLICATE KEY UPDATE executed_at = NOW();
