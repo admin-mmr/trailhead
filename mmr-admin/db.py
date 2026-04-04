@@ -90,24 +90,34 @@ _pool_lock = threading.Lock()
 
 def _get_pool() -> MySQLConnectionPool:
     """Return the shared connection pool, creating it on first call."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     global _pool
     if _pool is None:
         with _pool_lock:
             if _pool is None:
                 with _db_config_lock:
                     cfg = _db_config.copy()
-                _pool = MySQLConnectionPool(
-                    pool_name='mmr_admin',
-                    pool_size=5,
-                    pool_reset_session=True,
-                    host=cfg['host'],
-                    user=cfg['user'],
-                    password=cfg['password'],
-                    database=cfg['database'],
-                    ssl_disabled=cfg['ssl_disabled'],
-                    charset='utf8mb4',
-                    collation='utf8mb4_unicode_ci',
-                )
+
+                try:
+                    logger.info(f'[DB] Creating connection pool: {cfg["user"]}@{cfg["host"]}/{cfg["database"]}')
+                    _pool = MySQLConnectionPool(
+                        pool_name='mmr_admin',
+                        pool_size=5,
+                        pool_reset_session=True,
+                        host=cfg['host'],
+                        user=cfg['user'],
+                        password=cfg['password'],
+                        database=cfg['database'],
+                        ssl_disabled=cfg['ssl_disabled'],
+                        charset='utf8mb4',
+                        collation='utf8mb4_unicode_ci',
+                    )
+                    logger.info('[DB] Connection pool created successfully')
+                except Exception as e:
+                    logger.exception(f'[DB] Failed to create connection pool: {e}')
+                    raise
     return _pool
 
 
@@ -120,7 +130,28 @@ def _reset_pool() -> None:
 
 def get_conn():
     """Return a connection from the pool."""
-    return _get_pool().get_connection()
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        pool = _get_pool()
+        logger.debug('[DB] Getting connection from pool...')
+        conn = pool.get_connection()
+        logger.debug('[DB] Got connection successfully')
+        return conn
+    except Exception as e:
+        logger.exception(f'[DB] Failed to get connection: {e}')
+        error_msg = str(e)
+        # Provide user-friendly error messages
+        if 'Can\'t connect to MySQL server' in error_msg or 'Connection refused' in error_msg:
+            raise Exception('Cannot connect to database server. Check DATABASE_URL and network connectivity.')
+        elif 'No more connections available' in error_msg:
+            raise Exception('Database connection pool exhausted. Please retry.')
+        elif 'Unknown database' in error_msg or 'doesn\'t exist' in error_msg:
+            raise Exception('Database does not exist. Check DATABASE_URL database name.')
+        else:
+            raise Exception(f'MySQL Connection not available: {error_msg[:200]}')
+
 
 
 # ---------------------------------------------------------------------------

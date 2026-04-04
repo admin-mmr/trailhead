@@ -175,3 +175,45 @@ def api_config_info():
         return json_response({'ok': True, 'data': rows})
     except Exception as e:
         return json_response({'ok': False, 'error': str(e)}, 500)
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+@query_bp.route('/api/query/diag', methods=['GET'])
+@login_required
+def api_query_diagnostics():
+    """Diagnostic endpoint to check database connection and configuration."""
+    from db import get_db_config
+    import os
+
+    cfg = get_db_config()
+    db_url = os.environ.get('DATABASE_URL', 'NOT SET')
+
+    logger.info(f'[DIAG] Database URL: {db_url[:50]}...' if len(db_url) > 50 else f'[DIAG] Database URL: {db_url}')
+    logger.info(f'[DIAG] DB Config: {cfg["user"]}@{cfg["host"]}/{cfg["database"]}')
+
+    diag = {
+        'ok': True,
+        'database_url_set': bool(db_url and db_url != 'NOT SET'),
+        'db_config': {
+            'host': cfg.get('host'),
+            'user': cfg.get('user'),
+            'database': cfg.get('database'),
+            'ssl_disabled': cfg.get('ssl_disabled'),
+        },
+        'test_connection': None,
+        'test_error': None,
+    }
+
+    # Try to test the connection
+    try:
+        from db import query
+        result = query("SELECT 1 as test")
+        diag['test_connection'] = 'OK' if result else 'No result'
+    except Exception as e:
+        diag['test_error'] = str(e)[:200]
+        diag['ok'] = False
+
+    return json_response(diag)
