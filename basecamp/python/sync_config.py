@@ -549,6 +549,21 @@ def generic_sync_runner(
                         errors.append(batch_error)
                         skipped += len(batch_data)
 
+                        # Stop on fatal GAS errors
+                        error_str = str(result.get('error', '')).lower()
+                        is_fatal = any(keyword in error_str for keyword in [
+                            'not found',      # Sheet/spreadsheet doesn't exist
+                            'permission',     # Auth/permission denied
+                            'invalid',        # Invalid sheet/column
+                        ])
+                        if is_fatal:
+                            remaining = total_rows - (batch_idx + len(batch_data))
+                            fatal_msg = f"FATAL: Stopping sync. GAS error: {batch_error}. Remaining: {remaining} rows unprocessed."
+                            logger.error(fatal_msg)
+                            errors.append(fatal_msg)
+                            skipped += remaining
+                            break  # Stop batch loop immediately
+
                 except Exception as e:
                     batch_error = f"Batch {batch_num} webhook error: {str(e)}"
                     logger.error(batch_error)
@@ -559,6 +574,21 @@ def generic_sync_runner(
                     )
                     errors.append(batch_error)
                     skipped += len(batch_data)
+
+                    # Stop on fatal errors from GAS webhook
+                    error_str = str(e).lower()
+                    is_fatal = any(keyword in error_str for keyword in [
+                        'import error',    # GAS script doesn't exist or failed to compile
+                        'timeout',         # After 3 retries, timeout is fatal
+                        'empty body',      # GAS returned no response at all
+                    ])
+                    if is_fatal:
+                        remaining = total_rows - (batch_idx + len(batch_data))
+                        fatal_msg = f"FATAL: Stopping sync. Webhook error: {batch_error}. Remaining: {remaining} rows unprocessed."
+                        logger.error(fatal_msg)
+                        errors.append(fatal_msg)
+                        skipped += remaining
+                        break  # Stop batch loop immediately
 
             msg = f"✓ Exported {inserted} new + {updated} updated rows to {sheet_name} ({batches_processed} batches)"
             logger.info(msg)
@@ -722,6 +752,24 @@ def generic_sync_runner(
                     )
                     errors.append(batch_error)
                     skipped += len(batch)
+
+                    # Stop on fatal errors (not temporary connection issues)
+                    error_str = str(e).lower()
+                    is_fatal = any(keyword in error_str for keyword in [
+                        'incorrect',       # Incorrect datetime, decimal, etc.
+                        'unknown column',  # Schema mismatch
+                        'no such table',   # Table doesn't exist
+                        'column',          # Column constraint/type errors
+                        '1366',            # Incorrect value
+                        '1292',            # Incorrect datetime/decimal
+                    ])
+                    if is_fatal:
+                        remaining = total_rows - (batch_idx + len(batch))
+                        fatal_msg = f"FATAL: Stopping sync. Error: {batch_error}. Remaining: {remaining} rows unprocessed."
+                        logger.error(fatal_msg)
+                        errors.append(fatal_msg)
+                        skipped += remaining  # Count remaining as skipped
+                        break  # Stop batch loop immediately
 
             if sync_mode == 'insert_only':
                 msg = f"✓ Inserted {inserted} new rows to {table} ({skipped} skipped) ({batches_processed} batches)"
