@@ -341,13 +341,13 @@ def api_backfill_unix_timestamps():
     Populates:
       - members: updated_at_unix, last_login_unix, created_at_unix
       - payments: processed_date_unix
-      - webapp_events: timestamp_unix, expires_at_unix, approval_date_unix
+      - submissions: timestamp_unix, expires_at_unix, approval_date_unix
 
     Only fills rows where the Unix column is currently 0 (unset).
     Safe to run multiple times.
     """
     try:
-        stats = {'members': 0, 'payments': 0, 'webapp_events': 0}
+        stats = {'members': 0, 'payments': 0, 'submissions': 0}
 
         # Backfill members.updated_at_unix
         result = execute(
@@ -377,26 +377,26 @@ def api_backfill_unix_timestamps():
                WHERE ProcessedDate IS NOT NULL AND processed_date_unix = 0""")
         stats['payments'] += result
 
-        # Backfill webapp_events.timestamp_unix
+        # Backfill submissions.timestamp_unix
         result = execute(
-            """UPDATE webapp_events
+            """UPDATE submissions
                SET timestamp_unix = UNIX_TIMESTAMP(Timestamp)
                WHERE Timestamp IS NOT NULL AND timestamp_unix = 0""")
-        stats['webapp_events'] += result
+        stats['submissions'] += result
 
-        # Backfill webapp_events.expires_at_unix
+        # Backfill submissions.expires_at_unix
         result = execute(
-            """UPDATE webapp_events
+            """UPDATE submissions
                SET expires_at_unix = UNIX_TIMESTAMP(ExpiresAt)
                WHERE ExpiresAt IS NOT NULL AND expires_at_unix = 0""")
-        stats['webapp_events'] += result
+        stats['submissions'] += result
 
-        # Backfill webapp_events.approval_date_unix
+        # Backfill submissions.approval_date_unix
         result = execute(
-            """UPDATE webapp_events
+            """UPDATE submissions
                SET approval_date_unix = UNIX_TIMESTAMP(ApprovalDate)
                WHERE ApprovalDate IS NOT NULL AND approval_date_unix = 0""")
-        stats['webapp_events'] += result
+        stats['submissions'] += result
 
         total_updated = sum(stats.values())
 

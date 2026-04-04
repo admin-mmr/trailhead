@@ -197,8 +197,8 @@ def _normalize_gas_keys(row: Dict[str, Any]) -> Dict[str, Any]:
 
     Mappings:
       - Members: memberID→MemberID, firstName→FirstName, lastName→LastName, etc.
-      - WebApp Events: eventID→EventID, eventType→EventType, memberID→MemberID, etc.
-      - Payment History: paymentID→PaymentID, eventID→EventID, memberID→MemberID, etc.
+      - WebApp Events: eventID→SubmissionID, eventType→EventType, memberID→MemberID, etc.
+      - Payment History: paymentID→PaymentID, eventID→SubmissionID, memberID→MemberID, etc.
       - Fetch Gmail: messageId→MessageId, transactionNumber→TransactionNumber, etc.
     """
     CASE_MAP = {
@@ -216,7 +216,7 @@ def _normalize_gas_keys(row: Dict[str, Any]) -> Dict[str, Any]:
         'phoneNumber': 'PhoneNumber',
         'lastLogin': 'LastLogin',
         # WebApp Events table
-        'eventID': 'EventID',
+        'eventID': 'SubmissionID',
         'eventType': 'EventType',
         'expiresAt': 'ExpiresAt',
         'paymentIntent': 'PaymentIntent',
@@ -739,17 +739,17 @@ def _filter_member_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _filter_event_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Filter event rows to include only standard webapp_events columns.
+    Filter event rows to include only standard submissions columns.
     Prevents parse_datetime errors when unexpected fields (e.g., MembershipType from joins)
     are present.
 
-    Standard fields: EventID, EventType, EventCategory, Timestamp, ExpiresAt, MemberID, Email,
+    Standard fields: SubmissionID, EventType, EventCategory, Timestamp, ExpiresAt, MemberID, Email,
     PaymentIntent, Amount, PaymentMethod, PayerName, MemoField, Last4Digits, FamilyMemberEmails,
     Status, MatchedMessageId, MatchedTransactionNumber, AdminApprover, ApprovalDate, Notes,
     PaymentDate, ScreenshotFileId, GDriveFilePath, OCRText, OCRTimestamp, CreatedAt, UpdatedAt
     """
     VALID_EVENT_FIELDS = {
-        'EventID', 'EventType', 'EventCategory', 'Timestamp', 'ExpiresAt', 'MemberID', 'Email',
+        'SubmissionID', 'EventType', 'EventCategory', 'Timestamp', 'ExpiresAt', 'MemberID', 'Email',
         'PaymentIntent', 'Amount', 'PaymentMethod', 'PayerName', 'MemoField', 'Last4Digits',
         'FamilyMemberEmails', 'Status', 'MatchedMessageId', 'MatchedTransactionNumber',
         'AdminApprover', 'ApprovalDate', 'Notes', 'PaymentDate', 'ScreenshotFileId',
@@ -763,7 +763,7 @@ def _filter_event_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _sync_events_to_sheets(job_id: str, verbose: bool = False):
-    """Compare webapp_events by EventID with smart versioning.
+    """Compare submissions by SubmissionID with smart versioning.
 
     Verbose mode shows first 3 events from each source for debugging.
 
@@ -783,7 +783,7 @@ def _sync_events_to_sheets(job_id: str, verbose: bool = False):
         update_job(job_id, **job_update)
 
         events_rows = query(
-            "SELECT * FROM webapp_events ORDER BY EventID"
+            "SELECT * FROM submissions ORDER BY SubmissionID"
         )
         log_lines.append(f"📥 Fetched {len(events_rows)} events from MySQL")
 
@@ -793,7 +793,7 @@ def _sync_events_to_sheets(job_id: str, verbose: bool = False):
             for i, event in enumerate(events_rows[:3]):
                 event_name = event.get('EventName', 'N/A')
                 updated_at = event.get('UpdatedAt', 'NULL')
-                log_lines.append(f"   [Row {i+1}] {event['EventID']}: {event_name}, UpdatedAt={updated_at}")
+                log_lines.append(f"   [Row {i+1}] {event['SubmissionID']}: {event_name}, UpdatedAt={updated_at}")
 
         # Fetch from Sheets
         try:
@@ -801,7 +801,7 @@ def _sync_events_to_sheets(job_id: str, verbose: bool = False):
             sheets_events = sheets_data if isinstance(sheets_data, list) else []
             # Normalize camelCase to PascalCase
             sheets_events = [_normalize_gas_keys(row) for row in sheets_events]
-            sheets_by_id = {e.get('EventID'): e for e in sheets_events if 'EventID' in e}
+            sheets_by_id = {e.get('SubmissionID'): e for e in sheets_events if 'SubmissionID' in e}
             log_lines.append(f"📊 Fetched {len(sheets_by_id)} events from Google Sheets")
 
             if verbose_mode and sheets_events:
@@ -810,7 +810,7 @@ def _sync_events_to_sheets(job_id: str, verbose: bool = False):
                 for i, event in enumerate(sheets_events[:3]):
                     event_name = event.get('EventName', 'N/A')
                     updated_at = event.get('UpdatedAt', 'NULL')
-                    log_lines.append(f"   [Row {i+1}] {event.get('EventID', 'N/A')}: {event_name}, UpdatedAt={updated_at}")
+                    log_lines.append(f"   [Row {i+1}] {event.get('SubmissionID', 'N/A')}: {event_name}, UpdatedAt={updated_at}")
         except Exception as e:
             log_lines.append(f"⚠️  Could not fetch from Sheets: {e}")
             sheets_by_id = {}
@@ -822,7 +822,7 @@ def _sync_events_to_sheets(job_id: str, verbose: bool = False):
         rows_to_update = []
 
         for idx, event in enumerate(events_rows):
-            event_id = event['EventID']
+            event_id = event['SubmissionID']
             event_name = event.get('EventName', '')
             mysql_updated = event.get('UpdatedAt')
 
@@ -834,10 +834,10 @@ def _sync_events_to_sheets(job_id: str, verbose: bool = False):
                 )
                 inserted.append(event_id)
             else:
-                # Spec §2.2 bidirectional conflict resolution for webapp_events
+                # Spec §2.2 bidirectional conflict resolution for submissions
                 # Use Unix timestamp comparison (timezone-invariant) if available, else fallback to datetime
                 sheets_event = sheets_by_id[event_id]
-                decision = _engine_resolve_conflict_unix('webapp_events', event_id, event, sheets_event)
+                decision = _engine_resolve_conflict_unix('submissions', event_id, event, sheets_event)
 
                 if decision.direction == SyncDecision.NO_CHANGE:
                     skipped.append(event_id)
@@ -963,11 +963,11 @@ def _filter_payment_fields(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     Prevents parse_datetime errors when unexpected fields are present.
 
     Standard fields: PaymentID, MemberID, Amount, PaymentDate, PaymentMethod, TransactionReference,
-    PayerName, MemoField, PeriodStart, EventID, ProcessedDate, ProcessedTime, Notes, Status, etc.
+    PayerName, MemoField, PeriodStart, SubmissionID, ProcessedDate, ProcessedTime, Notes, Status, etc.
     """
     VALID_PAYMENT_FIELDS = {
         'PaymentID', 'MemberID', 'Amount', 'PaymentDate', 'PaymentMethod', 'TransactionReference',
-        'PayerName', 'MemoField', 'PeriodStart', 'EventID', 'ProcessedDate', 'ProcessedTime',
+        'PayerName', 'MemoField', 'PeriodStart', 'SubmissionID', 'ProcessedDate', 'ProcessedTime',
         'Notes', 'Status', 'CreatedAt', 'UpdatedAt'
     }
     result = []
@@ -1601,7 +1601,7 @@ def _dry_run_google_to_mysql(job_id: str, tables: list = None):
         try:
             sheets_events_data = _call_gas_webhook({'action': 'get_events'})
             sheets_events = sheets_events_data if isinstance(sheets_events_data, list) else []
-            sheets_event_ids = {e.get('EventID') for e in sheets_events if 'EventID' in e}
+            sheets_event_ids = {e.get('SubmissionID') for e in sheets_events if 'SubmissionID' in e}
             log_lines.append(f"📊 Sheets: {len(sheets_event_ids)} events")
         except Exception as e:
             log_lines.append(f"⚠️  Could not fetch events from Sheets: {e}")
@@ -1624,8 +1624,8 @@ def _dry_run_google_to_mysql(job_id: str, tables: list = None):
         mysql_member_ids = {m['MemberID'] for m in mysql_members}
         log_lines.append(f"💾 MySQL: {len(mysql_member_ids)} members")
 
-        mysql_events = query("SELECT EventID FROM webapp_events")
-        mysql_event_ids = {e['EventID'] for e in mysql_events}
+        mysql_events = query("SELECT SubmissionID FROM submissions")
+        mysql_event_ids = {e['SubmissionID'] for e in mysql_events}
         log_lines.append(f"💾 MySQL: {len(mysql_event_ids)} events")
 
         mysql_payments = query("SELECT PaymentID FROM payments")
@@ -1930,16 +1930,16 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
             try:
                 sheets_events_data = _call_gas_webhook({'action': 'get_events'})
                 sheets_events = [_normalize_gas_keys(e) for e in (sheets_events_data if isinstance(sheets_events_data, list) else [])]
-                sheets_events_by_id = {e['EventID']: e for e in sheets_events if e.get('EventID')}
+                sheets_events_by_id = {e['SubmissionID']: e for e in sheets_events if e.get('SubmissionID')}
                 log_lines.append(f"📊 Sheets: Fetched {len(sheets_events_by_id)} events")
 
-                mysql_events_rows = query("SELECT * FROM webapp_events")
-                mysql_events_by_id = {e['EventID']: e for e in mysql_events_rows}
+                mysql_events_rows = query("SELECT * FROM submissions")
+                mysql_events_by_id = {e['SubmissionID']: e for e in mysql_events_rows}
                 log_lines.append(f"💾 MySQL: Fetched {len(mysql_events_by_id)} events")
 
-                event_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events'")]
-                event_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events' AND DATA_TYPE IN ('datetime','timestamp','date')")}
-                event_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'webapp_events' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
+                event_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submissions'")]
+                event_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submissions' AND DATA_TYPE IN ('datetime','timestamp','date')")}
+                event_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submissions' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
                 valid_gmail_ids = {r['MessageId'] for r in query("SELECT MessageId FROM gmail_transactions")}
 
                 for event_id, sheet_event in sheets_events_by_id.items():
@@ -1957,7 +1957,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                                 cols_to_insert['MatchedMessageId'] = None
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
-                            sql = f"INSERT INTO webapp_events ({col_names}) VALUES ({placeholders})"
+                            sql = f"INSERT INTO submissions ({col_names}) VALUES ({placeholders})"
                             execute(sql, list(cols_to_insert.values()))
                             inserted_events.append(event_id)
                             log_lines.append(
@@ -1972,7 +1972,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         mysql_updated_at = mysql_event.get('Timestamp')
                         if sheet_updated_at and mysql_updated_at and sheet_updated_at > mysql_updated_at:
                             try:
-                                cols_to_update = {k: v for k, v in sheet_event.items() if k in event_columns and k != 'EventID'}
+                                cols_to_update = {k: v for k, v in sheet_event.items() if k in event_columns and k != 'SubmissionID'}
                                 cols_to_update = {k: _coerce_value(v, k, event_dt_columns, event_int_columns) for k, v in cols_to_update.items()}
                                 # Null out MatchedMessageId if empty string OR not in gmail_transactions
                                 raw_mid = cols_to_update.get('MatchedMessageId')
@@ -1987,7 +1987,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                                     if k != 'Timestamp' and str(mysql_event.get(k, '')) != str(v or '')
                                 ]
                                 set_clauses = ', '.join([f"{k}=%s" for k in cols_to_update.keys()])
-                                sql = f"UPDATE webapp_events SET {set_clauses} WHERE EventID=%s"
+                                sql = f"UPDATE submissions SET {set_clauses} WHERE SubmissionID=%s"
                                 values = list(cols_to_update.values()) + [event_id]
                                 execute(sql, values)
                                 updated_events.append(event_id)
@@ -2032,7 +2032,7 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                 payment_columns = [c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments'")]
                 payment_dt_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND DATA_TYPE IN ('datetime','timestamp','date')")}
                 payment_int_columns = {c['COLUMN_NAME'] for c in query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND DATA_TYPE IN ('int','tinyint','smallint','mediumint','bigint','year')")}
-                valid_event_ids = {r['EventID'] for r in query("SELECT EventID FROM webapp_events")}
+                valid_event_ids = {r['SubmissionID'] for r in query("SELECT SubmissionID FROM submissions")}
 
                 for payment_id, sheet_payment in sheets_payments_by_id.items():
                     mysql_payment = mysql_payments_by_id.get(payment_id)
@@ -2040,8 +2040,8 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                         try:
                             cols_to_insert = {k: v for k, v in sheet_payment.items() if k in payment_columns}
                             cols_to_insert = {k: _coerce_value(v, k, payment_dt_columns, payment_int_columns) for k, v in cols_to_insert.items()}
-                            if cols_to_insert.get('EventID') and cols_to_insert['EventID'] not in valid_event_ids:
-                                cols_to_insert['EventID'] = None
+                            if cols_to_insert.get('SubmissionID') and cols_to_insert['SubmissionID'] not in valid_event_ids:
+                                cols_to_insert['SubmissionID'] = None
                             col_names = ', '.join(cols_to_insert.keys())
                             placeholders = ', '.join(['%s'] * len(cols_to_insert))
                             sql = f"INSERT INTO payments ({col_names}) VALUES ({placeholders})"
@@ -2062,8 +2062,8 @@ def _sync_google_to_mysql(job_id: str, tables: list = None):
                             try:
                                 cols_to_update = {k: v for k, v in sheet_payment.items() if k in payment_columns and k != 'PaymentID'}
                                 cols_to_update = {k: _coerce_value(v, k, payment_dt_columns, payment_int_columns) for k, v in cols_to_update.items()}
-                                if cols_to_update.get('EventID') and cols_to_update['EventID'] not in valid_event_ids:
-                                    cols_to_update['EventID'] = None
+                                if cols_to_update.get('SubmissionID') and cols_to_update['SubmissionID'] not in valid_event_ids:
+                                    cols_to_update['SubmissionID'] = None
                                 # Compute field-level diff for the log
                                 pay_changed = [
                                     f"{k}: {mysql_payment.get(k)!r} → {v!r}"

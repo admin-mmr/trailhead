@@ -49,11 +49,11 @@ payments_bp = Blueprint('payments', __name__)
 def api_payments_dashboard():
     """Return counts for the payments dashboard cards."""
     pending = query("""
-        SELECT COUNT(*) as cnt FROM webapp_events
+        SELECT COUNT(*) as cnt FROM submissions
         WHERE Status = 'pending' AND EventCategory = 'payment'
     """)
     matched = query("""
-        SELECT COUNT(*) as cnt FROM webapp_events
+        SELECT COUNT(*) as cnt FROM submissions
         WHERE Status = 'matched' AND EventCategory = 'payment'
     """)
     unmatched_gmail = query("""
@@ -61,17 +61,17 @@ def api_payments_dashboard():
         WHERE ProcessedTime IS NULL AND IsArchived = FALSE
     """)
     recent_approved = query("""
-        SELECT COUNT(*) as cnt FROM webapp_events
+        SELECT COUNT(*) as cnt FROM submissions
         WHERE Status = 'approved' AND EventCategory = 'payment'
           AND ApprovalDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
     """)
     recent_rejected = query("""
-        SELECT COUNT(*) as cnt FROM webapp_events
+        SELECT COUNT(*) as cnt FROM submissions
         WHERE Status = 'rejected' AND EventCategory = 'payment'
           AND ApprovalDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
     """)
     error_count = query("""
-        SELECT COUNT(*) as cnt FROM webapp_events
+        SELECT COUNT(*) as cnt FROM submissions
         WHERE Status = 'error' AND EventCategory = 'payment'
     """)
 
@@ -95,7 +95,7 @@ def api_payments_dashboard():
 @handle_api_errors
 def api_pending_events():
     """
-    List all pending/matched webapp_events with member info.
+    List all pending/matched submissions with member info.
     Supports ?status=pending|matched and ?search= filters.
     """
     status_filter = request.args.get('status', '')
@@ -106,7 +106,7 @@ def api_pending_events():
                m.FirstName, m.LastName, m.Email as MemberEmail,
                m.Type as CurrentType, m.Expiration as CurrentExpiration,
                m.FamilyID, m.Status as MemberStatus
-        FROM webapp_events we
+        FROM submissions we
         LEFT JOIN members m ON we.MemberID = m.MemberID
         WHERE we.EventCategory = 'payment'
           AND we.Status IN ('pending', 'matched')
@@ -118,7 +118,7 @@ def api_pending_events():
         params.append(status_filter)
 
     sql, params = add_search(sql, params, search, [
-        'we.MemberID', 'we.Email', 'we.PayerName', 'we.EventID',
+        'we.MemberID', 'we.Email', 'we.PayerName', 'we.SubmissionID',
         'm.FirstName', 'm.LastName',
     ])
     sql += " ORDER BY we.Timestamp DESC LIMIT 200"
@@ -339,7 +339,7 @@ def api_gmail_candidates(event_id):
       'matched'   — this is the row linked via MatchedMessageId
       'candidate' — amount+date+identifier match, not yet linked
     """
-    events = query("SELECT * FROM webapp_events WHERE EventID = %s", [event_id])
+    events = query("SELECT * FROM submissions WHERE SubmissionID = %s", [event_id])
     if not events:
         return json_response({'ok': False, 'error': 'Event not found'}, 404)
     event = events[0]
@@ -480,8 +480,8 @@ def api_member_summary(member_id):
 
     # Pending events for this member
     pending_events = query("""
-        SELECT EventID, EventType, Status, Timestamp, Amount, PaymentIntent, PaymentMethod
-        FROM webapp_events WHERE MemberID = %s AND Status IN ('pending', 'matched')
+        SELECT SubmissionID, EventType, Status, Timestamp, Amount, PaymentIntent, PaymentMethod
+        FROM submissions WHERE MemberID = %s AND Status IN ('pending', 'matched')
         ORDER BY Timestamp DESC
     """, [member_id])
 
@@ -512,9 +512,9 @@ def api_pending_events_with_matches():
     """
     # Fetch all pending events that need matching
     pending = query("""
-        SELECT EventID, MemberID, PayerName, Email, Amount, MemoField,
+        SELECT SubmissionID, MemberID, PayerName, Email, Amount, MemoField,
                Timestamp, PaymentIntent, Status
-        FROM webapp_events
+        FROM submissions
         WHERE MatchedMessageId IS NULL
           AND Status IN ('pending', 'matched')
           AND EventCategory = 'payment'
@@ -523,7 +523,7 @@ def api_pending_events_with_matches():
 
     result = []
     for event in pending:
-        event_id = event['EventID']
+        event_id = event['SubmissionID']
         member_id = event['MemberID']
         amount = event['Amount']
         payer_name = event['PayerName'] or ''
@@ -596,7 +596,7 @@ def api_pending_events_with_matches():
 def api_approve_event_match():
     """
     Admin selects a gmail_transaction to match with an event.
-    Updates webapp_events with: MatchedMessageId, MatchedTransactionNumber, AdminApprover,
+    Updates submissions with: MatchedMessageId, MatchedTransactionNumber, AdminApprover,
     ApprovalDate, PaymentDate, and sets Status='approved'.
     """
     body = request.get_json() or {}
@@ -610,7 +610,7 @@ def api_approve_event_match():
 
     # Fetch event and gmail transaction details
     event = query("""
-        SELECT * FROM webapp_events WHERE EventID = %s
+        SELECT * FROM submissions WHERE SubmissionID = %s
     """, [event_id])
     if not event:
         return json_response({'ok': False, 'error': f'Event {event_id} not found'}, status=404)
@@ -623,14 +623,14 @@ def api_approve_event_match():
         return json_response({'ok': False, 'error': f'Gmail transaction {message_id} not found'}, status=404)
     gmail = gmail[0]
 
-    # Update webapp_events
+    # Update submissions
     admin_email = session.get('user_email', 'unknown')
     approval_date = _engine_to_mysql_dt(datetime.utcnow())
     payment_date = gmail.get('TransactionDate')
 
     try:
         execute("""
-            UPDATE webapp_events
+            UPDATE submissions
             SET MatchedMessageId = %s,
                 MatchedTransactionNumber = %s,
                 AdminApprover = %s,
@@ -638,7 +638,7 @@ def api_approve_event_match():
                 PaymentDate = %s,
                 Notes = IF(%s = '', Notes, %s),
                 Status = 'approved'
-            WHERE EventID = %s
+            WHERE SubmissionID = %s
         """, [message_id, transaction_number, admin_email, approval_date,
               payment_date, notes, notes, event_id])
 
@@ -679,7 +679,7 @@ def _sync_member_events_to_sheets(member_id: str) -> None:
 
     # Fetch member's updated events from MySQL
     events = query("""
-        SELECT * FROM webapp_events
+        SELECT * FROM submissions
         WHERE MemberID = %s
           AND EventCategory = 'payment'
         ORDER BY Timestamp DESC
@@ -695,7 +695,7 @@ def _sync_member_events_to_sheets(member_id: str) -> None:
     from datetime_utils import to_datetime
     synced_events = []
     for event in events:
-        synced_event = filter_sync_columns('webapp_events', event)
+        synced_event = filter_sync_columns('submissions', event)
 
         # Ensure UpdatedAt is present and is a proper ISO datetime string
         if not synced_event.get('UpdatedAt'):

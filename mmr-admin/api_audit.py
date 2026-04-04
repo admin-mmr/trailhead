@@ -7,7 +7,7 @@ Prefix: /api/audit
 Implements membership renewal audit workflow:
   1. Admin specifies date range and target expiration date
   2. Find transactions matching membership fee amounts
-  3. Trace transaction through members, payments, webapp_events tables
+  3. Trace transaction through members, payments, submissions tables
   4. Verify expiration dates match target date
   5. Generate audit report with trace routes and red flags
 """
@@ -400,11 +400,11 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
             result['trace_route'] = 'gmail_transactions → payments.TransactionReference → members'
             return _verify_expiration(result, target_expiration)
 
-    # PATH 4: gmail_transactions → MessageId → webapp_events → members
-    trace = _trace_via_webapp_events(message_id)
+    # PATH 4: gmail_transactions → MessageId → submissions → members
+    trace = _trace_via_submissions(message_id)
     if trace:
         result.update(trace)
-        result['trace_route'] = 'gmail_transactions → MatchedMessageId → webapp_events → members'
+        result['trace_route'] = 'gmail_transactions → MatchedMessageId → submissions → members'
         return _verify_expiration(result, target_expiration)
 
     # No trace found
@@ -500,15 +500,15 @@ def _trace_via_payments_txn(txn_number: str, message_id: str) -> dict | None:
     }
 
 
-def _trace_via_webapp_events(message_id: str) -> dict | None:
+def _trace_via_submissions(message_id: str) -> dict | None:
     """
-    Trace: webapp_events.MatchedMessageId → webapp_events.MemberID → members
+    Trace: submissions.MatchedMessageId → submissions.MemberID → members
     """
     sql = """
         SELECT
             w.MemberID, w.Amount, w.PaymentDate, w.MatchedTransactionNumber,
             m.FirstName, m.LastName, m.Type, m.FamilyID, m.Expiration
-        FROM webapp_events w
+        FROM submissions w
         LEFT JOIN members m ON w.MemberID = m.MemberID
         WHERE w.MatchedMessageId = %s
         LIMIT 1

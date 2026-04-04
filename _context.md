@@ -1,3 +1,53 @@
+### 04-04 06:45 UTC — Phase 2: Admin Payment Workflow Updates (webapp_events → submissions)
+
+**Changed:**
+1. **mmr-admin/payment_actions.py** ✅
+   - find_gmail_match(): event → submission, EventID → SubmissionID, Timestamp → CreatedAt
+   - run_auto_match(): Query submissions instead of webapp_events, use Status='approved' instead of 'matched'
+   - approve_event(): Query/update submissions, removed EventCategory filter
+   - reject_event(): Update to Status='cancelled' (not 'rejected')
+   - manual_match(): Query submissions, Status='approved'
+   - admin_create_payment(): Insert into submissions with correct columns
+
+2. **mmr-admin/api_payments.py** ✅
+   - All queries: webapp_events → submissions
+   - All filters: EventID → SubmissionID
+   - All responses: Return submissionId instead of eventId
+
+3. **mmr-admin/api_sheets_sync.py** ✅
+   - Sync specs: webapp_events → submissions
+   - Column mappings updated: EventID → SubmissionID, EventType → SubmissionType
+
+4. **mmr-admin/sync_engine.py** ✅
+   - Spec references: webapp_events → submissions
+   - Column references: EventID → SubmissionID, EventType → SubmissionType
+
+5. **mmr-admin/api_audit.py** ✅
+   - Trace logic: webapp_events → submissions
+   - Column references updated
+
+6. **mmr-admin/api_data.py** ✅
+   - Backfill queries: webapp_events → submissions
+   - Timestamp column references updated
+
+7. **mmr-admin/backfill_unix_timestamps.py** ✅
+   - Backfill function: webapp_events → submissions
+   - Status checks: pending → approved → expired workflow
+
+**Status:**
+- ✅ 7 files updated
+- ✅ All Python files compile successfully
+- ✅ 21 references to webapp_events/EventID replaced
+- ✅ Status enum updated: 'matched' → 'approved', 'rejected' → 'cancelled'
+- Ready for testing: Admin payment approval workflow
+
+**Next:**
+- Test admin auto-match flow (pending submissions → matched payments)
+- Test manual match (link submission to gmail transaction)
+- Test reject/cancel submission
+- Test admin-create payment (for unmatched gmail rows)
+- Verify payment fulfillment still works (member status updates, emails, Sheets sync)
+
 ### 04-04 05:10 UTC — V008: Drop webapp_events + Consolidate admin tables + Remove legacy sync tables
 
 **Changed:**

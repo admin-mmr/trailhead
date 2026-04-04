@@ -74,9 +74,9 @@ def backfill_members() -> int:
     return total_updated
 
 
-def backfill_webapp_events() -> int:
-    """Backfill Unix timestamps in webapp_events table."""
-    logger.info("Backfilling webapp_events table...")
+def backfill_submissions() -> int:
+    """Backfill Unix timestamps in submissions table."""
+    logger.info("Backfilling submissions table...")
 
     tables_to_update = [
         ('timestamp', 'timestamp_unix'),
@@ -90,7 +90,7 @@ def backfill_webapp_events() -> int:
         try:
             # Count records that need backfill
             count_result = query(
-                f"SELECT COUNT(*) as cnt FROM webapp_events "
+                f"SELECT COUNT(*) as cnt FROM submissions "
                 f"WHERE {iso_col} IS NOT NULL AND {iso_col} != '0000-00-00 00:00:00' "
                 f"AND ({unix_col} IS NULL OR {unix_col} = 0)"
             )
@@ -102,7 +102,7 @@ def backfill_webapp_events() -> int:
 
             # Perform backfill
             affected = execute(
-                f"UPDATE webapp_events "
+                f"UPDATE submissions "
                 f"SET {unix_col} = UNIX_TIMESTAMP({iso_col}) "
                 f"WHERE {iso_col} IS NOT NULL AND {iso_col} != '0000-00-00 00:00:00' "
                 f"AND ({unix_col} IS NULL OR {unix_col} = 0)"
@@ -157,7 +157,7 @@ def verify_backfill() -> bool:
 
     checks = [
         ("members", "updated_at_unix"),
-        ("webapp_events", "timestamp_unix"),
+        ("submissions", "timestamp_unix"),
         ("payment_history", "processed_date_unix"),
     ]
 
@@ -190,7 +190,7 @@ def main():
 
     try:
         members_count = backfill_members()
-        events_count = backfill_webapp_events()
+        events_count = backfill_submissions()
         payments_count = backfill_payment_history()
 
         if members_count < 0 or events_count < 0 or payments_count < 0:
