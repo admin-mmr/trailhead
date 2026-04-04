@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T04:18:42.272129 UTC
+-- Timestamp: 2026-04-04T04:33:12.235654 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -41,14 +41,18 @@ CREATE TABLE `admin_member_overrides` (
   CONSTRAINT `fk_override_member` FOREIGN KEY (`TargetMemberID`) REFERENCES `members` (`MemberID`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `admins` (
+CREATE TABLE `admin_users` (
   `id` int NOT NULL AUTO_INCREMENT,
   `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `role` enum('admin','super_admin') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'admin',
   `added_by` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'system',
   `added_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  UNIQUE KEY `email` (`email`),
+  KEY `idx_admin_role` (`role`),
+  KEY `idx_admin_email` (`email`)
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `config` (
   `ConfigKey` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -326,24 +330,13 @@ CREATE TABLE `submissions` (
   `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'trigger at update',
   PRIMARY KEY (`SubmissionID`),
   KEY `fk_submission_member` (`MemberID`),
+  KEY `idx_submissions_status` (`Status`),
+  KEY `idx_submissions_expires` (`ExpiresAt`),
+  KEY `idx_submissions_status_expires` (`Status`,`ExpiresAt`),
   CONSTRAINT `fk_submission_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE CASCADE,
   CONSTRAINT `chk_submissions_amount_nonnegative` CHECK (((`Amount` is null) or (`Amount` >= 0))),
   CONSTRAINT `chk_submissions_status_valid` CHECK ((`Status` in (_utf8mb4'pending',_utf8mb4'approved',_utf8mb4'cancelled',_utf8mb4'expired')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `sync_changes` (
-  `change_id` int NOT NULL AUTO_INCREMENT,
-  `sheet_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `snapshot_id` int DEFAULT NULL,
-  `change_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `row_key` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `old_values` json DEFAULT NULL,
-  `new_values` json DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`change_id`),
-  KEY `idx_snapshot` (`snapshot_id`),
-  KEY `idx_sheet` (`sheet_name`)
-) ENGINE=InnoDB AUTO_INCREMENT=26714 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `sync_jobs` (
   `JobID` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -361,40 +354,6 @@ CREATE TABLE `sync_jobs` (
   KEY `UpdatedAt` (`UpdatedAt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `sync_metadata` (
-  `sheet_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `spreadsheet_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `sync_status` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `last_synced_at` datetime DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`sheet_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `sync_snapshots` (
-  `snapshot_id` int NOT NULL AUTO_INCREMENT,
-  `sheet_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `snapshot_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `row_count` int DEFAULT NULL,
-  `snapshot_timestamp` datetime DEFAULT NULL,
-  `google_modified_at` datetime DEFAULT NULL,
-  `snapshot_data_url` longtext COLLATE utf8mb4_unicode_ci,
-  `status` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`snapshot_id`),
-  KEY `idx_sheet` (`sheet_name`),
-  KEY `idx_timestamp` (`snapshot_timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=108 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `viewer_admins` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `role` enum('admin','super_admin') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'admin',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE `viewer_user_settings` (
   `id` int NOT NULL AUTO_INCREMENT,
   `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -405,49 +364,6 @@ CREATE TABLE `viewer_user_settings` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_user_table` (`email`,`table_name`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `webapp_events` (
-  `EventID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `EventType` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `EventCategory` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'payment',
-  `Timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `ExpiresAt` datetime DEFAULT NULL,
-  `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `PaymentIntent` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Amount` decimal(10,2) DEFAULT NULL,
-  `PaymentMethod` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `PayerName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `MemoField` text COLLATE utf8mb4_unicode_ci,
-  `Last4Digits` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `FamilyMemberEmails` text COLLATE utf8mb4_unicode_ci,
-  `Status` enum('pending','matched','approved','rejected','expired','error') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
-  `MatchedMessageId` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `MatchedTransactionNumber` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `AdminApprover` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `ApprovalDate` datetime DEFAULT NULL,
-  `Notes` text COLLATE utf8mb4_unicode_ci,
-  `PaymentDate` date DEFAULT NULL,
-  `ScreenshotFileId` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `GDriveFilePath` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `OCRText` text COLLATE utf8mb4_unicode_ci,
-  `OCRTimestamp` datetime DEFAULT NULL,
-  `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `UpdatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `timestamp_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp (seconds since epoch) for timezone-invariant sync',
-  `expires_at_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp for expiration',
-  `approval_date_unix` bigint DEFAULT '0' COMMENT 'Unix timestamp for approval',
-  PRIMARY KEY (`EventID`),
-  KEY `idx_pe_memberid` (`MemberID`),
-  KEY `idx_pe_email` (`Email`),
-  KEY `idx_pe_status` (`Status`),
-  KEY `idx_pe_timestamp` (`Timestamp`),
-  KEY `idx_pe_matchedmessageid` (`MatchedMessageId`),
-  KEY `idx_webapp_events_timestamp_unix` (`timestamp_unix`),
-  KEY `idx_webapp_events_expires_at_unix` (`expires_at_unix`),
-  KEY `idx_webapp_events_approval_date_unix` (`approval_date_unix`),
-  CONSTRAINT `fk_pe_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================
 -- VIEWS
@@ -782,104 +698,6 @@ CREATE TRIGGER `trg_members_after_update` AFTER UPDATE ON `members` FOR EACH ROW
   );
 END;
 
-CREATE TRIGGER `trg_submissions_insert_validate` BEFORE INSERT ON `submissions` FOR EACH ROW BEGIN
-  DECLARE error_context_id VARCHAR(50);
-  DECLARE error_msg TEXT;
-  DECLARE error_code VARCHAR(50);
-
-  SET error_context_id = UUID();
-
-  IF NEW.`SubmissionID` IS NULL THEN
-    SET error_code = 'SUBM_NULL_ID';
-    SET error_msg = CONCAT(
-      'Submission ID cannot be NULL. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `ValidValueExamples`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, error_code,
-      'Cannot create submission without unique ID',
-      'SubmissionID column received NULL value on INSERT',
-      'submissions', 'SubmissionID', 'NULL',
-      '["sub_abc123xyz", "sub_2026_001"]',
-      'Ensure UUID is generated before INSERT. Check application code.',
-      'CRITICAL'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-
-  IF NOT EXISTS (SELECT 1 FROM `members` WHERE `MemberID` = NEW.`MemberID`) THEN
-    SET error_code = 'SUBM_FK_INVALID_MEMBER';
-    SET error_msg = CONCAT(
-      'MemberID "', NEW.`MemberID`, '" does not exist in members table. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,
-      `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, error_code,
-      CONCAT('Invalid MemberID: ', NEW.`MemberID`),
-      'Foreign key validation failed: referenced member does not exist',
-      'submissions', 'MemberID', 'fk_submissions_members',
-      NEW.`MemberID`,
-      'Verify MemberID exists in members table before creating submission',
-      'ERROR'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-
-  IF NEW.`Status` NOT IN ('pending','approved','cancelled','expired') THEN
-    SET error_code = 'SUBM_INVALID_STATUS';
-    SET error_msg = CONCAT(
-      'Invalid Status value: "', NEW.`Status`, '". ',
-      'Allowed: pending, approved, cancelled, expired. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `AllowedRange`, `ValidValueExamples`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, error_code,
-      CONCAT('Invalid submission status: ', NEW.`Status`),
-      'Status enum constraint violated',
-      'submissions', 'Status', NEW.`Status`,
-      'pending | approved | cancelled | expired',
-      '["pending", "approved"]',
-      'Use one of the allowed status values. Default is "pending".',
-      'ERROR'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-
-  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN
-    SET error_code = 'SUBM_NEGATIVE_AMOUNT';
-    SET error_msg = CONCAT(
-      'Amount cannot be negative: ', NEW.`Amount`, '. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `AllowedRange`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, error_code,
-      'Submission amount is negative',
-      'Amount validation failed: received negative value',
-      'submissions', 'Amount', CAST(NEW.`Amount` AS CHAR),
-      '>= 0',
-      'Ensure amount is positive. Use absolute value or check calculation logic.',
-      'WARNING'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-END;
-
 CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
   DECLARE error_context_id VARCHAR(50);
   DECLARE error_msg TEXT;
@@ -978,6 +796,104 @@ CREATE TRIGGER `trg_payments_insert_validate` BEFORE INSERT ON `payments` FOR EA
       );
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
     END IF;
+  END IF;
+END;
+
+CREATE TRIGGER `trg_submissions_insert_validate` BEFORE INSERT ON `submissions` FOR EACH ROW BEGIN
+  DECLARE error_context_id VARCHAR(50);
+  DECLARE error_msg TEXT;
+  DECLARE error_code VARCHAR(50);
+
+  SET error_context_id = UUID();
+
+  IF NEW.`SubmissionID` IS NULL THEN
+    SET error_code = 'SUBM_NULL_ID';
+    SET error_msg = CONCAT(
+      'Submission ID cannot be NULL. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `ValidValueExamples`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, error_code,
+      'Cannot create submission without unique ID',
+      'SubmissionID column received NULL value on INSERT',
+      'submissions', 'SubmissionID', 'NULL',
+      '["sub_abc123xyz", "sub_2026_001"]',
+      'Ensure UUID is generated before INSERT. Check application code.',
+      'CRITICAL'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM `members` WHERE `MemberID` = NEW.`MemberID`) THEN
+    SET error_code = 'SUBM_FK_INVALID_MEMBER';
+    SET error_msg = CONCAT(
+      'MemberID "', NEW.`MemberID`, '" does not exist in members table. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,
+      `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, error_code,
+      CONCAT('Invalid MemberID: ', NEW.`MemberID`),
+      'Foreign key validation failed: referenced member does not exist',
+      'submissions', 'MemberID', 'fk_submissions_members',
+      NEW.`MemberID`,
+      'Verify MemberID exists in members table before creating submission',
+      'ERROR'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`Status` NOT IN ('pending','approved','cancelled','expired') THEN
+    SET error_code = 'SUBM_INVALID_STATUS';
+    SET error_msg = CONCAT(
+      'Invalid Status value: "', NEW.`Status`, '". ',
+      'Allowed: pending, approved, cancelled, expired. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `ValidValueExamples`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, error_code,
+      CONCAT('Invalid submission status: ', NEW.`Status`),
+      'Status enum constraint violated',
+      'submissions', 'Status', NEW.`Status`,
+      'pending | approved | cancelled | expired',
+      '["pending", "approved"]',
+      'Use one of the allowed status values. Default is "pending".',
+      'ERROR'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN
+    SET error_code = 'SUBM_NEGATIVE_AMOUNT';
+    SET error_msg = CONCAT(
+      'Amount cannot be negative: ', NEW.`Amount`, '. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, error_code,
+      'Submission amount is negative',
+      'Amount validation failed: received negative value',
+      'submissions', 'Amount', CAST(NEW.`Amount` AS CHAR),
+      '>= 0',
+      'Ensure amount is positive. Use absolute value or check calculation logic.',
+      'WARNING'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
 END;
 

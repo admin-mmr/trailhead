@@ -175,7 +175,18 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- SECTION 4: Verify migration success
+-- SECTION 4: Record migration in schema_migrations table
+-- ═══════════════════════════════════════════════════════════════════════════
+
+INSERT IGNORE INTO schema_migrations (version, description, executed_at)
+VALUES (
+  '008',
+  'Drop webapp_events + sync_changes/snapshots/metadata + Consolidate admins→admin_users',
+  CURRENT_TIMESTAMP
+);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SECTION 5: Verify migration success
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Show final admin_users structure and data
