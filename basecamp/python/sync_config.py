@@ -730,11 +730,21 @@ def generic_sync_runner(
                     batch_error = f"Batch {batch_num}: {str(e)}"
                     error_str = str(e).lower()
 
-                    # Ignore unknown column errors (e.g., GAS sends extra columns)
+                    # Handle unknown column errors by filtering them out
                     if '1054' in str(e) or 'unknown column' in error_str:
-                        logger.warning(f"Ignoring unknown column error in batch {batch_num}: {str(e)}")
-                        skipped += len(batch)
-                        continue  # Skip this batch but continue to next
+                        # Extract column name from error: "Unknown column 'LastLogin' in 'NEW'"
+                        import re
+                        col_match = re.search(r"Unknown column '(\w+)'", str(e), re.IGNORECASE)
+                        if col_match:
+                            bad_col = col_match.group(1)
+                            logger.warning(f"Batch {batch_num}: Removing unknown column '{bad_col}' and retrying")
+                            # Remove this column from all rows in batch
+                            for row in batch:
+                                if bad_col in row:
+                                    del row[bad_col]
+                            # Retry this batch without the unknown column
+                            batch_idx -= BATCH_SIZE  # Retry same batch
+                            continue
 
                     logger.error(batch_error)
                     _log_sync_batch(
