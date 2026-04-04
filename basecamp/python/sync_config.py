@@ -524,7 +524,8 @@ def generic_sync_runner(
                         'keyField': cfg.get('key', 'MemberID')  # Use configured key for upsert
                     })
 
-                    if result.get('ok'):
+                    # GAS webhook wrapper returns only the 'data' field, so check for inserted/updated keys
+                    if result and ('inserted' in result or 'updated' in result):
                         batch_inserted = result.get('inserted', 0)
                         batch_updated = result.get('updated', 0)
                         inserted += batch_inserted
@@ -606,11 +607,15 @@ def generic_sync_runner(
             try:
                 result = gas_webhook(gas_payload)
                 logger.debug(f"GAS response type: {type(result)}, value: {result}")
+                # GAS webhook wrapper returns the 'data' field directly on success
+                # For fetch_data, this is typically a list of rows; treat it as raw_rows
                 if isinstance(result, list):
-                    logger.error(f"GAS returned raw list (not wrapped dict) first row sample: {result[:1]}")
                     raw_rows = result
+                elif isinstance(result, dict):
+                    # If dict, assume it's already the data (or try to extract 'data' field if present)
+                    raw_rows = result.get('data', result) if result else []
                 else:
-                    raw_rows = result.get('data', []) if result.get('ok') else []
+                    raw_rows = []
                 logger.debug(f"Fetched {len(raw_rows)} raw rows from {sheet_name}")
 
                 # Convert raw rows (list or dict format) to dict format

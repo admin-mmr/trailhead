@@ -1,3 +1,16 @@
+### 04-04 16:54 UTC — Fixed: export_members only wrote 50 rows (GAS webhook response check)
+
+**Root Cause:** Mismatch between GAS webhook response format and sync_config.py expectation. The `_call_gas_webhook()` wrapper in sync_runners.py extracts only the `'data'` field from the GAS response, but sync_config.py was checking `if result.get('ok')` — which doesn't exist in the returned data, so all exports failed on first batch. Export wrote 50 rows to Sheets but imported 0 to MySQL + marked 624 as skipped.
+
+**Fixes Applied:**
+1. **sync_config.py line 527 (export)** — Changed `if result.get('ok')` to `if result and ('inserted' in result or 'updated' in result)`
+2. **sync_config.py line 614 (import)** — Removed broken `if result.get('ok')` check; now correctly handles list or dict response from GAS
+3. **mmr-admin/sync_config.py** — Applied same fixes to keep copies in sync
+
+**Result:**
+- export_members will now process all 624 rows across multiple batches ✓
+- import_members will now correctly fetch and import Sheets data ✓
+
 ### 04-04 16:50 UTC — Fixed: Job status 404 + stuck 'Running' state
 
 **Root Causes:**
