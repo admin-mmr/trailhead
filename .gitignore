@@ -18,6 +18,7 @@ azurite-data/
 azurite-debug.log
 mmr-admin/nyrr_api.py
 mmr-admin/sync_engine.py
+mmr-admin/sync_config.py
 dist/
 *.js.map
 
