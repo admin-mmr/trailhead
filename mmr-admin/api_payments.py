@@ -277,20 +277,35 @@ def api_autoguess_all():
     skipped_count = 0
     errors = []
 
+    logger.info(f'[AUTOGUESS] Starting autoguess for {len(unmatched)} unmatched transactions')
+
     for tx in unmatched:
         try:
             result = _autoguess_single_transaction(tx)
             if result['created']:
                 created_count += 1
+                logger.info(f'[AUTOGUESS] Created payment for {tx["TransactionNumber"]}: {result["reason"]}')
             else:
                 skipped_count += 1
+                logger.debug(f'[AUTOGUESS] Skipped {tx["TransactionNumber"]}: {result["reason"]}')
         except Exception as e:
+            logger.exception(f'[AUTOGUESS] Error processing {tx["TransactionNumber"]}: {e}')
             errors.append({'transactionNumber': tx['TransactionNumber'], 'error': str(e)})
 
+    message = f'Autoguess complete: {created_count} payments created, {skipped_count} skipped'
+    if errors:
+        message += f', {len(errors)} errors'
+
+    logger.info(f'[AUTOGUESS] {message}')
+
     return json_response({
-        'created': created_count,
-        'skipped': skipped_count,
-        'errors': errors,
+        'ok': True,
+        'message': message,
+        'details': {
+            'created': created_count,
+            'skipped': skipped_count,
+            'errors': errors,
+        }
     })
 
 
@@ -421,12 +436,15 @@ def api_manual_approve():
     if not tx_num or not member_id:
         return json_response({'error': 'Missing transactionNumber or memberID'}, status=400)
 
+    logger.info(f'[MANUAL-APPROVE] Approving tx={tx_num}, member={member_id}')
+
     # Fetch Gmail transaction
     tx_rows = query(
         "SELECT * FROM gmail_transactions WHERE TransactionNumber = %s",
         (tx_num,)
     )
     if not tx_rows:
+        logger.warning(f'[MANUAL-APPROVE] Transaction not found: {tx_num}')
         return json_response({'error': 'Gmail transaction not found'}, status=404)
 
     tx = tx_rows[0]
@@ -434,6 +452,7 @@ def api_manual_approve():
     # Verify member exists
     member = get_member_by_id(member_id)
     if not member:
+        logger.warning(f'[MANUAL-APPROVE] Member not found: {member_id}')
         return json_response({'error': 'Member not found'}, status=404)
 
     # Check for pending membership submissions
@@ -445,21 +464,25 @@ def api_manual_approve():
     """, (member_id,))
 
     submission_id = pending_subs[0]['SubmissionID'] if pending_subs else None
-    admin_email = session.get('email', 'admin')
+    admin_email = session.get('user', {}).get('email', 'admin')
+
+    logger.info(f'[MANUAL-APPROVE] Linking transaction: amount={tx["Amount"]}, submissionID={submission_id}, admin={admin_email}')
 
     try:
         execute("""
             CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)
         """, (tx_num, member_id, 'Membership', tx['Amount'], admin_email, submission_id))
 
+        logger.info(f'[MANUAL-APPROVE] Success: tx={tx_num}, member={member_id}, submission={submission_id}')
         return json_response({
             'ok': True,
+            'message': f'Payment approved for {member["FirstName"]} {member["LastName"]}',
             'transactionNumber': tx_num,
             'memberID': member_id,
             'submissionID': submission_id,
         })
     except Exception as e:
-        logger.error(f'Error in manual_approve: {e}')
+        logger.exception(f'[MANUAL-APPROVE] Error: {e}')
         return json_response({'error': str(e)}, status=500)
 
 
@@ -509,7 +532,7 @@ def api_gmail_matching_candidates(member_id: str):
         LIMIT 20
     """, (f"%{first_name}%", f"%{last_name}%", f"%{first_name}%", f"%{last_name}%"))
 
-    return json_response({'candidates': candidates})
+    return json_response({'transactions': candidates})
 
 
 # ============================================================================
