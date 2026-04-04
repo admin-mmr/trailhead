@@ -121,7 +121,7 @@ def is_within_renewal_period(payment_date) -> bool:
 # DASHBOARD
 # ============================================================================
 
-@payments_bp.route('/dashboard', methods=['GET'])
+@payments_bp.route('/api/payments/dashboard', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
@@ -160,7 +160,7 @@ def api_payments_dashboard():
 # LIST ENDPOINTS
 # ============================================================================
 
-@payments_bp.route('/pending-submissions', methods=['GET'])
+@payments_bp.route('/api/payments/pending-submissions', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
@@ -194,7 +194,7 @@ def api_pending_submissions():
     return json_response({'submissions': rows})
 
 
-@payments_bp.route('/unmatched-gmail', methods=['GET'])
+@payments_bp.route('/api/payments/unmatched-gmail', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
@@ -230,7 +230,7 @@ def api_unmatched_gmail():
 # AUTOGUESS LOGIC
 # ============================================================================
 
-@payments_bp.route('/autoguess-all', methods=['POST'])
+@payments_bp.route('/api/payments/autoguess-all', methods=['POST'])
 @login_required
 @require_role('admin')
 @handle_api_errors
@@ -373,7 +373,7 @@ def _create_payment_from_autoguess(
 # MANUAL APPROVAL
 # ============================================================================
 
-@payments_bp.route('/manual-approve', methods=['POST'])
+@payments_bp.route('/api/payments/manual-approve', methods=['POST'])
 @login_required
 @require_role('admin')
 @handle_api_errors
@@ -447,7 +447,7 @@ def api_manual_approve():
 # SUBMISSION SEARCH & FILTERING
 # ============================================================================
 
-@payments_bp.route('/submissions-for-member/<member_id>', methods=['GET'])
+@payments_bp.route('/api/payments/submissions-for-member/<member_id>', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
@@ -462,7 +462,7 @@ def api_submissions_for_member(member_id: str):
     return json_response({'submissions': subs})
 
 
-@payments_bp.route('/gmail-matching-candidates/<member_id>', methods=['GET'])
+@payments_bp.route('/api/payments/gmail-matching-candidates/<member_id>', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
@@ -496,7 +496,7 @@ def api_gmail_matching_candidates(member_id: str):
 # MEMBER SEARCH
 # ============================================================================
 
-@payments_bp.route('/search-members', methods=['GET'])
+@payments_bp.route('/api/payments/search-members', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
