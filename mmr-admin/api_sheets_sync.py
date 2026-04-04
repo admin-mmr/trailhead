@@ -1367,8 +1367,8 @@ def _import_transactions(job_id: str):
 
         # Get existing transactions from MySQL
         existing_txns = query("""
-            SELECT MessageId, Memo, Notes, ProcessedTime, PaymentID, TimeStamp, SyncedAt,
-                   Amount, Sender, TransactionDate, TransactionNumber, Subject, OriginalMemo, Source
+            SELECT MessageId, Memo, Notes, UpdatedAt, Timestamp,
+                   Amount, Sender, TransactionDate, TransactionNumber, Subject, OriginalMemo, PaymentMethod
             FROM gmail_transactions
         """)
         existing_by_id = {t['MessageId']: t for t in existing_txns}
@@ -1380,15 +1380,13 @@ def _import_transactions(job_id: str):
         # Process each transaction
         for idx, txn in enumerate(sheets_txns):
             message_id = txn.get('MessageId')
-            timestamp_raw = txn.get('Timestamp')  # REQUIRED: TimeStamp column is NOT NULL
+            timestamp_raw = txn.get('Timestamp')  # REQUIRED: Timestamp column is NOT NULL
             memo = txn.get('Memo', '')
-            processed_time_raw = txn.get('ProcessedTime')
-            payment_id = txn.get('PaymentID', '')
             sender = txn.get('Sender', '') or ''
             transaction_number = txn.get('TransactionNumber', '') or ''
             subject = txn.get('Subject', '') or ''
             original_memo = txn.get('OriginalMemo', '') or ''
-            source = txn.get('Source', '') or ''
+            payment_method = txn.get('Source', '') or ''  # Source maps to PaymentMethod in MySQL
 
             # Coerce Amount to float or None
             amount_raw = txn.get('Amount', '')
@@ -1409,15 +1407,6 @@ def _import_transactions(job_id: str):
 
             # Normalize timestamps to MySQL-safe ISO format
             timestamp = _to_iso_datetime(timestamp_raw)
-            processed_time = _to_iso_datetime(processed_time_raw) if processed_time_raw else None
-
-            # Debug: flag rows where ProcessedTime is non-empty but failed datetime parse
-            if processed_time_raw and not processed_time:
-                log_lines.append(
-                    f"⚠️  [Row {idx}] ProcessedTime parse failed — raw value: {repr(str(processed_time_raw)[:80])}"
-                    f" | MessageId={message_id} | (column mapping issue?)"
-                )
-                processed_time_parse_failures.append({'row': idx, 'messageId': message_id, 'raw': str(processed_time_raw)[:80]})
 
             if verbose_mode and idx < 5:
                 # Show Unix epoch so same-instant timestamps are unambiguous
@@ -1431,7 +1420,7 @@ def _import_transactions(job_id: str):
                         _ts_unix = f' unix={int(_dt.timestamp())}'
                     except Exception:
                         pass
-                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp}{_ts_unix}, Sender={repr(sender)}, Amount={amount}, Memo={repr(memo)}, ProcessedTime={processed_time}")
+                log_lines.append(f"   [Row {idx+1}] MessageId={message_id}, Timestamp={timestamp}{_ts_unix}, Sender={repr(sender)}, Amount={amount}, Memo={repr(memo)}")
 
             if not message_id:
                 log_lines.append(f"⚠️  Skipping row {idx}: missing MessageId")
@@ -1449,14 +1438,12 @@ def _import_transactions(job_id: str):
                 try:
                     execute("""
                         INSERT INTO gmail_transactions
-                        (MessageId, TimeStamp, Sender, Amount, Memo, TransactionDate,
-                         TransactionNumber, Subject, OriginalMemo, Notes,
-                         ProcessedTime, Source, PaymentID)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        (MessageId, Timestamp, Sender, Amount, Memo, TransactionDate,
+                         TransactionNumber, Subject, OriginalMemo, Notes, PaymentMethod, UpdatedAt)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, [
                         message_id, timestamp, sender, amount, memo, transaction_date,
-                        transaction_number, subject, original_memo, memo,
-                        processed_time, source, payment_id,
+                        transaction_number, subject, original_memo, memo, payment_method, timestamp,
                     ])
                     inserted.append(message_id)
                     log_lines.append(f"✅ {message_id}: INSERTED (new)")
@@ -1471,12 +1458,9 @@ def _import_transactions(job_id: str):
                 existing = existing_by_id[message_id]
                 sheets_row_for_engine = {
                     'Memo':          memo,
-                    'ProcessedTime': processed_time,
                     'Notes':         existing.get('Notes', ''),
-                    # Pass Sheets' PaymentID/Source so engine can sync them Sheets→MySQL
-                    # when GAS has processed the row (Bug 3 fix).
-                    'PaymentID':     payment_id or existing.get('PaymentID', ''),
-                    'Source':        source or existing.get('Source', ''),
+                    # Pass Sheets' PaymentMethod (from Source) so engine can sync it Sheets→MySQL
+                    'PaymentMethod': payment_method or existing.get('PaymentMethod', ''),
                 }
                 action = _engine_resolve_gmail(message_id, existing, sheets_row_for_engine)
 
@@ -1494,8 +1478,8 @@ def _import_transactions(job_id: str):
                     backfill['Subject'] = subject
                 if not existing.get('OriginalMemo') and original_memo:
                     backfill['OriginalMemo'] = original_memo
-                if not existing.get('Source') and source:
-                    backfill['Source'] = source
+                if not existing.get('PaymentMethod') and payment_method:
+                    backfill['PaymentMethod'] = payment_method
                 if backfill:
                     action.mysql_updates.update(backfill)
 

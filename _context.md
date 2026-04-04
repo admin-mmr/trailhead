@@ -1,18 +1,19 @@
-# Trailhead Context — Last updated: 2026-04-03 21:22 UTC | Commit: a62461e
+### 04-03 15:45 UTC — Fixed schema export & updated transaction import
 
-## 🎯 Current Focus
-**MySQL V006 Migration:** webapp_events → submissions, gmail_transactions restructure (TransactionNumber = PK), add TransactionNumber to payments. MySQL 5.7+ constraint: no `IF NOT EXISTS` in ALTER TABLE/CREATE INDEX — single-operation statements only.
+**Changed:**
+1. Fixed `/api/export-schema` tuple indices for SHOW CREATE {VIEW|PROCEDURE|FUNCTION} — all now access [3] for SQL statement ✅
+2. Updated `/api/sync/import-transactions` to:
+   - Read from Google Sheets: Timestamp, Sender, Amount, Memo, TransactionDate, TransactionNumber, MessageId, Subject, OriginalMemo
+   - Map Source (Sheets) → PaymentMethod (MySQL)
+   - Added MIGRATION to add Subject column to gmail_transactions table
+3. GAS webhook already returns camelCase; mmr-admin normalizer converts to PascalCase ✅
 
-## Session log
+**Status:**
+- api_sheets_sync.py: import test passes ✅
+- GAS sheets.ts: rowToFetchGmailRow already includes subject, messageId, transactionDate, originalMemo ✅
+- mysql-mmr ready for MIGRATION_ADD_SUBJECT_TO_GMAIL_TRANSACTIONS.sql
 
-### 2026-04-03 21:22 UTC — V006 committed: 99-line ultra-clean
-Removed PREPARE/EXECUTE, IF NOT EXISTS, INFORMATION_SCHEMA checks. 5 steps: submissions CREATE, webapp_events→submissions INSERT (Status enum: matched→approved, rejected/error→cancelled), admin_member_overrides CREATE, payments ALTER TransactionNumber, gmail_transactions RENAME/MIGRATE. All single-line MySQL 5.7 compatible. ✅ Ready to push. GitHub Action auto-runs on main push.
-
-### 2026-04-03 21:15 UTC — Fixed syntax errors: stripped multi-line conditionals
-Multiple iterations fixing line 121 (IF NOT EXISTS not supported). Removed dynamic SQL, CREATE INDEX IF NOT EXISTS. Result: ultra-simple migration for older MySQL.
-
-### 2026-04-03 20:45 UTC — Data strategy: webapp_events → submissions
-INSERT...SELECT with Status enum remapping. payments.EventID naturally links to submissions.SubmissionID (no UPDATE needed). Zero new payment rows.
-
-## ⏭️ NEXT
-Push V006 to main. GitHub Action auto-runs. Monitor Actions log. Verify row counts, Status enum, schema_migrations entry.
+**Next:**
+- Run migration on Azure MySQL to add Subject column
+- Update Fetch-Gmail sheet header from "TimeStamp" to "Timestamp"
+- Trigger /api/sync/import-transactions to backfill gmail_transactions table
