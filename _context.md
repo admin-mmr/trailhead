@@ -1,19 +1,18 @@
-### 04-03 15:45 UTC — Fixed schema export & updated transaction import
+### 04-03 21:50 UTC — Schema validation tools & bug fix
 
 **Changed:**
-1. Fixed `/api/export-schema` tuple indices for SHOW CREATE {VIEW|PROCEDURE|FUNCTION} — all now access [3] for SQL statement ✅
-2. Updated `/api/sync/import-transactions` to:
-   - Read from Google Sheets: Timestamp, Sender, Amount, Memo, TransactionDate, TransactionNumber, MessageId, Subject, OriginalMemo
-   - Map Source (Sheets) → PaymentMethod (MySQL)
-   - Added MIGRATION to add Subject column to gmail_transactions table
-3. GAS webhook already returns camelCase; mmr-admin normalizer converts to PascalCase ✅
+1. Created db/validate_schema.py: Automated schema validator detects NULL violations, FK orphans, ENUM mismatches, missing PKs, duplicate uniques ✅
+2. Created db/SCHEMA_IMPROVEMENTS.sql: 8-section migration adds error_log table, DATETIME defaults, CHECK constraints, performance indices, validation triggers, scanning procedure ✅
+3. Fixed bug in mmr-admin/api_schema.py line 159: `sql_lines.append(+ ';\n\n')` → `sql_lines.append(create_sql + ';\n\n')` (caused "bad operand type for unary +" error) ✅
+4. Created db/VALIDATION_GUIDE.md: Complete usage guide with examples, monitoring queries, repair scripts ✅
 
 **Status:**
-- api_sheets_sync.py: import test passes ✅
-- GAS sheets.ts: rowToFetchGmailRow already includes subject, messageId, transactionDate, originalMemo ✅
-- mysql-mmr ready for MIGRATION_ADD_SUBJECT_TO_GMAIL_TRANSACTIONS.sql
+- Schema validator ready for local testing (requires DATABASE_URL + mysql-connector-python)
+- SCHEMA_IMPROVEMENTS.sql uses MySQL 5.7 compatible single-statement ALTERs
+- schema_snapshot.sql error was truncated JSON from failed export — fixed with api_schema.py correction
+- Baseline validation should run BEFORE applying improvements
 
 **Next:**
-- Run migration on Azure MySQL to add Subject column
-- Update Fetch-Gmail sheet header from "TimeStamp" to "Timestamp"
-- Trigger /api/sync/import-transactions to backfill gmail_transactions table
+- Run `python3 db/validate_schema.py` to detect current violations
+- Apply SCHEMA_IMPROVEMENTS.sql sections sequentially on Azure MySQL
+- Monitor schema_error_log table for ongoing data quality issues

@@ -156,7 +156,7 @@ def _export_via_connector():
             create_sql = cursor.fetchone()[2]
             create_sql = re.sub(r'DEFINER=`.*?`@`.*?` ', '', create_sql)
             # Index 2 is 'Create Procedure'
-            sql_lines.append(+ ';\n\n')
+            sql_lines.append(create_sql + ';\n\n')
 
         # 4. TRIGGERS (Index 2)
         cursor.execute("SELECT TRIGGER_NAME FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA = %s", (database,))
