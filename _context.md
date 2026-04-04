@@ -1,3 +1,22 @@
+### 04-04 18:25 UTC — COMPLETED: Renewal audit refactored to use stored procedure
+
+**Changed:** api_audit.py → Removed all Python audit logic (9 helper functions, ~380 lines) that traced transactions through members/payments/submissions tables. Endpoint now calls `sp_renewal_audit()` stored procedure directly.
+
+**Files:**
+- `mmr-admin/api_audit.py` (658→282 lines, -57%) — Endpoint only; all tracing logic delegated to DB
+- `db/MIGRATION_V009_renewal_audit_procedure.sql` (already committed in prior session)
+
+**Status:** ✅ Commit 704fa92 staged locally. Git push blocked by network ("No such device or address"). Awaiting network recovery. When main accepts push, Azure will auto-deploy.
+
+**Testing:** To test locally when deployed:
+```bash
+curl -X POST http://localhost:5000/api/audit/renewal \
+  -H "Content-Type: application/json" \
+  -d '{"start_date":"2025-10-01","end_date":"2026-04-04","target_expiration":"2027-03-31","membership_type":"both"}'
+```
+
+**Next:** Once git push succeeds, verify sp_renewal_audit is deployed to MySQL. Payments tab will auto-populate renewal audit results.
+
 ### 04-04 18:10 UTC — FIXED: import_members Expiration date validation (0000-00-00 → NULL)
 
 **Bug:** import_members crashed when Sheets contained blank/all-zero expiration dates (`'0000-00-00'`). MySQL 5.7+ rejects `"Incorrect date value: '0000-00-00'"`.
