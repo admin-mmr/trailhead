@@ -39,34 +39,34 @@
 - Test import_members: POST /api/sync/import/members
 - Verify duplicate MemberIDs are skipped (INSERT IGNORE behavior)
 
-### 04-04 03:55 UTC — V007 Corrected: Added schema_migrations registration + cleanup
+### 04-04 04:15 UTC — V007 Made Idempotent: Checks INFORMATION_SCHEMA before ALTER TABLE
 
-**Status: ✅ V007 CORRECTED + REGISTERED**
+**Status: ✅ V007 IDEMPOTENT + SAFE TO RE-RUN**
 
-Issues Fixed:
-  ❌ V007 was not registering in schema_migrations table (no INSERT statement)
-  ❌ V008 was created but now obsolete (cleaner solution: fix V007 directly)
+Root Cause:
+  - ErrorContext, ErrorSeverity, StackTrace columns already existed in activity_log
+  - V007 tried to ADD them again → "Duplicate column name 'ErrorContext'" error
+  - Columns ARE in schema (from previous partial execution), but V007 wasn't idempotent
 
-**Corrections Made:**
-  1. ✅ Deleted original V007 (no schema_migrations registration)
-  2. ✅ Created corrected V007 with:
-     - All original features (error_context, triggers, constraints, views, procedures)
-     - INSERT INTO schema_migrations at end (proper registration)
-     - SET FOREIGN_KEY_CHECKS = 0/1 (safe for re-runs)
-     - ON DUPLICATE KEY UPDATE (idempotent)
-  3. ✅ Deleted V008 (no longer needed - V007 now handles it)
+**Fix Applied:**
+  ✅ V007 now uses INFORMATION_SCHEMA checks before each ALTER TABLE:
+  - Checks if column/constraint/index exists
+  - Only executes if missing (PREPARE/EXECUTE pattern, MySQL 5.7 compatible)
+  - Skips if already present (no error)
+  - Safe to re-run idempotently
 
-**Live Features (Ready to Deploy):**
-- error_context table: 19 columns for comprehensive error tracking
-- 3 validation triggers: Auto-log violations on INSERT (submissions, members, payments)
-- 9 CHECK constraints: Status, Amount, Email, PaymentDate validation
-- v_unresolved_errors view: Priority-ranked error monitoring
-- sp_error_summary_report(days): Error trend analysis
-- activity_log enhanced: ErrorContext, ErrorSeverity, StackTrace fields
-- ✅ Properly registered in schema_migrations table
+**Sections Updated:**
+  1. Section 1: Column adds → wrapped in INFORMATION_SCHEMA checks
+  2. Section 3: Constraint adds → wrapped in INFORMATION_SCHEMA checks
+  3. Section 2: error_context table → already IF NOT EXISTS (safe)
+  4. Sections 4-9: Triggers/views/procedures → already safe (will skip if exist)
 
-**Cleanup:**
-  ✅ Deleted V007A, V007B (temporary helpers)
-  ✅ Deleted V008 (superseded by corrected V007)
+**Live Features (All Present in Schema):**
+- error_context table: 19 columns ✓
+- 3 validation triggers: submissions, members, payments ✓
+- 8 CHECK constraints: Status, Amount, Email, PaymentDate ✓
+- v_unresolved_errors view ✓
+- sp_error_summary_report(days) procedure ✓
+- activity_log enhanced: ErrorContext, ErrorSeverity, StackTrace ✓
 
-**Next:** Push corrected V007 to main - GitHub Actions will auto-register in schema_migrations
+**Next:** Re-run corrected V007 - will skip existing objects, add missing ones

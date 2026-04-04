@@ -24,23 +24,83 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 
 -- ============================================================================
--- SECTION 1: Enhance activity_log for better error tracking
+-- SECTION 1: Enhance activity_log for better error tracking (idempotent)
 -- ============================================================================
 
-ALTER TABLE `activity_log`
-ADD COLUMN `ErrorContext` json DEFAULT NULL COMMENT 'Detailed error info: {field, value, constraint, suggestion}';
+-- Only add columns if they don't exist (MySQL 5.7 compatible using INFORMATION_SCHEMA)
 
-ALTER TABLE `activity_log`
-ADD COLUMN `ErrorSeverity` enum('INFO','WARNING','ERROR','CRITICAL') DEFAULT 'ERROR' COMMENT 'Error classification level';
+SET @col_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'activity_log' AND COLUMN_NAME = 'ErrorContext'
+);
 
-ALTER TABLE `activity_log`
-ADD COLUMN `StackTrace` text DEFAULT NULL COMMENT 'Python/Node stack trace if available';
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE `activity_log` ADD COLUMN `ErrorContext` json DEFAULT NULL COMMENT "Detailed error info: {field, value, constraint, suggestion}"',
+  'SELECT "ErrorContext column already exists"'
+);
 
-ALTER TABLE `activity_log`
-ADD INDEX idx_error_code (`ErrorCode`);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE `activity_log`
-ADD INDEX idx_error_severity (`ErrorSeverity`);
+-- ErrorSeverity
+SET @col_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'activity_log' AND COLUMN_NAME = 'ErrorSeverity'
+);
+
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE `activity_log` ADD COLUMN `ErrorSeverity` enum(\'INFO\',\'WARNING\',\'ERROR\',\'CRITICAL\') DEFAULT \'ERROR\' COMMENT "Error classification level"',
+  'SELECT "ErrorSeverity column already exists"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- StackTrace
+SET @col_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'activity_log' AND COLUMN_NAME = 'StackTrace'
+);
+
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE `activity_log` ADD COLUMN `StackTrace` text DEFAULT NULL COMMENT "Python/Node stack trace if available"',
+  'SELECT "StackTrace column already exists"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add indices if they don't exist
+SET @idx_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'activity_log' AND INDEX_NAME = 'idx_error_code'
+);
+
+SET @sql = IF(@idx_exists = 0,
+  'ALTER TABLE `activity_log` ADD INDEX idx_error_code (`ErrorCode`)',
+  'SELECT "idx_error_code already exists"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @idx_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'activity_log' AND INDEX_NAME = 'idx_error_severity'
+);
+
+SET @sql = IF(@idx_exists = 0,
+  'ALTER TABLE `activity_log` ADD INDEX idx_error_severity (`ErrorSeverity`)',
+  'SELECT "idx_error_severity already exists"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================
@@ -87,56 +147,131 @@ CREATE TABLE IF NOT EXISTS `error_context` (
 
 
 -- ============================================================================
--- SECTION 3: Add CHECK constraints with better error messaging
+-- SECTION 3: Add CHECK constraints with better error messaging (idempotent)
 -- ============================================================================
 
-ALTER TABLE `submissions`
-ADD CONSTRAINT chk_submissions_status_valid CHECK (
-  `Status` IN ('pending','approved','cancelled','expired')
+-- Helper macro: safely add constraint if it doesn't exist
+-- MySQL 5.7 doesn't have IF NOT EXISTS for constraints, so we check manually
+
+-- submissions.Status
+SET @constraint_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submissions' AND CONSTRAINT_NAME = 'chk_submissions_status_valid'
 );
 
-ALTER TABLE `members`
-ADD CONSTRAINT chk_members_status_valid CHECK (
-  `Status` IN ('active','expired','inactive','pending')
+SET @sql = IF(@constraint_exists = 0,
+  'ALTER TABLE `submissions` ADD CONSTRAINT chk_submissions_status_valid CHECK (`Status` IN (\'pending\',\'approved\',\'cancelled\',\'expired\'))',
+  'SELECT "chk_submissions_status_valid already exists"'
 );
 
-ALTER TABLE `payments`
-ADD CONSTRAINT chk_payments_amount_nonnegative CHECK (
-  `Amount` >= 0
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- members.Status
+SET @constraint_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND CONSTRAINT_NAME = 'chk_members_status_valid'
 );
 
-ALTER TABLE `submissions`
-ADD CONSTRAINT chk_submissions_amount_nonnegative CHECK (
-  `Amount` IS NULL OR `Amount` >= 0
+SET @sql = IF(@constraint_exists = 0,
+  'ALTER TABLE `members` ADD CONSTRAINT chk_members_status_valid CHECK (`Status` IN (\'active\',\'expired\',\'inactive\',\'pending\'))',
+  'SELECT "chk_members_status_valid already exists"'
 );
 
-ALTER TABLE `gmail_transactions`
-ADD CONSTRAINT chk_gmail_amount_nonnegative CHECK (
-  `Amount` IS NULL OR `Amount` >= 0
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- payments.Amount
+SET @constraint_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND CONSTRAINT_NAME = 'chk_payments_amount_nonnegative'
 );
 
--- ExpiresAt must be after CreatedAt (COMMENTED OUT - see V008 for idempotent version)
--- ALTER TABLE `submissions`
--- ADD CONSTRAINT chk_submissions_expires_after_created CHECK (
---   `ExpiresAt` IS NULL OR `ExpiresAt` > `CreatedAt`
--- );
-
-ALTER TABLE `submissions`
-ADD CONSTRAINT chk_submissions_payment_date_reasonable CHECK (
-  `PaymentDate` IS NULL
-  OR (`PaymentDate` >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
-      AND `PaymentDate` <= DATE_ADD(CURDATE(), INTERVAL 30 DAY))
+SET @sql = IF(@constraint_exists = 0,
+  'ALTER TABLE `payments` ADD CONSTRAINT chk_payments_amount_nonnegative CHECK (`Amount` >= 0)',
+  'SELECT "chk_payments_amount_nonnegative already exists"'
 );
 
-ALTER TABLE `members`
-ADD CONSTRAINT chk_members_email_valid CHECK (
-  `Email` IS NULL OR `Email` LIKE '%@%'
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- submissions.Amount
+SET @constraint_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submissions' AND CONSTRAINT_NAME = 'chk_submissions_amount_nonnegative'
 );
 
-ALTER TABLE `activity_log`
-ADD CONSTRAINT chk_actlog_email_valid CHECK (
-  `Email` IS NULL OR `Email` LIKE '%@%'
+SET @sql = IF(@constraint_exists = 0,
+  'ALTER TABLE `submissions` ADD CONSTRAINT chk_submissions_amount_nonnegative CHECK (`Amount` IS NULL OR `Amount` >= 0)',
+  'SELECT "chk_submissions_amount_nonnegative already exists"'
 );
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- gmail_transactions.Amount
+SET @constraint_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'gmail_transactions' AND CONSTRAINT_NAME = 'chk_gmail_amount_nonnegative'
+);
+
+SET @sql = IF(@constraint_exists = 0,
+  'ALTER TABLE `gmail_transactions` ADD CONSTRAINT chk_gmail_amount_nonnegative CHECK (`Amount` IS NULL OR `Amount` >= 0)',
+  'SELECT "chk_gmail_amount_nonnegative already exists"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- submissions.PaymentDate
+SET @constraint_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'submissions' AND CONSTRAINT_NAME = 'chk_submissions_payment_date_reasonable'
+);
+
+SET @sql = IF(@constraint_exists = 0,
+  'ALTER TABLE `submissions` ADD CONSTRAINT chk_submissions_payment_date_reasonable CHECK (`PaymentDate` IS NULL OR (`PaymentDate` >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) AND `PaymentDate` <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)))',
+  'SELECT "chk_submissions_payment_date_reasonable already exists"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- members.Email
+SET @constraint_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND CONSTRAINT_NAME = 'chk_members_email_valid'
+);
+
+SET @sql = IF(@constraint_exists = 0,
+  'ALTER TABLE `members` ADD CONSTRAINT chk_members_email_valid CHECK (`Email` IS NULL OR `Email` LIKE \'%@%\')',
+  'SELECT "chk_members_email_valid already exists"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- activity_log.Email
+SET @constraint_exists = (
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'activity_log' AND CONSTRAINT_NAME = 'chk_actlog_email_valid'
+);
+
+SET @sql = IF(@constraint_exists = 0,
+  'ALTER TABLE `activity_log` ADD CONSTRAINT chk_actlog_email_valid CHECK (`Email` IS NULL OR `Email` LIKE \'%@%\')',
+  'SELECT "chk_actlog_email_valid already exists"'
+);
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 
 -- ============================================================================

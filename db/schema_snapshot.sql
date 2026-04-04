@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T03:57:34.316287 UTC
+-- Timestamp: 2026-04-04T04:13:02.913306 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
