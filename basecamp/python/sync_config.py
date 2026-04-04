@@ -109,6 +109,83 @@ SYNC_CONFIG = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Helper Functions (must be defined before generic_sync_runner)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _normalize_sheet_rows(raw_rows: List, cols: List[str]) -> List[Dict[str, Any]]:
+    """
+    Convert raw Sheets data (either list-of-lists or list-of-dicts) to list-of-dicts.
+
+    Args:
+        raw_rows: Data from GAS webhook — either List[List] or List[Dict]
+        cols: Column names (used to map list indices to dict keys if needed)
+
+    Returns:
+        List[Dict] where each dict has keys from cols
+    """
+    if not raw_rows:
+        return []
+
+    normalized = []
+    for row in raw_rows:
+        if isinstance(row, dict):
+            # Already a dict — just ensure all cols are present
+            normalized.append(row)
+        elif isinstance(row, (list, tuple)):
+            # List format — map indices to column names
+            row_dict = {}
+            for i, col in enumerate(cols):
+                row_dict[col] = row[i] if i < len(row) else None
+            normalized.append(row_dict)
+        else:
+            # Unknown format — skip or log warning
+            logger.warning(f"Skipping row with unexpected type {type(row)}: {row}")
+
+    return normalized
+
+
+def _prepare_sheet_rows(db_rows: List[Dict], cfg: Dict) -> List[List[Any]]:
+    """
+    Convert MySQL rows to Sheets format (list of lists).
+    Applies reverse field mappings if needed.
+    Handles datetime/date/time objects by converting to ISO format strings.
+    """
+    if not db_rows:
+        return []
+
+    cols = cfg['columns']
+    map_fields = cfg.get('map_fields', {})
+    reverse_map = {v: k for k, v in map_fields.items()}  # Reverse: SQL col → Sheet col
+
+    sheet_rows = []
+    for row in db_rows:
+        sheet_row = []
+        for col in cols:
+            # Use reverse mapping: if this Sheet col was mapped from SQL, use the original
+            sql_col = reverse_map.get(col, col)
+            val = row.get(sql_col, '')
+
+            # Serialize complex types for Sheets
+            if isinstance(val, datetime):
+                # Convert datetime to ISO format string (e.g., "2026-04-04T05:42:53")
+                val = val.isoformat()
+            elif isinstance(val, date):
+                # Convert date to ISO format string (e.g., "2026-04-04")
+                val = val.isoformat()
+            elif isinstance(val, time):
+                # Convert time to ISO format string (e.g., "05:42:53")
+                val = val.isoformat()
+            elif isinstance(val, (dict, list)):
+                # Convert dict/list to string representation
+                val = str(val)
+
+            sheet_row.append(val if val is not None else '')
+        sheet_rows.append(sheet_row)
+
+    return sheet_rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Generic Sync Runner
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -321,79 +398,6 @@ def generic_sync_runner(
             'skipped': 0,
             'message': msg
         }
-
-
-def _normalize_sheet_rows(raw_rows: List, cols: List[str]) -> List[Dict[str, Any]]:
-    """
-    Convert raw Sheets data (either list-of-lists or list-of-dicts) to list-of-dicts.
-
-    Args:
-        raw_rows: Data from GAS webhook — either List[List] or List[Dict]
-        cols: Column names (used to map list indices to dict keys if needed)
-
-    Returns:
-        List[Dict] where each dict has keys from cols
-    """
-    if not raw_rows:
-        return []
-
-    normalized = []
-    for row in raw_rows:
-        if isinstance(row, dict):
-            # Already a dict — just ensure all cols are present
-            normalized.append(row)
-        elif isinstance(row, (list, tuple)):
-            # List format — map indices to column names
-            row_dict = {}
-            for i, col in enumerate(cols):
-                row_dict[col] = row[i] if i < len(row) else None
-            normalized.append(row_dict)
-        else:
-            # Unknown format — skip or log warning
-            logger.warning(f"Skipping row with unexpected type {type(row)}: {row}")
-
-    return normalized
-
-
-def _prepare_sheet_rows(db_rows: List[Dict], cfg: Dict) -> List[List[Any]]:
-    """
-    Convert MySQL rows to Sheets format (list of lists).
-    Applies reverse field mappings if needed.
-    Handles datetime/date/time objects by converting to ISO format strings.
-    """
-    if not db_rows:
-        return []
-
-    cols = cfg['columns']
-    map_fields = cfg.get('map_fields', {})
-    reverse_map = {v: k for k, v in map_fields.items()}  # Reverse: SQL col → Sheet col
-
-    sheet_rows = []
-    for row in db_rows:
-        sheet_row = []
-        for col in cols:
-            # Use reverse mapping: if this Sheet col was mapped from SQL, use the original
-            sql_col = reverse_map.get(col, col)
-            val = row.get(sql_col, '')
-
-            # Serialize complex types for Sheets
-            if isinstance(val, datetime):
-                # Convert datetime to ISO format string (e.g., "2026-04-04T05:42:53")
-                val = val.isoformat()
-            elif isinstance(val, date):
-                # Convert date to ISO format string (e.g., "2026-04-04")
-                val = val.isoformat()
-            elif isinstance(val, time):
-                # Convert time to ISO format string (e.g., "05:42:53")
-                val = val.isoformat()
-            elif isinstance(val, (dict, list)):
-                # Convert dict/list to string representation
-                val = str(val)
-
-            sheet_row.append(val if val is not None else '')
-        sheet_rows.append(sheet_row)
-
-    return sheet_rows
 
 
 def get_config(config_key: str) -> Optional[Dict[str, Any]]:
