@@ -728,6 +728,14 @@ def generic_sync_runner(
 
                 except Exception as e:
                     batch_error = f"Batch {batch_num}: {str(e)}"
+                    error_str = str(e).lower()
+
+                    # Ignore unknown column errors (e.g., GAS sends extra columns)
+                    if '1054' in str(e) or 'unknown column' in error_str:
+                        logger.warning(f"Ignoring unknown column error in batch {batch_num}: {str(e)}")
+                        skipped += len(batch)
+                        continue  # Skip this batch but continue to next
+
                     logger.error(batch_error)
                     _log_sync_batch(
                         db_execute, job_id, config_key, 'sheet_to_mysql',
