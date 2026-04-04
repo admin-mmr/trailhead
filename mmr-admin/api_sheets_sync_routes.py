@@ -50,7 +50,7 @@ def api_export_members():
     Returns:
         {ok: true, job_id: str}
     """
-    job_id = launch_job(sync_export_members, initial_message='Exporting members...')
+    job_id = launch_job(sync_export_members, initial_message='Exporting members...', operation='export_members')
     return json_response({'ok': True, 'job_id': job_id})
 
 
@@ -63,7 +63,7 @@ def api_export_payments():
     Returns:
         {ok: true, job_id: str}
     """
-    job_id = launch_job(sync_export_payments, initial_message='Exporting payments...')
+    job_id = launch_job(sync_export_payments, initial_message='Exporting payments...', operation='export_payments')
     return json_response({'ok': True, 'job_id': job_id})
 
 
@@ -76,7 +76,7 @@ def api_export_submissions():
     Returns:
         {ok: true, job_id: str}
     """
-    job_id = launch_job(sync_export_submissions, initial_message='Exporting submissions...')
+    job_id = launch_job(sync_export_submissions, initial_message='Exporting submissions...', operation='export_submissions')
     return json_response({'ok': True, 'job_id': job_id})
 
 
@@ -91,7 +91,8 @@ def api_export_transaction_meta():
     """
     job_id = launch_job(
         sync_export_transaction_meta,
-        initial_message='Exporting transaction metadata...'
+        initial_message='Exporting transaction metadata...',
+        operation='export_transaction_meta'
     )
     return json_response({'ok': True, 'job_id': job_id})
 
@@ -112,7 +113,7 @@ def api_import_members():
     Returns:
         {ok: true, job_id: str}
     """
-    job_id = launch_job(sync_import_members, initial_message='Importing new members...')
+    job_id = launch_job(sync_import_members, initial_message='Importing new members...', operation='import_members')
     return json_response({'ok': True, 'job_id': job_id})
 
 
@@ -129,7 +130,7 @@ def api_import_transactions():
     Returns:
         {ok: true, job_id: str}
     """
-    job_id = launch_job(sync_import_transactions, initial_message='Importing transactions...')
+    job_id = launch_job(sync_import_transactions, initial_message='Importing transactions...', operation='import_transactions')
     return json_response({'ok': True, 'job_id': job_id})
 
 
@@ -149,7 +150,7 @@ def api_full_sync():
     Returns:
         {ok: true, job_id: str}
     """
-    job_id = launch_job(full_sync_all_operations, initial_message='Starting Full Sync (all 5 operations)...')
+    job_id = launch_job(full_sync_all_operations, initial_message='Starting Full Sync (all 5 operations)...', operation='full_sync')
     return json_response({'ok': True, 'job_id': job_id})
 
 

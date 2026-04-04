@@ -4,6 +4,8 @@ Background job registry for mmr-admin sheets-sync operations.
 Replaces the 10 identical daemon-thread dispatch blocks in api_sheets_sync.py
 and the ad-hoc _sync_jobs dict + _sync_jobs_lock + _gen_job_id pattern.
 
+Persists job entries to MySQL sync_jobs table for audit trail and batch logging FK compliance.
+
 Usage:
     from sync_jobs import launch_job, update_job, get_job, list_jobs
 
@@ -23,11 +25,22 @@ from __future__ import annotations
 
 import threading
 import time
+import logging
 from typing import Any, Dict, Optional
 
+logger = logging.getLogger(__name__)
 
 _jobs: Dict[str, Dict[str, Any]] = {}
 _lock = threading.Lock()
+
+
+def _get_db_execute():
+    """Lazy import to avoid circular dependencies."""
+    try:
+        from db import execute
+        return execute
+    except ImportError:
+        return None
 
 
 def _make_job(job_id: str, initial_message: str) -> Dict[str, Any]:
@@ -51,6 +64,7 @@ def launch_job(
     worker,
     *args,
     initial_message: str = 'Queued',
+    operation: str = 'sync',
     **kwargs,
 ) -> str:
     """
@@ -59,11 +73,37 @@ def launch_job(
     The worker callable receives `job_id` as its first positional argument,
     followed by any additional *args and **kwargs.
 
+    Persists job entry to MySQL sync_jobs table for audit trail and FK compliance.
+
+    Args:
+        worker: Callable(job_id, *args, **kwargs) to execute in background
+        initial_message: Status message (default: 'Queued')
+        operation: Operation name for audit (default: 'sync')
+
     Returns the job_id string.
     """
     job_id = _new_job_id()
+    job = _make_job(job_id, initial_message)
+
+    # Insert into MySQL sync_jobs table
+    db_execute = _get_db_execute()
+    if db_execute:
+        try:
+            sql = """
+                INSERT INTO sync_jobs (JobID, Operation, Status, Message, Progress, StartedAt, UpdatedAt)
+                VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE
+                    Status = VALUES(Status),
+                    Message = VALUES(Message),
+                    UpdatedAt = NOW()
+            """
+            db_execute(sql, [job_id, operation, job['status'], job['message'], job['progress']])
+            logger.debug(f"Persisted job {job_id} ({operation}) to sync_jobs table")
+        except Exception as e:
+            logger.warning(f"Failed to persist job {job_id} to MySQL: {str(e)}")
+
     with _lock:
-        _jobs[job_id] = _make_job(job_id, initial_message)
+        _jobs[job_id] = job
 
     t = threading.Thread(target=worker, args=(job_id, *args), kwargs=kwargs, daemon=True)
     t.start()
@@ -74,6 +114,8 @@ def update_job(job_id: str, **fields) -> None:
     """
     Update fields on an existing job.
 
+    Syncs changes to MySQL sync_jobs table for durability.
+
     Common fields: status ('queued'|'running'|'done'|'error'),
                    message (str), progress (0–100), result (any).
     """
@@ -81,6 +123,38 @@ def update_job(job_id: str, **fields) -> None:
         if job_id in _jobs:
             _jobs[job_id].update(fields)
             _jobs[job_id]['updatedAt'] = time.time()
+
+    # Sync to MySQL
+    db_execute = _get_db_execute()
+    if db_execute and fields:
+        try:
+            # Build update clause dynamically from fields
+            set_clauses = []
+            params = []
+            if 'status' in fields:
+                set_clauses.append('Status = %s')
+                params.append(fields['status'])
+            if 'message' in fields:
+                set_clauses.append('Message = %s')
+                params.append(fields['message'])
+            if 'progress' in fields:
+                set_clauses.append('Progress = %s')
+                params.append(fields['progress'])
+            if 'result' in fields:
+                set_clauses.append('Result = %s')
+                params.append(fields['result'])
+
+            if set_clauses:
+                set_clauses.append('UpdatedAt = NOW()')
+                if fields.get('status') == 'done' or fields.get('status') == 'error':
+                    set_clauses.append('CompletedAt = NOW()')
+
+                sql = f"UPDATE sync_jobs SET {', '.join(set_clauses)} WHERE JobID = %s"
+                params.append(job_id)
+                db_execute(sql, params)
+                logger.debug(f"Updated job {job_id} in sync_jobs table: {fields}")
+        except Exception as e:
+            logger.warning(f"Failed to update job {job_id} in MySQL: {str(e)}")
 
 
 def get_job(job_id: str) -> Optional[Dict[str, Any]]:
