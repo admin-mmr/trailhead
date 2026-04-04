@@ -827,14 +827,6 @@ CREATE TRIGGER `trg_submissions_insert_validate` BEFORE INSERT ON `submissions` 
   END IF;
 END;
 
-CREATE TRIGGER `members_insert_created_unix` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
-  IF NEW.Created IS NOT NULL THEN
-    SET NEW.created_at_unix = UNIX_TIMESTAMP(NEW.Created);
-  ELSE
-    SET NEW.created_at_unix = 0;
-  END IF;
-END;
-
 CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
   DECLARE error_context_id VARCHAR(50);
   DECLARE error_msg TEXT;
@@ -882,15 +874,6 @@ CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH
       'ERROR'
     );
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-END;
-
-CREATE TRIGGER `members_update_created_unix` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
-  IF NEW.Created <> OLD.Created OR
-     (NEW.Created IS NULL AND OLD.Created IS NOT NULL) OR
-     (NEW.Created IS NOT NULL AND OLD.Created IS NULL)
-  THEN
-    SET NEW.created_at_unix = IF(NEW.Created IS NULL, 0, UNIX_TIMESTAMP(NEW.Created));
   END IF;
 END;
 
