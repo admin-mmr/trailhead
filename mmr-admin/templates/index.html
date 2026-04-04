@@ -1944,181 +1944,60 @@ const SyncPanel = () => {
       {/* Sub-tabs */}
       <div className="tabs" style={{ marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
         <button className={`tab ${subTab === 'mysql-to-google' ? 'active' : ''}`} onClick={() => setSubTab('mysql-to-google')}>📤 MySQL → Google</button>
-        <button className={`tab ${subTab === 'import-txns' ? 'active' : ''}`} onClick={() => setSubTab('import-txns')}>📥 Import Transactions</button>
-        <button className={`tab ${subTab === 'sync-unprocessed-txns' ? 'active' : ''}`} onClick={() => setSubTab('sync-unprocessed-txns')}>🔄 Sync Unprocessed Txns</button>
         <button className={`tab ${subTab === 'google-to-mysql' ? 'active' : ''}`} onClick={() => setSubTab('google-to-mysql')}>📥 Google → MySQL</button>
-        <button className={`tab ${subTab === 'members-table' ? 'active' : ''}`} onClick={() => setSubTab('members-table')}>👥 Members Table</button>
         <button className={`tab ${subTab === 'full-sync' ? 'active' : ''}`} onClick={() => setSubTab('full-sync')}>🔄 Full Sync</button>
       </div>
 
       {/* MySQL → Google */}
       {subTab === 'mysql-to-google' && (
         <div>
-          <h2 style={{ fontSize: 18, marginBottom: 16 }}>MySQL → Google Sheets</h2>
+          <h2 style={{ fontSize: 18, marginBottom: 16 }}>MySQL → Google Sheets (SQL_* tabs)</h2>
           <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-            Sync MySQL data to Google Sheets. New records are appended; existing records are updated if MySQL is newer.
+            Export MySQL data to Google Sheets SQL_* destination tabs. New records are appended to SQL Members, SQL Payments, and SQL Submissions tabs.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-            <button className="btn btn-primary" onClick={() => triggerSync('MySQL → Google', 'Members', '/api/sync/mysql-to-google/members')}>👥 Sync Members</button>
-            <button className="btn btn-primary" onClick={() => triggerSync('MySQL → Google', 'Events', '/api/sync/mysql-to-google/events')}>📋 Sync Events</button>
-            <button className="btn btn-primary" onClick={() => triggerSync('MySQL → Google', 'Payments', '/api/sync/mysql-to-google/payments')}>💳 Sync Payments</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Export Members', 'MySQL → Sheets', '/api/sync/export/members')}>👥 Export Members</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Export Submissions', 'MySQL → Sheets', '/api/sync/export/submissions')}>📋 Export Submissions</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Export Payments', 'MySQL → Sheets', '/api/sync/export/payments')}>💳 Export Payments</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Export Transactions', 'MySQL → Sheets', '/api/sync/export/transaction-meta')}>📧 Export Transactions (Notes & UpdatedAt)</button>
           </div>
-          <RecentJobs filterFn={job => job.jobName === 'MySQL → Google'} />
-        </div>
-      )}
-
-      {/* Import Transactions (Google Sheets → MySQL) */}
-      {subTab === 'import-txns' && (
-        <div>
-          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Import Transactions from Google Sheets</h2>
-          <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-            Fetch gmail_transactions from Google Sheets. New MessageIds are inserted; existing records are updated if the Sheets Memo differs from MySQL Notes.
-          </p>
-          <button className="btn btn-primary" onClick={() => triggerSync('Import Transactions', 'Google → MySQL', '/api/sync/import-transactions')}>📥 Import Now</button>
-          <RecentJobs label="Recent Imports" filterFn={job => job.jobName === 'Import Transactions'} />
-        </div>
-      )}
-
-      {/* Sync Unprocessed Transactions (MySQL → Google Sheets) */}
-      {subTab === 'sync-unprocessed-txns' && (
-        <div>
-          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Sync Unprocessed Transactions → Google Sheets</h2>
-          <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-            Sync transactions with ProcessedTime = NULL from MySQL to Google Sheets. Updates Notes, ProcessedTime, and WebAppID.
-          </p>
-          <button className="btn btn-primary" onClick={() => triggerSync('Sync Unprocessed Txns', 'MySQL → Google', '/api/sync/unprocessed-transactions')}>🔄 Sync Unprocessed</button>
-          <RecentJobs label="Recent Syncs" filterFn={job => job.jobName === 'Sync Unprocessed Txns'} />
+          <RecentJobs filterFn={job => ['Export Members', 'Export Submissions', 'Export Payments', 'Export Transactions'].includes(job.jobName)} />
         </div>
       )}
 
       {/* Google → MySQL */}
       {subTab === 'google-to-mysql' && (
-        <GoogleToMySQLPanel triggerSync={triggerSync} RecentJobs={RecentJobs} />
-      )}
-
-      {/* Members Table — nested sub-tabs */}
-      {subTab === 'members-table' && (
         <div>
-          <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-            <button className={`tab ${subTab === 'members-table' && !['members-fees', 'members-lastupdated', 'members-unix'].includes(subTab2) ? 'active' : subTab2 === 'members-fees' ? 'active' : ''}`} onClick={() => setSubTab2('members-fees')}>💳 Membership Fees</button>
-            <button className={`tab ${subTab2 === 'members-lastupdated' ? 'active' : ''}`} onClick={() => setSubTab2('members-lastupdated')}>🕐 Sync LastUpdated</button>
-            <button className={`tab ${subTab2 === 'members-unix' ? 'active' : ''}`} onClick={() => setSubTab2('members-unix')}>⏱️ Backfill Unix Timestamps</button>
+          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Google Sheets → MySQL</h2>
+          <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
+            Import and sync data from Google Sheets to MySQL. Operations are safe and support insert-only (no overwrites) or upsert modes.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+            <button className="btn btn-primary" onClick={() => triggerSync('Import Transactions', 'Google → MySQL', '/api/sync/import-transactions')}>📧 Import Transactions</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Insert Members', 'Google → MySQL', '/api/sync/import/members')}>👥 Insert Members (new only)</button>
           </div>
-
-          {/* Membership Fees Sub-tab */}
-          {subTab2 !== 'members-lastupdated' && (
-            <div>
-              <h2 style={{ fontSize: 18, marginBottom: 16 }}>Sync Membership Fees to Members</h2>
-              <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-                Update members table with payment data from the payments table. For each member with an
-                Individual or Family Membership payment, syncs the most recent payment date, amount, and
-                transaction reference. Updates only if the new payment is more recent than existing data.
-              </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-                <button className="btn btn-primary" onClick={() => {
-                  const memberID = prompt('Enter MemberID (leave blank to sync all):');
-                  const payload = memberID ? { memberID } : {};
-                  api('/api/sync/membership-fees', { method: 'POST', body: JSON.stringify(payload) })
-                    .then(r => {
-                      if (r.ok) {
-                        setToast(`✅ ${r.message} (${r.stats.updated}/${r.stats.checked} updated)`);
-                      } else {
-                        setToast(`❌ Error: ${r.error || 'Unknown error'}`);
-                      }
-                    })
-                    .catch(e => setToast(`❌ Error: ${e.message}`));
-                }}>💳 Sync Membership Fees</button>
-              </div>
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: 12, fontSize: 12, color: 'var(--text2)' }}>
-                <strong>ℹ️ Manual sync:</strong> Click the button above to sync all members, or enter a MemberID to sync a specific member.
-              </div>
-            </div>
-          )}
-
-          {/* Sync LastUpdated Sub-tab */}
-          {subTab2 === 'members-lastupdated' && (
-            <div>
-              <h2 style={{ fontSize: 18, marginBottom: 16 }}>Sync LastUpdated from Member Log</h2>
-              <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-                Synchronize the LastUpdated column in members table from the member_log audit trail.
-                For each member, if the most recent LoggingTime in member_log is newer than the current
-                LastUpdated in members, updates LastUpdated to that LoggingTime.
-              </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-                <button className="btn btn-primary" onClick={() => {
-                  const memberID = prompt('Enter MemberID (leave blank to sync all):');
-                  const payload = memberID ? { memberID } : {};
-                  api('/api/sync/members-lastupdated', { method: 'POST', body: JSON.stringify(payload) })
-                    .then(r => {
-                      if (r.ok) {
-                        setToast(`✅ ${r.message} (${r.stats.updated}/${r.stats.checked} updated)`);
-                      } else {
-                        setToast(`❌ Error: ${r.error || 'Unknown error'}`);
-                      }
-                    })
-                    .catch(e => setToast(`❌ Error: ${e.message}`));
-                }}>🕐 Sync LastUpdated</button>
-              </div>
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: 12, fontSize: 12, color: 'var(--text2)' }}>
-                <strong>ℹ️ Manual sync:</strong> Click the button above to sync all members, or enter a MemberID to sync a specific member.
-              </div>
-            </div>
-          )}
-
-          {/* Backfill Unix Timestamps Sub-tab */}
-          {subTab2 === 'members-unix' && (
-            <div>
-              <h2 style={{ fontSize: 18, marginBottom: 16 }}>Backfill Unix Timestamp Columns</h2>
-              <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-                Populate Unix timestamp columns (updated_at_unix, last_login_date_unix, etc.) from their
-                corresponding DATETIME columns. This backfill is required after adding triggers to MySQL.
-                Safe to run multiple times — only fills rows where Unix column is currently 0.
-              </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-                <button className="btn btn-primary" onClick={() => {
-                  if (window.confirm('⏱️ Backfill Unix timestamps in all tables?\n\nThis will update:\n• members (4 columns)\n• payments (1 column)\n• webapp_events (3 columns)\n\nSafe to run multiple times.')) {
-                    api('/api/backfill-unix-timestamps', { method: 'POST' })
-                      .then(r => {
-                        if (r.ok) {
-                          const { members, payments, webapp_events } = r.stats;
-                          setToast(`✅ ${r.message}\n\nMembers: ${members} | Payments: ${payments} | WebApp Events: ${webapp_events}`);
-                        } else {
-                          setToast(`❌ Error: ${r.error || 'Unknown error'}`);
-                        }
-                      })
-                      .catch(e => setToast(`❌ Error: ${e.message}`));
-                  }
-                }}>⏱️ Backfill Now</button>
-              </div>
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: 12, fontSize: 12, color: 'var(--text2)' }}>
-                <strong>ℹ️ Step 1 of 2:</strong> Click above to backfill existing data. Then deploy the MySQL triggers (migration 0017) to keep Unix timestamps in sync going forward.
-              </div>
-            </div>
-          )}
+          <RecentJobs filterFn={job => ['Import Transactions', 'Insert Members'].includes(job.jobName)} />
         </div>
       )}
 
-      {/* Full Bidirectional Sync */}
+      {/* Full Sync */}
       {subTab === 'full-sync' && (
         <div>
-          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Full Bidirectional Sync</h2>
+          <h2 style={{ fontSize: 18, marginBottom: 16 }}>Full Sync (All Operations)</h2>
           <p style={{ color: 'var(--text2)', marginBottom: 8, fontSize: 14 }}>
-            Runs all 8 phases in sequence — same logic used by the GitHub Actions scheduled job:
+            Runs all 5 export and import operations in batch:
           </p>
           <ol style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 20, paddingLeft: 20 }}>
-            <li>Members: MySQL → Google</li>
-            <li>Members: Google → MySQL</li>
-            <li>Events: MySQL → Google</li>
-            <li>Events: Google → MySQL</li>
-            <li>Payments: MySQL → Google</li>
-            <li>Payments: Google → MySQL</li>
-            <li>Gmail Transactions: Import to MySQL</li>
-            <li>Unprocessed Transactions: MySQL → Google</li>
+            <li>Export Members (MySQL → Google Sheets)</li>
+            <li>Export Payments (MySQL → Google Sheets)</li>
+            <li>Export Submissions (MySQL → Google Sheets)</li>
+            <li>Export Transactions metadata (MySQL → Google Sheets, Notes & UpdatedAt only)</li>
+            <li>Import Transactions (Google Sheets → MySQL)</li>
           </ol>
           <p style={{ color: 'var(--text2)', fontSize: 12, marginBottom: 16 }}>
-            ⚠️ Live sync — writes to both MySQL and Google Sheets. Admin email sent after each phase.
+            ⚠️ Live batch operation — writes to both MySQL and Google Sheets. All operations run sequentially.
           </p>
-          <button className="btn btn-primary" onClick={() => triggerSync('Full Sync', 'All Tables', '/api/sync/full-bidirectional-sync')}>🔄 Run Full Sync</button>
+          <button className="btn btn-primary" onClick={() => triggerSync('Full Sync', 'All Operations', '/api/sync/full-sync')}>🔄 Run Full Sync</button>
           <RecentJobs filterFn={job => job.jobName === 'Full Sync'} />
         </div>
       )}
@@ -2127,22 +2006,6 @@ const SyncPanel = () => {
     </div>
   );
 };
-
-const GoogleToMySQLPanel = ({ triggerSync, RecentJobs }) => (
-  <div>
-    <h2 style={{ fontSize: 18, marginBottom: 16 }}>Google Sheets → MySQL</h2>
-    <p style={{ color: 'var(--text2)', marginBottom: 20, fontSize: 14 }}>
-      Sync Google Sheets data to MySQL. New records are inserted; existing records are updated using
-      bidirectional conflict resolution (last-write-wins by timestamp). ⚠️ Live sync writes directly to MySQL.
-    </p>
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-      <button className="btn btn-primary" onClick={() => triggerSync('Google → MySQL', 'Members', '/api/sync/google-to-mysql/members')}>👥 Sync Members</button>
-      <button className="btn btn-primary" onClick={() => triggerSync('Google → MySQL', 'Events', '/api/sync/google-to-mysql/events')}>📋 Sync Events</button>
-      <button className="btn btn-primary" onClick={() => triggerSync('Google → MySQL', 'Payments', '/api/sync/google-to-mysql/payments')}>💳 Sync Payments</button>
-    </div>
-    <RecentJobs filterFn={job => job.jobName === 'Google → MySQL'} />
-  </div>
-);
 
 // ═══════════════════════════════════════════════════
 // Python Execution Panel

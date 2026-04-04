@@ -1,3 +1,92 @@
+### 04-04 07:45 UTC — Restructured Sync Tab from 6 to 3 sub-tabs + deleted legacy endpoints
+
+**Changed:**
+1. **mmr-admin/templates/index.html** (SyncPanel component)
+   - Reduced sub-tabs from 6 to 3: MySQL→Google, Google→MySQL, Full Sync
+   - Removed old tabs: import-txns, sync-unprocessed-txns, members-table (with nested fees/lastupdated/unix)
+   - Updated MySQL→Google to include 4 buttons: Export Members, Submissions, Payments, Transactions (metadata)
+   - Updated Google→MySQL to include 2 buttons: Import Transactions, Insert Members (new only)
+   - Removed GoogleToMySQLPanel legacy component
+
+2. **mmr-admin/api_sheets_sync_routes.py** (NEW)
+   - Added `/api/sync/full-sync` endpoint (runs all 5 operations in batch)
+
+3. **mmr-admin/sync_runners.py** (NEW)
+   - Added `full_sync_all_operations(job_id)` function
+   - Runs 5 operations sequentially: export_members, export_payments, export_submissions, export_transaction_meta, import_transactions
+   - Updates job progress after each operation
+
+4. **mmr-admin/api_sheets_sync.py** (DEPRECATED)
+   - Removed Flask routes (no longer exposed via HTTP):
+     • `/api/sync/mysql-to-google/members`
+     • `/api/sync/mysql-to-google/events`
+     • `/api/sync/mysql-to-google/payments`
+     • `/api/sync/unprocessed-transactions`
+     • `/api/sync/import-transactions`
+     • `/api/sync/google-to-mysql`
+     • `/api/sync/dry-run`
+     • `/api/sync/full-bidirectional-sync`
+   - Legacy functions preserved (may be used by scheduled jobs, but not exposed via UI)
+
+**Schema Verification:**
+✅ **MembershipFeePaid:** Synced via trigger `trg_payments_sync_membership_only` (AFTER INSERT on payments table)
+✅ **UpdatedAt:** Has native `ON UPDATE CURRENT_TIMESTAMP` (line 171 in members table)
+✅ **No need for Unix timestamp columns:** Native MySQL triggers handle freshness
+
+**New Sync Tab Structure:**
+```
+Sync Tab (3 sub-tabs)
+├── 📤 MySQL → Google (4 operations)
+│   ├── 👥 Export Members
+│   ├── 💳 Export Payments
+│   ├── 📋 Export Submissions
+│   └── 📧 Export Transactions (Notes & UpdatedAt only)
+├── 📥 Google → MySQL (2 operations)
+│   ├── 📧 Import Transactions
+│   └── 👥 Insert Members (new only, no overwrites)
+└── 🔄 Full Sync (5 operations in batch)
+    └── 🔄 Run Full Sync (all 5 above operations)
+```
+
+**Status:**
+- ✅ UI restructured and simplified
+- ✅ All new endpoints created
+- ✅ Legacy endpoints removed from Flask routing
+- ✅ Full Sync endpoint batches all 5 operations
+- ✅ Syntax verified
+
+**Next:**
+- Test: Full Sync endpoint (/api/sync/full-sync) to verify batch operation
+- Monitor: GAS webhook logs for write_range/read_range calls
+- Deploy: UI and backend changes together
+
+### 04-04 07:24 UTC — Updated Admin Portal Sync Tab: New export endpoints + removed old actions
+
+**Changed:**
+- **mmr-admin/templates/index.html** lines 1954-1967: Updated MySQL→Google Sheets section
+  - Old buttons: `/api/sync/mysql-to-google/{members,events,payments}` (legacy, write to Main/WebApp-Events tabs)
+  - New buttons: `/api/sync/export/{members,submissions,payments}` (modern, write to SQL Members/Submissions/Payments tabs)
+  - Updated labels: "Sync X" → "Export X" for clarity
+  - Updated job filters: Now track 'Export Members', 'Export Submissions', 'Export Payments'
+  - Updated description: Clarified destination is SQL_* tabs
+  - Removed old 'Sync Events' button → Replaced with 'Export Submissions'
+
+**Impact:**
+- Admin Portal now calls correct endpoints that append to SQL_* sheets
+- Old `/api/sync/mysql-to-google/` endpoints still exist but are legacy (not recommended)
+- New flow: Members/Payments/Submissions → generic_sync_runner → SQL_* sheets ✅
+
+**Status:**
+- ✅ Admin UI sync_config.py files fixed (sheet names to SQL_*)
+- ✅ Admin Portal UI updated (endpoints + job naming)
+- Ready: Admin can now click Export buttons and data flows to correct SQL_* tabs
+
+**Next:**
+- Test: Click "Export Members" → verify data in "SQL Members" tab
+- Test: Click "Export Submissions" → verify data in "SQL Submissions" tab
+- Test: Click "Export Payments" → verify data in "SQL Payments" tab
+- Monitor GAS webhook logs for write_range calls
+
 ### 04-04 07:18 UTC — Fix: MySQL→Sheets export routes using wrong sheet names
 
 **Changed:**

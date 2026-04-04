@@ -133,6 +133,26 @@ def api_import_transactions():
     return json_response({'ok': True, 'job_id': job_id})
 
 
+@sheets_sync_bp.route('/api/sync/full-sync', methods=['POST'])
+@login_required
+def api_full_sync():
+    """
+    Full Sync: Run all 5 operations in batch sequence.
+
+    Operations (in order):
+      1. Export Members (MySQL → Google Sheets, SQL Members tab)
+      2. Export Payments (MySQL → Google Sheets, SQL Payments tab)
+      3. Export Submissions (MySQL → Google Sheets, SQL Submissions tab)
+      4. Export Transactions metadata (MySQL → Google Sheets, SQL Transactions tab, Notes & UpdatedAt only)
+      5. Import Transactions (Google Sheets → MySQL, gmail_transactions table)
+
+    Returns:
+        {ok: true, job_id: str}
+    """
+    job_id = launch_job(full_sync_all_operations, initial_message='Starting Full Sync (all 5 operations)...')
+    return json_response({'ok': True, 'job_id': job_id})
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Job Management Routes
 # ═══════════════════════════════════════════════════════════════════════════

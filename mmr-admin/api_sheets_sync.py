@@ -2203,46 +2203,20 @@ def _cron_auth_or_session(f):
 # REST API Endpoints
 # ═══════════════════════════════════════════════════════════════════════════
 
-@sheets_sync_bp.route('/api/sync/mysql-to-google/members', methods=['POST'])
-@_cron_auth_or_session
-def api_sync_members():
-    """Trigger members sync (MySQL → Google Sheets).
-
-    Query parameters:
-      ?verbose=true  — Enable verbose logging (shows sample rows, detailed diffs)
-    """
-    verbose = request.args.get('verbose', 'false').lower() == 'true'
-    job_id = launch_job(_sync_members_to_sheets, verbose=verbose)
-
-    return json_response({'ok': True, 'job_id': job_id, 'verbose': verbose})
-
-
-@sheets_sync_bp.route('/api/sync/mysql-to-google/events', methods=['POST'])
-@_cron_auth_or_session
-def api_sync_events():
-    """Trigger events sync (MySQL → Google Sheets).
-
-    Query parameters:
-      ?verbose=true  — Enable verbose logging (shows sample rows, detailed diffs)
-    """
-    verbose = request.args.get('verbose', 'false').lower() == 'true'
-    job_id = launch_job(_sync_events_to_sheets, verbose=verbose)
-
-    return json_response({'ok': True, 'job_id': job_id, 'verbose': verbose})
-
-
-@sheets_sync_bp.route('/api/sync/mysql-to-google/payments', methods=['POST'])
-@_cron_auth_or_session
-def api_sync_payments():
-    """Trigger payments sync (MySQL → Google Sheets).
-
-    Query parameters:
-      ?verbose=true  — Enable verbose logging (shows sample rows, detailed diffs)
-    """
-    verbose = request.args.get('verbose', 'false').lower() == 'true'
-    job_id = launch_job(_sync_payments_to_sheets, verbose=verbose)
-
-    return json_response({'ok': True, 'job_id': job_id, 'verbose': verbose})
+# ═══════════════════════════════════════════════════════════════════════════
+# DEPRECATED ENDPOINTS — Use /api/sync/export/* instead
+# ═══════════════════════════════════════════════════════════════════════════
+# The following endpoints are LEGACY and should not be used:
+#   • /api/sync/mysql-to-google/{members,events,payments} → Use /api/sync/export/{members,submissions,payments}
+#   • /api/sync/google-to-mysql/{members,events,payments} → Use /api/sync/import/members + /api/sync/import/transactions
+#   • /api/sync/membership-fees → Handled by native trigger in MySQL
+#   • /api/sync/members-lastupdated → UpdatedAt has native ON UPDATE CURRENT_TIMESTAMP
+#   • /api/sync/backfill-unix-timestamps → Not needed with native triggers
+#   • /api/sync/unprocessed-transactions → Use /api/sync/export/transaction-meta
+#
+# The legacy functions (_sync_members_to_sheets, _sync_events_to_sheets, etc.)
+# are still defined below but no longer exposed via Flask routes.
+# ═══════════════════════════════════════════════════════════════════════════
 
 
 def _sync_unprocessed_transactions_to_sheets(job_id: str):
@@ -2361,50 +2335,12 @@ def api_sync_gmail_transactions():
     return json_response({'ok': True, 'job_id': job_id})
 
 
-@sheets_sync_bp.route('/api/sync/unprocessed-transactions', methods=['POST'])
-@login_required
-def api_sync_unprocessed_transactions():
-    """Trigger unprocessed transactions sync (MySQL → Google Sheets)."""
-    job_id = launch_job(_sync_unprocessed_transactions_to_sheets)
-
-    return json_response({'ok': True, 'job_id': job_id})
-
-
-@sheets_sync_bp.route('/api/sync/import-transactions', methods=['POST'])
-@login_required
-def api_import_transactions():
-    """Trigger transaction import (Google Sheets → MySQL)."""
-    job_id = launch_job(_import_transactions)
-
-    return json_response({'ok': True, 'job_id': job_id})
-
-
-@sheets_sync_bp.route('/api/sync/google-to-mysql', methods=['POST'])
-@login_required
-def api_sync_google_to_mysql():
-    """Trigger sync (Google Sheets → MySQL)."""
-    job_id = launch_job(_sync_google_to_mysql)
-
-    return json_response({'ok': True, 'job_id': job_id})
-
-
-@sheets_sync_bp.route('/api/sync/dry-run', methods=['POST'])
-@login_required
-def api_dry_run():
-    """Trigger dry-run (Google → MySQL, no changes)."""
-    job_id = launch_job(_dry_run_google_to_mysql)
-
-    return json_response({'ok': True, 'job_id': job_id})
-
-
-def _make_g2m_route(table: str, live: bool):
-    """Factory for per-table Google → MySQL live/dry-run route handlers."""
-    def handler():
-        fn = _sync_google_to_mysql if live else _dry_run_google_to_mysql
-        job_id = launch_job(fn, tables=[table])
-        return json_response({'ok': True, 'job_id': job_id})
-    handler.__name__ = f'api_g2m_{"live" if live else "dry"}_{table}'
-    return handler
+# LEGACY ENDPOINTS REMOVED (use new endpoints in api_sheets_sync_routes.py instead)
+#   • /api/sync/unprocessed-transactions → Use /api/sync/export/transaction-meta
+#   • /api/sync/import-transactions → Use /api/sync/import/transactions (in api_sheets_sync_routes.py)
+#   • /api/sync/google-to-mysql → Use /api/sync/import/members or /api/sync/import/transactions
+#   • /api/sync/dry-run → Dry-run functionality removed (use live mode only)
+#   • /api/sync/google-to-mysql/{members,events,payments} → Use new import routes
 
 
 for _table in ('members', 'events', 'payments'):
@@ -2551,13 +2487,5 @@ def _run_full_bidirectional_sync(job_id: str):
         log_content='\n'.join(overall_log),
     )
 
-
-@sheets_sync_bp.route('/api/sync/full-bidirectional-sync', methods=['POST'])
-@_cron_auth_or_session
-def api_full_bidirectional_sync():
-    """
-    Trigger a full 8-phase bidirectional sync.
-    Accessible via admin session OR X-Cron-Token header (for GitHub Actions).
-    """
-    job_id = launch_job(_run_full_bidirectional_sync, initial_message='Queued…')
-    return json_response({'ok': True, 'job_id': job_id})
+# LEGACY ENDPOINT REMOVED
+#   • /api/sync/full-bidirectional-sync (old 8-phase sync) → Use /api/sync/full-sync (new 5-phase sync)

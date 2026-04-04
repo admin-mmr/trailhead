@@ -182,3 +182,56 @@ def sync_import_transactions(job_id: str):
     )
     logger.info(f"[{job_id}] Result: {result}")
     update_job(job_id, status='completed', **result)
+
+
+def full_sync_all_operations(job_id: str):
+    """
+    Full Sync: Run all 5 operations in sequence.
+
+    Operations:
+      1. Export Members (MySQL → Google Sheets, SQL Members tab)
+      2. Export Payments (MySQL → Google Sheets, SQL Payments tab)
+      3. Export Submissions (MySQL → Google Sheets, SQL Submissions tab)
+      4. Export Transactions metadata (MySQL → Google Sheets, SQL Transactions tab, Notes & UpdatedAt only)
+      5. Import Transactions (Google Sheets → MySQL, gmail_transactions table)
+
+    Each operation updates the job status with progress and messages.
+    """
+    operations = [
+        ('export_members', 'Export Members'),
+        ('export_payments', 'Export Payments'),
+        ('export_submissions', 'Export Submissions'),
+        ('export_transaction_meta', 'Export Transactions'),
+        ('import_transactions', 'Import Transactions'),
+    ]
+
+    logger.info(f"[{job_id}] Starting Full Sync (5 operations)")
+
+    for idx, (config_key, op_name) in enumerate(operations):
+        progress = int((idx / len(operations)) * 100)
+        update_job(job_id, message=f"[{idx + 1}/5] Running {op_name}...", progress=progress)
+        logger.info(f"[{job_id}] [{idx + 1}/5] Starting {op_name}")
+
+        try:
+            result = generic_sync_runner(
+                job_id=job_id,
+                config_key=config_key,
+                db_query=query,
+                db_execute=execute,
+                gas_webhook=_call_gas_webhook,
+                update_job=update_job,
+                direction=None  # Use direction from config
+            )
+            logger.info(f"[{job_id}] [{idx + 1}/5] {op_name} result: {result}")
+        except Exception as e:
+            logger.error(f"[{job_id}] [{idx + 1}/5] {op_name} failed: {e}")
+            update_job(job_id, status='error', message=f"❌ {op_name} failed: {e}")
+            return
+
+    update_job(
+        job_id,
+        status='done',
+        message='✅ Full Sync Complete: All 5 operations succeeded',
+        progress=100
+    )
+    logger.info(f"[{job_id}] Full Sync completed successfully")
