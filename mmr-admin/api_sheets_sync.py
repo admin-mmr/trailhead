@@ -2342,15 +2342,9 @@ def api_sync_gmail_transactions():
 #   • /api/sync/dry-run → Dry-run functionality removed (use live mode only)
 #   • /api/sync/google-to-mysql/{members,events,payments} → Use new import routes
 
-
-for _table in ('members', 'events', 'payments'):
-    sheets_sync_bp.route(f'/api/sync/google-to-mysql/{_table}', methods=['POST'])(
-        login_required(_make_g2m_route(_table, live=True))
-    )
-    sheets_sync_bp.route(f'/api/sync/dry-run/{_table}', methods=['POST'])(
-        login_required(_make_g2m_route(_table, live=False))
-    )
-
+# LEGACY ROUTE REGISTRATION REMOVED
+#   • /api/sync/google-to-mysql/{members,events,payments} (live and dry-run)
+#   • /api/sync/dry-run/{members,events,payments}
 
 @sheets_sync_bp.route('/api/sync/jobs')
 @login_required

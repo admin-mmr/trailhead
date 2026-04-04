@@ -1,3 +1,17 @@
+### 04-04 07:50 UTC — Fixed: Removed dangling _make_g2m_route() route registration loop
+
+**Fixed:**
+- **mmr-admin/api_sheets_sync.py** lines 2346-2352: Removed legacy route registration loop
+  - Was trying to register `/api/sync/google-to-mysql/{members,events,payments}` (live)
+  - Was trying to register `/api/sync/dry-run/{members,events,payments}` (dry-run)
+  - These routes call deleted `_make_g2m_route()` function → NameError on import
+  - Now removed completely (replaced with comment)
+
+**Status:**
+- ✅ api_sheets_sync.py imports without errors
+- ✅ All Python files syntax-verified
+- Ready for deployment
+
 ### 04-04 07:45 UTC — Restructured Sync Tab from 6 to 3 sub-tabs + deleted legacy endpoints
 
 **Changed:**
