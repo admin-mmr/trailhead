@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T13:16:24.983512 UTC
+-- Timestamp: 2026-04-04T15:57:51.142676 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -145,7 +145,7 @@ CREATE TABLE `member_log` (
 
 CREATE TABLE `members` (
   `MemberID` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `Status` enum('active','expired','inactive','pending') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'active=paying; expired=may renew; inactive=left; pending=awaiting payment',
+  `Status` enum('active','expired','inactive','pending','pending_upgrade') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'active=paying; expired=may renew; inactive=left; pending=awaiting payment; pending_upgrade=upgrading to family',
   `Created` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `Expiration` date DEFAULT NULL,
   `Email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -178,7 +178,7 @@ CREATE TABLE `members` (
   KEY `idx_family` (`FamilyID`),
   KEY `idx_joinyear` (`JoinYear`),
   CONSTRAINT `chk_members_email_valid` CHECK (((`Email` is null) or (`Email` like _utf8mb4'%@%'))),
-  CONSTRAINT `chk_members_status_valid` CHECK ((`Status` in (_utf8mb4'active',_utf8mb4'expired',_utf8mb4'inactive',_utf8mb4'pending')))
+  CONSTRAINT `chk_members_status_valid` CHECK ((`Status` in (_utf8mb4'active',_utf8mb4'expired',_utf8mb4'inactive',_utf8mb4'pending',_utf8mb4'pending_upgrade')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `nyrr_event_runners` (
@@ -334,7 +334,7 @@ CREATE TABLE `sheets_sync_log` (
   KEY `idx_status` (`Status`),
   KEY `idx_started_at` (`StartedAt`),
   CONSTRAINT `fk_sheets_sync_log_jobid` FOREIGN KEY (`JobID`) REFERENCES `sync_jobs` (`JobID`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
 
 CREATE TABLE `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
@@ -679,128 +679,6 @@ CREATE TRIGGER `trg_payments_approve_submission` AFTER INSERT ON `payments` FOR 
     END IF;
 END;
 
-CREATE TRIGGER `members_insert_lastlogin_unix` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
-  IF NEW.LastLogin IS NOT NULL THEN
-    SET NEW.last_login_unix = UNIX_TIMESTAMP(NEW.LastLogin);
-  ELSE
-    SET NEW.last_login_unix = 0;
-  END IF;
-END;
-
-CREATE TRIGGER `members_insert_created_unix` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
-  IF NEW.Created IS NOT NULL THEN
-    SET NEW.created_at_unix = UNIX_TIMESTAMP(NEW.Created);
-  ELSE
-    SET NEW.created_at_unix = 0;
-  END IF;
-END;
-
-CREATE TRIGGER `members_update_lastlogin_unix` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
-  IF NEW.LastLogin <> OLD.LastLogin OR
-     (NEW.LastLogin IS NULL AND OLD.LastLogin IS NOT NULL) OR
-     (NEW.LastLogin IS NOT NULL AND OLD.LastLogin IS NULL)
-  THEN
-    SET NEW.last_login_unix = IF(NEW.LastLogin IS NULL, 0, UNIX_TIMESTAMP(NEW.LastLogin));
-  END IF;
-END;
-
-CREATE TRIGGER `members_update_created_unix` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
-  IF NEW.Created <> OLD.Created OR
-     (NEW.Created IS NULL AND OLD.Created IS NOT NULL) OR
-     (NEW.Created IS NOT NULL AND OLD.Created IS NULL)
-  THEN
-    SET NEW.created_at_unix = IF(NEW.Created IS NULL, 0, UNIX_TIMESTAMP(NEW.Created));
-  END IF;
-END;
-
-CREATE TRIGGER `members_before_update` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
-    IF NEW.Expiration <> OLD.Expiration THEN
-        IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';
-        END IF;
-    END IF;
-END;
-
-CREATE TRIGGER `trg_members_after_insert` AFTER INSERT ON `members` FOR EACH ROW BEGIN
-  INSERT INTO member_log (
-    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
-    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
-    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
-    NYRRRunnerName, YearBorn
-  )
-  VALUES (
-    UUID(), NOW(), NEW.MemberID, 'INSERT', NEW.Status, NEW.Created, NEW.Expiration,
-    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
-    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
-    NEW.NYRRRunnerName, NEW.YearBorn
-  );
-END;
-
-CREATE TRIGGER `trg_members_after_update` AFTER UPDATE ON `members` FOR EACH ROW BEGIN
-  INSERT INTO member_log (
-    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
-    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
-    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
-    NYRRRunnerName, YearBorn
-  )
-  VALUES (
-    UUID(), NOW(), NEW.MemberID, 'UPDATE', NEW.Status, NEW.Created, NEW.Expiration,
-    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
-    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
-    NEW.NYRRRunnerName, NEW.YearBorn
-  );
-END;
-
-CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
-  DECLARE error_context_id VARCHAR(50);
-  DECLARE error_msg TEXT;
-
-  SET error_context_id = UUID();
-
-  IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN
-    SET error_msg = CONCAT(
-      'Invalid email format: "', NEW.`Email`, '". Must contain @. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `ValidValueExamples`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, 'MEM_INVALID_EMAIL',
-      CONCAT('Email format invalid: ', NEW.`Email`),
-      'Email validation failed: missing @ symbol',
-      'members', 'Email', NEW.`Email`,
-      '["john@example.com", "jane.doe@company.org"]',
-      'Verify email address format matches standard email pattern (user@domain.com)',
-      'WARNING'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-
-  IF NEW.`Status` NOT IN ('active','expired','inactive','pending') THEN
-    SET error_msg = CONCAT(
-      'Invalid Status: "', NEW.`Status`, '". ',
-      'Allowed: active, expired, inactive, pending. ',
-      'Error: ', error_context_id
-    );
-    INSERT INTO `error_context` (
-      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
-      `TableName`, `ColumnName`, `ProblematicValue`,
-      `AllowedRange`, `SuggestedFix`, `Severity`
-    ) VALUES (
-      error_context_id, 'MEM_INVALID_STATUS',
-      CONCAT('Invalid member status: ', NEW.`Status`),
-      'Status enum constraint violated on members table',
-      'members', 'Status', NEW.`Status`,
-      'active | expired | inactive | pending',
-      'Status must be one of: active (paying), expired (may renew), inactive (left), pending (awaiting payment)',
-      'ERROR'
-    );
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
-  END IF;
-END;
-
 CREATE TRIGGER `trg_payments_insert_validate` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
   DECLARE error_context_id VARCHAR(50);
   DECLARE error_msg TEXT;
@@ -947,6 +825,158 @@ CREATE TRIGGER `trg_submissions_insert_validate` BEFORE INSERT ON `submissions` 
       'WARNING'
     );
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+END;
+
+CREATE TRIGGER `members_insert_lastlogin_unix` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
+  IF NEW.LastLogin IS NOT NULL THEN
+    SET NEW.last_login_unix = UNIX_TIMESTAMP(NEW.LastLogin);
+  ELSE
+    SET NEW.last_login_unix = 0;
+  END IF;
+END;
+
+CREATE TRIGGER `members_insert_created_unix` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
+  IF NEW.Created IS NOT NULL THEN
+    SET NEW.created_at_unix = UNIX_TIMESTAMP(NEW.Created);
+  ELSE
+    SET NEW.created_at_unix = 0;
+  END IF;
+END;
+
+CREATE TRIGGER `trg_members_insert_validate` BEFORE INSERT ON `members` FOR EACH ROW BEGIN
+  DECLARE error_context_id VARCHAR(50);
+  DECLARE error_msg TEXT;
+
+  SET error_context_id = UUID();
+
+  IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN
+    SET error_msg = CONCAT(
+      'Invalid email format: "', NEW.`Email`, '". Must contain @. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `ValidValueExamples`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'MEM_INVALID_EMAIL',
+      CONCAT('Email format invalid: ', NEW.`Email`),
+      'Email validation failed: missing @ symbol',
+      'members', 'Email', NEW.`Email`,
+      '["john@example.com", "jane.doe@company.org"]',
+      'Verify email address format matches standard email pattern (user@domain.com)',
+      'WARNING'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`Status` NOT IN ('active','expired','inactive','pending') THEN
+    SET error_msg = CONCAT(
+      'Invalid Status: "', NEW.`Status`, '". ',
+      'Allowed: active, expired, inactive, pending. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'MEM_INVALID_STATUS',
+      CONCAT('Invalid member status: ', NEW.`Status`),
+      'Status enum constraint violated on members table',
+      'members', 'Status', NEW.`Status`,
+      'active | expired | inactive | pending',
+      'Status must be one of: active (paying), expired (may renew), inactive (left), pending (awaiting payment)',
+      'ERROR'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+END;
+
+CREATE TRIGGER `members_update_lastlogin_unix` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
+  IF NEW.LastLogin <> OLD.LastLogin OR
+     (NEW.LastLogin IS NULL AND OLD.LastLogin IS NOT NULL) OR
+     (NEW.LastLogin IS NOT NULL AND OLD.LastLogin IS NULL)
+  THEN
+    SET NEW.last_login_unix = IF(NEW.LastLogin IS NULL, 0, UNIX_TIMESTAMP(NEW.LastLogin));
+  END IF;
+END;
+
+CREATE TRIGGER `members_update_created_unix` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
+  IF NEW.Created <> OLD.Created OR
+     (NEW.Created IS NULL AND OLD.Created IS NOT NULL) OR
+     (NEW.Created IS NOT NULL AND OLD.Created IS NULL)
+  THEN
+    SET NEW.created_at_unix = IF(NEW.Created IS NULL, 0, UNIX_TIMESTAMP(NEW.Created));
+  END IF;
+END;
+
+CREATE TRIGGER `members_before_update` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
+    IF NEW.Expiration <> OLD.Expiration THEN
+        IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';
+        END IF;
+    END IF;
+END;
+
+CREATE TRIGGER `trg_members_after_insert` AFTER INSERT ON `members` FOR EACH ROW BEGIN
+  INSERT INTO member_log (
+    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
+    NYRRRunnerName, YearBorn
+  )
+  VALUES (
+    UUID(), NOW(), NEW.MemberID, 'INSERT', NEW.Status, NEW.Created, NEW.Expiration,
+    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
+    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
+    NEW.NYRRRunnerName, NEW.YearBorn
+  );
+END;
+
+CREATE TRIGGER `trg_members_after_update` AFTER UPDATE ON `members` FOR EACH ROW BEGIN
+  INSERT INTO member_log (
+    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
+    NYRRRunnerName, YearBorn
+  )
+  VALUES (
+    UUID(), NOW(), NEW.MemberID, 'UPDATE', NEW.Status, NEW.Created, NEW.Expiration,
+    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
+    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
+    NEW.NYRRRunnerName, NEW.YearBorn
+  );
+END;
+
+CREATE TRIGGER `trg_members_family_inheritance` AFTER INSERT ON `members` FOR EACH ROW BEGIN
+  IF NEW.FamilyID IS NOT NULL THEN
+    UPDATE members
+    SET 
+      Expiration = (
+        SELECT Expiration FROM members 
+        WHERE FamilyID = NEW.FamilyID AND Status IN ('active','lifetime') 
+        LIMIT 1
+      ),
+      MembershipFeePaid = (
+        SELECT MembershipFeePaid FROM members 
+        WHERE FamilyID = NEW.FamilyID AND Status IN ('active','lifetime')
+        LIMIT 1
+      ),
+      PaymentDate = (
+        SELECT PaymentDate FROM members 
+        WHERE FamilyID = NEW.FamilyID AND Status IN ('active','lifetime')
+        LIMIT 1
+      ),
+      PaymentTransaction = (
+        SELECT PaymentTransaction FROM members 
+        WHERE FamilyID = NEW.FamilyID AND Status IN ('active','lifetime')
+        LIMIT 1
+      )
+    WHERE MemberID = NEW.MemberID 
+      AND FamilyID = NEW.FamilyID
+      AND Status IN ('pending', 'pending_ungrade', 'expired', 'inactive');
   END IF;
 END;
 
