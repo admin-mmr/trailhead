@@ -637,9 +637,9 @@ def generic_sync_runner(
                     # Convert ISO 8601 strings to MySQL datetime format
                     if sql_col in ('Timestamp', 'TransactionDate', 'PaymentDate', 'CreatedAt', 'UpdatedAt'):
                         value = _convert_iso_to_mysql_datetime(value)
-                    # Coerce empty strings to None for numeric/decimal columns
+                    # Coerce empty strings to 0 for numeric/decimal columns
                     if value == '' and sql_col in ('Amount', 'PaymentAmount', 'Price', 'Balance', 'MembershipFeePaid'):
-                        value = None
+                        value = 0
                     mapped_row[sql_col] = value
                 mapped_rows.append(mapped_row)
 

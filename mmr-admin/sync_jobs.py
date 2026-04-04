@@ -129,12 +129,16 @@ def update_job(job_id: str, **fields) -> None:
     db_execute = _get_db_execute()
     if db_execute and fields:
         try:
+            logger.debug(f"update_job({job_id}): fields={fields}")
+
             # Build update clause dynamically from fields
             set_clauses = []
             params = []
             if 'status' in fields:
+                status_val = fields['status']
+                logger.debug(f"  Setting Status = {repr(status_val)} (type: {type(status_val).__name__})")
                 set_clauses.append('Status = %s')
-                params.append(fields['status'])
+                params.append(status_val)
             if 'message' in fields:
                 set_clauses.append('Message = %s')
                 params.append(fields['message'])
@@ -156,8 +160,10 @@ def update_job(job_id: str, **fields) -> None:
 
                 sql = f"UPDATE sync_jobs SET {', '.join(set_clauses)} WHERE JobID = %s"
                 params.append(job_id)
+                logger.debug(f"  SQL: {sql}")
+                logger.debug(f"  Params: {params}")
                 db_execute(sql, params)
-                logger.debug(f"Updated job {job_id} in sync_jobs table: {fields}")
+                logger.debug(f"Updated job {job_id} in sync_jobs table")
         except Exception as e:
             logger.warning(f"Failed to update job {job_id} in MySQL: {str(e)}")
 
