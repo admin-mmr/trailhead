@@ -1,10 +1,14 @@
 name: Full Bidirectional Sync
 
 on:
-  # disabled 
+  # DISABLED FOR DEBUGGING (04-04-2026)
+  # Reason: Excessive 404 polling on "Inline Babel script" during Azure SWA deployments.
+  # Fix deployed: exponential backoff + circuit breaker in run_sync_phase.sh.
+  # Re-enable after testing polling improvements and verifying no more 404 spam.
   # schedule:
   #  - cron: '0 2,8,14,20 * * *'   # 02:00 / 08:00 / 14:00 / 20:00 UTC
-  workflow_dispatch:               # Manual trigger from GitHub UI
+  # workflow_dispatch is still enabled for manual testing
+  workflow_dispatch:               # Manual trigger from GitHub UI (test only)
     inputs:
       verbose:
         description: 'Enable verbose logging (shows sample rows and diffs)'
@@ -16,11 +20,13 @@ on:
           - 'true'
 
 env:
-  ADMIN_URL:     ${{ secrets.MMR_ADMIN_URL }}    # https://mmr-admin.azurewebsites.net
-  CRON_TOKEN:    ${{ secrets.SYNC_CRON_TOKEN }}  # shared secret, set in Azure App Settings too
-  POLL_INTERVAL: 5
-  POLL_TIMEOUT:  300
-  VERBOSE:       ${{ inputs.verbose || 'false' }}
+  ADMIN_URL:           ${{ secrets.MMR_ADMIN_URL }}    # https://mmr-admin.azurewebsites.net
+  CRON_TOKEN:          ${{ secrets.SYNC_CRON_TOKEN }}  # shared secret, set in Azure App Settings too
+  POLL_INTERVAL:       10                              # Start at 10s, grows exponentially to 60s
+  POLL_MAX_INTERVAL:   60                              # Cap exponential backoff at 60s
+  POLL_TIMEOUT:        600                             # 10 min max wait per phase
+  CIRCUIT_BREAKER:     10                              # Give up after 10 consecutive errors
+  VERBOSE:             ${{ inputs.verbose || 'false' }}
 
 # Each phase job:
 #   1. checks out the repo (so the shared poll script is available)
