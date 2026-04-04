@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T16:09:53.295733 UTC
+-- Timestamp: 2026-04-04T16:28:10.188815 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -331,7 +331,7 @@ CREATE TABLE `sheets_sync_log` (
   KEY `idx_status` (`Status`),
   KEY `idx_started_at` (`StartedAt`),
   CONSTRAINT `fk_sheets_sync_log_jobid` FOREIGN KEY (`JobID`) REFERENCES `sync_jobs` (`JobID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
+) ENGINE=InnoDB AUTO_INCREMENT=52 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
 
 CREATE TABLE `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
@@ -898,21 +898,6 @@ CREATE TRIGGER `trg_members_after_insert` AFTER INSERT ON `members` FOR EACH ROW
   );
 END;
 
-CREATE TRIGGER `trg_members_after_update` AFTER UPDATE ON `members` FOR EACH ROW BEGIN
-  INSERT INTO member_log (
-    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
-    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
-    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
-    NYRRRunnerName, YearBorn
-  )
-  VALUES (
-    UUID(), NOW(), NEW.MemberID, 'UPDATE', NEW.Status, NEW.Created, NEW.Expiration,
-    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
-    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
-    NEW.NYRRRunnerName, NEW.YearBorn
-  );
-END;
-
 CREATE TRIGGER `trg_members_family_inheritance` AFTER INSERT ON `members` FOR EACH ROW BEGIN
   IF NEW.FamilyID IS NOT NULL THEN
     UPDATE members
@@ -941,6 +926,21 @@ CREATE TRIGGER `trg_members_family_inheritance` AFTER INSERT ON `members` FOR EA
       AND FamilyID = NEW.FamilyID
       AND Status IN ('pending', 'pending_ungrade', 'expired', 'inactive');
   END IF;
+END;
+
+CREATE TRIGGER `trg_members_after_update` AFTER UPDATE ON `members` FOR EACH ROW BEGIN
+  INSERT INTO member_log (
+    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
+    NYRRRunnerName, YearBorn
+  )
+  VALUES (
+    UUID(), NOW(), NEW.MemberID, 'UPDATE', NEW.Status, NEW.Created, NEW.Expiration,
+    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
+    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
+    NEW.NYRRRunnerName, NEW.YearBorn
+  );
 END;
 
 -- EVENTS

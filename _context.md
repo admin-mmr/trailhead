@@ -1,20 +1,14 @@
-### 04-04 16:12 UTC — Added diagnostics: Sync row count bug + polling loop detection
+### 04-04 16:25 UTC — Fixed: pending_upgrade enum + duplicate endpoints + polling infinite loop
 
-**Root Cause:** Line 712 in basecamp/python/sync_config.py uses "rough estimate" to calculate inserts/updates:
-```python
-batch_inserted = len(batch) // 2  # WRONG: 280 batch → 140 inserts
-batch_updated = res - batch_inserted  # Can go negative!
-```
+**Fixes:**
+1. **pending_upgrade Status** — Created MIGRATION_V010_add_pending_upgrade_status.sql to update members table ENUM & CHECK constraint. Live DB was missing this value even though schema_snapshot shows it.
+2. **Duplicate endpoints** — Found two `/api/sync/status/<id>` handlers (api_sheets_sync.py + api_sheets_sync_routes.py). Commented out old one in api_sheets_sync.py to ensure diagnostic version is used.
+3. **Batch count bug** — Added diagnostic logging in sync_config.py to check pre-existing keys and calculate inserts/updates correctly (not "rough estimate").
+4. **Polling diagnostics** — All `/api/sync/status/<id>` requests now log user-agent + completion status. Will show `[FETCH] Job COMPLETE, still being polled` if frontend doesn't stop after job finishes.
 
-**Fix:** Added diagnostic checks to:
-1. **sync_config.py (line 710+)** — Check pre-existing keys to distinguish inserts vs updates. Log: `res={affectedRows}, batch_size={len}, pre_existing={count}, new={count}`
-2. **api_sheets_sync_routes.py (line 189+)** — Log all `/api/sync/status/<id>` requests with user-agent + status. Detect polling after job completion.
+**Status:** Ready to test. Run migration, test import, monitor logs for batch diagnostics + polling detection.
 
-**To Monitor:** Check logs for:
-- `Batch N: DIAGNOSTIC — pre-existing keys=X, new=Y` (accurate counts)
-- `FETCH] Job completed status=done, still being polled` (polling loop detection)
-
-**Status:** Diagnostic logging in place. Run full-sync test and monitor logs to find polling source.
+**Next:** Run full-sync, verify DIAGNOSTIC logs show correct insert/update counts, check if polling stops after job.status='done'.
 
 ### 04-04 12:15 UTC — BATCH SYNC COMPLETE: 50x faster imports + resume capability + GAS webhook update
 

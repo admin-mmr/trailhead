@@ -36,23 +36,3 @@ from sync_coerce import (
 sheets_sync_bp = Blueprint('sheets_sync', __name__)
 
 
-# Legacy routes now provided by api_sheets_sync_routes.py
-# Kept here only for reference/backwards-compatibility
-
-@sheets_sync_bp.route('/api/sync/jobs')
-@login_required
-def api_sync_jobs():
-    """Return all known sync jobs (newest first) so the UI can restore state on mount."""
-    jobs = list_sync_jobs()
-    ordered = {j['id']: j for j in jobs}
-    return json_response({'ok': True, 'jobs': ordered})
-
-
-@sheets_sync_bp.route('/api/sync/status/<job_id>')
-@login_required
-def api_sync_status(job_id):
-    """Get status of a sync job."""
-    job = get_job(job_id)
-    if not job:
-        return json_response({'ok': False, 'error': 'Job not found'}, 404)
-    return json_response({'ok': True, 'data': job})
