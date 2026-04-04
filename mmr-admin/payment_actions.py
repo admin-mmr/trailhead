@@ -6,10 +6,10 @@ Handles the 2-step async workflow:
   Step 2 — Admin matches & approves → category-specific fulfillment
 
 This module coordinates: auto-match, manual-match, approve, reject,
-admin-create. Business logic lives in payment_handlers.py,
-Sheets sync in sheets_sync.py.
+admin-create. Business logic lives in payment_handlers.py.
+Sheets syncing is deferred to scheduled sync jobs (not real-time webhooks).
 
-Imports: db, payment_handlers, sheets_sync.
+Imports: db, payment_handlers, webhook_client.
 """
 
 from __future__ import annotations
@@ -32,11 +32,6 @@ from payment_handlers import (  # noqa: F401
     get_member,
     get_family_member_ids,
     dispatch_fulfillment,
-)
-from sheets_sync import (  # noqa: F401
-    sync_member_to_sheets,
-    sync_event_to_sheets,
-    sync_payment_to_sheets,
 )
 from webhook_client import (  # noqa: F401
     send_payment_approved_email,
@@ -298,18 +293,8 @@ def approve_event(event_id: str, admin_email: str, notes: str = '') -> Dict[str,
         state=f'intent={event.get("PaymentIntent")}, amount={event.get("Amount")}',
     )
 
-    # Fire-and-forget sheets sync: event status + payment record
-    # (Member sync already happened inside update_member_expiration)
-    sync_event_to_sheets(event_id, 'approved', admin_email)
-    if result.get('payment_id'):
-        sync_payment_to_sheets(
-            payment_id=result['payment_id'],
-            event_id=event_id,
-            member_id=event.get('MemberID', ''),
-            amount=str(event.get('Amount', '')),
-            payment_intent=event.get('PaymentIntent', ''),
-            period_end=result.get('new_expiration', ''),
-        )
+    # Note: Sheets sync happens via scheduled sync jobs (export_events, export_payments)
+    # not in real-time from payment approval
 
     # Send approval email to member
     try:
@@ -360,7 +345,7 @@ def reject_event(event_id: str, admin_email: str, notes: str = '') -> Dict[str, 
         state=f'notes={notes[:100]}',
     )
 
-    sync_event_to_sheets(event_id, 'rejected', admin_email)
+    # Note: Sheets sync happens via scheduled sync jobs (not real-time)
 
     # Send rejection email to member
     try:

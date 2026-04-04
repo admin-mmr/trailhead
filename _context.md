@@ -1,3 +1,20 @@
+### 04-04 18:05 UTC — CLEANED: Payments API refactored, removed real-time GAS webhooks
+
+**Removed:** All direct GAS webhook calls from payment approval/rejection flows. Payment approval now updates MySQL only; Sheets syncing deferred to scheduled sync jobs.
+
+**Files Changed:**
+- **api_payments.py** (650 lines) — Deleted `_sync_member_events_to_sheets()` function + call from api_approve_event_match()
+- **payment_actions.py** (504 lines) — Removed sync_*_to_sheets() calls from approve_event() + reject_event()
+- **payment_handlers.py** (370 lines) — Removed sheets_sync import, deleted sync call from update_member_expiration()
+
+**Operations Verified:** ✓ All 12 payment MySQL operations work (dashboard, pending events, auto-match, manual-match, approve, reject, admin-create, history, member summary, gmail candidates, member quick lookup). Email webhooks via webhook_client.py remain functional.
+
+**Architecture:** User submits → submissions table → admin matches → approve_event() {dispatch_fulfillment() creates payment + updates members} → log_activity() → [Scheduled sync job exports to Sheets]. No real-time webhooks.
+
+**Docs:** Created PAYMENTS_API_TRACE.md + PAYMENTS_API_VERIFICATION.md for reference.
+
+**Status:** ✅ Ready. No regressions found.
+
 ### 04-04 17:35 UTC — ENHANCED: Verbose logging for UpdatedAt timestamp filtering in exports
 
 **Issue:** export_members always sent all 624 members to GAS (even on repeat runs). No timestamp filtering on exports. Sync functions don't check `sheets_sync_log` for last successful completion time.

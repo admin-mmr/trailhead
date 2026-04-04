@@ -4,7 +4,8 @@ Category-specific payment fulfillment handlers for mmr-admin.
 Each PaymentIntent maps to a handler function that executes the
 business logic after a payment is approved (update members, etc.).
 
-This module imports from: db, sheets_sync.
+This module imports from: db, core, config_cache, datetime_utils.
+Sheets syncing happens via scheduled sync jobs (not real-time).
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from db import query, execute
-from sheets_sync import sync_member_to_sheets
 from core import gen_id
 from config_cache import get_config
 from datetime_utils import to_date, to_datetime
@@ -106,7 +106,7 @@ def update_member_expiration(
     """
     Update a single member's expiration, type, status, and payment fields.
     The member_log trigger handles audit logging automatically.
-    After MySQL write, syncs the updated member to Google Sheets.
+    Sheets sync happens via scheduled sync jobs (not real-time).
     """
     affected = execute("""
         UPDATE members SET
@@ -119,9 +119,6 @@ def update_member_expiration(
             LastUpdated         = NOW()
         WHERE MemberID = %s
     """, [new_expiration, membership_type, amount, transaction_ref, member_id])
-
-    if affected > 0:
-        sync_member_to_sheets(member_id, changed_by)
 
     return affected
 
