@@ -4,6 +4,8 @@
  */
 
 const PaymentsPanel = () => {
+  const { useState, useEffect } = React;
+
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
