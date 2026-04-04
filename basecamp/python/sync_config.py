@@ -448,36 +448,45 @@ def generic_sync_runner(
             # ─────────────────────────────────────────────────────────────────
             # MySQL → Google Sheets (Export) with batching & timestamp filtering
             # ─────────────────────────────────────────────────────────────────
-            logger.info(f"Starting MySQL→Sheets export for table={table}")
+            logger.info(f"[EXPORT START] MySQL→Sheets export for table={table}, config={config_key}, has_updated_at={'UpdatedAt' in cols}")
             update_job(job_id, message=f"Reading {len(cols)} columns from {table}...")
 
             try:
                 # Query with timestamp filter if UpdatedAt exists
                 col_list = ", ".join(cols)
                 if 'UpdatedAt' in cols:
-                    # Get last sync time from sheets_sync_log
+                    # Get last sync time from sheets_sync_log: max CompletedAt for successful exports
+                    logger.info(f"[TIMESTAMP CHECK] Looking for last successful sync: config_key={config_key}, table={table}, direction=mysql_to_sheet")
                     try:
-                        last_sync = db_query("""
-                            SELECT MAX(StartedAt) as LastSync
+                        # Find the most recent COMPLETED batch from a successful sync
+                        last_sync_query = db_query("""
+                            SELECT MAX(CompletedAt) as LastCompletedTime
                             FROM sheets_sync_log
-                            WHERE JobID = %s AND ConfigKey = %s AND Status = 'success'
-                        """, [job_id, config_key])
-                        last_sync_time = last_sync[0]['LastSync'] if last_sync and last_sync[0]['LastSync'] else None
+                            WHERE ConfigKey = %s AND Direction = %s AND Status = 'success'
+                        """, [config_key, 'mysql_to_sheet'])
+
+                        last_sync_time = None
+                        if last_sync_query and last_sync_query[0]:
+                            last_sync_time = last_sync_query[0].get('LastCompletedTime')
 
                         if last_sync_time:
-                            sql = f"SELECT {col_list} FROM {table} WHERE UpdatedAt >= %s"
+                            logger.info(f"[TIMESTAMP CHECK] ✓ Found last successful sync completed at: {last_sync_time}")
+                            sql = f"SELECT {col_list} FROM {table} WHERE UpdatedAt > %s"
                             rows = db_query(sql, [last_sync_time])
-                            logger.info(f"Fetched {len(rows)} rows updated since {last_sync_time}")
+                            logger.info(f"[TIMESTAMP FILTER] ✓ Applied UpdatedAt > {last_sync_time}. Result: {len(rows)} rows to export")
                         else:
+                            logger.info(f"[TIMESTAMP CHECK] ⚠ No prior successful sync found for {config_key} — treating as first sync")
                             rows = db_query(f"SELECT {col_list} FROM {table}")
-                            logger.info(f"First sync: fetched all {len(rows)} rows")
-                    except:
-                        # Fallback if sheets_sync_log query fails
+                            logger.info(f"[TIMESTAMP FILTER] ⚠ First sync detected: exporting all {len(rows)} rows")
+                    except Exception as ts_err:
+                        # Fallback if query fails — don't hide the error
+                        logger.error(f"[TIMESTAMP CHECK] ✗ Failed to query sheets_sync_log: {str(ts_err)}")
+                        logger.warning(f"[TIMESTAMP FILTER] Falling back to unfiltered export (all rows)")
                         rows = db_query(f"SELECT {col_list} FROM {table}")
-                        logger.info(f"Fetched {len(rows)} rows (timestamp filter unavailable)")
+                        logger.warning(f"[TIMESTAMP FILTER] Fetched all {len(rows)} rows (timestamp check unavailable)")
                 else:
                     rows = db_query(f"SELECT {col_list} FROM {table}")
-                    logger.debug(f"Fetched {len(rows)} rows from {table}")
+                    logger.debug(f"Fetched {len(rows)} rows from {table} (UpdatedAt not in columns)")
 
             except Exception as e:
                 msg = f"Failed to query {table}: {str(e)}"

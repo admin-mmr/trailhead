@@ -29,6 +29,26 @@ Edit in `basecamp/python/` FIRST (source of truth): `sync_engine.py`, `nyrr_api.
 ## BUILD VERIFICATION
 Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not paraphrased) + diagnosis + fix. Apply → retest. **Max 5 attempts:** Print summary table, then ask "How to proceed?"
 
+## SHEETS SYNC ARCHITECTURE (04-04 cleanup complete)
+**Current Implementation:** Batched UPSERT via `sync_config.py` + `sync_engine.py` (source of truth in `basecamp/python/`).
+- Routes: `api_sheets_sync_routes.py` (Flask endpoints, `/api/sync/*`)
+- Job management: `sync_jobs.py` (in-memory + MySQL fallback for persistence)
+- Runners: `sync_runners.py` (6 export/import operations + full_sync orchestration)
+- GAS integration: `api_sheets_diags.py` (webhook wrapper with retry logic)
+
+**Deprecated files (removed 04-04):**
+1. `basecamp/python/google_sheets_snapshot.py` — Old snapshot/diff logic (replaced by direct GAS webhook)
+2. `mmr-admin/sheets_sync.py` — Fire-and-forget single-record POSTs (replaced by batch exports)
+3. `basecamp/ops/sync_sheets_to_mysql.py` — Legacy CLI tool with duplicated validation logic (archived; not in GitHub Actions)
+
+**MySQL Procedures (all active):**
+- `generate_member_id()` — Auto-generate sequential IDs on member create
+- `sp_admin_update_member_status()` — Admin override with audit trail
+- `sp_error_summary_report(days_back)` — Error dashboard trends
+- `sp_link_transaction()` — Link gmail_transactions to members
+
+**Batch Sizing:** BATCH_SIZE=300 (MySQL inserts, GAS API calls). Configurable in `sync_config.py` line 26.
+
 ## COMMON TASKS
 **GitHub Actions:** Check `.github/workflows/` + `git status/diff/log` → identify issues → suggest fixes + commit.
 **Photo Manager:** Check `process_photos.py`/`bib_analyzer.py` → data flow (Drive → download → process → output.json → Blob) → optimize.
