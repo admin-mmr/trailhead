@@ -502,19 +502,19 @@ def api_gmail_matching_candidates(member_id: str):
 @handle_api_errors
 def api_search_members():
     """
-    Search members by name, email, or memberID.
-    Query param: ?q=search_term
+    Search members by name, email, memberID, notes, wechat, etc.
+    Query params: ?q=search_term&limit=30
+    Supports multiple space-separated terms (AND logic).
     """
     q = request.args.get('q', '').strip()
+    limit = int(request.args.get('limit', 30))
+
     if len(q) < 2:
         return json_response({'error': 'Search term too short'}, status=400)
 
-    results = query("""
-        SELECT MemberID, FirstName, LastName, Email, Type, Status, Expiration
-        FROM members
-        WHERE FirstName LIKE %s OR LastName LIKE %s OR Email LIKE %s OR MemberID LIKE %s
-        ORDER BY FirstName, LastName
-        LIMIT 20
-    """, (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"))
+    results = query(
+        "CALL sp_search_members_advanced(%s, %s)",
+        (q, limit)
+    )
 
     return json_response({'members': results})
