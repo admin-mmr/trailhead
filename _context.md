@@ -1,3 +1,18 @@
+### 04-04 18:10 UTC — FIXED: import_members Expiration date validation (0000-00-00 → NULL)
+
+**Bug:** import_members crashed when Sheets contained blank/all-zero expiration dates (`'0000-00-00'`). MySQL 5.7+ rejects `"Incorrect date value: '0000-00-00'"`.
+
+**Root Cause:** `sync_config.py` lines 667-671 converted ISO 8601 dates for only 5 columns (Timestamp, TransactionDate, PaymentDate, CreatedAt, UpdatedAt) but NOT Expiration. Blank dates weren't normalized to NULL before INSERT.
+
+**Fix Applied:** `basecamp/python/sync_config.py` lines 672-675 — Added date validation block:
+- Normalize `'0000-00-00'`, `'0000-00-00 00:00:00'`, empty strings, and whitespace-only to NULL
+- Applied to all date columns: Expiration, Created, PaymentDate, TransactionDate, CreatedAt, UpdatedAt
+- Runs AFTER field mapping, BEFORE INSERT
+
+**Test:** Created `test_expiration_fix.py` — 6 test cases: normal date (kept), empty (→NULL), 0000-00-00 (→NULL), zero datetime (→NULL), whitespace (→NULL), None (→NULL). ✓ All passed.
+
+**Status:** ✅ Ready. Next import_members run will skip/accept invalid dates gracefully.
+
 ### 04-04 18:05 UTC — CLEANED: Payments API refactored, removed real-time GAS webhooks
 
 **Removed:** All direct GAS webhook calls from payment approval/rejection flows. Payment approval now updates MySQL only; Sheets syncing deferred to scheduled sync jobs.

@@ -669,6 +669,10 @@ def generic_sync_runner(
                     # Coerce empty strings to 0 for numeric/decimal columns
                     if value == '' and sql_col in ('Amount', 'PaymentAmount', 'Price', 'Balance', 'MembershipFeePaid'):
                         value = 0
+                    # Handle invalid/blank dates: coerce '0000-00-00' and empty strings to NULL for date columns
+                    if sql_col in ('Expiration', 'Created', 'PaymentDate', 'TransactionDate', 'CreatedAt', 'UpdatedAt'):
+                        if value in ('', '0000-00-00', '0000-00-00 00:00:00', None) or (isinstance(value, str) and value.strip() == ''):
+                            value = None
                     mapped_row[sql_col] = value
                 mapped_rows.append(mapped_row)
 
