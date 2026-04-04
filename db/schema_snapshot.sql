@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T01:26:22.502098 UTC
+-- Timestamp: 2026-04-04T01:40:26.709534 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -405,13 +405,19 @@ CREATE TABLE `webapp_events` (
   CONSTRAINT `fk_pe_member` FOREIGN KEY (`MemberID`) REFERENCES `members` (`MemberID`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================
 -- VIEWS
+-- ==========================================
+DROP VIEW IF EXISTS `v_family_members`;
 utf8mb4;
 
+DROP VIEW IF EXISTS `v_gmail_split_audit`;
 utf8mb4;
 
+DROP VIEW IF EXISTS `v_payment_details`;
 utf8mb4;
 
+DROP VIEW IF EXISTS `v_payment_splits`;
 utf8mb4;
 
 -- PROCEDURES

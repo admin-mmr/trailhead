@@ -118,9 +118,21 @@ def _export_via_connector():
                 try:
                     cursor.execute(f"SHOW CREATE VIEW `{view}`")
                     res = cursor.fetchone()
-                    # Index 2 is the 'Create View' string in MySQL 8.0+
-                    sql_lines.append(f"DROP VIEW IF EXISTS `{view}`;\n")
-                    sql_lines.append(res[2] + ';\n\n')
+                    
+                    # res[0] = View Name
+                    # res[1] = Create View SQL (In some versions)
+                    # res[2] = Create View SQL (Standard MySQL 8.0)
+                    # res[3] = character_set_client
+                    
+                    # LOGIC: Find the first item in the list that starts with 'CREATE'
+                    create_sql = next((item for item in res if isinstance(item, str) and item.strip().upper().startswith('CREATE')), None)
+                    
+                    if create_sql:
+                        sql_lines.append(f"DROP VIEW IF EXISTS `{view}`;\n")
+                        sql_lines.append(create_sql + ';\n\n')
+                    else:
+                        sql_lines.append(f"-- Could not find SQL for view {view} in result set.\n\n")
+                        
                 except mysql.connector.Error as err:
                     sql_lines.append(f"-- Error exporting view {view}: {err.msg}\n\n")
 
