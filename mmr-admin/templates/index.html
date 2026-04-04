@@ -1973,7 +1973,7 @@ const SyncPanel = () => {
             Import and sync data from Google Sheets to MySQL. Operations are safe and support insert-only (no overwrites) or upsert modes.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-            <button className="btn btn-primary" onClick={() => triggerSync('Import Transactions', 'Google → MySQL', '/api/sync/import-transactions')}>📧 Import Transactions</button>
+            <button className="btn btn-primary" onClick={() => triggerSync('Import Transactions', 'Google → MySQL', '/api/sync/import/transactions')}>📧 Import Transactions</button>
             <button className="btn btn-primary" onClick={() => triggerSync('Insert Members', 'Google → MySQL', '/api/sync/import/members')}>👥 Insert Members (new only)</button>
           </div>
           <RecentJobs filterFn={job => ['Import Transactions', 'Insert Members'].includes(job.jobName)} />
