@@ -40,6 +40,7 @@ def _call_gas_webhook(payload: Dict) -> Dict:
         Response data or empty dict on error
     """
     import requests
+    import json
     from config_cache import get_config as _get_config_cached
 
     webhook_url = _get_config_cached('SheetsWebhookUrl', '')
@@ -52,19 +53,34 @@ def _call_gas_webhook(payload: Dict) -> Dict:
 
     for attempt in range(max_retries):
         try:
-            logger.info(f"GAS webhook POST action={payload.get('action')} ...")
+            action = payload.get('action', 'unknown')
+            logger.info(f"GAS webhook POST action={action}, rows={len(payload.get('rows', []))} ...")
+
+            # Try to serialize payload to catch serialization errors early
+            try:
+                payload_json = json.dumps(payload)
+            except TypeError as te:
+                logger.error(f"Payload serialization failed: {str(te)}")
+                logger.debug(f"Problematic payload type: {type(payload)}")
+                if 'rows' in payload:
+                    logger.debug(f"First row types: {[type(v).__name__ for v in payload['rows'][0]] if payload['rows'] else 'empty'}")
+                raise Exception(f"JSON serialization error: {str(te)}")
+
             resp = requests.post(webhook_url, json=payload, timeout=timeout)
-            logger.info(f"GAS webhook response: status={resp.status_code}")
+            logger.info(f"GAS webhook response: status={resp.status_code}, body_len={len(resp.text)}")
 
             if resp.status_code != 200:
+                logger.debug(f"GAS response body: {resp.text[:1000]}")
                 raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
             if not resp.text.strip():
                 raise Exception(f"GAS returned empty body")
 
             body = resp.json()
             if not body.get('ok'):
+                logger.debug(f"GAS response error: {body}")
                 raise Exception(f"GAS error: {body.get('error', body)}")
 
+            logger.info(f"GAS webhook success: {body.get('message', 'ok')}")
             return body.get('data', {})
 
         except requests.exceptions.Timeout as e:
@@ -76,9 +92,11 @@ def _call_gas_webhook(payload: Dict) -> Dict:
                 return {}
 
         except Exception as e:
-            logger.error(f"GAS webhook error: {str(e)}")
+            logger.error(f"GAS webhook error on attempt {attempt + 1}/{max_retries}: {str(e)}")
             if attempt < max_retries - 1:
+                logger.info(f"Retrying (attempt {attempt + 1}/{max_retries})...")
                 continue
+            logger.error(f"GAS webhook failed after {max_retries} attempts")
             return {}
 
     return {}

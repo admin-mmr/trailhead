@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, date, time
 
 logger = logging.getLogger(__name__)
 
@@ -321,6 +322,7 @@ def _prepare_sheet_rows(db_rows: List[Dict], cfg: Dict) -> List[List[Any]]:
     """
     Convert MySQL rows to Sheets format (list of lists).
     Applies reverse field mappings if needed.
+    Handles datetime/date/time objects by converting to ISO format strings.
     """
     if not db_rows:
         return []
@@ -336,9 +338,21 @@ def _prepare_sheet_rows(db_rows: List[Dict], cfg: Dict) -> List[List[Any]]:
             # Use reverse mapping: if this Sheet col was mapped from SQL, use the original
             sql_col = reverse_map.get(col, col)
             val = row.get(sql_col, '')
+
             # Serialize complex types for Sheets
-            if isinstance(val, (dict, list)):
+            if isinstance(val, datetime):
+                # Convert datetime to ISO format string (e.g., "2026-04-04T05:42:53")
+                val = val.isoformat()
+            elif isinstance(val, date):
+                # Convert date to ISO format string (e.g., "2026-04-04")
+                val = val.isoformat()
+            elif isinstance(val, time):
+                # Convert time to ISO format string (e.g., "05:42:53")
+                val = val.isoformat()
+            elif isinstance(val, (dict, list)):
+                # Convert dict/list to string representation
                 val = str(val)
+
             sheet_row.append(val if val is not None else '')
         sheet_rows.append(sheet_row)
 
