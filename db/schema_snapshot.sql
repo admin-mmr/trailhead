@@ -127,8 +127,6 @@ CREATE TABLE `member_log` (
   `Gender` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `WeChatID` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `District` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Info` text COLLATE utf8mb4_unicode_ci,
-  `LastUpdated` datetime DEFAULT NULL,
   `MembershipFeePaid` decimal(10,2) DEFAULT NULL,
   `PaymentDate` date DEFAULT NULL,
   `PaymentTransaction` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
