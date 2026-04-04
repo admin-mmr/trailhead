@@ -24,6 +24,10 @@ const SHEET_NAMES = {
   FETCH_GMAIL:       'Active',
   PAYMENT_EVENTS:    'Payment Confirmation Events',
   OUTBOUND_EMAILS:   'Outbound-Emails',          // Log of all outbound reminder emails
+  // MySQL sync destination tabs (same file)
+  SQL_MEMBERS:       'SQL Members',
+  SQL_PAYMENTS:      'SQL Payments',
+  SQL_SUBMISSIONS:   'SQL Submissions',
 };
 
 // Sheets that live in the Fetch-Gmail spreadsheet (all others are in the membership spreadsheet)

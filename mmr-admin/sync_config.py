@@ -27,11 +27,27 @@ SYNC_CONFIG = {
     # ─────────────────────────────────────────────────────────────────────────
     # Direction: Sheets → MySQL (Import)
     # ─────────────────────────────────────────────────────────────────────────
+    'import_members': {
+        'table': 'members',
+        'sheet': 'Main',
+        'key': 'MemberID',
+        'direction': 'sheet_to_mysql',
+        'mode': 'insert_only',  # NEW: only insert, never update
+        'columns': [
+            'MemberID', 'Status', 'Created', 'Expiration', 'Email', 'FirstName',
+            'LastName', 'Type', 'FamilyID', 'Gender', 'WeChatID', 'District',
+            'MembershipFeePaid', 'PaymentDate', 'PaymentTransaction', 'JoinYear',
+            'PhoneNumber', 'Notes', 'NYRRRunnerName', 'YearBorn', 'YearBornGuess',
+            'UpdatedAt'
+        ]
+    },
+
     'import_transactions': {
         'table': 'gmail_transactions',
-        'sheet': 'Transactions',  # Adjust to your actual sheet name
+        'sheet': 'Transactions',
         'key': 'MessageId',
         'direction': 'sheet_to_mysql',
+        'mode': 'upsert',  # Default: insert or update
         'columns': [
             'Timestamp', 'Sender', 'Amount', 'Memo', 'TransactionDate',
             'TransactionNumber', 'MessageId', 'Subject', 'OriginalMemo', 'Source'
@@ -222,8 +238,11 @@ def generic_sync_runner(
                     'message': msg
                 }
 
-            # UPSERT into MySQL
-            update_job(job_id, message=f"Upserting {len(rows)} rows into {table}...")
+            # Get sync mode (upsert or insert_only)
+            sync_mode = cfg.get('mode', 'upsert')
+            action_verb = "Inserting" if sync_mode == 'insert_only' else "Upserting"
+            update_job(job_id, message=f"{action_verb} {len(rows)} rows into {table}...")
+
             for idx, row in enumerate(rows):
                 try:
                     # Apply field mappings (e.g., Source → PaymentMethod)
@@ -232,32 +251,49 @@ def generic_sync_runner(
                         sql_col = cfg.get('map_fields', {}).get(col, col)
                         mapped_row[sql_col] = row.get(col)
 
-                    # Build UPSERT SQL
-                    col_names = ", ".join(mapped_row.keys())
-                    placeholders = ", ".join(["%s"] * len(mapped_row))
-                    update_stmt = ", ".join(
-                        [f"{c}=VALUES({c})" for c in mapped_row.keys() if c != pk]
-                    )
-
-                    sql = f"""
-                        INSERT INTO {table} ({col_names})
-                        VALUES ({placeholders})
-                        ON DUPLICATE KEY UPDATE {update_stmt}
-                    """
-
-                    res = db_execute(sql, list(mapped_row.values()))
-                    if res == 1:
-                        inserted += 1
+                    if sync_mode == 'insert_only':
+                        # INSERT IGNORE: skip if PK already exists
+                        col_names = ", ".join(mapped_row.keys())
+                        placeholders = ", ".join(["%s"] * len(mapped_row))
+                        sql = f"""
+                            INSERT IGNORE INTO {table} ({col_names})
+                            VALUES ({placeholders})
+                        """
+                        res = db_execute(sql, list(mapped_row.values()))
+                        if res == 1:
+                            inserted += 1
+                        else:
+                            skipped += 1  # Row already existed
                     else:
-                        updated += 1
+                        # UPSERT (default): insert or update
+                        col_names = ", ".join(mapped_row.keys())
+                        placeholders = ", ".join(["%s"] * len(mapped_row))
+                        update_stmt = ", ".join(
+                            [f"{c}=VALUES({c})" for c in mapped_row.keys() if c != pk]
+                        )
+
+                        sql = f"""
+                            INSERT INTO {table} ({col_names})
+                            VALUES ({placeholders})
+                            ON DUPLICATE KEY UPDATE {update_stmt}
+                        """
+
+                        res = db_execute(sql, list(mapped_row.values()))
+                        if res == 1:
+                            inserted += 1
+                        else:
+                            updated += 1
 
                 except Exception as e:
-                    error_msg = f"Row {idx} upsert failed: {str(e)}"
+                    error_msg = f"Row {idx} sync failed: {str(e)}"
                     logger.error(error_msg)
                     errors.append(error_msg)
                     skipped += 1
 
-            msg = f"✓ Synced {inserted} new + {updated} updated rows to {table}"
+            if sync_mode == 'insert_only':
+                msg = f"✓ Inserted {inserted} new rows to {table} ({skipped} skipped as duplicates)"
+            else:
+                msg = f"✓ Synced {inserted} new + {updated} updated rows to {table}"
             logger.info(msg)
             update_job(job_id, message=msg)
 

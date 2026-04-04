@@ -9,6 +9,7 @@ Routes:
   POST /api/sync/export/payments
   POST /api/sync/export/submissions
   POST /api/sync/export/transaction-meta
+  POST /api/sync/import/members
   POST /api/sync/import/transactions
   POST /api/sync/jobs
   GET  /api/sync/status/<job_id>
@@ -28,6 +29,7 @@ from sync_runners import (
     sync_export_payments,
     sync_export_submissions,
     sync_export_transaction_meta,
+    sync_import_members,
     sync_import_transactions,
 )
 
@@ -98,12 +100,29 @@ def api_export_transaction_meta():
 # Import Routes (Google Sheets → MySQL)
 # ═══════════════════════════════════════════════════════════════════════════
 
+@sheets_sync_bp.route('/api/sync/import/members', methods=['POST'])
+@login_required
+def api_import_members():
+    """
+    Import NEW members from Google Sheets Main tab into MySQL members table.
+
+    Mode: INSERT ONLY (skips duplicates, never updates existing members).
+    Primary key: MemberID
+
+    Returns:
+        {ok: true, job_id: str}
+    """
+    job_id = launch_job(sync_import_members, initial_message='Importing new members...')
+    return json_response({'ok': True, 'job_id': job_id})
+
+
 @sheets_sync_bp.route('/api/sync/import/transactions', methods=['POST'])
 @login_required
 def api_import_transactions():
     """
     Import transactions from Google Sheets to MySQL.
 
+    Mode: UPSERT (insert new or update existing).
     Field mappings:
       Source (Sheet) → PaymentMethod (MySQL)
 

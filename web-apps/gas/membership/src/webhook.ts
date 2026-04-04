@@ -99,6 +99,11 @@ function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.Tex
         return handleUpdateEvents(payload);
       case 'update_payments':
         return handleUpdatePayments(payload);
+      // MySQL sync — generic write/read operations
+      case 'write_range':
+        return handleWriteRange(payload);
+      case 'read_range':
+        return handleReadRange(payload);
       // Legacy — kept for backward compat during rollout
       case 'payment_approved':
         return handlePaymentApproved(payload);
@@ -776,6 +781,132 @@ function handlePaymentApproved(payload: any): GoogleAppsScript.Content.TextOutpu
   }
 
   return jsonResponse({ ok: true, results });
+}
+
+
+// ---------------------------------------------------------------------------
+// MySQL Sync Handlers — write_range and read_range
+// Used by mmr-admin sync_config.py generic_sync_runner
+// ---------------------------------------------------------------------------
+
+/**
+ * handleWriteRange: Write data to a sheet tab (MySQL → Sheets sync).
+ *
+ * Payload:
+ *   {
+ *     action: 'write_range',
+ *     sheetName: 'SQL Members' | 'SQL Payments' | 'SQL Submissions',
+ *     rows: [[col1, col2, ...], [col1, col2, ...], ...],
+ *     overwrite: false  // false = append, true = replace all
+ *   }
+ */
+function handleWriteRange(payload: any): GoogleAppsScript.Content.TextOutput {
+  console.log('[webhook] write_range: target sheet =', payload.sheetName);
+  const { sheetName, rows, overwrite } = payload;
+
+  if (!sheetName || !Array.isArray(rows)) {
+    return jsonResponse({ ok: false, error: 'sheetName and rows array required' });
+  }
+
+  try {
+    const sheet = getSheet(sheetName);
+
+    if (overwrite) {
+      // Clear all data and write fresh
+      const lastRow = sheet.getLastRow();
+      const lastCol = sheet.getLastColumn();
+      if (lastRow > 1) {
+        sheet.deleteRows(2, lastRow - 1); // Keep header
+      }
+    }
+
+    let inserted = 0;
+    let updated = 0;
+
+    // Append each row
+    for (const row of rows) {
+      if (Array.isArray(row)) {
+        sheet.appendRow(row);
+        inserted++;
+      }
+    }
+
+    console.log(`[webhook] write_range: wrote ${inserted} rows to "${sheetName}"`);
+    return jsonResponse({ ok: true, data: { inserted, updated } });
+  } catch (err: any) {
+    console.error('[webhook] write_range error:', err);
+    return jsonResponse({ ok: false, error: err.message || String(err) });
+  }
+}
+
+/**
+ * handleReadRange: Read data from a sheet tab (Sheets → MySQL sync).
+ *
+ * Payload:
+ *   {
+ *     action: 'read_range',
+ *     sheetName: 'Main' | 'Payment-History' | 'WebApp-Events',
+ *     columns: ['MemberID', 'Status', 'Email', ...]
+ *   }
+ *
+ * Returns:
+ *   {
+ *     ok: true,
+ *     data: [
+ *       { MemberID: '123', Status: 'active', Email: '...' },
+ *       { MemberID: '124', Status: 'inactive', Email: '...' },
+ *       ...
+ *     ]
+ *   }
+ */
+function handleReadRange(payload: any): GoogleAppsScript.Content.TextOutput {
+  console.log('[webhook] read_range: source sheet =', payload.sheetName);
+  const { sheetName, columns } = payload;
+
+  if (!sheetName || !Array.isArray(columns)) {
+    return jsonResponse({ ok: false, error: 'sheetName and columns array required' });
+  }
+
+  try {
+    const sheet = getSheet(sheetName);
+    const data = sheet.getDataRange().getValues();
+
+    if (data.length < 1) {
+      return jsonResponse({ ok: true, data: [] });
+    }
+
+    const headers = data[0];
+    const columnIndices: Record<string, number> = {};
+
+    // Map column names to indices
+    for (const colName of columns) {
+      const idx = headers.indexOf(colName);
+      if (idx >= 0) {
+        columnIndices[colName] = idx;
+      } else {
+        console.warn(`[webhook] Column not found in header: ${colName}`);
+      }
+    }
+
+    // Convert rows to objects
+    const result = [];
+    for (let i = 1; i < data.length; i++) {
+      const row: Record<string, any> = {};
+      for (const colName of columns) {
+        const idx = columnIndices[colName];
+        if (idx !== undefined) {
+          row[colName] = data[i][idx] ?? '';
+        }
+      }
+      result.push(row);
+    }
+
+    console.log(`[webhook] read_range: read ${result.length} rows from "${sheetName}"`);
+    return jsonResponse({ ok: true, data: result });
+  } catch (err: any) {
+    console.error('[webhook] read_range error:', err);
+    return jsonResponse({ ok: false, error: err.message || String(err) });
+  }
 }
 
 

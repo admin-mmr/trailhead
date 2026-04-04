@@ -1,22 +1,43 @@
-### 04-03 22:15 UTC — Simplified sync architecture w/ generic runner
+### 04-03 22:30 UTC — GAS webhook handlers for MySQL→Sheets write
 
 **Changed:**
-1. Created basecamp/python/sync_config.py: Single SYNC_CONFIG dict + generic_sync_runner() helper eliminates code duplication across all 5 sync patterns (import/export members/payments/submissions/transaction-meta) ✅
-2. Created mmr-admin/sync_runners.py: Thin wrapper functions (sync_export_members, sync_import_transactions, etc.) delegate to generic runner with db/webhook helpers ✅
-3. Created mmr-admin/api_sheets_sync_routes.py: Clean Flask routes using new helpers; POST /api/sync/{export,import}/{members,payments,submissions,transaction-meta,transactions} ✅
-4. Updated scripts/sync-shared-modules.sh: Now syncs sync_config.py from basecamp/python/ → mmr-admin/ at build time ✅
+1. web-apps/gas/membership/src/config.ts: Added SQL_MEMBERS, SQL_PAYMENTS, SQL_SUBMISSIONS to SHEET_NAMES ✅
+2. web-apps/gas/membership/src/webhook.ts: Added handleWriteRange() + handleReadRange() action handlers ✅
+   • write_range: Appends rows to SQL_* tabs (MySQL→Sheets export)
+   • read_range: Reads columns from Main/Payment-History/WebApp-Events (Sheets→MySQL import)
 
 **Status:**
-- All 5 config patterns defined in SYNC_CONFIG with field mappings (e.g., Source→PaymentMethod for gmail_transactions)
-- generic_sync_runner handles both directions (mysql_to_sheet, sheet_to_mysql) + UPSERT logic
-- Compiled successfully; imports verified in mmr-admin context
-- New routes ready to register in app.py (line 161 area) or run standalone tests
+- TypeScript compiles successfully (no errors)
+- New action handlers integrated into doPost() switch
+- Generic sync_runner can now call gas_webhook with write_range/read_range actions
+- Export flow complete: Flask → Python → GAS webhook → SQL tabs in Sheets
 
 **Next:**
-- Optional: Register api_sheets_sync_routes blueprint in app.py to replace old endpoints (maintains backward compat)
-- Test import flow: call sync_import_transactions() with mock webhook
-- Verify export flow: call sync_export_members() with real MySQL data + mock webhook
-- Migrate job history display UI to use new /api/sync/status/<job_id> responses
+- Deploy GAS changes to Google Apps Script project
+- Create "SQL Members", "SQL Payments", "SQL Submissions" tabs in Sheets
+- Test export_members route (POST /api/sync/export/members)
+- Test import_members route (POST /api/sync/import/members)
+
+### 04-03 22:20 UTC — Add insert-only import_members sync mode
+
+**Changed:**
+1. Added import_members config to SYNC_CONFIG: Sheets→MySQL, Main sheet, mode=insert_only (uses INSERT IGNORE) ✅
+2. Updated generic_sync_runner: Supports both upsert and insert_only modes; different SQL + logging ✅
+3. Added sync_import_members() wrapper in sync_runners.py ✅
+4. Added POST /api/sync/import/members route in api_sheets_sync_routes.py ✅
+5. Synced basecamp/python/sync_config.py → mmr-admin/sync_config.py ✅
+
+**Status:**
+- 6 total configs: 4 export (MySQL→Sheets) + 2 import (Sheets→MySQL, one insert_only)
+- import_members: reads all 22 member columns from Main sheet, inserts only new MemberIDs (skips duplicates)
+- import_transactions: upserts (insert or update) with Source→PaymentMethod mapping
+- All routes compile; imports verified
+- Ready to register blueprint in app.py
+
+**Next:**
+- Register api_sheets_sync_routes blueprint in app.py (line 162)
+- Test import_members: POST /api/sync/import/members
+- Verify duplicate MemberIDs are skipped (INSERT IGNORE behavior)
 
 ### 04-04 03:25 UTC — Cleanup: Delete executed migrations, V007 is final
 

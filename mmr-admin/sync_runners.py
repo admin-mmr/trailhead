@@ -152,8 +152,24 @@ def sync_export_transaction_meta(job_id: str):
     update_job(job_id, status='completed', **result)
 
 
+def sync_import_members(job_id: str):
+    """Import members (insert-only): Google Sheets Main → MySQL members."""
+    logger.info(f"[{job_id}] Starting import_members (insert-only mode)")
+    result = generic_sync_runner(
+        job_id=job_id,
+        config_key='import_members',
+        db_query=query,
+        db_execute=execute,
+        gas_webhook=_call_gas_webhook,
+        update_job=update_job,
+        direction='sheet_to_mysql'
+    )
+    logger.info(f"[{job_id}] Result: {result}")
+    update_job(job_id, status='completed', **result)
+
+
 def sync_import_transactions(job_id: str):
-    """Import transactions: Google Sheets → MySQL."""
+    """Import transactions (upsert): Google Sheets → MySQL."""
     logger.info(f"[{job_id}] Starting import_transactions")
     result = generic_sync_runner(
         job_id=job_id,
