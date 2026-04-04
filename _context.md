@@ -1,3 +1,47 @@
+### 04-04 07:18 UTC — Fix: MySQL→Sheets export routes using wrong sheet names
+
+**Changed:**
+- **mmr-admin/sync_config.py** lines 63, 77, 89: Updated sheet names for exports
+  - export_members: `'Main'` → `'SQL Members'`
+  - export_payments: `'Payment-History'` → `'SQL Payments'`
+  - export_submissions: `'Submissions'` → `'SQL Submissions'`
+- **basecamp/python/sync_config.py** lines 63, 77, 89: Same fixes (source of truth)
+- GAS webhook handleWriteRange correctly appends to target sheets (no changes needed)
+
+**Root Cause:**
+- API routes `/api/sync/export/{members,payments,submissions}` were appending data to old sheet names
+- Should write to SQL_* destination tabs (created in Apr 3 update) for MySQL→Sheets sync
+- Old sheets (Main, Payment-History, Submissions) are for Sheets→MySQL import direction
+
+**Status:**
+- ✅ Both sync_config files updated
+- ✅ File syntax verified
+- Ready: Re-run `/api/sync/export/members`, `/api/sync/export/payments`, `/api/sync/export/submissions`
+- Data will now append to correct `SQL Members`, `SQL Payments`, `SQL Submissions` tabs
+
+**Next:**
+- Test export routes to verify data lands in SQL_* sheets
+- Verify append behavior (each run adds new rows, not overwrites)
+- Monitor GAS webhook logs for successful write_range calls
+
+### 04-04 07:12 UTC — Fix: gmail_transactions INSERT parameter mismatch
+
+**Changed:**
+- **mmr-admin/api_sheets_sync.py** line 1446: Fixed INSERT VALUES clause
+  - Had 12 placeholders (`%s`), 10 columns → Now has correct 10 placeholders
+  - Error: "Not enough parameters for the SQL statement" (12 params expected, 10 provided)
+  - All 5 transaction rows from import now will succeed
+
+**Status:**
+- ✅ File syntax verified
+- ✅ Import route ready for retry: `/api/sync/import/transactions`
+- Ready: Re-run import to process Ming Jin, Frank Ko, Wayne, Julia Xiaoyan Fan, Rui Zhang rows
+
+**Next:**
+- Re-run `/api/sync/import/transactions` to insert these 5 rows
+- Verify gmail_transactions populated correctly
+- Check payment matching workflow for these new transactions
+
 ### 04-04 06:45 UTC — Phase 2: Admin Payment Workflow Updates (webapp_events → submissions)
 
 **Changed:**

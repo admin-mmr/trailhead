@@ -1443,7 +1443,7 @@ def _import_transactions(job_id: str):
                         INSERT INTO gmail_transactions
                         (MessageId, Timestamp, Sender, Amount, Memo, TransactionDate,
                          TransactionNumber, Subject, OriginalMemo, PaymentMethod)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, [
                         message_id, timestamp, sender, amount, memo, transaction_date,
                         transaction_number, subject, original_memo, payment_method

@@ -60,7 +60,7 @@ SYNC_CONFIG = {
     # ─────────────────────────────────────────────────────────────────────────
     'export_members': {
         'table': 'members',
-        'sheet': 'Main',
+        'sheet': 'SQL Members',
         'key': 'MemberID',
         'direction': 'mysql_to_sheet',
         'columns': [
@@ -74,7 +74,7 @@ SYNC_CONFIG = {
 
     'export_payments': {
         'table': 'payments',
-        'sheet': 'Payment-History',
+        'sheet': 'SQL Payments',
         'key': 'PaymentID',
         'direction': 'mysql_to_sheet',
         'columns': [
@@ -86,7 +86,7 @@ SYNC_CONFIG = {
 
     'export_submissions': {
         'table': 'submissions',
-        'sheet': 'Submissions',
+        'sheet': 'SQL Submissions',
         'key': 'SubmissionID',
         'direction': 'mysql_to_sheet',
         'columns': [
