@@ -536,6 +536,165 @@ def api_gmail_matching_candidates(member_id: str):
 
 
 # ============================================================================
+# MISSING ENDPOINTS FOR FRONTEND
+# ============================================================================
+
+@payments_bp.route('/api/payments/member-quick/<member_id>', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_member_quick(member_id: str):
+    """
+    Quick member lookup for tooltips and quick-approve popover.
+    Returns: {FirstName, LastName, MemberID, Email, Expiration, Type, Gender, District, WeChatID}
+    """
+    member = get_member_by_id(member_id.upper())
+    if not member:
+        return json_response({'error': 'Member not found'}, status=404)
+
+    return json_response({
+        'MemberID': member.get('MemberID'),
+        'FirstName': member.get('FirstName'),
+        'LastName': member.get('LastName'),
+        'Email': member.get('Email'),
+        'Expiration': member.get('Expiration'),
+        'Type': member.get('Type'),
+        'Gender': member.get('Gender'),
+        'District': member.get('District'),
+        'WeChatID': member.get('WeChatID'),
+    })
+
+
+@payments_bp.route('/api/payments/member-quick/all', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_member_quick_all():
+    """
+    Fetch all members for fuzzy search in quick-approve popover.
+    Returns: [{MemberID, FirstName, LastName, Email, Expiration, Type, District}]
+    """
+    members = query("""
+        SELECT MemberID, FirstName, LastName, Email, Expiration, Type, District
+        FROM members
+        ORDER BY FirstName, LastName
+    """)
+    return json_response({'data': members})
+
+
+@payments_bp.route('/api/payments/gmail-candidates/<submission_id>', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_gmail_candidates(submission_id: str):
+    """
+    Get unmatched Gmail transactions + already-processed ones for a specific submission.
+    Used when clicking a submission to filter Gmail candidates.
+    Returns all unmatched plus processed rows related to this submission.
+    """
+    # Get submission details
+    sub = query(
+        "SELECT * FROM submissions WHERE SubmissionID = %s",
+        (submission_id,)
+    )
+    if not sub:
+        return json_response({'error': 'Submission not found'}, status=404)
+
+    sub = sub[0]
+    member_id = sub.get('MemberID')
+    amount = sub.get('Amount')
+
+    # Get unmatched Gmail transactions + related ones
+    candidates = query("""
+        SELECT MessageId, Sender, Amount, Memo, OriginalMemo, TransactionDate,
+               TransactionNumber, Notes, ProcessedTime, MatchContext
+        FROM gmail_transactions
+        WHERE (Notes IS NULL OR MatchContext IS NULL OR MatchContext = 'unmatched')
+           OR Sender LIKE %s
+           OR Memo LIKE %s
+        ORDER BY TransactionDate DESC
+        LIMIT 50
+    """, (f"%{sub.get('FirstName', '')}%", f"%{member_id}%"))
+
+    return json_response({'data': candidates})
+
+
+@payments_bp.route('/api/payments/admin-create', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_admin_create():
+    """
+    Admin creates a payment directly from Gmail transaction.
+    Body: {memberId, messageId, paymentIntent, notes}
+    """
+    data = request.get_json()
+    member_id = data.get('memberId', '').upper()
+    message_id = data.get('messageId')
+    payment_intent = data.get('paymentIntent', 'Individual Membership')
+    notes = data.get('notes', '')
+
+    if not member_id or not message_id:
+        return json_response({'error': 'memberId and messageId required'}, status=400)
+
+    # Get member & gmail transaction
+    member = get_member_by_id(member_id)
+    if not member:
+        return json_response({'error': f'Member {member_id} not found'}, status=404)
+
+    gmail = query(
+        "SELECT * FROM gmail_transactions WHERE MessageId = %s",
+        (message_id,)
+    )
+    if not gmail:
+        return json_response({'error': 'Gmail transaction not found'}, status=404)
+
+    gmail = gmail[0]
+    amount = gmail.get('Amount')
+    tx_date = gmail.get('TransactionDate')
+
+    # Create payment
+    try:
+        execute("""
+            INSERT INTO payments (
+                PaymentID, MemberID, Amount, PaymentIntent, PaymentDate,
+                Source, ProcessedBy, CreatedAt
+            ) VALUES (%s, %s, %s, %s, %s, 'Gmail', %s, NOW())
+        """, (
+            str(uuid.uuid4()),
+            member_id,
+            amount,
+            payment_intent,
+            tx_date,
+            session.get('user_id', 'admin')
+        ))
+
+        # Update gmail transaction
+        execute("""
+            UPDATE gmail_transactions
+            SET Notes = %s, ProcessedTime = NOW(), MatchContext = 'matched'
+            WHERE MessageId = %s
+        """, (f"Linked to {member_id}: {payment_intent}", message_id))
+
+        # Update member if membership
+        if 'membership' in payment_intent.lower():
+            execute("""
+                UPDATE members
+                SET Status = 'active', Expiration = DATE_ADD(NOW(), INTERVAL 1 YEAR)
+                WHERE MemberID = %s
+            """, (member_id,))
+
+        return json_response({
+            'ok': True,
+            'message': f'Payment created for {member_id}',
+            'updated_members': [member_id]
+        })
+    except Exception as e:
+        logger.error(f'[admin-create] Error: {e}')
+        return json_response({'error': str(e)}, status=500)
+
+
+# ============================================================================
 # MEMBER SEARCH
 # ============================================================================
 

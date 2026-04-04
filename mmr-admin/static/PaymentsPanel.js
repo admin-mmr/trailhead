@@ -1,952 +1,795 @@
 /**
- * PaymentsPanel — Payment reconciliation UI
- * Dashboard + 3 workflows (Pending, Autoguess, Manual) + always-visible Gmail transactions table
- * Redesigned to match old payments.js style with better table rendering
+ * PaymentsPanel — React component for the Payments tab in mmr-admin.
+ *
+ * Layout: side-by-side reconcile view
+ *   Left panel:  pending submissions (toggleable)
+ *   Right panel: gmail_transactions (filtered when a submission is focused)
+ *
+ * Features:
+ *   - MemberID hover tooltip (name, expiration, type, gender, district)
+ *   - Submission row focus → auto-filter gmail candidates
+ *   - Toggle submissions panel visibility (left ↔ full-width)
+ *   - Quick-approve popover with manual member search
+ *   - Expandable transaction rows with column resizing
+ *
+ * Loaded as <script> in index.html; uses global `api()` helper and React globals.
  */
 
-const PaymentsPanel = () => {
-  const { useState, useEffect } = React;
+/* global React, api, useState, useEffect, useCallback, useRef */
 
-  const [dashboard, setDashboard] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [dashboardOpen, setDashboardOpen] = useState(true);
-  const [gmailTransactions, setGmailTransactions] = useState([]);
-  const [gmailLoading, setGmailLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('pending-submissions');
-  const [selectedGmailForQuickApprove, setSelectedGmailForQuickApprove] = useState(null);
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-  // Load dashboard on mount
-  useEffect(() => {
-    console.log('[PaymentsPanel] Mounting, fetching dashboard data...');
-    console.log('[PaymentsPanel] api function available?', typeof window.api);
-
-    if (typeof window.api !== 'function') {
-      console.error('[PaymentsPanel] ERROR: window.api is not a function!', window.api);
-      setError('API not available');
-      setLoading(false);
-      return;
+const fmt = (v) => v == null ? '—' : String(v);
+const fmtDate = (v) => {
+  if (!v) return '—';
+  try {
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+      const [year, month, day] = v.split('T')[0].split('-');
+      const date = new Date(year, month - 1, day);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     }
+    return new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  catch { return String(v); }
+};
+const fmtMoney = (v) => v == null ? '—' : `$${Number(v).toFixed(2)}`;
 
-    console.log('[PaymentsPanel] Calling /api/payments/dashboard...');
-    window.api('/api/payments/dashboard')
-      .then(r => {
-        console.log('[PaymentsPanel] Raw API response:', r);
-        console.log('[PaymentsPanel] Response type:', typeof r);
-        console.log('[PaymentsPanel] Response keys:', Object.keys(r || {}));
+const STATUS_COLORS = {
+  pending:  'var(--yellow)',
+  matched:  'var(--accent)',
+  approved: 'var(--green)',
+  rejected: 'var(--red)',
+  expired:  'var(--text2)',
+  error:    'var(--red)',
+};
 
-        const hasData = r && (r.pending !== undefined || r.ok === true);
-        const hasError = r && r.error !== undefined && r.ok === false;
+const Badge = ({ status }) =>
+  React.createElement('span', {
+    style: {
+      display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11,
+      fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+      background: (STATUS_COLORS[status] || 'var(--text2)') + '22',
+      color: STATUS_COLORS[status] || 'var(--text2)',
+      border: `1px solid ${STATUS_COLORS[status] || 'var(--text2)'}44`,
+    }
+  }, status);
 
-        if (hasData && !hasError) {
-          console.log('[PaymentsPanel] Dashboard data received:', r);
-          setDashboard(r);
-          setLoading(false);
-        } else {
-          console.error('[PaymentsPanel] Response not ok:', r);
-          console.error('[PaymentsPanel] Error message:', r?.error);
-          setError(`API error: ${r?.error || 'Unknown error (check console)'}`);
-          setLoading(false);
-        }
-      })
-      .catch(e => {
-        console.error('[PaymentsPanel] API call failed:', e);
-        console.error('[PaymentsPanel] Error stack:', e.stack);
-        setError(`Fetch error: ${e.message}`);
-        setLoading(false);
-      });
-  }, []);
 
-  // Load gmail transactions
-  useEffect(() => {
-    loadGmailTransactions();
-  }, []);
+// ---------------------------------------------------------------------------
+// Memo → MemberID extraction + intent suggestion
+// ---------------------------------------------------------------------------
 
-  const loadGmailTransactions = () => {
-    setGmailLoading(true);
-    window.api('/api/payments/unmatched-gmail?limit=100')
-      .then(r => {
-        if (r && r.transactions) {
-          setGmailTransactions(r.transactions);
-        }
-        setGmailLoading(false);
-      })
-      .catch(e => {
-        console.error('[Gmail] Error loading:', e);
-        setGmailLoading(false);
-      });
-  };
+function extractMemberIds(text) {
+  if (!text) return [];
+  const matches = [...String(text).matchAll(/\b([Aa]\d{4})\b/g)];
+  return [...new Set(matches.map(m => m[1].toUpperCase()))];
+}
 
-  if (error) {
-    return (
-      <div style={{
-        background: '#fef2f2',
-        border: '1px solid #fca5a5',
-        borderRadius: 'var(--radius)',
-        padding: 16,
-        color: '#b91c1c',
-      }}>
-        <strong>❌ Error Loading Payments:</strong>
-        <p style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }}>{error}</p>
-      </div>
-    );
+function suggestIntent(amount) {
+  const n = Number(amount) || 0;
+  if (n >= 50) return 'Family Membership';
+  if (n >= 30) return 'Individual Membership';
+  return 'Individual Membership';
+}
+
+const PAYMENT_INTENTS = [
+  'Individual Membership',
+  'Family Membership',
+  'Family Upgrade',
+  'Event Registration',
+  'Donation',
+];
+
+
+// ---------------------------------------------------------------------------
+// Member tooltip cache + components
+// ---------------------------------------------------------------------------
+
+const _memberCache = {};
+
+const MemberTooltip = ({ memberId, anchorRect, data }) => {
+  if (!memberId || !anchorRect) return null;
+
+  const TOOLTIP_WIDTH = 270;
+  const TOOLTIP_HEIGHT = 160;
+  const MARGIN = 6;
+  const EDGE_PADDING = 8;
+
+  let left = anchorRect.left - TOOLTIP_WIDTH / 2 + anchorRect.width / 2;
+  left = Math.max(EDGE_PADDING, Math.min(left, window.innerWidth - TOOLTIP_WIDTH - EDGE_PADDING));
+
+  let top = anchorRect.bottom + MARGIN;
+  const spaceBelow = window.innerHeight - anchorRect.bottom;
+  const spaceAbove = anchorRect.top;
+
+  if (spaceBelow < TOOLTIP_HEIGHT + MARGIN && spaceAbove > TOOLTIP_HEIGHT + MARGIN) {
+    top = anchorRect.top - TOOLTIP_HEIGHT - MARGIN;
   }
 
-  if (loading) {
-    return <div style={{ padding: 20, textAlign: 'center', color: 'var(--text2)' }}>Loading payments dashboard...</div>;
-  }
-
-  if (!dashboard) {
-    return <div style={{ color: 'var(--text2)', padding: 16 }}>No data available</div>;
-  }
-
-  const stats = [
-    { label: 'Pending Submissions', value: dashboard.pending, icon: '⏳', color: '#f59e0b' },
-    { label: 'Unmatched Gmail', value: dashboard.unmatched_gmail, icon: '📧', color: '#ef4444' },
-    { label: 'Matched Payments', value: dashboard.matched, icon: '✓', color: '#10b981' },
-  ];
-
-  return (
-    <div>
-      {/* Collapsible Dashboard Section */}
-      <div style={{ marginBottom: 24 }}>
-        <button
-          onClick={() => setDashboardOpen(!dashboardOpen)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 20,
-            fontWeight: 600,
-            color: 'var(--text)',
-          }}
-        >
-          <span style={{ transform: dashboardOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>
-            ▼
-          </span>
-          💰 Dashboard
-        </button>
-
-        {dashboardOpen && (
-          <div style={{ marginTop: 16 }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-              gap: 12,
-            }}>
-              {stats.map((stat) => (
-                <div
-                  key={stat.label}
-                  style={{
-                    background: 'var(--surface)',
-                    border: `1px solid ${stat.color}`,
-                    borderRadius: 'var(--radius)',
-                    padding: 12,
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 28, marginBottom: 6 }}>{stat.icon}</div>
-                  <div style={{ fontSize: 24, fontWeight: 600, color: stat.color, marginBottom: 4 }}>
-                    {stat.value}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)' }}>{stat.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Workflow Tabs */}
-      <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 20 }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className={`tab ${activeTab === 'pending-submissions' ? 'active' : ''}`}
-            onClick={() => setActiveTab('pending-submissions')}
-            style={{
-              padding: '8px 16px',
-              background: activeTab === 'pending-submissions' ? 'var(--accent)' : 'transparent',
-              border: activeTab === 'pending-submissions' ? 'none' : '1px solid var(--border)',
-              color: activeTab === 'pending-submissions' ? 'white' : 'var(--text)',
-              borderRadius: 'var(--radius)',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 500,
-            }}
-          >
-            📋 Pending ({dashboard.pending})
-          </button>
-          <button
-            className={`tab ${activeTab === 'autoguess' ? 'active' : ''}`}
-            onClick={() => setActiveTab('autoguess')}
-            style={{
-              padding: '8px 16px',
-              background: activeTab === 'autoguess' ? 'var(--accent)' : 'transparent',
-              border: activeTab === 'autoguess' ? 'none' : '1px solid var(--border)',
-              color: activeTab === 'autoguess' ? 'white' : 'var(--text)',
-              borderRadius: 'var(--radius)',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 500,
-            }}
-          >
-            🤖 Autoguess ({dashboard.unmatched_gmail})
-          </button>
-          <button
-            className={`tab ${activeTab === 'manual-approval' ? 'active' : ''}`}
-            onClick={() => setActiveTab('manual-approval')}
-            style={{
-              padding: '8px 16px',
-              background: activeTab === 'manual-approval' ? 'var(--accent)' : 'transparent',
-              border: activeTab === 'manual-approval' ? 'none' : '1px solid var(--border)',
-              color: activeTab === 'manual-approval' ? 'white' : 'var(--text)',
-              borderRadius: 'var(--radius)',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 500,
-            }}
-          >
-            ✓ Manual Approval
-          </button>
-        </div>
-      </div>
-
-      {/* Workflow Content */}
-      <div style={{ marginBottom: 32 }}>
-        {activeTab === 'pending-submissions' && <PendingSubmissionsView />}
-        {activeTab === 'autoguess' && <AutoguessView />}
-        {activeTab === 'manual-approval' && <ManualApprovalView />}
-      </div>
-
-      {/* Always-visible Gmail Transactions Section */}
-      <div style={{ marginTop: 32, borderTop: '2px solid var(--border)', paddingTop: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600 }}>
-            📧 Gmail Transactions ({gmailTransactions.length})
-          </h3>
-          <button
-            onClick={loadGmailTransactions}
-            disabled={gmailLoading}
-            style={{
-              padding: '6px 12px',
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              cursor: gmailLoading ? 'not-allowed' : 'pointer',
-              fontSize: 12,
-              opacity: gmailLoading ? 0.5 : 1,
-            }}
-          >
-            {gmailLoading ? '⟳ Refreshing...' : '⟳ Refresh'}
-          </button>
-        </div>
-        <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>
-          💡 Click any row to quickly approve the payment
-        </p>
-
-        {gmailTransactions.length === 0 ? (
-          <div style={{ padding: 20, textAlign: 'center', color: 'var(--text2)', background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
-            No unmatched Gmail transactions
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontSize: 12,
-              background: 'var(--surface)',
-              borderRadius: 'var(--radius)',
-              overflow: 'hidden',
-            }}>
-              <thead>
-                <tr style={{ background: 'var(--bg)', borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>Date</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>Sender</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>Memo</th>
-                  <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>Amount</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>Method</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: 'var(--text)' }}>ID</th>
-                </tr>
-              </thead>
-              <tbody>
-                {gmailTransactions.map((tx, idx) => (
-                  <tr
-                    key={tx.TransactionNumber || idx}
-                    onClick={() => setSelectedGmailForQuickApprove(tx)}
-                    style={{
-                      borderBottom: '1px solid var(--border)',
-                      background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
-                      transition: 'background 0.2s',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(79, 172, 254, 0.2)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}
-                  >
-                    <td style={{ padding: '10px 12px', color: 'var(--text2)', fontFamily: 'monospace', fontSize: 11 }}>
-                      {tx.TransactionDate?.split('T')[0] || '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text)' }}>
-                      {tx.Sender || '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text)', maxWidth: 300, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {tx.Memo || '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>
-                      ${parseFloat(tx.Amount).toFixed(2)}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text2)', fontSize: 11 }}>
-                      {tx.PaymentMethod || '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text2)', fontFamily: 'monospace', fontSize: 11 }}>
-                      {tx.TransactionNumber?.slice(0, 12) || '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Quick Approve Modal */}
-      {selectedGmailForQuickApprove && (
-        <QuickApproveModal
-          gmail={selectedGmailForQuickApprove}
-          onClose={() => setSelectedGmailForQuickApprove(null)}
-          onSuccess={() => {
-            setSelectedGmailForQuickApprove(null);
-            loadGmailTransactions();
-          }}
-        />
-      )}
-    </div>
+  return React.createElement('div', {
+    style: {
+      position: 'fixed', top, left, zIndex: 1000,
+      background: 'var(--surface)', border: '1px solid var(--accent)',
+      borderRadius: 8, padding: '10px 14px', fontSize: 12,
+      boxShadow: '0 6px 24px rgba(0,0,0,0.5)', pointerEvents: 'none',
+      minWidth: 250, maxWidth: 320,
+    },
+  },
+    !data
+      ? React.createElement('span', { style: { color: 'var(--text2)' } }, '…')
+      : React.createElement(React.Fragment, null,
+          React.createElement('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 2 } },
+            `${data.FirstName || ''} ${data.LastName || ''}`.trim() || memberId,
+          ),
+          React.createElement('div', { style: { color: 'var(--text2)', fontSize: 11, marginBottom: 6 } }, memberId),
+          React.createElement('div', {
+            style: { display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 10, rowGap: 3, fontSize: 11 },
+          },
+            React.createElement('span', { style: { color: 'var(--text2)' } }, 'Expires'),
+            React.createElement('span', null, fmtDate(data.Expiration)),
+            React.createElement('span', { style: { color: 'var(--text2)' } }, 'Type'),
+            React.createElement('span', null, fmt(data.Type)),
+            data.Email
+              ? React.createElement(React.Fragment, null,
+                  React.createElement('span', { style: { color: 'var(--text2)' } }, 'Email'),
+                  React.createElement('span', { style: { wordBreak: 'break-all' } }, data.Email),
+                ) : null,
+            data.WeChatID
+              ? React.createElement(React.Fragment, null,
+                  React.createElement('span', { style: { color: 'var(--text2)' } }, 'WeChat'),
+                  React.createElement('span', null, data.WeChatID),
+                ) : null,
+            data.Gender
+              ? React.createElement(React.Fragment, null,
+                  React.createElement('span', { style: { color: 'var(--text2)' } }, 'Gender'),
+                  React.createElement('span', null, data.Gender),
+                ) : null,
+            data.District
+              ? React.createElement(React.Fragment, null,
+                  React.createElement('span', { style: { color: 'var(--text2)' } }, 'District'),
+                  React.createElement('span', null, data.District),
+                ) : null,
+          ),
+        ),
   );
 };
 
-// ============================================================================
-// QUICK APPROVE MODAL
-// ============================================================================
+const MemberIdChip = ({ memberId, tooltipHandlers, onClick }) => {
+  const ref = useRef(null);
+  if (!memberId) return React.createElement('span', null, '—');
+  return React.createElement('span', {
+    ref,
+    style: { cursor: 'pointer', color: 'var(--accent)', fontWeight: 500, whiteSpace: 'nowrap' },
+    onMouseEnter: () => {
+      if (ref.current && tooltipHandlers?.onHover) {
+        tooltipHandlers.onHover(memberId, ref.current.getBoundingClientRect());
+      }
+    },
+    onMouseLeave: tooltipHandlers?.onLeave,
+    onClick: (e) => { e.stopPropagation(); if (onClick) onClick(memberId); },
+  }, memberId);
+};
 
-const QuickApproveModal = ({ gmail, onClose, onSuccess }) => {
-  const { useState } = React;
-  const [memberId, setMemberId] = useState('');
-  const [memberSearch, setMemberSearch] = useState('');
-  const [members, setMembers] = useState([]);
+
+// ---------------------------------------------------------------------------
+// Gmail Quick-Approve Popover
+// ---------------------------------------------------------------------------
+
+const fuzzyMatchMember = (query, member) => {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const searchFields = [
+    (member.FirstName || ''),
+    (member.LastName || ''),
+    (member.MemberID || ''),
+    (member.Email || ''),
+    (member.WeChatID || ''),
+  ].join(' ').toLowerCase();
+  return q.split(/\s+/).every(word => searchFields.includes(word));
+};
+
+const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers }) => {
+  const memoIds = extractMemberIds((gmail.Memo || '') + ' ' + (gmail.OriginalMemo || ''));
+  const [memberId, setMemberId] = useState(memoIds[0] || '');
+  const [intent, setIntent] = useState(suggestIntent(gmail.Amount));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [popoverPos, setPopoverPos] = useState({ left: 0, right: 'auto' });
   const [memberData, setMemberData] = useState(null);
-  const [approving, setApproving] = useState(false);
-  const [result, setResult] = useState(null);
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allMembers, setAllMembers] = useState([]);
+  const [membersLoaded, setMembersLoaded] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const popoverRef = useRef(null);
+  const e = React.createElement;
 
-  const handleSearchMembers = (query) => {
-    setMemberSearch(query);
-    if (query.length < 2) {
-      setMembers([]);
+  useEffect(() => {
+    if (!membersLoaded) {
+      api('/api/payments/member-quick/all').then(r => {
+        if (r.ok) {
+          const members = Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.data) ? r.data.data : []);
+          setAllMembers(members);
+        }
+        setMembersLoaded(true);
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (popoverRef.current) {
+      const rect = popoverRef.current.getBoundingClientRect();
+      if (rect.right > window.innerWidth - 8) {
+        setPopoverPos({ left: 'auto', right: 0 });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
       return;
     }
-    window.api(`/api/payments/search-members?q=${encodeURIComponent(query)}`)
-      .then(r => {
-        if (r && r.members) setMembers(r.members);
-      })
-      .catch(e => console.error('[QuickApprove] Search error:', e));
-  };
+    const filtered = allMembers.filter(m => fuzzyMatchMember(searchQuery, m)).slice(0, 10);
+    setSearchResults(filtered);
+  }, [searchQuery, allMembers]);
+
+  useEffect(() => {
+    const mid = memberId.trim().toUpperCase();
+    if (!mid || !/^A\d{4}$/.test(mid)) {
+      setMemberData(null);
+      return;
+    }
+    setMemberLoading(true);
+    api(`/api/payments/member-quick/${mid}`).then(r => {
+      if (r.ok) setMemberData(r.data);
+      else setMemberData(null);
+      setMemberLoading(false);
+    }).catch(() => {
+      setMemberData(null);
+      setMemberLoading(false);
+    });
+  }, [memberId]);
 
   const handleSelectMember = (member) => {
     setMemberId(member.MemberID);
-    setMemberSearch('');
-    setMembers([]);
-    setMemberData(member);
+    setSearchQuery('');
+    setSearchResults([]);
   };
 
-  const handleApprove = () => {
-    if (!memberId) return;
-    setApproving(true);
-    window.api('/api/payments/manual-approve', {
+  const handleApprove = async () => {
+    const mid = memberId.trim().toUpperCase();
+    if (!mid) { setError('MemberID required'); return; }
+    if (!/^A\d{4}$/.test(mid)) { setError('MemberID must be A followed by 4 digits (e.g. A0123)'); return; }
+    setLoading(true); setError('');
+    const r = await api('/api/payments/admin-create', {
       method: 'POST',
-      body: JSON.stringify({ memberId, transactionNumber: gmail.TransactionNumber }),
-    })
-      .then(r => {
-        console.log('[QuickApprove] Result:', r);
-        if (r.ok) {
-          setResult({ ok: true, message: r.message || 'Payment approved!' });
-          setTimeout(() => onSuccess(), 1500);
-        } else {
-          setResult({ ok: false, error: r.error || 'Failed to approve' });
-        }
-        setApproving(false);
-      })
-      .catch(e => {
-        console.error('[QuickApprove] Error:', e);
-        setResult({ ok: false, error: e.message });
-        setApproving(false);
-      });
+      body: JSON.stringify({
+        memberId: mid, messageId: gmail.MessageId, paymentIntent: intent,
+        notes: `Quick-approved from unmatched Gmail. Memo: ${gmail.Memo || ''}`,
+      }),
+    });
+    setLoading(false);
+    if (r.ok) { onApproved(mid, intent); }
+    else { setError(r.error || 'Failed to approve'); }
   };
 
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--surface)',
-          borderRadius: 'var(--radius)',
-          padding: 24,
-          maxWidth: 500,
-          width: '90%',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600 }}>⚡ Quick Approve Payment</h3>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: 20,
-              color: 'var(--text2)',
-            }}
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Transaction Details */}
-        <div
-          style={{
-            background: 'var(--bg)',
-            padding: 12,
-            borderRadius: 'var(--radius)',
-            marginBottom: 16,
-            fontSize: 12,
-            color: 'var(--text2)',
-          }}
-        >
-          <div>Sender: {gmail.Sender || '—'}</div>
-          <div>Amount: ${parseFloat(gmail.Amount).toFixed(2)} · Date: {gmail.TransactionDate?.split('T')[0]}</div>
-          <div style={{ wordBreak: 'break-all', marginTop: 4 }}>Memo: {gmail.Memo || '—'}</div>
-        </div>
-
-        {result ? (
-          <div
-            style={{
-              background: result.ok ? '#f0fdf4' : '#fef2f2',
-              border: `1px solid ${result.ok ? '#86efac' : '#fca5a5'}`,
-              borderRadius: 'var(--radius)',
-              padding: 12,
-              textAlign: 'center',
-              color: result.ok ? '#15803d' : '#b91c1c',
-              fontSize: 13,
-              marginBottom: 16,
-            }}
-          >
-            {result.ok ? '✅ ' : '❌ '}
-            {result.ok ? result.message : result.error}
-          </div>
-        ) : (
-          <>
-            {/* Member Search */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
-                Search Member
-              </label>
-              <input
-                type="text"
-                placeholder="Name, email, or ID..."
-                value={memberSearch}
-                onChange={(e) => handleSearchMembers(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  fontSize: 13,
-                  background: 'var(--bg)',
-                  color: 'var(--text)',
-                  boxSizing: 'border-box',
-                }}
-              />
-              {members.length > 0 && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    background: 'var(--bg)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)',
-                    maxHeight: 150,
-                    overflowY: 'auto',
-                  }}
-                >
-                  {members.map((m) => (
-                    <button
-                      key={m.MemberID}
-                      onClick={() => handleSelectMember(m)}
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '10px 12px',
-                        background: 'transparent',
-                        border: 'none',
-                        borderBottom: '1px solid var(--border)',
-                        cursor: 'pointer',
-                        fontSize: 12,
-                      }}
-                    >
-                      <strong>{m.FirstName} {m.LastName}</strong> <span style={{ color: 'var(--text2)', fontSize: 11 }}>({m.MemberID})</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Selected Member */}
-            {memberData && (
-              <div
-                style={{
-                  background: '#f0fdf4',
-                  border: '1px solid #86efac',
-                  borderRadius: 'var(--radius)',
-                  padding: 12,
-                  marginBottom: 16,
-                  fontSize: 12,
-                }}
-              >
-                <div style={{ fontWeight: 600, color: '#15803d' }}>✓ {memberData.FirstName} {memberData.LastName}</div>
-                <div style={{ color: 'var(--text2)', marginTop: 2 }}>{memberData.MemberID}</div>
-                {memberData.Expiration && (
-                  <div style={{ color: 'var(--text2)', fontSize: 11, marginTop: 2 }}>
-                    Expires: {memberData.Expiration?.split('T')[0]}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Action Button */}
-            <button
-              onClick={handleApprove}
-              disabled={!memberId || approving}
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                background: !memberId || approving ? '#ccc' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: 'var(--radius)',
-                cursor: !memberId || approving ? 'not-allowed' : 'pointer',
-                fontSize: 14,
-                fontWeight: 600,
-                opacity: !memberId || approving ? 0.6 : 1,
-              }}
-            >
-              {approving ? '⟳ Approving...' : '✓ Approve Payment'}
-            </button>
-          </>
-        )}
-      </div>
-    </div>
+  return e('div', {
+    ref: popoverRef,
+    style: {
+      position: 'absolute', zIndex: 50, top: '100%', ...popoverPos,
+      background: 'var(--surface)', border: '1px solid var(--accent)',
+      borderRadius: 'var(--radius)', padding: 16, minWidth: 340, maxWidth: 360,
+      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+    },
+    onClick: ev => ev.stopPropagation(),
+  },
+    e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } },
+      e('strong', { style: { fontSize: 13 } }, '⚡ Quick Approve Payment'),
+      e('button', { onClick: onClose, style: { background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 16 } }, '✕'),
+    ),
+    e('div', { style: { fontSize: 12, color: 'var(--text2)', marginBottom: 12, padding: '8px 10px', background: 'var(--bg)', borderRadius: 4 } },
+      e('div', null, `Sender: ${gmail.Sender || '—'}`),
+      e('div', null, `Amount: ${fmtMoney(gmail.Amount)}  ·  Date: ${fmtDate(gmail.TransactionDate)}`),
+      e('div', { style: { wordBreak: 'break-all' } }, `Memo: ${gmail.Memo || '—'}`),
+    ),
+    e('div', { style: { marginBottom: 8 } },
+      e('label', { style: { fontSize: 12, color: 'var(--text2)', display: 'block', marginBottom: 4 } }, 'Find Member'),
+      e('input', {
+        placeholder: 'Search by name, WeChat ID, or A####',
+        value: searchQuery,
+        onChange: ev => setSearchQuery(ev.target.value),
+        style: { width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13, boxSizing: 'border-box' },
+      }),
+      searchResults.length > 0 && e('div', {
+        style: {
+          marginTop: 6, maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11,
+        },
+      },
+        searchResults.map(m => e('div', {
+          key: m.MemberID,
+          onClick: () => handleSelectMember(m),
+          style: {
+            padding: '6px 8px', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg)',
+            display: 'flex', justifyContent: 'space-between', fontSize: 11,
+          },
+          onMouseOver: ev => ev.target.style.background = 'var(--accent)22',
+          onMouseOut: ev => ev.target.style.background = 'var(--bg)',
+        },
+          e('div', null,
+            e('div', { style: { fontWeight: 500 } }, `${m.FirstName || ''} ${m.LastName || ''}`.trim()),
+            e('div', { style: { color: 'var(--text2)', fontSize: 10 } }, `${m.MemberID}${m.District ? ' · ' + m.District : ''}`),
+            m.Email && e('div', { style: { color: 'var(--text2)', fontSize: 9, marginTop: 2, wordBreak: 'break-all' } }, m.Email),
+          ),
+          e('div', { style: { textAlign: 'right', color: 'var(--text2)' } },
+            e('div', null, m.Type || '—'),
+            e('div', { style: { fontSize: 10 } }, fmtDate(m.Expiration) || '—'),
+          ),
+        ))
+      ),
+    ),
+    e('div', { style: { marginBottom: 8 } },
+      e('label', { style: { fontSize: 12, color: 'var(--text2)', display: 'block', marginBottom: 4 } }, 'Member ID'),
+      memoIds.length > 0
+        ? e('select', {
+            value: memberId,
+            onChange: ev => setMemberId(ev.target.value),
+            style: { width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13 },
+          },
+          memoIds.map(id => e('option', { key: id, value: id }, id)),
+          e('option', { value: '' }, '— Enter manually —'),
+        )
+        : null,
+      (memoIds.length === 0 || memberId === '') && e('input', {
+        placeholder: 'e.g. A0123',
+        value: memoIds.length === 0 ? memberId : '',
+        onChange: ev => setMemberId(ev.target.value),
+        style: { width: '100%', marginTop: memoIds.length > 0 ? 6 : 0, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13, boxSizing: 'border-box' },
+      }),
+      memberLoading && e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 8 } }, '⏳ Loading member…'),
+      memberData && !memberLoading && e('div', {
+        style: {
+          marginTop: 8, padding: '8px 10px', background: 'var(--bg)', borderRadius: 4, borderLeft: '3px solid var(--green)', fontSize: 11, lineHeight: 1.4,
+        },
+      },
+        e('div', { style: { fontWeight: 600, color: 'var(--text)' } }, `${memberData.FirstName || ''} ${memberData.LastName || ''}`.trim() || memberId),
+        e('div', { style: { color: 'var(--text2)' } }, `Expires: ${fmtDate(memberData.Expiration) || '—'}`),
+        memberData.WeChatID && e('div', { style: { color: 'var(--text2)' } }, `WeChat: ${memberData.WeChatID}`),
+      ),
+    ),
+    e('div', { style: { marginBottom: 12 } },
+      e('label', { style: { fontSize: 12, color: 'var(--text2)', display: 'block', marginBottom: 4 } }, 'Payment Type'),
+      e('select', {
+        value: intent, onChange: ev => setIntent(ev.target.value),
+        style: { width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13 },
+      },
+        PAYMENT_INTENTS.map(opt => e('option', { key: opt, value: opt }, opt)),
+      ),
+    ),
+    error && e('div', { style: { color: 'var(--red)', fontSize: 12, marginBottom: 8 } }, error),
+    e('button', {
+      className: 'btn btn-green', onClick: handleApprove, disabled: loading,
+      style: { width: '100%' },
+    }, loading ? 'Processing…' : `✓ Approve as ${intent}`),
   );
 };
 
-// ============================================================================
-// PENDING SUBMISSIONS VIEW
-// ============================================================================
 
-const PendingSubmissionsView = () => {
-  const { useState, useEffect } = React;
-  const [submissions, setSubmissions] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [showTable, setShowTable] = useState(true);
+// ---------------------------------------------------------------------------
+// Stats cards
+// ---------------------------------------------------------------------------
 
-  const loadSubmissions = () => {
-    setLoading(true);
-    window.api('/api/payments/pending-submissions?limit=100')
-      .then(r => {
-        if (r && r.submissions) {
-          setSubmissions(r.submissions);
-        }
-        setLoading(false);
+const StatsCards = ({ stats }) => {
+  const cards = [
+    { label: 'Pending',         value: stats.pending        || 0, cls: 'yellow' },
+    { label: 'Matched',         value: stats.matched        || 0, cls: 'accent' },
+    { label: 'Unmatched Gmail', value: stats.unmatched_gmail || 0, cls: 'red'   },
+    { label: 'Approved (30d)',  value: stats.approved_30d   || 0, cls: 'green'  },
+    { label: 'Rejected (30d)',  value: stats.rejected_30d   || 0, cls: ''       },
+    { label: 'Errors',          value: stats.errors         || 0, cls: stats.errors > 0 ? 'red' : '' },
+  ];
+  return React.createElement('div', { className: 'stats-grid' },
+    cards.map((c, i) =>
+      React.createElement('div', { className: 'stat-card', key: i },
+        React.createElement('div', { className: 'label' }, c.label),
+        React.createElement('div', { className: `value ${c.cls}` }, c.value),
+      )
+    )
+  );
+};
+
+
+// ---------------------------------------------------------------------------
+// Pending submissions table (left panel)
+// ---------------------------------------------------------------------------
+
+const PendingSubmissionsTable = ({ submissions, selectedSubmissionIds, focusedSubmissionId, onToggle, onSelectAll, onViewMember, onFocus, tooltipHandlers }) => {
+  const e = React.createElement;
+  if (!submissions.length) {
+    return e('div', { className: 'empty', style: { padding: 24, textAlign: 'center' } },
+      e('div', { className: 'big' }, '✓'), 'No pending submissions'
+    );
+  }
+  const allChecked  = submissions.length > 0 && submissions.every(sub => selectedSubmissionIds.has(sub.SubmissionID));
+  const someChecked = submissions.some(sub => selectedSubmissionIds.has(sub.SubmissionID));
+
+  return e('table', { className: 'data-table' },
+    e('thead', null,
+      e('tr', null,
+        e('th', null,
+          e('input', {
+            type: 'checkbox', checked: allChecked,
+            ref: el => { if (el) el.indeterminate = someChecked && !allChecked; },
+            onChange: () => onSelectAll(allChecked ? [] : submissions.map(sub => sub.SubmissionID)),
+            title: allChecked ? 'Deselect all' : 'Select all',
+          })
+        ),
+        e('th', null, 'Member'),
+        e('th', null, 'Intent'),
+        e('th', null, 'Amount'),
+        e('th', null, 'Status'),
+        e('th', null, 'Submitted'),
+      )
+    ),
+    e('tbody', null,
+      submissions.map(sub => {
+        const isFocused  = focusedSubmissionId === sub.SubmissionID;
+        const isSelected = selectedSubmissionIds.has(sub.SubmissionID);
+        return e('tr', {
+          key: sub.SubmissionID,
+          title: sub.SubmissionID,
+          style: {
+            cursor: 'pointer',
+            background: isSelected ? 'var(--surface2)' : undefined,
+            borderLeft: isFocused ? '3px solid var(--yellow)' : '3px solid transparent',
+            outline: isFocused ? '1px solid var(--yellow)22' : undefined,
+          },
+          onClick: () => onFocus(sub.SubmissionID),
+        },
+          e('td', { onClick: ev2 => ev2.stopPropagation() },
+            e('input', { type: 'checkbox', checked: isSelected, onChange: () => onToggle(sub.SubmissionID) })
+          ),
+          e('td', null,
+            e(MemberIdChip, { memberId: sub.MemberID, tooltipHandlers, onClick: onViewMember }),
+            sub.FirstName
+              ? e('span', { style: { color: 'var(--text2)', marginLeft: 4, fontSize: 11 } }, `${sub.FirstName} ${sub.LastName}`)
+              : null,
+          ),
+          e('td', { style: { fontSize: 11 } }, fmt(sub.PaymentIntent)),
+          e('td', null, fmtMoney(sub.Amount)),
+          e('td', null, e(Badge, { status: sub.Status })),
+          e('td', { style: { fontSize: 11 } }, fmtDate(sub.Timestamp)),
+        );
       })
-      .catch(e => {
-        console.error('[PendingSubmissions] Error:', e);
-        setLoading(false);
-      });
+    )
+  );
+};
+
+
+// ---------------------------------------------------------------------------
+// Gmail table — normal mode + candidate/filter mode
+// ---------------------------------------------------------------------------
+
+const MatchCtxBadge = ({ ctx, processedTime }) => {
+  const e = React.createElement;
+  if (ctx === 'matched') {
+    return e('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' } }, '✓ LINKED');
+  }
+  if (processedTime) {
+    return e('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--yellow)', whiteSpace: 'nowrap' }, title: `Processed: ${processedTime}` }, '⚠ PROCESSED');
+  }
+  return e('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' } }, '~ CANDIDATE');
+};
+
+const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, selectedMessageId, onSelect, onQuickApproved, onClearFocus, tooltipHandlers }) => {
+  const [activePopover, setActivePopover] = useState(null);
+  const [colWidths, setColWidths] = useState({ sender: 120, memo: 200 });
+  const [resizing, setResizing] = useState(null);
+  const tableRef = useRef(null);
+  const e = React.createElement;
+
+  const isFilterMode = candidates !== null;
+  const displayRows  = isFilterMode ? candidates : rows;
+
+  const handleResizeStart = (col, ev) => {
+    ev.preventDefault();
+    setResizing({ col, startX: ev.clientX, startWidth: colWidths[col] });
   };
 
   useEffect(() => {
-    loadSubmissions();
+    if (!resizing) return;
+    const handleMouseMove = (ev) => {
+      const delta = ev.clientX - resizing.startX;
+      const newWidth = Math.max(80, resizing.startWidth + delta);
+      setColWidths(prev => ({ ...prev, [resizing.col]: newWidth }));
+    };
+    const handleMouseUp = () => setResizing(null);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizing]);
+
+  if (candidatesLoading) {
+    return e('div', { style: { padding: 24, textAlign: 'center', color: 'var(--text2)' } }, 'Loading candidates…');
+  }
+  if (!displayRows.length) {
+    return e('div', { className: 'empty', style: { padding: 24, textAlign: 'center' } },
+      e('div', { className: 'big' }, isFilterMode ? '🔍' : '✓'),
+      isFilterMode ? 'No candidates found for this submission' : 'No unmatched Gmail transactions',
+    );
+  }
+
+  return e('table', { className: 'data-table', ref: tableRef, style: { tableLayout: 'fixed' } },
+    e('thead', null,
+      e('tr', null,
+        e('th', null, ''),
+        isFilterMode && e('th', null, 'Match'),
+        e('th', {
+          style: { position: 'relative', width: colWidths.sender, userSelect: 'none' },
+          title: 'Drag right edge to resize'
+        },
+          e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            'Sender',
+            e('div', {
+              onMouseDown: (ev) => handleResizeStart('sender', ev),
+              style: {
+                cursor: 'col-resize', width: 4, height: 20, margin: '0 -2px',
+                background: resizing?.col === 'sender' ? 'var(--accent)' : 'transparent',
+                transition: 'background 0.2s',
+              }
+            })
+          )
+        ),
+        e('th', null, 'Amount'),
+        e('th', {
+          style: { position: 'relative', width: colWidths.memo, userSelect: 'none' },
+          title: 'Drag right edge to resize'
+        },
+          e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            'Memo',
+            e('div', {
+              onMouseDown: (ev) => handleResizeStart('memo', ev),
+              style: {
+                cursor: 'col-resize', width: 4, height: 20, margin: '0 -2px',
+                background: resizing?.col === 'memo' ? 'var(--accent)' : 'transparent',
+                transition: 'background 0.2s',
+              }
+            })
+          )
+        ),
+        e('th', null, 'Tx Date'),
+        e('th', null, 'Tx #'),
+        e('th', null, ''),
+      )
+    ),
+    e('tbody', null,
+      displayRows.map(g => {
+        const memoIds = extractMemberIds((g.Memo || '') + ' ' + (g.OriginalMemo || ''));
+        const hasMemoId = memoIds.length > 0;
+        const isOpen    = activePopover === g.MessageId;
+        const isLinked  = g.MatchContext === 'matched';
+
+        return e('tr', {
+          key: g.MessageId,
+          style: {
+            cursor: 'pointer',
+            background: selectedMessageId === g.MessageId
+              ? 'var(--surface2)'
+              : isLinked ? 'rgba(0,200,100,0.06)' : undefined,
+            opacity: (isFilterMode && g.ProcessedTime && !isLinked) ? 0.72 : 1,
+          },
+          onClick: () => onSelect(g.MessageId === selectedMessageId ? null : g.MessageId),
+        },
+          e('td', null,
+            e('input', { type: 'radio', checked: selectedMessageId === g.MessageId, onChange: () => onSelect(g.MessageId), onClick: ev => ev.stopPropagation() })
+          ),
+          isFilterMode && e('td', { style: { whiteSpace: 'nowrap' } },
+            e(MatchCtxBadge, { ctx: g.MatchContext, processedTime: g.ProcessedTime })
+          ),
+          e('td', { style: { fontSize: 12, width: colWidths.sender, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, fmt(g.Sender)),
+          e('td', null, fmtMoney(g.Amount)),
+          e('td', { style: { width: colWidths.memo, overflow: 'hidden', textOverflow: 'ellipsis' } },
+            hasMemoId
+              ? e('span', null,
+                  e('span', {
+                    style: {
+                      display: 'inline-block', background: 'var(--accent)22', color: 'var(--accent)',
+                      border: '1px solid var(--accent)44', borderRadius: 3, padding: '1px 5px',
+                      fontSize: 11, fontWeight: 600, marginRight: 4, cursor: 'default',
+                    },
+                    title: `MemberID: ${memoIds.join(', ')}`,
+                  }, memoIds[0]),
+                  e(MemberIdChip, { memberId: memoIds[0], tooltipHandlers, onClick: () => {} }),
+                  e('span', { style: { color: 'var(--text2)', marginLeft: 4 } }, fmt(g.Memo)),
+                )
+              : e('span', { style: { color: 'var(--text2)' } }, fmt(g.Memo)),
+          ),
+          e('td', { style: { fontSize: 11 } }, fmtDate(g.TransactionDate)),
+          e('td', { style: { fontSize: 11, fontFamily: 'monospace' } }, fmt(g.TransactionNumber)?.slice(-8)),
+          e('td', { style: { position: 'relative', whiteSpace: 'nowrap' }, onClick: ev => ev.stopPropagation() },
+            !isLinked && e('button', {
+              className: `btn btn-sm ${hasMemoId ? 'btn-green' : 'btn-outline'}`,
+              style: { fontSize: 11, padding: '2px 8px' },
+              title: hasMemoId ? `Quick-approve for ${memoIds.join(', ')}` : 'Create payment',
+              onClick: ev => { ev.stopPropagation(); setActivePopover(isOpen ? null : g.MessageId); },
+            }, hasMemoId ? '⚡ Quick' : '+ Create'),
+            isOpen && e(GmailQuickApprovePopover, {
+              gmail: g,
+              onClose: () => setActivePopover(null),
+              tooltipHandlers,
+              onApproved: (mid, intent) => { setActivePopover(null); onQuickApproved(g.MessageId, mid, intent); },
+            }),
+          ),
+        );
+      })
+    )
+  );
+};
+
+
+// ---------------------------------------------------------------------------
+// Main PaymentsPanel component
+// ---------------------------------------------------------------------------
+
+const PaymentsPanel = () => {
+  const e = React.createElement;
+
+  const [stats,          setStats]          = useState({});
+  const [pendingSubmissions, setPendingSubmissions] = useState([]);
+  const [unmatchedGmail, setUnmatchedGmail] = useState([]);
+
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState(new Set());
+  const [selectedMessageId, setSelectedMessageId] = useState(null);
+
+  const [focusedSubmissionId, setFocusedSubmissionId] = useState(null);
+  const [gmailCandidates, setGmailCandidates] = useState(null);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+
+  const [toast, setToast] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showSubmissions, setShowSubmissions] = useState(true);
+
+  const [tooltip, setTooltip] = useState({ memberId: null, rect: null, data: null });
+  const tooltipTimer = useRef(null);
+
+  const handleMemberHover = useCallback((memberId, rect) => {
+    if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+    setTooltip(prev => ({ memberId, rect, data: _memberCache[memberId] || null }));
+    if (!_memberCache[memberId]) {
+      api(`/api/payments/member-quick/${memberId}`).then(r => {
+        if (r.ok) {
+          _memberCache[memberId] = r.data;
+          setTooltip(prev => prev.memberId === memberId ? { ...prev, data: r.data } : prev);
+        }
+      });
+    }
   }, []);
 
-  return (
-    <div>
-      <button
-        onClick={() => setShowTable(!showTable)}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '8px 0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          color: 'var(--accent)',
-          fontSize: 14,
-          fontWeight: 500,
-          marginBottom: 12,
-        }}
-      >
-        <span style={{ transform: showTable ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>
-          ▼
-        </span>
-        {showTable ? 'Hide' : 'Show'} Submissions ({submissions.length})
-      </button>
+  const handleMemberLeave = useCallback(() => {
+    tooltipTimer.current = setTimeout(() => setTooltip({ memberId: null, rect: null, data: null }), 150);
+  }, []);
 
-      {showTable && (
-        <div style={{ overflowX: 'auto' }}>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: 20, color: 'var(--text2)' }}>Loading...</div>
-          ) : submissions.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 20, color: 'var(--text2)' }}>No pending submissions</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg)', borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600 }}>Member ID</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600 }}>Name</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600 }}>Type</th>
-                  <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 600 }}>Amount</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600 }}>Created</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600 }}>Expires</th>
-                </tr>
-              </thead>
-              <tbody>
-                {submissions.map((s, idx) => (
-                  <tr
-                    key={s.SubmissionID || idx}
-                    style={{
-                      borderBottom: '1px solid var(--border)',
-                      background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
-                    }}
-                  >
-                    <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: 'var(--accent)' }}>{s.MemberID}</td>
-                    <td style={{ padding: '10px 12px' }}>{s.FirstName} {s.LastName}</td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text2)' }}>{s.SubmissionType}</td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>${parseFloat(s.Amount).toFixed(2)}</td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text2)', fontSize: 11 }}>{s.CreatedAt?.split('T')[0]}</td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text2)', fontSize: 11 }}>{s.ExpiresAt?.split('T')[0]}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
+  const tooltipHandlers = { onHover: handleMemberHover, onLeave: handleMemberLeave };
 
-// ============================================================================
-// AUTOGUESS VIEW
-// ============================================================================
-
-const AutoguessView = () => {
-  const { useState } = React;
-  const [autoguessing, setAutoguessing] = useState(false);
-  const [result, setResult] = useState(null);
-
-  const handleAutoguess = () => {
-    setAutoguessing(true);
-    setResult(null);
-    window.api('/api/payments/autoguess-all', { method: 'POST' })
-      .then(r => {
-        console.log('[Autoguess] Result:', r);
-        setResult(r);
-        setAutoguessing(false);
-      })
-      .catch(e => {
-        console.error('[Autoguess] Error:', e);
-        setResult({ error: e.message });
-        setAutoguessing(false);
-      });
-  };
-
-  return (
-    <div>
-      <button
-        onClick={handleAutoguess}
-        disabled={autoguessing}
-        style={{
-          padding: '12px 24px',
-          background: autoguessing ? '#ccc' : 'var(--accent)',
-          color: 'white',
-          border: 'none',
-          borderRadius: 'var(--radius)',
-          cursor: autoguessing ? 'not-allowed' : 'pointer',
-          fontSize: 14,
-          fontWeight: 600,
-          marginBottom: 16,
-          transition: 'opacity 0.2s',
-          opacity: autoguessing ? 0.6 : 1,
-        }}
-      >
-        {autoguessing ? '⟳ Running autoguess...' : '🤖 Run Autoguess'}
-      </button>
-
-      {result && (
-        <div
-          style={{
-            background: result.error ? '#fef2f2' : '#f0fdf4',
-            border: `1px solid ${result.error ? '#fca5a5' : '#86efac'}`,
-            borderRadius: 'var(--radius)',
-            padding: 16,
-            fontSize: 13,
-            color: result.error ? '#b91c1c' : '#15803d',
-          }}
-        >
-          {result.error ? (
-            <>
-              <strong>❌ Error:</strong> {result.error}
-            </>
-          ) : (
-            <>
-              <strong>✅ Success:</strong> {result.message}
-              {result.details && (
-                <div style={{ marginTop: 12, fontSize: 12, opacity: 0.8 }}>
-                  Created: {result.details.created} | Skipped: {result.details.skipped} | Errors: {result.details.errors?.length || 0}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================================================
-// MANUAL APPROVAL VIEW
-// ============================================================================
-
-const ManualApprovalView = () => {
-  const { useState } = React;
-  const [memberSearch, setMemberSearch] = useState('');
-  const [members, setMembers] = useState([]);
-  const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [memberSubmissions, setMemberSubmissions] = useState([]);
-  const [gmailMatches, setGmailMatches] = useState([]);
-  const [selectedTx, setSelectedTx] = useState('');
-  const [approving, setApproving] = useState(false);
-  const [result, setResult] = useState(null);
-
-  const handleSearchMembers = (query) => {
-    setMemberSearch(query);
-    if (query.length < 2) {
-      setMembers([]);
+  const handleSubmissionFocus = useCallback((submissionId) => {
+    if (focusedSubmissionId === submissionId) {
+      setFocusedSubmissionId(null);
+      setGmailCandidates(null);
       return;
     }
-    window.api(`/api/payments/search-members?q=${encodeURIComponent(query)}`)
-      .then(r => {
-        if (r && r.members) setMembers(r.members);
-      })
-      .catch(e => console.error('[ManualApproval] Search error:', e));
+    setFocusedSubmissionId(submissionId);
+    setGmailCandidates(null);
+    setCandidatesLoading(true);
+    api(`/api/payments/gmail-candidates/${submissionId}`).then(r => {
+      setCandidatesLoading(false);
+      if (r.ok) {
+        const candidates = Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.data) ? r.data.data : []);
+        setGmailCandidates(candidates);
+      }
+    });
+  }, [focusedSubmissionId]);
+
+  const clearSubmissionFocus = useCallback(() => {
+    setFocusedSubmissionId(null);
+    setGmailCandidates(null);
+  }, []);
+
+  const loadAll = useCallback(() => {
+    api('/api/payments/dashboard').then(r => r.ok && setStats(r.data));
+    api('/api/payments/pending-submissions').then(r => r.ok && setPendingSubmissions(r.data || []));
+    api('/api/payments/unmatched-gmail').then(r => r.ok && setUnmatchedGmail(r.data || []));
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 4000); };
+
+  const toggleSubmission = (id) => setSelectedSubmissionIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const selectAllSubmissions = (ids) => setSelectedSubmissionIds(new Set(ids));
+
+  const focusedSubmission = pendingSubmissions.find(sub => sub.SubmissionID === focusedSubmissionId) || null;
+
+  const handleQuickApproved = (messageId, memberId, intent) => {
+    showToast(`✓ Approved ${intent} for ${memberId}`);
+    clearSubmissionFocus();
+    loadAll();
   };
 
-  const handleSelectMember = (memberId) => {
-    setSelectedMemberId(memberId);
-    setMembers([]);
-    setMemberSearch('');
-    setMemberSubmissions([]);
-    setGmailMatches([]);
-    setSelectedTx('');
-    setResult(null);
+  return e('div', null,
+    toast && e('div', {
+      style: { position: 'fixed', top: 16, right: 16, zIndex: 200, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: '10px 16px', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }
+    }, toast),
 
-    Promise.all([
-      window.api(`/api/payments/submissions-for-member/${memberId}`),
-      window.api(`/api/payments/gmail-matching-candidates/${memberId}`),
-    ])
-      .then(([subR, gmailR]) => {
-        if (subR && subR.submissions) setMemberSubmissions(subR.submissions);
-        if (gmailR && gmailR.transactions) setGmailMatches(gmailR.transactions);
-      })
-      .catch(e => console.error('[ManualApproval] Load error:', e));
-  };
+    e(MemberTooltip, { memberId: tooltip.memberId, anchorRect: tooltip.rect, data: tooltip.data }),
 
-  const handleApprove = () => {
-    if (!selectedMemberId || !selectedTx) return;
-    setApproving(true);
-    window.api('/api/payments/manual-approve', {
-      method: 'POST',
-      body: JSON.stringify({ memberId: selectedMemberId, transactionNumber: selectedTx }),
-    })
-      .then(r => {
-        console.log('[ManualApproval] Result:', r);
-        setResult(r);
-        setApproving(false);
-        if (r.ok) {
-          setTimeout(() => {
-            setSelectedMemberId('');
-            setSelectedTx('');
-            setMemberSubmissions([]);
-            setGmailMatches([]);
-          }, 1500);
+    e(StatsCards, { stats }),
+
+    e('div', { style: { display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 16 } },
+
+      // LEFT: Submissions panel
+      showSubmissions && e('div', {
+        style: {
+          flex: '0 0 420px', minWidth: 0, border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column',
         }
-      })
-      .catch(e => {
-        console.error('[ManualApproval] Error:', e);
-        setResult({ error: e.message });
-        setApproving(false);
-      });
-  };
+      },
+        e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' } },
+          e('span', { style: { fontSize: 13, fontWeight: 600 } }, `Submissions (${pendingSubmissions.length})`),
+        ),
+        e('div', { style: { overflowY: 'auto', maxHeight: 520 } },
+          e(PendingSubmissionsTable, {
+            submissions: pendingSubmissions,
+            selectedSubmissionIds,
+            focusedSubmissionId,
+            onToggle: toggleSubmission,
+            onSelectAll: selectAllSubmissions,
+            onViewMember: () => {},
+            onFocus: handleSubmissionFocus,
+            tooltipHandlers,
+          }),
+        ),
+      ),
 
-  return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-            Search Member
-          </label>
-          <input
-            type="text"
-            placeholder="Name, email, or ID..."
-            value={memberSearch}
-            onChange={(e) => handleSearchMembers(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              fontSize: 13,
-              background: 'var(--surface)',
-              color: 'var(--text)',
-            }}
-          />
-          {members.length > 0 && (
-            <div
-              style={{
-                marginTop: 8,
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                maxHeight: 200,
-                overflowY: 'auto',
-              }}
-            >
-              {members.map((m) => (
-                <button
-                  key={m.MemberID}
-                  onClick={() => handleSelectMember(m.MemberID)}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '10px 12px',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: '1px solid var(--border)',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                  }}
-                >
-                  <strong>{m.FirstName} {m.LastName}</strong> <span style={{ color: 'var(--text2)', fontSize: 11 }}>({m.MemberID})</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {selectedMemberId && (
-            <div style={{ marginTop: 8, padding: 10, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 'var(--radius)', fontSize: 12 }}>
-              ✓ Selected: <strong>{selectedMemberId}</strong>
-            </div>
-          )}
-        </div>
+      // RIGHT: Gmail panel
+      e('div', { style: { flex: 1, minWidth: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius)', display: 'flex', flexDirection: 'column' } },
+        e('div', { style: { padding: '8px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } },
+          e('div', { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
+            e('button', {
+              className: 'btn btn-sm btn-outline',
+              onClick: () => setShowSubmissions(v => !v),
+              title: showSubmissions ? 'Hide submissions panel' : 'Show submissions panel',
+              style: { fontSize: 11, padding: '2px 7px', whiteSpace: 'nowrap' },
+            }, showSubmissions ? '◀ Hide' : '▶ Show'),
 
-        <div>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-            Select Gmail Transaction
-          </label>
-          <select
-            value={selectedTx}
-            onChange={(e) => setSelectedTx(e.target.value)}
-            disabled={!selectedMemberId || gmailMatches.length === 0}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              fontSize: 13,
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              opacity: !selectedMemberId || gmailMatches.length === 0 ? 0.5 : 1,
-              cursor: !selectedMemberId || gmailMatches.length === 0 ? 'not-allowed' : 'pointer',
-            }}
-          >
-            <option value="">-- Select transaction --</option>
-            {gmailMatches.map((tx) => (
-              <option key={tx.TransactionNumber} value={tx.TransactionNumber}>
-                ${parseFloat(tx.Amount).toFixed(2)} - {tx.Sender} - {tx.TransactionDate}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <button
-        onClick={handleApprove}
-        disabled={!selectedMemberId || !selectedTx || approving}
-        style={{
-          padding: '12px 24px',
-          background: !selectedMemberId || !selectedTx || approving ? '#ccc' : '#10b981',
-          color: 'white',
-          border: 'none',
-          borderRadius: 'var(--radius)',
-          cursor: !selectedMemberId || !selectedTx || approving ? 'not-allowed' : 'pointer',
-          fontSize: 14,
-          fontWeight: 600,
-          marginBottom: 16,
-          opacity: !selectedMemberId || !selectedTx || approving ? 0.6 : 1,
-        }}
-      >
-        {approving ? '⟳ Approving...' : '✓ Approve Payment'}
-      </button>
-
-      {result && (
-        <div
-          style={{
-            background: result.error ? '#fef2f2' : '#f0fdf4',
-            border: `1px solid ${result.error ? '#fca5a5' : '#86efac'}`,
-            borderRadius: 'var(--radius)',
-            padding: 12,
-            fontSize: 13,
-            color: result.error ? '#b91c1c' : '#15803d',
-          }}
-        >
-          {result.error ? (
-            <>
-              <strong>❌ Error:</strong> {result.error}
-            </>
-          ) : (
-            <>
-              <strong>✅ Approved:</strong> {result.message}
-            </>
-          )}
-        </div>
-      )}
-    </div>
+            focusedSubmission
+              ? e('div', { style: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 } },
+                  e('span', { style: { fontSize: 11, color: 'var(--yellow)', fontWeight: 600 } }, '🔍 Candidates'),
+                  e(MemberIdChip, { memberId: focusedSubmission.MemberID, tooltipHandlers, onClick: () => {} }),
+                  e('button', { className: 'btn btn-sm btn-outline', onClick: clearSubmissionFocus, style: { fontSize: 10, padding: '1px 5px' } }, '✕'),
+                )
+              : e('span', { style: { fontSize: 13, fontWeight: 600 } }, `Gmail (${unmatchedGmail.length})`),
+          ),
+        ),
+        e('div', { style: { overflowY: 'auto', maxHeight: 520 } },
+          e(GmailTable, {
+            rows: unmatchedGmail,
+            candidates: gmailCandidates,
+            focusedSubmission,
+            candidatesLoading,
+            selectedMessageId,
+            onSelect: setSelectedMessageId,
+            onQuickApproved: handleQuickApproved,
+            onClearFocus: clearSubmissionFocus,
+            tooltipHandlers,
+          }),
+        ),
+      ),
+    ),
   );
 };
 
