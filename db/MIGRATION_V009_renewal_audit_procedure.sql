@@ -36,15 +36,21 @@ DELIMITER //
 
 DROP PROCEDURE IF EXISTS sp_renewal_audit //
 
+DELIMITER //
+
 CREATE PROCEDURE sp_renewal_audit(
   IN p_start_date DATE,
   IN p_end_date DATE,
   IN p_target_expiration DATE,
   IN p_membership_type VARCHAR(50)
 )
-READS SQL DATA
+MODIFIES SQL DATA
 BEGIN
-  -- Temporary table to hold matched transactions with member info
+  -- Cleanup temporary tables
+  DROP TEMPORARY TABLE IF EXISTS tmp_audit_results;
+  DROP TEMPORARY TABLE IF EXISTS tmp_matching_txns;
+
+  -- Results table with family check columns set to NULL default
   CREATE TEMPORARY TABLE tmp_audit_results (
     message_id VARCHAR(100),
     amount DECIMAL(10,2),
@@ -57,11 +63,11 @@ BEGIN
     target_expiration DATE,
     status_match VARCHAR(20),
     trace_route VARCHAR(100),
-    family_members_checked INT DEFAULT 0,
+    family_members_checked INT DEFAULT NULL,
     family_all_match CHAR(1) DEFAULT NULL
   );
 
-  -- Step 1: Find all transactions in date range matching membership fees ($30/$50)
+  -- Internal working table for filtering transactions
   CREATE TEMPORARY TABLE tmp_matching_txns (
     message_id VARCHAR(100),
     amount DECIMAL(10,2),
@@ -74,161 +80,78 @@ BEGIN
     member_id VARCHAR(10)
   );
 
+  -- Step 1: Pull transactions in range matching standard fee amounts
   INSERT INTO tmp_matching_txns (message_id, amount, transaction_date, transaction_number, sender, memo, original_memo)
-  SELECT
-    MessageId,
-    Amount,
-    TransactionDate,
-    TransactionNumber,
-    Sender,
-    Memo,
-    OriginalMemo
+  SELECT MessageId, Amount, TransactionDate, TransactionNumber, Sender, Memo, OriginalMemo
   FROM gmail_transactions
   WHERE TransactionDate BETWEEN p_start_date AND p_end_date
-    AND Amount IN (30.00, 50.00)
-  ORDER BY TransactionDate DESC;
+    AND Amount IN (30.00, 50.00);
 
-  -- Step 2: PATH 1 - Trace via TransactionNumber → members.PaymentTransaction
+  -- Step 2: Path A - Direct link (members.PaymentTransaction)
   UPDATE tmp_matching_txns txn
   INNER JOIN members m ON txn.transaction_number = m.PaymentTransaction
-  SET txn.member_id = m.MemberID, txn.traced = TRUE
-  WHERE txn.traced = FALSE AND txn.transaction_number IS NOT NULL;
+  SET txn.member_id = m.MemberID, txn.traced = TRUE;
 
-  -- Step 3: PATH 2 - Trace via TransactionNumber → payments → members
+  -- Step 3: Path B - Split link (payments.TransactionNumber)
   UPDATE tmp_matching_txns txn
   INNER JOIN payments p ON txn.transaction_number = p.TransactionNumber
   INNER JOIN members m ON p.MemberID = m.MemberID
   SET txn.member_id = m.MemberID, txn.traced = TRUE
-  WHERE txn.traced = FALSE AND txn.transaction_number IS NOT NULL;
+  WHERE txn.traced = FALSE;
 
-  -- Step 4: PATH 3 - Trace via TransactionNumber → submissions → members
-  -- (submissions link to payments via SubmissionID in payments table)
-  UPDATE tmp_matching_txns txn
-  INNER JOIN payments p ON txn.transaction_number = p.TransactionNumber AND p.SubmissionID IS NOT NULL
-  INNER JOIN submissions s ON p.SubmissionID = s.SubmissionID
-  INNER JOIN members m ON s.MemberID = m.MemberID
-  SET txn.member_id = m.MemberID, txn.traced = TRUE
-  WHERE txn.traced = FALSE AND txn.transaction_number IS NOT NULL;
-
-  -- Step 5: Build audit results with member info and expiration check
+  -- Step 4: Build audit results for traced members
   INSERT INTO tmp_audit_results (
     message_id, amount, transaction_date, sender, memo,
     member_id, member_name, current_expiration, target_expiration,
     status_match, trace_route
   )
   SELECT
-    txn.message_id,
-    txn.amount,
-    txn.transaction_date,
-    txn.sender,
+    txn.message_id, txn.amount, txn.transaction_date, txn.sender,
     COALESCE(txn.memo, txn.original_memo, ''),
-    txn.member_id,
-    CONCAT(m.FirstName, ' ', m.LastName),
-    m.Expiration,
-    p_target_expiration,
+    txn.member_id, CONCAT(m.FirstName, ' ', m.LastName),
+    m.Expiration, p_target_expiration,
     CASE
       WHEN m.Expiration IS NULL THEN 'ERROR'
       WHEN m.Expiration >= p_target_expiration THEN 'MATCH'
       ELSE 'MISMATCH'
-    END AS status_match,
+    END,
     CASE
       WHEN m.PaymentTransaction = txn.transaction_number THEN 'members.PaymentTransaction'
-      WHEN EXISTS (
-        SELECT 1 FROM payments p
-        WHERE p.TransactionNumber = txn.transaction_number
-          AND p.MemberID = txn.member_id
-          AND p.SubmissionID IS NULL
-      ) THEN 'payments.TransactionNumber → members'
-      WHEN EXISTS (
-        SELECT 1 FROM payments p
-        INNER JOIN submissions s ON p.SubmissionID = s.SubmissionID
-        WHERE p.TransactionNumber = txn.transaction_number
-          AND s.MemberID = txn.member_id
-      ) THEN 'payments.TransactionNumber → submissions → members'
+      WHEN txn.traced THEN 'payments.TransactionNumber'
       ELSE 'UNKNOWN'
-    END AS trace_route
+    END
   FROM tmp_matching_txns txn
-  LEFT JOIN members m ON txn.member_id = m.MemberID
+  INNER JOIN members m ON txn.member_id = m.MemberID
   WHERE (p_membership_type = 'both')
-     OR (p_membership_type = 'individual' AND (m.Type = 'Individual' OR m.Type IS NULL))
-     OR (p_membership_type = 'family' AND m.Type = 'Family');
+     OR (p_membership_type = 'individual' AND LOWER(m.Type) = 'individual')
+     OR (p_membership_type = 'family' AND LOWER(m.Type) = 'family');
 
-  -- Step 6: Add untraced transactions (no member found)
-  INSERT INTO tmp_audit_results (
-    message_id, amount, transaction_date, sender, memo,
-    member_id, member_name, current_expiration, target_expiration,
-    status_match, trace_route
-  )
-  SELECT
-    txn.message_id,
-    txn.amount,
-    txn.transaction_date,
-    txn.sender,
-    COALESCE(txn.memo, txn.original_memo, ''),
-    NULL,
-    NULL,
-    NULL,
-    p_target_expiration,
-    'NOT TRACED',
-    'NOT FOUND'
-  FROM tmp_matching_txns txn
-  WHERE txn.member_id IS NULL;
+  -- Step 5: Add untraced transactions
+  INSERT INTO tmp_audit_results (message_id, amount, transaction_date, sender, memo, status_match, trace_route)
+  SELECT message_id, amount, transaction_date, sender, COALESCE(memo, original_memo, ''), 'NOT TRACED', 'NOT FOUND'
+  FROM tmp_matching_txns WHERE member_id IS NULL;
 
-  -- Step 7: For family members, check if all related members have matching expirations
+  -- Step 6: Perform Family Consistency Check
   UPDATE tmp_audit_results audit
+  INNER JOIN members m ON audit.member_id = m.MemberID
   SET
-    family_members_checked = (
-      SELECT COUNT(*) FROM members m2
-      WHERE m2.FamilyID = (
-        SELECT FamilyID FROM members m1
-        WHERE m1.MemberID = audit.member_id
-      )
-    ),
-    family_all_match = (
-      SELECT IF(
-        MIN(m2.Expiration >= p_target_expiration) = 1,
-        'Y',
-        'N'
-      )
-      FROM members m2
-      WHERE m2.FamilyID = (
-        SELECT FamilyID FROM members m1
-        WHERE m1.MemberID = audit.member_id
-      )
+    audit.family_members_checked = (SELECT COUNT(*) FROM members m2 WHERE m2.FamilyID = m.FamilyID),
+    audit.family_all_match = (
+        SELECT IF(MIN(m3.Expiration >= p_target_expiration) = 1, 'Y', 'N')
+        FROM members m3 WHERE m3.FamilyID = m.FamilyID
     )
-  WHERE member_id IS NOT NULL
-    AND family_members_checked IS NULL;
+  WHERE m.FamilyID IS NOT NULL;
 
-  -- Step 8: Return results, sorted by status and date
-  SELECT
-    message_id,
-    amount,
-    transaction_date,
-    sender,
-    memo,
-    member_id,
-    member_name,
-    current_expiration,
-    target_expiration,
-    status_match,
-    trace_route,
-    family_members_checked,
-    family_all_match
-  FROM tmp_audit_results
-  ORDER BY
-    CASE WHEN status_match = 'MISMATCH' THEN 1
-         WHEN status_match = 'NOT TRACED' THEN 2
-         WHEN status_match = 'MATCH' THEN 3
-         ELSE 4
-    END,
+  -- Return final report
+  SELECT * FROM tmp_audit_results 
+  ORDER BY 
+    FIELD(status_match, 'MISMATCH', 'NOT TRACED', 'MATCH', 'ERROR'),
     transaction_date DESC;
 
   -- Cleanup
   DROP TEMPORARY TABLE IF EXISTS tmp_audit_results;
   DROP TEMPORARY TABLE IF EXISTS tmp_matching_txns;
-
 END //
-
 DELIMITER ;
 
 -- Register this migration
