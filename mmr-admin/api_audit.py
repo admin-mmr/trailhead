@@ -295,13 +295,11 @@ def _get_matching_transactions(start_date: date, end_date: date,
     sql = """
         SELECT
             MessageId, Amount, TransactionDate, TransactionNumber,
-            Sender, Subject, OriginalMemo, Memo,
-            PaymentID, Source
+            Sender, Subject, OriginalMemo, Memo
         FROM gmail_transactions
         WHERE
             TransactionDate BETWEEN %s AND %s
             AND Amount IN (%s, %s)
-            AND IsArchived = 0
         ORDER BY TransactionDate DESC, MessageId
     """
 
@@ -334,7 +332,6 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
         amount = float(txn.get('Amount', 0)) if txn.get('Amount') else None
         txn_date = txn.get('TransactionDate')
         txn_number = txn.get('TransactionNumber', '')
-        payment_id = txn.get('PaymentID', '')
         sender = txn.get('Sender', '')
         memo = txn.get('Memo', '') or txn.get('OriginalMemo', '')
     except (KeyError, ValueError, TypeError) as e:
@@ -374,17 +371,9 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
         'red_flags': []
     }
 
-    # Try 3 trace paths in order of preference
+    # Try trace paths in order of preference
 
-    # PATH 1: gmail_transactions → PaymentID → payments → members
-    if payment_id:
-        trace = _trace_via_paymentid(payment_id, message_id)
-        if trace:
-            result.update(trace)
-            result['trace_route'] = 'gmail_transactions → PaymentID → payments → members'
-            return _verify_expiration(result, target_expiration)
-
-    # PATH 2: gmail_transactions → TransactionNumber → members.PaymentTransaction
+    # PATH 1: gmail_transactions → TransactionNumber → members.PaymentTransaction
     if txn_number:
         trace = _trace_via_txn_number(txn_number, message_id)
         if trace:
@@ -392,7 +381,7 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
             result['trace_route'] = 'gmail_transactions → TransactionNumber → members'
             return _verify_expiration(result, target_expiration)
 
-    # PATH 3: gmail_transactions → TransactionNumber → payments → members
+    # PATH 2: gmail_transactions → TransactionNumber → payments → members
     if txn_number:
         trace = _trace_via_payments_txn(txn_number, message_id)
         if trace:
@@ -400,7 +389,7 @@ def _audit_transaction(txn: dict, target_expiration: date) -> dict:
             result['trace_route'] = 'gmail_transactions → payments.TransactionReference → members'
             return _verify_expiration(result, target_expiration)
 
-    # PATH 4: gmail_transactions → MessageId → submissions → members
+    # PATH 3: gmail_transactions → MessageId → submissions → members
     trace = _trace_via_submissions(message_id)
     if trace:
         result.update(trace)
