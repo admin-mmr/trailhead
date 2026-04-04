@@ -1439,17 +1439,17 @@ def _import_transactions(job_id: str):
                     execute("""
                         INSERT INTO gmail_transactions
                         (MessageId, Timestamp, Sender, Amount, Memo, TransactionDate,
-                         TransactionNumber, Subject, OriginalMemo, Notes, PaymentMethod, UpdatedAt)
+                         TransactionNumber, Subject, OriginalMemo, PaymentMethod)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, [
                         message_id, timestamp, sender, amount, memo, transaction_date,
-                        transaction_number, subject, original_memo, memo, payment_method, timestamp,
+                        transaction_number, subject, original_memo, payment_method
                     ])
                     inserted.append(message_id)
                     log_lines.append(f"✅ {message_id}: INSERTED (new)")
 
                     if verbose_mode:
-                        log_lines.append(f"   → Sender={repr(sender)}, Amount={amount}, TransactionDate={transaction_date}, ProcessedTime={processed_time}")
+                        log_lines.append(f"   → Sender={repr(sender)}, Amount={amount}, TransactionDate={transaction_date}, ProcessedTime={timestamp}")
                 except Exception as e:
                     errors.append(f"{message_id}: {e}")
                     log_lines.append(f"❌ {message_id}: INSERT failed — {e}")
