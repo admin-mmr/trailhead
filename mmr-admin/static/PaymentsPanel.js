@@ -483,12 +483,14 @@ const MatchCtxBadge = ({ ctx, processedTime }) => {
   return e('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' } }, '~ CANDIDATE');
 };
 
-const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, selectedMessageId, onSelect, onQuickApproved, onClearFocus, tooltipHandlers }) => {
-  const [activePopover, setActivePopover] = useState(null);
+const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, selectedMessageId, onSelect, onQuickApproved, onClearFocus, tooltipHandlers, activePopover, onPopoverToggle }) => {
   const [colWidths, setColWidths] = useState({ sender: 120, memo: 200 });
   const [resizing, setResizing] = useState(null);
   const tableRef = useRef(null);
   const e = React.createElement;
+
+  // Track which Gmail row is open for popover (for showing popover data)
+  const activeGmailData = activePopover ? rows.find(g => g.MessageId === activePopover) : null;
 
   const isFilterMode = candidates !== null;
   const displayRows  = isFilterMode ? candidates : rows;
@@ -616,14 +618,8 @@ const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, se
               className: `btn btn-sm ${hasMemoId ? 'btn-green' : 'btn-outline'}`,
               style: { fontSize: 11, padding: '2px 8px' },
               title: hasMemoId ? `Quick-approve for ${memoIds.join(', ')}` : 'Create payment',
-              onClick: ev => { ev.stopPropagation(); setActivePopover(isOpen ? null : g.MessageId); },
+              onClick: ev => { ev.stopPropagation(); onPopoverToggle(isOpen ? null : g.MessageId); },
             }, hasMemoId ? '⚡ Quick' : '+ Create'),
-            isOpen && e(GmailQuickApprovePopover, {
-              gmail: g,
-              onClose: () => setActivePopover(null),
-              tooltipHandlers,
-              onApproved: (mid, intent) => { setActivePopover(null); onQuickApproved(g.MessageId, mid, intent); },
-            }),
           ),
         );
       })
@@ -654,6 +650,7 @@ const PaymentsPanel = () => {
   const [loading, setLoading] = useState(false);
   const [showSubmissions, setShowSubmissions] = useState(true);
   const [showDashboard, setShowDashboard] = useState(true);
+  const [activeGmailPopover, setActiveGmailPopover] = useState(null);
 
   const [tooltip, setTooltip] = useState({ memberId: null, rect: null, data: null });
   const tooltipTimer = useRef(null);
@@ -811,10 +808,20 @@ const PaymentsPanel = () => {
             onQuickApproved: handleQuickApproved,
             onClearFocus: clearSubmissionFocus,
             tooltipHandlers,
+            activePopover: activeGmailPopover,
+            onPopoverToggle: setActiveGmailPopover,
           }),
         ),
       ),
     ),
+
+    // Popover for quick-approve (rendered at root level so it appears on top)
+    activeGmailPopover && unmatchedGmail && unmatchedGmail.find(g => g.MessageId === activeGmailPopover) && e(GmailQuickApprovePopover, {
+      gmail: unmatchedGmail.find(g => g.MessageId === activeGmailPopover),
+      onClose: () => setActiveGmailPopover(null),
+      tooltipHandlers,
+      onApproved: (mid, intent) => { setActiveGmailPopover(null); handleQuickApproved(activeGmailPopover, mid, intent); },
+    }),
   );
 };
 
