@@ -391,7 +391,7 @@ const StatsCards = ({ stats = {}, onAutoguess, autoguessLoading = false }) => {
     { label: 'Errors',          value: stats.errors         || 0, cls: (stats.errors || 0) > 0 ? 'red' : '' },
   ];
   const e = React.createElement;
-  return e('div', { style: { display: 'flex', gap: 16, alignItems: 'flex-start' } },
+  return e('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
     e('div', { className: 'stats-grid' },
       cards.map((c, i) =>
         e('div', { className: 'stat-card', key: i },
@@ -406,13 +406,11 @@ const StatsCards = ({ stats = {}, onAutoguess, autoguessLoading = false }) => {
       disabled: autoguessLoading,
       title: 'Automatically match transactions with explicit memberID in memo',
       style: {
-        padding: '12px 20px',
+        padding: '10px 16px',
         fontSize: 13,
         fontWeight: 600,
         borderRadius: 'var(--radius)',
-        minWidth: 160,
-        height: 'fit-content',
-        alignSelf: 'center',
+        width: 'fit-content',
       }
     }, autoguessLoading ? '⏳ Autoguessing...' : '🤖 Autoguess + Approve')
   );
