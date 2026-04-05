@@ -63,8 +63,9 @@ def get_config(key: str) -> str | None:
 
 def get_renewal_period():
     """Get renewal period (start, end) from config as (start_date, end_date)."""
-    start = get_config('renewal_start_date')
-    end = get_config('renewal_end_date')
+    # Try new keys first, then fall back to old keys for backwards compatibility
+    start = get_config('renewal_start_date') or get_config('MembershipCollectionStart')
+    end = get_config('renewal_end_date') or get_config('MembershipCollectionEnd')
     return start, end
 
 
