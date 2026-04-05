@@ -47,22 +47,22 @@ def _log_api_error(error_msg: str, sql_snippet: str, user_email: str) -> None:
     try:
         with db_cursor() as cur:
             error_id = str(uuid.uuid4())
-            cur.execute("""
+            # Change this part in api_query.py (~line 65)
+            query_sql = """
                 INSERT INTO error_context (
-                    ErrorContextID, ErrorCode, ErrorMessage, TableName, ColumnName,
-                    Severity, Status, DetectedAt, DetectedBy, Notes
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
+                    ErrorContextID, ErrorCode, ErrorMessage, TechnicalMessage, 
+                    TableName, ProblematicValue, Severity
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            # Ensure the values tuple matches these 7 columns
+            cur.execute(query_sql, (
                 error_id,
-                'API_ERROR',
-                error_msg[:500],
-                'api_query',
-                None,
-                'ERROR',
-                'NEW',
-                datetime.now(),
-                user_email,
-                f'Query: {sql_snippet}'
+                'QUERY_ERROR', 
+                error_msg[:255], 
+                f'Query: {sql_snippet[:490]}', 
+                'gmail_transactions', # or generic
+                user_email, 
+                'ERROR'
             ))
     except Exception as e:
         logger.warning(f'[QUERY] Failed to log error to error_context: {e}')
@@ -115,12 +115,13 @@ def api_execute_query():
 
     # Enforce SELECT-only for non-super-admins
     if not is_super_admin and not _is_select_query(sql):
+        # This line prints to the server's stdout/stderr which is captured by Azure logs
+        logger.warning(f"[PERMISSION DENIED] User: {user_email} | Role: Admin | Action: Blocked {sql[:100]}")
         return json_response({
             'ok': False,
             'error': 'Only SELECT queries allowed for your role. Contact admin@mmrunners.org for data modifications.',
             'sql_snippet': sql[:100],
         }, 403)
-
     try:
         # Detect query type
         is_select = _is_select_query(sql)

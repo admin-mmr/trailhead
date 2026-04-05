@@ -198,7 +198,14 @@ def query(sql: str, params=None, dictionary=True) -> List[Dict]:
         return rows
     finally:
         cur.close()
-        conn.close()
+        try:
+            if conn and conn.is_connected():
+                conn.close()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error while closing connection: {e}")
+            # Don't raise here, the main logic is already done
 
 
 def execute(sql: str, params=None) -> int:
@@ -215,7 +222,14 @@ def execute(sql: str, params=None) -> int:
         raise
     finally:
         cur.close()
-        conn.close()
+        try:
+            if conn and conn.is_connected():
+                conn.close()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error while closing connection: {e}")
+            # Don't raise here, the main logic is already done
 
 
 def get_db_config() -> Dict[str, Any]:
