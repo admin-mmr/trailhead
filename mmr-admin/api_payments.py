@@ -597,12 +597,13 @@ def api_gmail_candidates(submission_id: str):
         "SELECT * FROM submissions WHERE SubmissionID = %s",
         (submission_id,)
     )
-    if not sub:
+    if not sub or len(sub) == 0:
         return json_response({'error': 'Submission not found'}, status=404)
 
     sub = sub[0]
     member_id = sub.get('MemberID')
     amount = sub.get('Amount')
+    first_name = sub.get('FirstName', '')
 
     # Get unmatched Gmail transactions + related ones
     candidates = query("""
@@ -610,11 +611,10 @@ def api_gmail_candidates(submission_id: str):
                TransactionNumber, Notes, ProcessedTime, MatchContext
         FROM gmail_transactions
         WHERE (Notes IS NULL OR MatchContext IS NULL OR MatchContext = 'unmatched')
-           OR Sender LIKE %s
-           OR Memo LIKE %s
+           OR (Sender LIKE %s OR Memo LIKE %s)
         ORDER BY TransactionDate DESC
         LIMIT 50
-    """, (f"%{sub.get('FirstName', '')}%", f"%{member_id}%"))
+    """, (f"%{first_name}%", f"%{member_id}%"))
 
     return json_response({'data': candidates})
 
@@ -646,7 +646,7 @@ def api_admin_create():
         "SELECT * FROM gmail_transactions WHERE MessageId = %s",
         (message_id,)
     )
-    if not gmail:
+    if not gmail or len(gmail) == 0:
         return json_response({'error': 'Gmail transaction not found'}, status=404)
 
     gmail = gmail[0]
