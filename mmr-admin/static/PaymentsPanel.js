@@ -653,6 +653,7 @@ const PaymentsPanel = () => {
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSubmissions, setShowSubmissions] = useState(true);
+  const [showDashboard, setShowDashboard] = useState(true);
 
   const [tooltip, setTooltip] = useState({ memberId: null, rect: null, data: null });
   const tooltipTimer = useRef(null);
@@ -743,7 +744,16 @@ const PaymentsPanel = () => {
 
     e(MemberTooltip, { memberId: tooltip.memberId, anchorRect: tooltip.rect, data: tooltip.data }),
 
-    e(StatsCards, { stats }),
+    e('div', { style: { marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+      e('h3', { style: { fontSize: 14, fontWeight: 600, margin: 0 } }, 'Dashboard'),
+      e('button', {
+        className: 'btn btn-sm btn-outline',
+        onClick: () => setShowDashboard(v => !v),
+        style: { fontSize: 11, padding: '2px 7px' },
+      }, showDashboard ? '▼ Collapse' : '▶ Expand'),
+    ),
+
+    showDashboard && e(StatsCards, { stats }),
 
     e('div', { style: { display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 16 } },
 
