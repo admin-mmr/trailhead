@@ -1,3 +1,20 @@
+### 04-05 17:52 UTC — CRITICAL FIX: Trigger bug causing PaymentDate error in autoguess
+
+**Root cause:** `trg_payments_auto_fill` trigger references non-existent `PaymentDate` in gmail_transactions table
+- gmail_transactions has `TransactionDate`, NOT `PaymentDate`
+- Trigger tries: `SELECT PaymentDate, ...` ← should be `SELECT TransactionDate, ...`
+- This was the actual cause of "Unknown column 'PaymentDate' in 'field list'" error
+
+**Fix:** MIGRATION_V011_fix_payments_auto_fill_trigger.sql
+- Drops/recreates trigger with correct column name (TransactionDate)
+- Assigns to NEW.PaymentDate in payments table (which does exist)
+- Will auto-run on next main push
+
+**Previous fixes still active:**
+- Autoguess performance: circuit breaker (5 errors) + minimal logging
+- History: admin_email captured before loop
+- All direct INSERT + UPDATE (no stored proc calls)
+
 ### 04-05 17:50 UTC — COMPLETED: Autoguess perf + logging fixes (circuit breaker, reduced verbosity, email capture)
 
 **Issues fixed:**
