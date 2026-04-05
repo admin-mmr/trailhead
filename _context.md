@@ -1,3 +1,30 @@
+### 04-05 18:35 UTC — FIX: Transaction metadata sync (Notes/UpdatedAt only, not full row overwrite)
+
+**Problem:** Python export_transaction_meta was sending all columns via `write_range`, causing Active sheet to append new columns instead of updating Notes + UpdatedAt only.
+
+**Root Cause:** sync_config.py used generic `write_range` action which overwrites entire rows. gmail_transactions table has 12 columns (TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate, PaymentMethod, MessageId, Subject, OriginalMemo, Notes, UpdatedAt) but we only wanted to update Notes + UpdatedAt.
+
+**Fix Applied:**
+1. **web-apps/gas/membership/dist/webhook.js** — Added new action handler `handleUpdateTransactionMeta()` that:
+   - Matches transactions by TransactionNumber (column 5) or MessageId (column 6)
+   - Updates ONLY Notes (column 9) and UpdatedAt (column 10)
+   - Auto-adds UpdatedAt column header if missing
+   - Leaves all other columns untouched
+   - Returns `{ok: true, data: {updated, notFound}}`
+
+2. **basecamp/python/sync_config.py** — Modified export_transaction_meta config:
+   - Added TransactionNumber + MessageId to columns list (needed for matching in GAS)
+   - Now sends: `['TransactionNumber', 'MessageId', 'Notes', 'UpdatedAt']`
+
+3. **basecamp/python/sync_config.py generic_sync_runner()** — Added special case for transaction_meta:
+   - Detects `config_key == 'export_transaction_meta'`
+   - Routes to `update_transaction_meta` action (not `write_range`)
+   - Sends minimal payload: `{action, rows}` (no sheetName/overwrite/keyField)
+
+**Impact:** Next export_transaction_meta run will properly update only Notes + UpdatedAt, preserving all existing data in Active sheet.
+
+**Status:** ✅ Fixed. Ready to test with next sync run.
+
 ### 04-05 12:50 UTC — FIX: Member card tooltip not working in Payments tab
 
 **Issue:** Hovering over member IDs in pending submissions didn't show tooltip

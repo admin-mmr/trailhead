@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-05T17:09:51.107423 UTC
+-- Timestamp: 2026-04-05T18:08:14.691860 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -333,7 +333,7 @@ CREATE TABLE `sheets_sync_log` (
   KEY `idx_status` (`Status`),
   KEY `idx_started_at` (`StartedAt`),
   CONSTRAINT `fk_sheets_sync_log_jobid` FOREIGN KEY (`JobID`) REFERENCES `sync_jobs` (`JobID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=117 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
+) ENGINE=InnoDB AUTO_INCREMENT=120 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
 
 CREATE TABLE `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
@@ -1000,20 +1000,6 @@ CREATE TRIGGER `trg_members_after_update` AFTER UPDATE ON `members` FOR EACH ROW
   );
 END;
 
-CREATE TRIGGER `trg_payments_auto_fill` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
-    IF NEW.TransactionNumber IS NOT NULL THEN
-        SELECT PaymentDate, PaymentMethod, Sender, Memo
-        INTO @d, @m, @p, @memo
-        FROM gmail_transactions
-        WHERE TransactionNumber = NEW.TransactionNumber
-        LIMIT 1;
-        SET NEW.PaymentDate = @d;
-        SET NEW.PaymentMethod = @m;
-        SET NEW.PayerName = @p;
-        SET NEW.MemoField = @memo;
-    END IF;
-END;
-
 CREATE TRIGGER `trg_payments_limit_check_insert` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
     DECLARE v_max DECIMAL(10,2);
     DECLARE v_used DECIMAL(10,2);
@@ -1165,6 +1151,20 @@ CREATE TRIGGER `trg_payments_sync_to_gmail_on_change_after_payment_insert` AFTER
             Notes = v_new_notes,
             UpdatedAt = v_latest_update
         WHERE TransactionNumber = NEW.TransactionNumber;
+    END IF;
+END;
+
+CREATE TRIGGER `trg_payments_auto_fill` BEFORE INSERT ON `payments` FOR EACH ROW BEGIN
+    IF NEW.TransactionNumber IS NOT NULL THEN
+        SELECT TransactionDate, PaymentMethod, Sender, Memo
+        INTO @d, @m, @p, @memo
+        FROM gmail_transactions
+        WHERE TransactionNumber = NEW.TransactionNumber
+        LIMIT 1;
+        SET NEW.PaymentDate = @d;
+        SET NEW.PaymentMethod = @m;
+        SET NEW.PayerName = @p;
+        SET NEW.MemoField = @memo;
     END IF;
 END;
 

@@ -126,6 +126,8 @@ function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.Content.Tex
         return handleUpdateEvents(payload);
       case 'update_payments':
         return handleUpdatePayments(payload);
+      case 'update_transaction_meta':
+        return handleUpdateTransactionMeta(payload);
       // MySQL sync — generic write/read operations
       case 'write_range':
         return handleWriteRange(payload);
@@ -566,6 +568,80 @@ function handleUpdatePayments(payload: any): GoogleAppsScript.Content.TextOutput
     return jsonResponse({ ok: true, data: { updated } });
   } catch (err: any) {
     console.error('[webhook] Failed to update payments:', err);
+    return jsonResponse({ ok: false, error: err.message || String(err) });
+  }
+}
+
+// UPDATE handler — update ONLY Notes & UpdatedAt in gmail_transactions (Active sheet)
+// Matches by TransactionNumber or MessageId, updates only those 2 columns
+function handleUpdateTransactionMeta(payload: any): GoogleAppsScript.Content.TextOutput {
+  console.log('[webhook] update_transaction_meta: updating transaction metadata only');
+  const { rows } = payload;
+  if (!Array.isArray(rows)) {
+    return jsonResponse({ ok: false, error: 'rows must be an array' });
+  }
+  try {
+    const sheet = getSheetFromSpreadsheet('Active', 'GMAIL');
+    const data = sheet.getDataRange().getValues();
+    let updated = 0;
+    let notFound: any[] = [];
+
+    // Ensure UpdatedAt column exists (column 10, 0-indexed)
+    // FG_COL.NOTES = 9, and we need UpdatedAt at column 10
+    const NOTES_COL = 9;
+    const UPDATED_AT_COL = 10;
+
+    // Check if header row has UpdatedAt; if not, add it
+    if (!data[0][UPDATED_AT_COL] || data[0][UPDATED_AT_COL] !== 'UpdatedAt') {
+      console.log('[webhook] Adding UpdatedAt column header at column ' + (UPDATED_AT_COL + 1));
+      sheet.getRange(1, UPDATED_AT_COL + 1).setValue('UpdatedAt');
+    }
+
+    for (const row of rows) {
+      const transactionNumber = row.TransactionNumber || row.transactionNumber;
+      const messageId = row.MessageId || row.messageId;
+      const notes = row.Notes || row.notes || '';
+      const updatedAt = row.UpdatedAt || row.updatedAt || '';
+
+      if (!transactionNumber && !messageId) {
+        console.warn('[webhook] Skipping row with missing TransactionNumber and MessageId');
+        notFound.push('missing-key');
+        continue;
+      }
+
+      let found = false;
+      for (let i = 1; i < data.length; i++) {
+        const sheetTransNum = String(data[i][5] || '').trim(); // FG_COL.TRANSACTION_NUMBER = 5
+        const sheetMsgId = String(data[i][6] || '').trim(); // FG_COL.MESSAGE_ID = 6
+        const matches = (transactionNumber && sheetTransNum === String(transactionNumber).trim()) ||
+                        (messageId && sheetMsgId === String(messageId).trim());
+
+        if (matches) {
+          // Update ONLY Notes (column 9) and UpdatedAt (column 10)
+          if (notes) {
+            sheet.getRange(i + 1, NOTES_COL + 1).setValue(notes);
+          }
+          if (updatedAt) {
+            sheet.getRange(i + 1, UPDATED_AT_COL + 1).setValue(updatedAt);
+          }
+          console.log(`[webhook] Updated transaction metadata: TransNum=${transactionNumber || messageId} at row ${i + 1}`);
+          updated++;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        const key = transactionNumber || messageId;
+        notFound.push(key);
+        console.warn(`[webhook] Transaction NOT FOUND (will skip): ${key}`);
+      }
+    }
+
+    console.log(`[webhook] update_transaction_meta: updated=${updated}, notFound=${notFound.length}`);
+    return jsonResponse({ ok: true, data: { updated, notFound } });
+  } catch (err: any) {
+    console.error('[webhook] Failed to update transaction metadata:', err);
     return jsonResponse({ ok: false, error: err.message || String(err) });
   }
 }

@@ -117,7 +117,7 @@ SYNC_CONFIG = {
         'spreadsheet': 'GMAIL',
         'key': 'TransactionNumber',
         'direction': 'mysql_to_sheet',
-        'columns': ['Notes', 'UpdatedAt']  # Only sync back these two
+        'columns': ['TransactionNumber', 'MessageId', 'Notes', 'UpdatedAt']  # Include keys for matching + 2 columns to update
     }
 }
 
@@ -525,14 +525,26 @@ def generic_sync_runner(
                     logger.info(f"Writing batch {batch_num} ({len(batch_data)} rows) to {sheet_name}")
                     update_job(job_id, message=f"Writing batch {batch_num + 1} ({len(batch_data)} rows) to {sheet_name}...")
 
-                    result = gas_webhook({
-                        'action': 'write_range',
-                        'sheetName': sheet_name,
-                        'spreadsheetId': cfg.get('spreadsheet', 'MEMBERSHIP'),  # Which workbook to write to
-                        'rows': batch_data,
-                        'overwrite': False,
-                        'keyField': cfg.get('key', 'MemberID')  # Use configured key for upsert
-                    })
+                    # Special handling for transaction metadata: use update_transaction_meta action
+                    # instead of write_range to only update Notes & UpdatedAt columns
+                    if config_key == 'export_transaction_meta':
+                        webhook_action = 'update_transaction_meta'
+                        webhook_payload = {
+                            'action': webhook_action,
+                            'rows': batch_data,
+                        }
+                    else:
+                        webhook_action = 'write_range'
+                        webhook_payload = {
+                            'action': webhook_action,
+                            'sheetName': sheet_name,
+                            'spreadsheetId': cfg.get('spreadsheet', 'MEMBERSHIP'),  # Which workbook to write to
+                            'rows': batch_data,
+                            'overwrite': False,
+                            'keyField': cfg.get('key', 'MemberID')  # Use configured key for upsert
+                        }
+
+                    result = gas_webhook(webhook_payload)
 
                     # GAS webhook wrapper returns only the 'data' field, so check for inserted/updated keys
                     if result and ('inserted' in result or 'updated' in result):
