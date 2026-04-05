@@ -703,22 +703,21 @@ const PaymentsPanel = () => {
   const loadAll = useCallback(() => {
     api('/api/payments/dashboard').then(r => {
       if (r.ok) {
-        // API returns the stats object directly in r.data
-        const stats = typeof r.data === 'object' && r.data !== null ? r.data : {};
+        // Dashboard API returns: {ok: true, pending: 4, matched: 238, unmatched_gmail: 325, ...}
+        // Extract just the stats (remove the 'ok' field)
+        const { ok, ...stats } = r;
         setStats(stats);
       }
     });
     api('/api/payments/pending-submissions').then(r => {
-      if (r.ok) {
-        const submissions = Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.data) ? r.data.data : []);
-        setPendingSubmissions(submissions);
-      }
+      // Response: {submissions: [...rows...]}
+      const submissions = (Array.isArray(r.submissions)) ? r.submissions : [];
+      setPendingSubmissions(submissions);
     });
     api('/api/payments/unmatched-gmail').then(r => {
-      if (r.ok) {
-        const gmail = Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.data) ? r.data.data : []);
-        setUnmatchedGmail(gmail);
-      }
+      // Response: {transactions: [...rows...]}
+      const gmail = (Array.isArray(r.transactions)) ? r.transactions : [];
+      setUnmatchedGmail(gmail);
     });
   }, []);
 

@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-04T19:07:32.086548 UTC
+-- Timestamp: 2026-04-05T00:52:46.086806 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -333,7 +333,7 @@ CREATE TABLE `sheets_sync_log` (
   KEY `idx_status` (`Status`),
   KEY `idx_started_at` (`StartedAt`),
   CONSTRAINT `fk_sheets_sync_log_jobid` FOREIGN KEY (`JobID`) REFERENCES `sync_jobs` (`JobID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=113 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
+) ENGINE=InnoDB AUTO_INCREMENT=117 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
 
 CREATE TABLE `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
@@ -420,6 +420,22 @@ SELECT
 FROM (`gmail_transactions` `gt`
 LEFT JOIN `payments` `p` on((`gt`.`TransactionNumber` = `p`.`TransactionNumber`)))
 GROUP BY `gt`.`TransactionNumber`;
+
+DROP VIEW IF EXISTS `v_inconsistent_family_data`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_inconsistent_family_data` AS 
+SELECT 
+    `m`.`FamilyID` AS `FamilyID`,
+   count(`m`.`MemberID`) AS `TotalMembers`,
+   count(distinct `m`.`Status`) AS `DistinctStatuses`,
+   count(distinct `m`.`Expiration`) AS `DistinctExpirations`,
+   group_concat(distinct `m`.`Status` order by `m`.`Status` ASC separator ',
+    ') AS `StatusesFound`,
+   group_concat(distinct ifnull(`m`.`Expiration`,
+   'NULL') order by `m`.`Expiration` ASC separator ',
+    ') AS `ExpirationsFound`
+FROM `members` `m`
+WHERE (`m`.`FamilyID` is not null)
+GROUP BY `m`.`FamilyID` having ((`DistinctStatuses` > 1) or (`DistinctExpirations` > 1));
 
 DROP VIEW IF EXISTS `v_last_successful_batch`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_last_successful_batch` AS 
@@ -602,6 +618,128 @@ BEGIN
         UpdatedAt = NOW(),
         Notes = CONCAT(IFNULL(Notes, ''), '\n[', NOW(), '] Linked: ', p_MemID, ' (', p_Type, ') $', p_Amt)
     WHERE TransactionNumber = p_TxNum;
+END;
+
+CREATE PROCEDURE `sp_renewal_audit`(
+  IN p_start_date DATE,
+  IN p_end_date DATE,
+  IN p_target_expiration DATE,
+  IN p_membership_type VARCHAR(50),
+  IN p_only_mismatches BOOLEAN
+)
+    MODIFIES SQL DATA
+BEGIN
+  
+  DROP TEMPORARY TABLE IF EXISTS tmp_audit_results;
+  DROP TEMPORARY TABLE IF EXISTS tmp_matching_txns;
+
+  
+  CREATE TEMPORARY TABLE tmp_audit_results (
+    message_id VARCHAR(100),
+    amount DECIMAL(10,2),
+    transaction_date DATE,
+    sender VARCHAR(255),
+    memo TEXT,
+    member_id VARCHAR(10),
+    member_name VARCHAR(255),
+    current_expiration DATE,
+    target_expiration DATE,
+    status_match VARCHAR(20),
+    trace_route VARCHAR(100),
+    family_members_checked INT DEFAULT NULL,
+    family_all_match CHAR(1) DEFAULT NULL
+  );
+
+  
+  CREATE TEMPORARY TABLE tmp_matching_txns (
+    message_id VARCHAR(100),
+    amount DECIMAL(10,2),
+    transaction_date DATE,
+    transaction_number VARCHAR(100),
+    sender VARCHAR(255),
+    memo TEXT,
+    original_memo TEXT,
+    traced BOOLEAN DEFAULT FALSE,
+    member_id VARCHAR(10)
+  );
+
+  
+  INSERT INTO tmp_matching_txns (message_id, amount, transaction_date, transaction_number, sender, memo, original_memo)
+  SELECT MessageId, Amount, TransactionDate, TransactionNumber, Sender, Memo, OriginalMemo
+  FROM gmail_transactions
+  WHERE TransactionDate BETWEEN p_start_date AND p_end_date
+    AND Amount IN (30.00, 50.00);
+
+  
+  UPDATE tmp_matching_txns txn
+  INNER JOIN members m ON txn.transaction_number = m.PaymentTransaction
+  SET txn.member_id = m.MemberID, txn.traced = TRUE;
+
+  
+  UPDATE tmp_matching_txns txn
+  INNER JOIN payments p ON txn.transaction_number = p.TransactionNumber
+  INNER JOIN members m ON p.MemberID = m.MemberID
+  SET txn.member_id = m.MemberID, txn.traced = TRUE
+  WHERE txn.traced = FALSE;
+
+  
+  INSERT INTO tmp_audit_results (
+    message_id, amount, transaction_date, sender, memo,
+    member_id, member_name, current_expiration, target_expiration,
+    status_match, trace_route
+  )
+  SELECT
+    txn.message_id, txn.amount, txn.transaction_date, txn.sender,
+    COALESCE(txn.memo, txn.original_memo, ''),
+    txn.member_id, CONCAT(m.FirstName, ' ', m.LastName),
+    m.Expiration, p_target_expiration,
+    CASE
+      WHEN m.Expiration IS NULL THEN 'ERROR'
+      WHEN m.Expiration >= p_target_expiration THEN 'MATCH'
+      ELSE 'MISMATCH'
+    END,
+    CASE
+      WHEN m.PaymentTransaction = txn.transaction_number THEN 'members.PaymentTransaction'
+      WHEN txn.traced THEN 'payments.TransactionNumber'
+      ELSE 'UNKNOWN'
+    END
+  FROM tmp_matching_txns txn
+  INNER JOIN members m ON txn.member_id = m.MemberID
+  WHERE (p_membership_type = 'both')
+     OR (p_membership_type = 'individual' AND LOWER(m.Type) = 'individual')
+     OR (p_membership_type = 'family' AND LOWER(m.Type) = 'family');
+
+  
+  INSERT INTO tmp_audit_results (message_id, amount, transaction_date, sender, memo, status_match, trace_route)
+  SELECT message_id, amount, transaction_date, sender, COALESCE(memo, original_memo, ''), 'NOT TRACED', 'NOT FOUND'
+  FROM tmp_matching_txns WHERE member_id IS NULL;
+
+  
+  UPDATE tmp_audit_results audit
+  INNER JOIN members m ON audit.member_id = m.MemberID
+  SET
+    audit.family_members_checked = (SELECT COUNT(*) FROM members m2 WHERE m2.FamilyID = m.FamilyID),
+    audit.family_all_match = (
+        SELECT IF(MIN(m3.Expiration >= p_target_expiration) = 1, 'Y', 'N')
+        FROM members m3 WHERE m3.FamilyID = m.FamilyID
+    )
+  WHERE m.FamilyID IS NOT NULL;
+
+  
+  SELECT * FROM tmp_audit_results 
+  WHERE (p_only_mismatches IS FALSE OR status_match <> 'MATCH')
+  ORDER BY 
+    FIELD(status_match, 'MISMATCH', 'NOT TRACED', 'MATCH', 'ERROR'),
+    transaction_date DESC;
+
+  DROP TEMPORARY TABLE IF EXISTS tmp_audit_results;
+  DROP TEMPORARY TABLE IF EXISTS tmp_matching_txns;
+END;
+
+CREATE PROCEDURE `sp_renewal_audit_default`()
+    MODIFIES SQL DATA
+BEGIN
+    CALL sp_renewal_audit('2025-10-01', CURDATE(), '2027-03-31', 'both', TRUE);
 END;
 
 CREATE PROCEDURE `sp_search_members_advanced`(
