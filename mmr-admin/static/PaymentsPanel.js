@@ -657,6 +657,44 @@ const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, se
 
 
 // ---------------------------------------------------------------------------
+// Payment history table
+// ---------------------------------------------------------------------------
+
+const PaymentHistoryTable = ({ payments = [] }) => {
+  const e = React.createElement;
+  if (!payments.length) {
+    return e('div', { style: { padding: 24, textAlign: 'center', color: 'var(--text2)' } },
+      'No payments found'
+    );
+  }
+  return e('table', { className: 'data-table' },
+    e('thead', null,
+      e('tr', null,
+        e('th', null, 'Member'),
+        e('th', null, 'Amount'),
+        e('th', null, 'Intent'),
+        e('th', null, 'Payment Date'),
+        e('th', null, 'Created'),
+        e('th', null, 'Processed By'),
+      )
+    ),
+    e('tbody', null,
+      payments.map((p, i) =>
+        e('tr', { key: i, style: { borderBottom: '1px solid var(--border)' } },
+          e('td', null, `${p.FirstName} ${p.LastName} (${p.MemberID})`),
+          e('td', null, fmtMoney(p.Amount)),
+          e('td', null, p.PaymentIntent || '—'),
+          e('td', null, fmtDate(p.PaymentDate)),
+          e('td', { style: { fontSize: 11, color: 'var(--text2)' } }, fmtDate(p.CreatedAt)),
+          e('td', { style: { fontSize: 11, color: 'var(--text2)' } }, p.ProcessedBy || 'auto'),
+        )
+      )
+    )
+  );
+};
+
+
+// ---------------------------------------------------------------------------
 // Main PaymentsPanel component
 // ---------------------------------------------------------------------------
 
@@ -666,6 +704,7 @@ const PaymentsPanel = () => {
   const [stats,          setStats]          = useState({});
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
   const [unmatchedGmail, setUnmatchedGmail] = useState([]);
+  const [paymentHistory, setPaymentHistory] = useState([]);
 
   const [selectedSubmissionIds, setSelectedSubmissionIds] = useState(new Set());
   const [selectedMessageId, setSelectedMessageId] = useState(null);
@@ -678,6 +717,7 @@ const PaymentsPanel = () => {
   const [loading, setLoading] = useState(false);
   const [showSubmissions, setShowSubmissions] = useState(true);
   const [showDashboard, setShowDashboard] = useState(true);
+  const [showHistory, setShowHistory] = useState(true);
   const [activeGmailPopover, setActiveGmailPopover] = useState(null);
 
   const [tooltip, setTooltip] = useState({ memberId: null, rect: null, data: null });
@@ -743,6 +783,11 @@ const PaymentsPanel = () => {
       // Response: {transactions: [...rows...]}
       const gmail = (Array.isArray(r.transactions)) ? r.transactions : [];
       setUnmatchedGmail(gmail);
+    });
+    api('/api/payments/history?limit=50&days=30').then(r => {
+      // Response: {payments: [...rows...]}
+      const payments = (Array.isArray(r.payments)) ? r.payments : [];
+      setPaymentHistory(payments);
     });
   }, []);
 
@@ -858,6 +903,21 @@ const PaymentsPanel = () => {
             onPopoverToggle: setActiveGmailPopover,
           }),
         ),
+      ),
+    ),
+
+    // Payment history section
+    e('div', { style: { marginTop: 32 } },
+      e('div', { style: { marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+        e('h3', { style: { fontSize: 14, fontWeight: 600, margin: 0 } }, `Payment History (Last 30 Days)`),
+        e('button', {
+          className: 'btn btn-sm btn-outline',
+          onClick: () => setShowHistory(v => !v),
+          style: { fontSize: 11, padding: '2px 7px' },
+        }, showHistory ? '▼ Collapse' : '▶ Expand'),
+      ),
+      showHistory && e('div', { style: { border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowY: 'auto', maxHeight: 400 } },
+        e(PaymentHistoryTable, { payments: paymentHistory })
       ),
     ),
 

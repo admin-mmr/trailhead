@@ -945,6 +945,48 @@ def api_search_members():
 
 
 # ============================================================================
+# PAYMENT HISTORY
+# ============================================================================
+
+@payments_bp.route('/api/payments/history', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_payment_history():
+    """
+    Get payment history, sorted by most recent first.
+    Query params: ?skip=0&limit=50&days=30
+    Returns: approved and rejected payments from the last N days.
+    """
+    skip = int(request.args.get('skip', 0))
+    limit = int(request.args.get('limit', 50))
+    days = int(request.args.get('days', 30))
+
+    rows = query("""
+        SELECT
+            p.PaymentID,
+            p.MemberID,
+            m.FirstName,
+            m.LastName,
+            p.Amount,
+            p.PaymentIntent,
+            p.PaymentDate,
+            p.ProcessedBy,
+            s.SubmissionID,
+            s.Status as SubmissionStatus,
+            p.CreatedAt
+        FROM payments p
+        JOIN members m ON p.MemberID = m.MemberID
+        LEFT JOIN submissions s ON p.SubmissionID = s.SubmissionID
+        WHERE p.CreatedAt >= DATE_SUB(NOW(), INTERVAL %s DAY)
+        ORDER BY p.CreatedAt DESC
+        LIMIT %s OFFSET %s
+    """, (days, limit, skip))
+
+    return json_response({'payments': rows})
+
+
+# ============================================================================
 # FUZZY MATCHING DEBUG / TEST ENDPOINTS
 # ============================================================================
 
