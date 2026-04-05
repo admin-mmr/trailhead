@@ -491,6 +491,9 @@ def api_autoguess_all():
       3. Transaction date within renewal period (from config)
       4. [Optional] Link to pending membership submission if exists, otherwise create payment alone
     """
+    # Capture admin email BEFORE entering loop (fixes blank history issue)
+    admin_email = session.get('user', {}).get('email', 'admin')
+
     # Get unmatched transactions
     unmatched = query("""
         SELECT TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate
@@ -502,42 +505,43 @@ def api_autoguess_all():
     created_count = 0
     skipped_count = 0
     errors = []
+    max_errors = 5  # Circuit breaker: stop after 5 errors
 
-    logger.info(f'[AUTOGUESS] ===============================================')
     logger.info(f'[AUTOGUESS] Starting autoguess for {len(unmatched)} unmatched transactions')
 
-    # Log renewal period
+    # Log renewal period once
     start_str, end_str = get_renewal_period()
-    if start_str and end_str:
-        logger.info(f'[AUTOGUESS] Renewal period: {start_str} to {end_str}')
-    else:
-        logger.warning(f'[AUTOGUESS] ⚠️ WARNING: Renewal period NOT configured! start={start_str}, end={end_str}')
-    logger.info(f'[AUTOGUESS] ===============================================')
+    if not start_str or not end_str:
+        logger.error(f'[AUTOGUESS] ⚠️ Renewal period NOT configured!')
+        return json_response({'error': 'Renewal period not configured'}, status=400)
 
     for idx, tx in enumerate(unmatched, 1):
+        # Circuit breaker: stop on too many errors
+        if len(errors) >= max_errors:
+            logger.error(f'[AUTOGUESS] Stopping: {len(errors)} errors reached. Processed {idx-1}/{len(unmatched)}')
+            break
+
         try:
-            result = _autoguess_single_transaction(tx)
+            result = _autoguess_single_transaction(tx, admin_email)
             if result['created']:
                 created_count += 1
             else:
                 skipped_count += 1
         except Exception as e:
-            logger.exception(f'[AUTOGUESS] EXCEPTION on {tx["TransactionNumber"]}: {e}')
-            errors.append({'transactionNumber': tx['TransactionNumber'], 'error': str(e)})
+            logger.error(f'[AUTOGUESS] ERROR on tx {tx["TransactionNumber"]}: {str(e)[:100]}')
+            errors.append({'transactionNumber': tx['TransactionNumber'], 'error': str(e)[:200]})
 
-    message = f'Autoguess complete: {created_count} payments created, {skipped_count} skipped'
+    message = f'Autoguess: {created_count} created, {skipped_count} skipped'
     if errors:
         message += f', {len(errors)} errors'
+    if len(errors) >= max_errors:
+        message += ' (stopped due to errors)'
 
-    logger.info(f'[AUTOGUESS] ===============================================')
     logger.info(f'[AUTOGUESS] {message}')
-    logger.info(f'[AUTOGUESS] Created: {created_count}, Skipped: {skipped_count}, Errors: {len(errors)}')
-    logger.info(f'[AUTOGUESS] ===============================================')
 
-    # Log to activity_log for audit trail
+    # Log to activity_log for audit trail (use captured admin_email)
     try:
         log_id = str(uuid.uuid4())
-        admin_email = session.get('user', {}).get('email', 'admin')
         error_summary = '\n'.join([f"{e['transactionNumber']}: {e['error']}" for e in errors]) if errors else None
 
         execute("""
@@ -729,9 +733,19 @@ def api_manual_approve():
     logger.info(f'[MANUAL-APPROVE] Linking transaction: amount={tx["Amount"]}, submissionID={submission_id}, admin={admin_email}')
 
     try:
+        # Direct INSERT + UPDATE (workaround for old sp_link_transaction procedure)
+        payment_id = str(uuid.uuid4())
         execute("""
-            CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)
-        """, (tx_num, member_id, 'Membership', tx['Amount'], admin_email, submission_id))
+            INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (payment_id, member_id, tx_num, tx['Amount'], submission_id, 'Membership', admin_email))
+
+        execute("""
+            UPDATE gmail_transactions
+            SET UpdatedAt = NOW(),
+                Notes = CONCAT(IFNULL(Notes, ''), '\n[', NOW(), '] Linked: ', %s, ' (Membership) $', %s)
+            WHERE TransactionNumber = %s
+        """, (member_id, tx['Amount'], tx_num))
 
         logger.info(f'[MANUAL-APPROVE] Success: tx={tx_num}, member={member_id}, submission={submission_id}')
         return json_response({
@@ -911,15 +925,14 @@ def api_admin_create():
     try:
         execute("""
             INSERT INTO payments (
-                PaymentID, MemberID, Amount, PaymentType, PaymentDate,
+                PaymentID, MemberID, Amount, PaymentType,
                 Source, ProcessedBy, CreatedAt
-            ) VALUES (%s, %s, %s, %s, %s, 'Gmail', %s, NOW())
+            ) VALUES (%s, %s, %s, %s, 'Gmail', %s, NOW())
         """, (
             str(uuid.uuid4()),
             member_id,
             amount,
             payment_intent,
-            tx_date,
             session.get('user_id', 'admin')
         ))
 

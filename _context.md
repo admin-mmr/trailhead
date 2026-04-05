@@ -1,20 +1,19 @@
-### 04-05 17:15 UTC — IMPLEMENTED: Autoguess logging + UI panel + paymentIntent fix
+### 04-05 17:45 UTC — COMPLETED: Autoguess + Logging + sp_link_transaction workaround (all calls fixed)
 
-**Issues & Fixes:**
-1. **PaymentIntent → PaymentType** (api_payments.py lines 882, 972)
-   - payments table uses `PaymentType`, not `PaymentIntent`
-2. **sp_link_transaction workaround** (api_payments.py lines 617-639)
-   - Deployed procedure has broken PaymentDate ref
-   - Direct INSERT + UPDATE replaces procedure call (works immediately)
-   - MIGRATION_V010 will fix procedure once deployed
-3. **Autoguess logging** — NEW infrastructure:
-   - `api_payments.py` lines 528-548: Log each run to activity_log (Action='AUTOGUESS_RUN')
-   - New endpoint: `/api/payments/autoguess-log` (line 1000+) — fetch historical runs
-   - `autoguess-log-panel.html` — React component showing: timestamp, admin, created/skipped/errors, status
-   - `index.html` — Added Payments sub-tab: "Payments" + "🤖 Autoguess Log"
-4. **PaymentsPanel.js** — Display fixes (flex layout, z-index 10000, tooltip shows "Loading…")
-5. **CLAUDE.md** — Corrected schema_migrations table + column names
-**Status:** Autoguess now works + shows logs in admin portal
+**Root cause:** Deployed `sp_link_transaction` procedure references non-existent `PaymentDate` in INSERT
+**Full solution:**
+1. **Replaced ALL 2 stored procedure calls with direct SQL** (api_payments.py):
+   - Line 645-655: Autoguess _autoguess_single_transaction() → direct INSERT + UPDATE
+   - Line 733-745: Manual approval api_manual_approve() → direct INSERT + UPDATE
+   - No more CALL sp_link_transaction (workaround until MIGRATION_V010 deployed)
+2. **Fixed PaymentIntent → PaymentType** (lines 914, 1005) — payments table uses PaymentType
+3. **Autoguess activity logging** (lines 528-548) — writes to activity_log table
+4. **New admin UI endpoints + components**:
+   - `/api/payments/autoguess-log` — fetch historical runs
+   - `autoguess-log-panel.html` — React component
+   - `index.html` — Payments sub-tabs (Payments + 🤖 Autoguess Log)
+5. **PaymentsPanel.js** — Display fixes (flex, z-index, tooltip)
+**Status:** ✅ All payments workflows work (autoguess, manual, history)
 
 ### 04-04 19:30 UTC — ADDED: Autoguess button to dashboard in PaymentsPanel.js
 
