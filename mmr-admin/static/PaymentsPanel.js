@@ -381,14 +381,14 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
 // Stats cards
 // ---------------------------------------------------------------------------
 
-const StatsCards = ({ stats }) => {
+const StatsCards = ({ stats = {} }) => {
   const cards = [
     { label: 'Pending',         value: stats.pending        || 0, cls: 'yellow' },
     { label: 'Matched',         value: stats.matched        || 0, cls: 'accent' },
     { label: 'Unmatched Gmail', value: stats.unmatched_gmail || 0, cls: 'red'   },
     { label: 'Approved (30d)',  value: stats.approved_30d   || 0, cls: 'green'  },
     { label: 'Rejected (30d)',  value: stats.rejected_30d   || 0, cls: ''       },
-    { label: 'Errors',          value: stats.errors         || 0, cls: stats.errors > 0 ? 'red' : '' },
+    { label: 'Errors',          value: stats.errors         || 0, cls: (stats.errors || 0) > 0 ? 'red' : '' },
   ];
   return React.createElement('div', { className: 'stats-grid' },
     cards.map((c, i) =>
@@ -700,9 +700,25 @@ const PaymentsPanel = () => {
   }, []);
 
   const loadAll = useCallback(() => {
-    api('/api/payments/dashboard').then(r => r.ok && setStats(r.data));
-    api('/api/payments/pending-submissions').then(r => r.ok && setPendingSubmissions(r.data || []));
-    api('/api/payments/unmatched-gmail').then(r => r.ok && setUnmatchedGmail(r.data || []));
+    api('/api/payments/dashboard').then(r => {
+      if (r.ok) {
+        // API returns the stats object directly in r.data
+        const stats = typeof r.data === 'object' && r.data !== null ? r.data : {};
+        setStats(stats);
+      }
+    });
+    api('/api/payments/pending-submissions').then(r => {
+      if (r.ok) {
+        const submissions = Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.data) ? r.data.data : []);
+        setPendingSubmissions(submissions);
+      }
+    });
+    api('/api/payments/unmatched-gmail').then(r => {
+      if (r.ok) {
+        const gmail = Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.data) ? r.data.data : []);
+        setUnmatchedGmail(gmail);
+      }
+    });
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
