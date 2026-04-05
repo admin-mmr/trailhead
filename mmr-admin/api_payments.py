@@ -534,6 +534,27 @@ def api_autoguess_all():
     logger.info(f'[AUTOGUESS] Created: {created_count}, Skipped: {skipped_count}, Errors: {len(errors)}')
     logger.info(f'[AUTOGUESS] ===============================================')
 
+    # Log to activity_log for audit trail
+    try:
+        log_id = str(uuid.uuid4())
+        admin_email = session.get('user', {}).get('email', 'admin')
+        error_summary = '\n'.join([f"{e['transactionNumber']}: {e['error']}" for e in errors]) if errors else None
+
+        execute("""
+            INSERT INTO activity_log (
+                LogID, Timestamp, Email, Action, State, ErrorMessage, ErrorSeverity
+            ) VALUES (%s, NOW(), %s, %s, %s, %s, %s)
+        """, (
+            log_id,
+            admin_email,
+            'AUTOGUESS_RUN',
+            f'created={created_count},skipped={skipped_count},errors={len(errors)}',
+            error_summary,
+            'ERROR' if errors else 'INFO'
+        ))
+    except Exception as log_err:
+        logger.warning(f'[AUTOGUESS] Failed to log to activity_log: {log_err}')
+
     return json_response({
         'ok': True,
         'message': message,
@@ -617,10 +638,21 @@ def _autoguess_single_transaction(tx: dict) -> dict:
     # Step 6: Create payment
     try:
         admin_email = session.get('user', {}).get('email', 'admin_autoguess')
-        logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: Calling sp_link_transaction(tx_num={tx_num}, member={member_id}, type=Membership, amount={amount}, admin={admin_email}, submission={submission_id})')
+        logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: Creating payment for {member_id} (type=Membership, amount={amount}, submission={submission_id})')
+
+        # Direct INSERT + UPDATE (workaround for old sp_link_transaction procedure)
+        payment_id = str(uuid.uuid4())
         execute("""
-            CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)
-        """, (tx_num, member_id, 'Membership', amount, admin_email, submission_id))
+            INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (payment_id, member_id, tx_num, amount, submission_id, 'Membership', admin_email))
+
+        execute("""
+            UPDATE gmail_transactions
+            SET UpdatedAt = NOW(),
+                Notes = CONCAT(IFNULL(Notes, ''), '\n[', NOW(), '] Linked: ', %s, ' (Membership) $', %s)
+            WHERE TransactionNumber = %s
+        """, (member_id, amount, tx_num))
 
         if submission_id:
             logger.info(f'[AUTOGUESS] ✓✓✓ APPROVED {tx_num}: {member_id} ${amount} (linked to {submission_id}) — All checks passed')
@@ -628,7 +660,7 @@ def _autoguess_single_transaction(tx: dict) -> dict:
             logger.info(f'[AUTOGUESS] ✓✓✓ APPROVED {tx_num}: {member_id} ${amount} (no submission) — All checks passed')
         return {'created': True, 'reason': f'Created payment for {member_id}'}
     except Exception as e:
-        logger.exception(f'[AUTOGUESS-DETAIL] {tx_num}: ✗ ERROR calling sp_link_transaction: {e}')
+        logger.exception(f'[AUTOGUESS-DETAIL] {tx_num}: ✗ ERROR creating payment: {e}')
         return {'created': False, 'reason': f'Error creating payment: {str(e)}'}
 
 
@@ -879,7 +911,7 @@ def api_admin_create():
     try:
         execute("""
             INSERT INTO payments (
-                PaymentID, MemberID, Amount, PaymentIntent, PaymentDate,
+                PaymentID, MemberID, Amount, PaymentType, PaymentDate,
                 Source, ProcessedBy, CreatedAt
             ) VALUES (%s, %s, %s, %s, %s, 'Gmail', %s, NOW())
         """, (
@@ -969,7 +1001,7 @@ def api_payment_history():
             m.FirstName,
             m.LastName,
             p.Amount,
-            p.PaymentIntent,
+            p.PaymentType,
             p.PaymentDate,
             p.ProcessedBy,
             s.SubmissionID,
@@ -984,6 +1016,36 @@ def api_payment_history():
     """, (days, limit, skip))
 
     return json_response({'payments': rows})
+
+
+# ============================================================================
+# AUTOGUESS AUDIT LOG
+# ============================================================================
+
+@payments_bp.route('/api/payments/autoguess-log', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_autoguess_log():
+    """Fetch historical autoguess runs from activity_log."""
+    limit = int(request.args.get('limit', 100))
+    skip = int(request.args.get('skip', 0))
+
+    rows = query("""
+        SELECT
+            LogID,
+            Timestamp,
+            Email,
+            State,
+            ErrorMessage,
+            ErrorSeverity
+        FROM activity_log
+        WHERE Action = 'AUTOGUESS_RUN'
+        ORDER BY Timestamp DESC
+        LIMIT %s OFFSET %s
+    """, (limit, skip))
+
+    return json_response({'logs': rows})
 
 
 # ============================================================================

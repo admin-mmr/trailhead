@@ -26,6 +26,7 @@
   <script type="text/babel" src="/templates/settings-panel.html"></script>
   <script type="text/babel" src="/templates/sync-panel.html"></script>
   <script type="text/babel" src="/templates/processing-log.html"></script>
+  <script type="text/babel" src="/templates/autoguess-log-panel.html"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -300,7 +301,7 @@ const App = () => {
           {/* Top-level tabs: Payments, Members, Sync, Admins, Data Browser, NYRR Todos */}
           <div className="tabs">
             {(userRole === 'super_admin' || userRole === 'admin') && (
-              <button className={`tab ${view === 'payments' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
+              <button className={`tab ${view === 'payments' || view === 'autoguess_log' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
               <button className={`tab ${view === 'members' || view === 'district' || view === 'audit' ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
@@ -314,6 +315,18 @@ const App = () => {
             <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => setView('tables')}>Data Browser</button>
             <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => setView('dashboard')}>NYRR Todos</button>
           </div>
+
+          {/* Payments sub-tabs: Payments, Autoguess Log */}
+          {view === 'payments' || view === 'autoguess_log' ? (
+            <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+              {(userRole === 'super_admin' || userRole === 'admin') && (
+                <button className={`tab ${view === 'payments' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
+              )}
+              {(userRole === 'super_admin' || userRole === 'admin') && (
+                <button className={`tab ${view === 'autoguess_log' ? 'active' : ''}`} onClick={() => setView('autoguess_log')}>🤖 Autoguess Log</button>
+              )}
+            </div>
+          ) : null}
 
           {/* Members sub-tabs: Members, Members by District, Renewal Audit */}
           {view === 'members' || view === 'district' || view === 'audit' ? (
@@ -351,6 +364,7 @@ const App = () => {
       {view === 'dashboard' && window.Dashboard && React.createElement(window.Dashboard, { onSelectEvent: selectEvent, onGoSettings: () => setView('settings') })}
       {view === 'detail' && selectedEventId && window.EventDetail && React.createElement(window.EventDetail, { eventId: selectedEventId, onBack: goBack })}
       {view === 'payments' && window.PaymentsPanel && React.createElement(window.PaymentsPanel)}
+      {view === 'autoguess_log' && window.AutoguessLogPanel && React.createElement(window.AutoguessLogPanel)}
       {view === 'members' && window.MembersPanel && React.createElement(window.MembersPanel)}
       {view === 'district' && window.DistrictMembersPanel && React.createElement(window.DistrictMembersPanel)}
       {view === 'audit' && window.AuditPanel && React.createElement(window.AuditPanel)}

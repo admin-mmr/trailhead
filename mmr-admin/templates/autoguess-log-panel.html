@@ -1,0 +1,94 @@
+initComponent('AutoguessLogPanel', () => {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api('/api/payments/autoguess-log?limit=50').then(r => {
+      if (r.ok) setLogs(r.data.logs || []);
+      setLoading(false);
+    }).catch(err => {
+      console.error('Failed to fetch autoguess logs:', err);
+      setLoading(false);
+    });
+  }, []);
+
+  const fmtDate = (v) => {
+    if (!v) return '—';
+    try {
+      const date = new Date(v);
+      return date.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    catch { return String(v); }
+  };
+
+  const parseSummary = (state) => {
+    if (!state) return {};
+    const parts = state.split(',');
+    const result = {};
+    parts.forEach(part => {
+      const [k, v] = part.split('=');
+      result[k.trim()] = v ? parseInt(v) : 0;
+    });
+    return result;
+  };
+
+  const e = React.createElement;
+
+  return e('div', { className: 'panel' },
+    e('div', { className: 'panel-header' },
+      e('h3', null, '🤖 Autoguess History')
+    ),
+    e('div', { className: 'table-wrap' },
+      loading
+        ? e('div', { style: { padding: 24, textAlign: 'center' } }, 'Loading…')
+        : !logs.length
+        ? e('div', { style: { padding: 24, textAlign: 'center', color: 'var(--text2)' } }, 'No autoguess runs yet')
+        : e('table', null,
+            e('thead', null,
+              e('tr', null,
+                e('th', null, 'Timestamp'),
+                e('th', null, 'Admin'),
+                e('th', null, 'Created'),
+                e('th', null, 'Skipped'),
+                e('th', null, 'Errors'),
+                e('th', null, 'Status'),
+                e('th', null, 'Details')
+              )
+            ),
+            e('tbody', null,
+              logs.map(log => {
+                const summary = parseSummary(log.State);
+                const isError = log.ErrorSeverity === 'ERROR' && summary.errors > 0;
+                return e('tr', {
+                  key: log.LogID,
+                  style: { background: isError ? 'rgba(248, 113, 113, 0.06)' : undefined }
+                },
+                  e('td', { style: { fontSize: 12 } }, fmtDate(log.Timestamp)),
+                  e('td', { style: { fontSize: 12, color: 'var(--text2)' } }, log.Email || '—'),
+                  e('td', { style: { textAlign: 'center', fontWeight: 600, color: 'var(--green)' } }, summary.created || 0),
+                  e('td', { style: { textAlign: 'center', color: 'var(--text2)' } }, summary.skipped || 0),
+                  e('td', { style: { textAlign: 'center', fontWeight: 600, color: isError ? 'var(--red)' : 'var(--text2)' } }, summary.errors || 0),
+                  e('td', null,
+                    e('span', {
+                      style: {
+                        display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11,
+                        fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+                        background: isError ? 'rgba(248, 113, 113, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                        color: isError ? 'var(--red)' : 'var(--green)',
+                      }
+                    }, isError ? 'Errors' : 'Success')
+                  ),
+                  e('td', {
+                    style: {
+                      fontSize: 11, color: 'var(--text2)', maxWidth: 200,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    },
+                    title: log.ErrorMessage || ''
+                  }, log.ErrorMessage ? log.ErrorMessage.split('\n')[0] : '—')
+                );
+              })
+            )
+          )
+    )
+  );
+});

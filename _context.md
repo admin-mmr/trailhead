@@ -1,18 +1,20 @@
-### 04-05 17:05 UTC — FIXED: sp_link_transaction procedure PaymentDate error + PaymentsPanel display
+### 04-05 17:15 UTC — IMPLEMENTED: Autoguess logging + UI panel + paymentIntent fix
 
-**Issue:**
-1. Autoguess was failing: "Unknown column 'PaymentDate' in 'field list'" when calling sp_link_transaction
-2. Memo column text overlaying, tooltip blank, columns misaligned
-
-**Fixes:**
-1. **MIGRATION_V010_fix_sp_link_transaction.sql**
-   - Drops/recreates procedure with correct INSERT (only: PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
-   - Auto-registers in schema_migrations table (NOT schema_versions)
-2. **PaymentsPanel.js display fixes**
-   - Memo cell now uses flex layout with proper truncation
-   - Tooltip z-index raised to 10000, pointerEvents='auto', shows "Loading member data…" when blank
-   - MemberID chip layout improved to prevent wrapping
-**Status:** Ready to deploy (MIGRATION_V010 will auto-run on main push)
+**Issues & Fixes:**
+1. **PaymentIntent → PaymentType** (api_payments.py lines 882, 972)
+   - payments table uses `PaymentType`, not `PaymentIntent`
+2. **sp_link_transaction workaround** (api_payments.py lines 617-639)
+   - Deployed procedure has broken PaymentDate ref
+   - Direct INSERT + UPDATE replaces procedure call (works immediately)
+   - MIGRATION_V010 will fix procedure once deployed
+3. **Autoguess logging** — NEW infrastructure:
+   - `api_payments.py` lines 528-548: Log each run to activity_log (Action='AUTOGUESS_RUN')
+   - New endpoint: `/api/payments/autoguess-log` (line 1000+) — fetch historical runs
+   - `autoguess-log-panel.html` — React component showing: timestamp, admin, created/skipped/errors, status
+   - `index.html` — Added Payments sub-tab: "Payments" + "🤖 Autoguess Log"
+4. **PaymentsPanel.js** — Display fixes (flex layout, z-index 10000, tooltip shows "Loading…")
+5. **CLAUDE.md** — Corrected schema_migrations table + column names
+**Status:** Autoguess now works + shows logs in admin portal
 
 ### 04-04 19:30 UTC — ADDED: Autoguess button to dashboard in PaymentsPanel.js
 
