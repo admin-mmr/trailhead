@@ -1,21 +1,56 @@
-### 04-04 18:25 UTC — COMPLETED: Renewal audit refactored to use stored procedure
+### 04-04 19:30 UTC — ADDED: Autoguess button to dashboard in PaymentsPanel.js
 
-**Changed:** api_audit.py → Removed all Python audit logic (9 helper functions, ~380 lines) that traced transactions through members/payments/submissions tables. Endpoint now calls `sp_renewal_audit()` stored procedure directly.
+**Changes:** `mmr-admin/static/PaymentsPanel.js`
+- Updated `StatsCards` component: Added button next to stats cards
+- New button: "🤖 Autoguess + Approve" (shows "⏳ Autoguessing..." while loading)
+- New handler: `handleAutoguess()` → POST /api/payments/autoguess-all
+- Auto-reload dashboard + submissions + gmail after completion
+- Toast feedback: "✓ Autoguess complete: 42 created, 283 skipped"
 
-**Files:**
-- `mmr-admin/api_audit.py` (658→282 lines, -57%) — Endpoint only; all tracing logic delegated to DB
-- `db/MIGRATION_V009_renewal_audit_procedure.sql` (already committed in prior session)
+**UX Flow:**
+1. Admin clicks dashboard expand
+2. Sees stats + "🤖 Autoguess + Approve" button (right side)
+3. Clicks button → auto-matches transactions with explicit memberID in memo
+4. Toast shows results, dashboard refreshes with new counts
 
-**Status:** ✅ Commit 704fa92 staged locally. Git push blocked by network ("No such device or address"). Awaiting network recovery. When main accepts push, Azure will auto-deploy.
+**Strict Criteria (API enforces):**
+- ✓ MemberID explicit in memo (regex: `\bA\d{4}\b`)
+- ✓ Amount matches membership type ($30/$50)
+- ✓ Date within renewal window
+- ✓ Pending submission exists
 
-**Testing:** To test locally when deployed:
-```bash
-curl -X POST http://localhost:5000/api/audit/renewal \
-  -H "Content-Type: application/json" \
-  -d '{"start_date":"2025-10-01","end_date":"2026-04-04","target_expiration":"2027-03-31","membership_type":"both"}'
+**Status:** ✅ Syntax verified. Button ready to use.
+
+### 04-04 19:25 UTC — IMPLEMENTED: Fuzzy select candidates ranking for quick-approve UI
+
+**Added:** Candidate ranking for admin quick-approve workflow.
+
+**Files Changed:**
+- `mmr-admin/api_payments.py` — Added:
+  - `fuzzy_select_transaction_to_submission(submission_id, max_candidates=20)` — Ranks candidates by fuzzy priority
+  - Updated `GET /api/payments/gmail-candidates/<submission_id>` to use fuzzy ranking (replaces simple name filter)
+
+**New Endpoint Behavior:**
+- **Query:** Unmatched Gmail transactions matching submission amount (SQL filter)
+- **Score:** Apply 4 fuzzy rules to each transaction (Python)
+- **Sort:** By priority (1 > 2 > 3 > 4 > 0), then matched, then date (newest first)
+- **Return:** Top 20 candidates ranked by confidence
+
+**Example:** Admin clicks submission "A0123, $30"
+```
+1. TX001 — Priority 1 (MemberID "A0123" in memo) → 🥇 HIGHEST, click to approve
+2. TX002 — Priority 2 (TransactionNumber last 4 digits match) → 🥈 HIGH
+3. TX003 — Priority 3 (Sender name "John Smith" matches member) → 🥉 MEDIUM
+4. TX004 — Priority 0 (No match) → scroll down to see
 ```
 
-**Next:** Once git push succeeds, verify sp_renewal_audit is deployed to MySQL. Payments tab will auto-populate renewal audit results.
+**No Auto-Approval:** Candidates are ranked but NOT automatically approved. Admin explicitly clicks to approve via `/api/payments/manual-approve`.
+
+**Documentation:**
+- `FUZZY_SELECT_CANDIDATES.md` — Complete guide (ranking algorithm, response format, UI integration)
+- Previous docs updated: `PAYMENTS_FUZZY_MATCH.md`, `FUZZY_MATCH_QUICK_START.md`
+
+**Status:** ✅ Syntax verified. Ready for UI integration in PaymentsPanel.js quick-approve popover.
 
 ### 04-04 18:10 UTC — FIXED: import_members Expiration date validation (0000-00-00 → NULL)
 

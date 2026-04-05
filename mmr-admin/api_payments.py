@@ -102,6 +102,232 @@ def partial_name_match(submission_memberid: str, gmail_sender: str, gmail_memo: 
     )
 
 
+def build_member_text(member: dict) -> str:
+    """
+    Build searchable member text from member record.
+    Format: "FirstName LastName WeChatID email_local NYRRRunnerName"
+    """
+    parts = [
+        member.get('FirstName', ''),
+        member.get('LastName', ''),
+        member.get('WeChatID', ''),
+    ]
+
+    # Extract email local part (before @)
+    email = member.get('Email', '')
+    if email and '@' in email:
+        parts.append(email.split('@')[0])
+
+    # Add NYRR runner name if available
+    if member.get('NYRRRunnerName'):
+        parts.append(member['NYRRRunnerName'])
+
+    # Join and normalize: lowercase, remove empty parts, single space separation
+    text = ' '.join(p for p in parts if p).lower()
+    return text
+
+
+def build_transaction_text(gmail: dict) -> str:
+    """
+    Build searchable transaction text from Gmail transaction.
+    Format: "Sender Memo Notes"
+    """
+    parts = [
+        gmail.get('Sender', ''),
+        gmail.get('Memo', ''),
+        gmail.get('Notes', ''),
+    ]
+    text = ' '.join(p for p in parts if p).lower()
+    return text
+
+
+def fuzzy_match_transaction_to_member(gmail: dict, member: dict) -> tuple[bool, int]:
+    """
+    Fuzzy match a Gmail transaction to a member using 4 priority rules.
+
+    Rules (in priority order):
+    1. MemberID is substring of transaction text
+    2. Last 4 digits of TransactionNumber match MemberID
+    3. Every word in Sender is substring of member_text
+    4. Any word in member_text is substring of transaction_text
+
+    Returns: (matched: bool, priority: int)
+      - priority 1 = rule 1, 2 = rule 2, 3 = rule 3, 4 = rule 4, 0 = no match
+    """
+    member_id = member.get('MemberID', '').upper()
+    tx_number = gmail.get('TransactionNumber', '')
+    sender = gmail.get('Sender', '').lower()
+    memo = gmail.get('Memo', '').lower()
+    notes = gmail.get('Notes', '').lower()
+
+    member_text = build_member_text(member)
+    tx_text = build_transaction_text(gmail)
+
+    # Rule 1: MemberID is substring of transaction text
+    if member_id and member_id.lower() in tx_text:
+        return True, 1
+
+    # Rule 2: Last 4 digits of TransactionNumber match MemberID (without A prefix)
+    if tx_number and len(member_id) >= 2 and member_id[1:].isdigit():
+        member_digits = member_id[1:]  # Remove 'A' prefix
+        tx_last_4 = tx_number[-4:] if len(tx_number) >= 4 else tx_number
+        if tx_last_4 == member_digits:
+            return True, 2
+
+    # Rule 3: Every word in Sender is substring of member_text
+    if sender:
+        sender_words = sender.split()
+        if sender_words and all(word in member_text for word in sender_words):
+            return True, 3
+
+    # Rule 4: Any word in member_text is substring of transaction_text
+    if member_text:
+        member_words = member_text.split()
+        if any(word in tx_text for word in member_words):
+            return True, 4
+
+    return False, 0
+
+
+def find_best_matching_submission(gmail: dict, amount: Decimal) -> dict | None:
+    """
+    Find the best pending submission for a Gmail transaction using fuzzy matching.
+
+    Returns: {submission_id, member_id, score} or None if no match found
+
+    Algorithm:
+      1. Get all pending membership submissions with matching amount
+      2. For each submission's member, apply fuzzy_match_transaction_to_member
+      3. Return submission with highest priority match (priority 1 > 2 > 3 > 4)
+    """
+    # Fetch pending submissions with matching amount
+    pending_subs = query("""
+        SELECT s.SubmissionID, s.MemberID, s.Amount
+        FROM submissions s
+        WHERE s.Status = 'pending' AND s.SubmissionType LIKE '%Membership%'
+          AND s.Amount = %s
+        ORDER BY s.CreatedAt DESC
+    """, (amount,))
+
+    best_match = None
+    best_priority = 0
+
+    for sub in pending_subs:
+        member_id = sub['MemberID']
+        member = get_member_by_id(member_id)
+        if not member:
+            continue
+
+        matched, priority = fuzzy_match_transaction_to_member(gmail, member)
+        if matched and priority > best_priority:
+            best_match = {
+                'submission_id': sub['SubmissionID'],
+                'member_id': member_id,
+                'priority': priority,
+            }
+            best_priority = priority
+
+    return best_match
+
+
+def fuzzy_select_transaction_to_submission(submission_id: str, max_candidates: int = 20) -> dict:
+    """
+    Find candidate Gmail transactions for a pending submission, ranked by fuzzy match score.
+
+    Used in quick-approve UI to show admin a short list of transactions to choose from.
+
+    Returns: {
+      'submission': {SubmissionID, MemberID, Amount},
+      'member': {MemberID, FirstName, LastName, Email, ...},
+      'candidates': [
+        {
+          'TransactionNumber', 'Sender', 'Amount', 'Memo', 'TransactionDate',
+          'priority': int (1-4, 0 if no match),
+          'matched': bool
+        },
+        ...
+      ]
+    }
+
+    Algorithm:
+      1. Get submission + member
+      2. Query unmatched Gmail transactions matching amount
+      3. For each transaction, apply fuzzy_match_transaction_to_member
+      4. Sort by priority (highest first), then by TransactionDate (newest first)
+      5. Return top N candidates
+    """
+    # Get submission
+    sub = query(
+        "SELECT * FROM submissions WHERE SubmissionID = %s",
+        (submission_id,)
+    )
+    if not sub or len(sub) == 0:
+        return {'error': 'Submission not found', 'candidates': []}
+
+    sub = sub[0]
+    member_id = sub['MemberID']
+    amount = sub['Amount']
+
+    # Get member
+    member = get_member_by_id(member_id)
+    if not member:
+        return {'error': f'Member {member_id} not found', 'candidates': []}
+
+    # Get unmatched Gmail transactions matching amount
+    candidates = query("""
+        SELECT MessageId, TransactionNumber, Sender, Amount, Memo, TransactionDate,
+               Notes, UpdatedAt, Timestamp
+        FROM gmail_transactions
+        WHERE (Notes IS NULL OR UpdatedAt IS NULL)
+          AND Amount = %s
+        ORDER BY TransactionDate DESC
+        LIMIT 100
+    """, (amount,))
+
+    # Score each candidate using fuzzy matching
+    scored_candidates = []
+    for gmail in candidates:
+        matched, priority = fuzzy_match_transaction_to_member(gmail, member)
+        scored_candidates.append({
+            'MessageId': gmail['MessageId'],
+            'TransactionNumber': gmail['TransactionNumber'],
+            'Sender': gmail['Sender'],
+            'Amount': float(gmail['Amount']),
+            'Memo': gmail['Memo'],
+            'TransactionDate': gmail['TransactionDate'].isoformat() if gmail['TransactionDate'] else None,
+            'Notes': gmail['Notes'],
+            'priority': priority,
+            'matched': matched,
+        })
+
+    # Sort by priority (descending), then by matched (True first), then by TransactionDate (newest first)
+    scored_candidates.sort(
+        key=lambda x: (x['priority'], x['matched'], x['TransactionDate']),
+        reverse=True
+    )
+
+    # Return top N
+    return {
+        'submission': {
+            'SubmissionID': sub['SubmissionID'],
+            'MemberID': sub['MemberID'],
+            'Amount': float(sub['Amount']),
+        },
+        'member': {
+            'MemberID': member['MemberID'],
+            'FirstName': member['FirstName'],
+            'LastName': member['LastName'],
+            'Email': member['Email'],
+            'WeChatID': member.get('WeChatID'),
+            'Type': member.get('Type'),
+            'Expiration': member.get('Expiration'),
+        },
+        'candidates': scored_candidates[:max_candidates],
+        'total_candidates': len(scored_candidates),
+        'count': len(scored_candidates[:max_candidates]),
+    }
+
+
 def is_within_renewal_period(payment_date) -> bool:
     """Check if payment_date falls within renewal period from config."""
     start_str, end_str = get_renewal_period()
@@ -311,8 +537,18 @@ def api_autoguess_all():
 
 def _autoguess_single_transaction(tx: dict) -> dict:
     """
-    Attempt to match a single unmatched Gmail transaction.
+    Strict autoguess: Only link if memberID is explicitly in memo AND all conditions met.
+
     Returns {'created': bool, 'reason': str}
+
+    Algorithm (FIRM):
+      1. Extract memberID from memo (regex: \bA\d{4}\b)
+      2. If memberID not found: skip
+      3. Verify member exists
+      4. Check amount matches membership type ($30 individual, $50 family)
+      5. Check transaction date within renewal period (from config)
+      6. Check pending membership submission exists
+      7. Create payment via sp_link_transaction
     """
     tx_num = tx['TransactionNumber']
     sender = tx['Sender'] or ''
@@ -320,88 +556,52 @@ def _autoguess_single_transaction(tx: dict) -> dict:
     amount = Decimal(str(tx['Amount'])) if tx['Amount'] else None
     tx_date = tx['TransactionDate']
 
-    # Step 1: Try to extract memberID from memo
+    if not amount:
+        return {'created': False, 'reason': 'Invalid or missing amount'}
+
+    # Step 1: Extract memberID from memo (REQUIRED)
     member_id = parse_member_id_from_memo(memo)
+    if not member_id:
+        return {'created': False, 'reason': 'No memberID found in memo'}
 
-    if member_id:
-        member = get_member_by_id(member_id)
-        if member:
-            # Check amount matches renewal fee
-            expected_amt = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
-            if amount != expected_amt:
-                return {'created': False, 'reason': f'Amount mismatch: {amount} vs expected {expected_amt}'}
+    # Step 2: Verify member exists
+    member = get_member_by_id(member_id)
+    if not member:
+        return {'created': False, 'reason': f'Member {member_id} not found'}
 
-            # Check within renewal period
-            if not is_within_renewal_period(tx_date):
-                return {'created': False, 'reason': 'Outside renewal period'}
+    # Step 3: Check amount matches membership type
+    expected_amt = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
+    if amount != expected_amt:
+        return {'created': False, 'reason': f'Amount mismatch: {amount} vs {expected_amt} for {member["Type"]}'}
 
-            # Check if pending membership submission exists
-            pending_subs = query("""
-                SELECT SubmissionID FROM submissions
-                WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
-                LIMIT 1
-            """, (member_id,))
+    # Step 4: Check within renewal period
+    if not is_within_renewal_period(tx_date):
+        return {'created': False, 'reason': f'Transaction date {tx_date} outside renewal period'}
 
-            if pending_subs:
-                # Case 1a: Create payment with submissionID
-                return _create_payment_from_autoguess(
-                    tx_num, member_id, amount, tx_date, tx['PaymentMethod'],
-                    sender, memo, 'Membership', 'admin_autoguess',
-                    submission_id=pending_subs[0]['SubmissionID']
-                )
-            else:
-                # Case 1b: Create payment without submissionID
-                return _create_payment_from_autoguess(
-                    tx_num, member_id, amount, tx_date, tx['PaymentMethod'],
-                    sender, memo, 'Membership', 'admin_autoguess'
-                )
-
-    # Step 2: No memberID in memo; try to match by name
+    # Step 5: Check pending membership submission exists
     pending_subs = query("""
-        SELECT s.SubmissionID, s.MemberID FROM submissions s
-        WHERE s.Status = 'pending' AND s.SubmissionType LIKE '%Membership%'
-    """)
+        SELECT SubmissionID FROM submissions
+        WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
+        LIMIT 1
+    """, (member_id,))
 
-    for sub in pending_subs:
-        member = get_member_by_id(sub['MemberID'])
-        if not member:
-            continue
+    if not pending_subs or len(pending_subs) == 0:
+        return {'created': False, 'reason': f'No pending membership submission for {member_id}'}
 
-        expected_amt = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
-        if amount != expected_amt:
-            continue
+    submission_id = pending_subs[0]['SubmissionID']
 
-        if not is_within_renewal_period(tx_date):
-            continue
-
-        # Partial name match
-        if partial_name_match(sub['MemberID'], sender, memo):
-            return _create_payment_from_autoguess(
-                tx_num, sub['MemberID'], amount, tx_date, tx['PaymentMethod'],
-                sender, memo, 'Membership', 'admin_autoguess',
-                submission_id=sub['SubmissionID']
-            )
-
-    return {'created': False, 'reason': 'No match found'}
-
-
-def _create_payment_from_autoguess(
-    tx_num: str, member_id: str, amount: Decimal, payment_date,
-    payment_method: str, payer_name: str, memo: str, payment_type: str,
-    processed_by: str, submission_id: str | None = None
-) -> dict:
-    """Create a payment record and call sp_link_transaction."""
-    payment_id = str(uuid.uuid4())
-
+    # Step 6: Create payment
     try:
+        admin_email = session.get('user', {}).get('email', 'admin_autoguess')
         execute("""
             CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)
-        """, (tx_num, member_id, payment_type, amount, processed_by, submission_id))
+        """, (tx_num, member_id, 'Membership', amount, admin_email, submission_id))
 
-        return {'created': True, 'reason': f'Created payment {payment_id}'}
+        logger.info(f'[AUTOGUESS] Created payment for {member_id} (strict match: memo={member_id}, amount={amount}, renewal OK)')
+        return {'created': True, 'reason': f'Created payment for {member_id}'}
     except Exception as e:
-        logger.error(f'Error creating payment for {tx_num}: {e}')
-        raise
+        logger.exception(f'[AUTOGUESS] Error creating payment for {tx_num}: {e}')
+        return {'created': False, 'reason': f'Error creating payment: {str(e)}'}
 
 
 # ============================================================================
@@ -588,35 +788,29 @@ def api_member_quick_all():
 @handle_api_errors
 def api_gmail_candidates(submission_id: str):
     """
-    Get unmatched Gmail transactions + already-processed ones for a specific submission.
-    Used when clicking a submission to filter Gmail candidates.
-    Returns all unmatched plus processed rows related to this submission.
+    Get ranked Gmail transaction candidates for a submission using fuzzy matching.
+
+    Returns unmatched Gmail transactions matching the submission amount, scored by fuzzy rules.
+    Sorted by priority (highest first) for admin to choose from in quick-approve UI.
+
+    Response:
+    {
+      'submission': {SubmissionID, MemberID, Amount},
+      'member': {MemberID, FirstName, LastName, Email, WeChatID, Type, Expiration},
+      'candidates': [
+        {TransactionNumber, Sender, Amount, Memo, TransactionDate, priority, matched},
+        ...
+      ],
+      'count': int,
+      'total_candidates': int
+    }
     """
-    # Get submission details
-    sub = query(
-        "SELECT * FROM submissions WHERE SubmissionID = %s",
-        (submission_id,)
-    )
-    if not sub or len(sub) == 0:
-        return json_response({'error': 'Submission not found'}, status=404)
+    result = fuzzy_select_transaction_to_submission(submission_id, max_candidates=20)
 
-    sub = sub[0]
-    member_id = sub.get('MemberID')
-    amount = sub.get('Amount')
-    first_name = sub.get('FirstName', '')
+    if 'error' in result:
+        return json_response(result, status=404)
 
-    # Get unmatched Gmail transactions + related ones
-    candidates = query("""
-        SELECT MessageId, Sender, Amount, Memo, OriginalMemo, TransactionDate,
-               TransactionNumber, Notes, ProcessedTime, MatchContext
-        FROM gmail_transactions
-        WHERE (Notes IS NULL OR MatchContext IS NULL OR MatchContext = 'unmatched')
-           OR (Sender LIKE %s OR Memo LIKE %s)
-        ORDER BY TransactionDate DESC
-        LIMIT 50
-    """, (f"%{first_name}%", f"%{member_id}%"))
-
-    return json_response({'data': candidates})
+    return json_response(result)
 
 
 @payments_bp.route('/api/payments/admin-create', methods=['POST'])
@@ -672,7 +866,7 @@ def api_admin_create():
         # Update gmail transaction
         execute("""
             UPDATE gmail_transactions
-            SET Notes = %s, ProcessedTime = NOW(), MatchContext = 'matched'
+            SET Notes = %s, UpdatedAt = NOW()
             WHERE MessageId = %s
         """, (f"Linked to {member_id}: {payment_intent}", message_id))
 
@@ -720,3 +914,77 @@ def api_search_members():
     )
 
     return json_response({'members': results})
+
+
+# ============================================================================
+# FUZZY MATCHING DEBUG / TEST ENDPOINTS
+# ============================================================================
+
+@payments_bp.route('/api/payments/test-fuzzy-match/<submission_id>', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_test_fuzzy_match(submission_id: str):
+    """
+    Test endpoint: Score all unmatched Gmail transactions against a submission.
+    Used for debugging fuzzy matching logic.
+
+    Returns: {submission, candidates: [{gmail, member, matched, priority, scores}]}
+    """
+    # Get submission
+    sub = query(
+        "SELECT * FROM submissions WHERE SubmissionID = %s",
+        (submission_id,)
+    )
+    if not sub or len(sub) == 0:
+        return json_response({'error': 'Submission not found'}, status=404)
+
+    sub = sub[0]
+    member_id = sub['MemberID']
+    amount = sub['Amount']
+
+    # Get member
+    member = get_member_by_id(member_id)
+    if not member:
+        return json_response({'error': f'Member {member_id} not found'}, status=404)
+
+    # Get unmatched Gmail transactions with matching amount
+    candidates = query("""
+        SELECT TransactionNumber, MessageId, Sender, Amount, Memo, TransactionDate,
+               Notes, UpdatedAt
+        FROM gmail_transactions
+        WHERE (Notes IS NULL OR UpdatedAt IS NULL)
+          AND Amount = %s
+        ORDER BY TransactionDate DESC
+        LIMIT 30
+    """, (amount,))
+
+    # Score each candidate
+    scored = []
+    for gmail in candidates:
+        matched, priority = fuzzy_match_transaction_to_member(gmail, member)
+        scored.append({
+            'gmail': gmail,
+            'matched': matched,
+            'priority': priority,
+            'member_text': build_member_text(member),
+            'tx_text': build_transaction_text(gmail),
+        })
+
+    return json_response({
+        'submission': {
+            'SubmissionID': sub['SubmissionID'],
+            'MemberID': sub['MemberID'],
+            'Amount': float(sub['Amount']),
+        },
+        'member': {
+            'MemberID': member['MemberID'],
+            'FirstName': member['FirstName'],
+            'LastName': member['LastName'],
+            'Email': member['Email'],
+            'WeChatID': member.get('WeChatID'),
+            'NYRRRunnerName': member.get('NYRRRunnerName'),
+        },
+        'candidates': scored,
+        'count': len(scored),
+    })

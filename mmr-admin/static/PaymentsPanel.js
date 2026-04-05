@@ -381,7 +381,7 @@ const GmailQuickApprovePopover = ({ gmail, onClose, onApproved, tooltipHandlers 
 // Stats cards
 // ---------------------------------------------------------------------------
 
-const StatsCards = ({ stats = {} }) => {
+const StatsCards = ({ stats = {}, onAutoguess, autoguessLoading = false }) => {
   const cards = [
     { label: 'Pending',         value: stats.pending        || 0, cls: 'yellow' },
     { label: 'Matched',         value: stats.matched        || 0, cls: 'accent' },
@@ -390,13 +390,31 @@ const StatsCards = ({ stats = {} }) => {
     { label: 'Rejected (30d)',  value: stats.rejected_30d   || 0, cls: ''       },
     { label: 'Errors',          value: stats.errors         || 0, cls: (stats.errors || 0) > 0 ? 'red' : '' },
   ];
-  return React.createElement('div', { className: 'stats-grid' },
-    cards.map((c, i) =>
-      React.createElement('div', { className: 'stat-card', key: i },
-        React.createElement('div', { className: 'label' }, c.label),
-        React.createElement('div', { className: `value ${c.cls}` }, c.value),
+  const e = React.createElement;
+  return e('div', { style: { display: 'flex', gap: 16, alignItems: 'flex-start' } },
+    e('div', { className: 'stats-grid' },
+      cards.map((c, i) =>
+        e('div', { className: 'stat-card', key: i },
+          e('div', { className: 'label' }, c.label),
+          e('div', { className: `value ${c.cls}` }, c.value),
+        )
       )
-    )
+    ),
+    e('button', {
+      className: 'btn btn-primary',
+      onClick: onAutoguess,
+      disabled: autoguessLoading,
+      title: 'Automatically match transactions with explicit memberID in memo',
+      style: {
+        padding: '12px 20px',
+        fontSize: 13,
+        fontWeight: 600,
+        borderRadius: 'var(--radius)',
+        minWidth: 160,
+        height: 'fit-content',
+        alignSelf: 'center',
+      }
+    }, autoguessLoading ? '⏳ Autoguessing...' : '🤖 Autoguess + Approve')
   );
 };
 
@@ -472,13 +490,21 @@ const PendingSubmissionsTable = ({ submissions, selectedSubmissionIds, focusedSu
 // Gmail table — normal mode + candidate/filter mode
 // ---------------------------------------------------------------------------
 
-const MatchCtxBadge = ({ ctx, processedTime }) => {
+// Determine if a Gmail transaction is linked (has Notes) or still a candidate
+const getMatchContext = (gmail) => {
+  if (gmail.Notes && gmail.Notes.trim()) {
+    return { status: 'matched', time: gmail.UpdatedAt };  // Notes exist = linked to payment
+  }
+  return { status: 'candidate', time: null };  // No notes = still unmatched
+};
+
+const MatchCtxBadge = ({ status, linkedTime }) => {
   const e = React.createElement;
-  if (ctx === 'matched') {
+  if (status === 'matched') {
     return e('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' } }, '✓ LINKED');
   }
-  if (processedTime) {
-    return e('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--yellow)', whiteSpace: 'nowrap' }, title: `Processed: ${processedTime}` }, '⚠ PROCESSED');
+  if (linkedTime) {
+    return e('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--yellow)', whiteSpace: 'nowrap' }, title: `Linked: ${linkedTime}` }, '⚠ LINKED');
   }
   return e('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' } }, '~ CANDIDATE');
 };
@@ -574,7 +600,8 @@ const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, se
         const memoIds = extractMemberIds((g.Memo || '') + ' ' + (g.OriginalMemo || ''));
         const hasMemoId = memoIds.length > 0;
         const isOpen    = activePopover === g.MessageId;
-        const isLinked  = g.MatchContext === 'matched';
+        const ctx       = getMatchContext(g);
+        const isLinked  = ctx.status === 'matched';  // Notes exist = linked
 
         return e('tr', {
           key: g.MessageId,
@@ -583,7 +610,7 @@ const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, se
             background: selectedMessageId === g.MessageId
               ? 'var(--surface2)'
               : isLinked ? 'rgba(0,200,100,0.06)' : undefined,
-            opacity: (isFilterMode && g.ProcessedTime && !isLinked) ? 0.72 : 1,
+            opacity: (isFilterMode && ctx.time && !isLinked) ? 0.72 : 1,  // Dim if in filter mode but not linked
           },
           onClick: () => onSelect(g.MessageId === selectedMessageId ? null : g.MessageId),
         },
@@ -591,7 +618,10 @@ const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, se
             e('input', { type: 'radio', checked: selectedMessageId === g.MessageId, onChange: () => onSelect(g.MessageId), onClick: ev => ev.stopPropagation() })
           ),
           isFilterMode && e('td', { style: { whiteSpace: 'nowrap' } },
-            e(MatchCtxBadge, { ctx: g.MatchContext, processedTime: g.ProcessedTime })
+            (() => {
+              const ctx = getMatchContext(g);
+              return e(MatchCtxBadge, { status: ctx.status, linkedTime: ctx.time });
+            })()
           ),
           e('td', { style: { fontSize: 12, width: colWidths.sender, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, fmt(g.Sender)),
           e('td', null, fmtMoney(g.Amount)),
@@ -733,6 +763,24 @@ const PaymentsPanel = () => {
     loadAll();
   };
 
+  const handleAutoguess = useCallback(() => {
+    setLoading(true);
+    api('/api/payments/autoguess-all', { method: 'POST' }).then(r => {
+      setLoading(false);
+      if (r.ok) {
+        const { created, skipped, errors } = r.details || {};
+        const msg = `✓ Autoguess complete: ${created} created, ${skipped} skipped${errors > 0 ? `, ${errors} errors` : ''}`;
+        showToast(msg);
+        loadAll();
+      } else {
+        showToast(`✗ Autoguess failed: ${r.error || 'Unknown error'}`);
+      }
+    }).catch(err => {
+      setLoading(false);
+      showToast(`✗ Error: ${err.message}`);
+    });
+  }, []);
+
   return e('div', null,
     toast && e('div', {
       style: { position: 'fixed', top: 16, right: 16, zIndex: 200, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: '10px 16px', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }
@@ -749,7 +797,7 @@ const PaymentsPanel = () => {
       }, showDashboard ? '▼ Collapse' : '▶ Expand'),
     ),
 
-    showDashboard && e(StatsCards, { stats }),
+    showDashboard && e(StatsCards, { stats, onAutoguess: handleAutoguess, autoguessLoading: loading }),
 
     e('div', { style: { display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 16 } },
 
