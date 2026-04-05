@@ -110,15 +110,15 @@ const MemberTooltip = ({ memberId, anchorRect, data }) => {
 
   return React.createElement('div', {
     style: {
-      position: 'fixed', top, left, zIndex: 1000,
+      position: 'fixed', top, left, zIndex: 10000,
       background: 'var(--surface)', border: '1px solid var(--accent)',
       borderRadius: 8, padding: '10px 14px', fontSize: 12,
-      boxShadow: '0 6px 24px rgba(0,0,0,0.5)', pointerEvents: 'none',
-      minWidth: 250, maxWidth: 320,
+      boxShadow: '0 6px 24px rgba(0,0,0,0.8)', pointerEvents: 'auto',
+      minWidth: 250, maxWidth: 320, willChange: 'transform',
     },
   },
     !data
-      ? React.createElement('span', { style: { color: 'var(--text2)' } }, '…')
+      ? React.createElement('div', { style: { color: 'var(--text2)', padding: '8px 0', textAlign: 'center' } }, 'Loading member data…')
       : React.createElement(React.Fragment, null,
           React.createElement('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 2 } },
             `${data.FirstName || ''} ${data.LastName || ''}`.trim() || memberId,
@@ -161,7 +161,7 @@ const MemberIdChip = ({ memberId, tooltipHandlers, onClick }) => {
   if (!memberId) return React.createElement('span', null, '—');
   return React.createElement('span', {
     ref,
-    style: { cursor: 'pointer', color: 'var(--accent)', fontWeight: 500, whiteSpace: 'nowrap' },
+    style: { cursor: 'pointer', color: 'var(--accent)', fontWeight: 500, display: 'inline', minWidth: 0 },
     onMouseEnter: () => {
       if (ref.current && tooltipHandlers?.onHover) {
         tooltipHandlers.onHover(memberId, ref.current.getBoundingClientRect());
@@ -623,19 +623,27 @@ const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, se
           ),
           e('td', { style: { fontSize: 12, width: colWidths.sender, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, fmt(g.Sender)),
           e('td', null, fmtMoney(g.Amount)),
-          e('td', { style: { width: colWidths.memo, overflow: 'hidden', textOverflow: 'ellipsis' } },
+          e('td', { style: { width: colWidths.memo, overflow: 'hidden', textOverflow: 'ellipsis', position: 'relative', minWidth: 0 } },
             hasMemoId
-              ? e('span', null,
+              ? e('div', { style: { display: 'flex', gap: 4, alignItems: 'center', minWidth: 0, overflow: 'hidden' } },
                   e('span', {
                     style: {
                       display: 'inline-block', background: 'var(--accent)22', color: 'var(--accent)',
                       border: '1px solid var(--accent)44', borderRadius: 3, padding: '1px 5px',
-                      fontSize: 11, fontWeight: 600, marginRight: 4, cursor: 'default',
+                      fontSize: 11, fontWeight: 600, cursor: 'default', flexShrink: 0,
                     },
                     title: `MemberID: ${memoIds.join(', ')}`,
                   }, memoIds[0]),
-                  e(MemberIdChip, { memberId: memoIds[0], tooltipHandlers, onClick: () => {} }),
-                  e('span', { style: { color: 'var(--text2)', marginLeft: 4 } }, fmt(g.Memo)),
+                  e('span', { style: { color: 'var(--accent)', fontWeight: 500, cursor: 'pointer', flexShrink: 0 },
+                    onMouseEnter: () => {
+                      const el = event?.currentTarget;
+                      if (el && tooltipHandlers?.onHover) {
+                        tooltipHandlers.onHover(memoIds[0], el.getBoundingClientRect());
+                      }
+                    },
+                    onMouseLeave: tooltipHandlers?.onLeave,
+                  }, memoIds[0]),
+                  e('span', { style: { color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, fmt(g.Memo)),
                 )
               : e('span', { style: { color: 'var(--text2)' } }, fmt(g.Memo)),
           ),

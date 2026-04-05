@@ -1,3 +1,19 @@
+### 04-05 17:05 UTC — FIXED: sp_link_transaction procedure PaymentDate error + PaymentsPanel display
+
+**Issue:**
+1. Autoguess was failing: "Unknown column 'PaymentDate' in 'field list'" when calling sp_link_transaction
+2. Memo column text overlaying, tooltip blank, columns misaligned
+
+**Fixes:**
+1. **MIGRATION_V010_fix_sp_link_transaction.sql**
+   - Drops/recreates procedure with correct INSERT (only: PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
+   - Auto-registers in schema_migrations table (NOT schema_versions)
+2. **PaymentsPanel.js display fixes**
+   - Memo cell now uses flex layout with proper truncation
+   - Tooltip z-index raised to 10000, pointerEvents='auto', shows "Loading member data…" when blank
+   - MemberID chip layout improved to prevent wrapping
+**Status:** Ready to deploy (MIGRATION_V010 will auto-run on main push)
+
 ### 04-04 19:30 UTC — ADDED: Autoguess button to dashboard in PaymentsPanel.js
 
 **Changes:** `mmr-admin/static/PaymentsPanel.js`
@@ -6,8 +22,6 @@
 - New handler: `handleAutoguess()` → POST /api/payments/autoguess-all
 - Auto-reload dashboard + submissions + gmail after completion
 - Toast feedback: "✓ Autoguess complete: 42 created, 283 skipped"
-
-**UX Flow:**
 1. Admin clicks dashboard expand
 2. Sees stats + "🤖 Autoguess + Approve" button (right side)
 3. Clicks button → auto-matches transactions with explicit memberID in memo
