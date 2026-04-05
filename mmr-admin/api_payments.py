@@ -794,22 +794,25 @@ def api_gmail_matching_candidates(member_id: str):
 def api_member_quick(member_id: str):
     """
     Quick member lookup for tooltips and quick-approve popover.
-    Returns: {FirstName, LastName, MemberID, Email, Expiration, Type, Gender, District, WeChatID}
+    Returns: {ok: true, data: {FirstName, LastName, MemberID, Email, Expiration, Type, Gender, District, WeChatID}}
     """
     member = get_member_by_id(member_id.upper())
     if not member:
-        return json_response({'error': 'Member not found'}, status=404)
+        return json_response({'ok': False, 'error': 'Member not found'}, status=404)
 
     return json_response({
-        'MemberID': member.get('MemberID'),
-        'FirstName': member.get('FirstName'),
-        'LastName': member.get('LastName'),
-        'Email': member.get('Email'),
-        'Expiration': member.get('Expiration'),
-        'Type': member.get('Type'),
-        'Gender': member.get('Gender'),
-        'District': member.get('District'),
-        'WeChatID': member.get('WeChatID'),
+        'ok': True,
+        'data': {
+            'MemberID': member.get('MemberID'),
+            'FirstName': member.get('FirstName'),
+            'LastName': member.get('LastName'),
+            'Email': member.get('Email'),
+            'Expiration': member.get('Expiration'),
+            'Type': member.get('Type'),
+            'Gender': member.get('Gender'),
+            'District': member.get('District'),
+            'WeChatID': member.get('WeChatID'),
+        }
     })
 
 
