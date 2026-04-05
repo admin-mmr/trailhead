@@ -623,10 +623,12 @@ def _autoguess_single_transaction(tx: dict, admin_email: str) -> dict:
     # Step 6: Create payment
     try:
         payment_id = str(uuid.uuid4())
+        # Set PaymentType based on member type
+        payment_type = 'Family Membership' if member['Type'] == 'Family' else 'Individual Membership'
         execute("""
             INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (payment_id, member_id, tx_num, amount, submission_id, 'Membership', admin_email))
+        """, (payment_id, member_id, tx_num, amount, submission_id, payment_type, admin_email))
 
         execute("""
             UPDATE gmail_transactions
@@ -709,10 +711,12 @@ def api_manual_approve():
     try:
         # Direct INSERT + UPDATE (workaround for old sp_link_transaction procedure)
         payment_id = str(uuid.uuid4())
+        # Set PaymentType based on member type
+        payment_type = 'Family Membership' if member['Type'] == 'Family' else 'Individual Membership'
         execute("""
             INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (payment_id, member_id, tx_num, tx['Amount'], submission_id, 'Membership', admin_email))
+        """, (payment_id, member_id, tx_num, tx['Amount'], submission_id, payment_type, admin_email))
 
         execute("""
             UPDATE gmail_transactions
