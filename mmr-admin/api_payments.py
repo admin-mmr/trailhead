@@ -570,7 +570,7 @@ def api_autoguess_all():
     })
 
 
-def _autoguess_single_transaction(tx: dict) -> dict:
+def _autoguess_single_transaction(tx: dict, admin_email: str) -> dict:
     """
     Strict autoguess: Only link if memberID is explicitly in memo AND all conditions met.
 
@@ -583,47 +583,34 @@ def _autoguess_single_transaction(tx: dict) -> dict:
       4. Check amount matches membership type ($30 individual, $50 family)
       5. Check transaction date within renewal period (from config)
       6. Look for pending membership submission (optional, not required)
-      7. Create payment via sp_link_transaction (with or without submissionID)
+      7. Create payment directly (INSERT + UPDATE)
     """
     tx_num = tx['TransactionNumber']
-    sender = tx['Sender'] or ''
     memo = tx['Memo'] or ''
     amount = Decimal(str(tx['Amount'])) if tx['Amount'] else None
     tx_date = tx['TransactionDate']
 
-    logger.info(f'[AUTOGUESS-DETAIL] Processing tx={tx_num}, sender={sender}, memo={memo}, amount={amount}, date={tx_date}')
-
     if not amount:
-        logger.warning(f'[AUTOGUESS-DETAIL] {tx_num}: ✗ REJECT — Invalid or missing amount')
-        return {'created': False, 'reason': 'Invalid or missing amount'}
+        return {'created': False, 'reason': 'Invalid amount'}
 
     # Step 1: Extract memberID from memo (REQUIRED)
     member_id = parse_member_id_from_memo(memo)
     if not member_id:
-        logger.warning(f'[AUTOGUESS-DETAIL] {tx_num}: ✗ REJECT — No memberID found in memo')
-        return {'created': False, 'reason': 'No memberID found in memo'}
-    logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: ✓ Step 1 — MemberID extracted: {member_id}')
+        return {'created': False, 'reason': 'No memberID in memo'}
 
     # Step 2: Verify member exists
     member = get_member_by_id(member_id)
     if not member:
-        logger.warning(f'[AUTOGUESS-DETAIL] {tx_num}: ✗ REJECT — Member {member_id} not found in database')
         return {'created': False, 'reason': f'Member {member_id} not found'}
-    logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: ✓ Step 2 — Member exists: {member["FirstName"]} {member["LastName"]}, Type={member["Type"]}')
 
     # Step 3: Check amount matches membership type
     expected_amt = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
     if amount != expected_amt:
-        logger.warning(f'[AUTOGUESS-DETAIL] {tx_num}: ✗ REJECT — Amount mismatch: {amount} vs {expected_amt} for {member["Type"]}')
-        return {'created': False, 'reason': f'Amount mismatch: {amount} vs {expected_amt} for {member["Type"]}'}
-    logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: ✓ Step 3 — Amount matches: {amount} = {expected_amt}')
+        return {'created': False, 'reason': f'Amount {amount} != {expected_amt}'}
 
     # Step 4: Check within renewal period
-    start_str, end_str = get_renewal_period()
     if not is_within_renewal_period(tx_date):
-        logger.warning(f'[AUTOGUESS-DETAIL] {tx_num}: ✗ REJECT — Transaction date {tx_date} outside renewal period [{start_str}, {end_str}]')
-        return {'created': False, 'reason': f'Transaction date {tx_date} outside renewal period'}
-    logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: ✓ Step 4 — Within renewal period [{start_str}, {end_str}]')
+        return {'created': False, 'reason': 'Date outside renewal period'}
 
     # Step 5: Check for pending membership submission (optional)
     pending_subs = query("""
@@ -631,20 +618,10 @@ def _autoguess_single_transaction(tx: dict) -> dict:
         WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
         LIMIT 1
     """, (member_id,))
-
-    submission_id = None
-    if pending_subs and len(pending_subs) > 0:
-        submission_id = pending_subs[0]['SubmissionID']
-        logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: ✓ Step 5 — Pending submission found: {submission_id}')
-    else:
-        logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: ⓘ Step 5 — No pending submission for {member_id}, will create payment without submissionID')
+    submission_id = pending_subs[0]['SubmissionID'] if pending_subs else None
 
     # Step 6: Create payment
     try:
-        admin_email = session.get('user', {}).get('email', 'admin_autoguess')
-        logger.info(f'[AUTOGUESS-DETAIL] {tx_num}: Creating payment for {member_id} (type=Membership, amount={amount}, submission={submission_id})')
-
-        # Direct INSERT + UPDATE (workaround for old sp_link_transaction procedure)
         payment_id = str(uuid.uuid4())
         execute("""
             INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
@@ -658,14 +635,11 @@ def _autoguess_single_transaction(tx: dict) -> dict:
             WHERE TransactionNumber = %s
         """, (member_id, amount, tx_num))
 
-        if submission_id:
-            logger.info(f'[AUTOGUESS] ✓✓✓ APPROVED {tx_num}: {member_id} ${amount} (linked to {submission_id}) — All checks passed')
-        else:
-            logger.info(f'[AUTOGUESS] ✓✓✓ APPROVED {tx_num}: {member_id} ${amount} (no submission) — All checks passed')
+        logger.info(f'[AUTOGUESS] ✓ {tx_num}: {member_id} ${amount}')
         return {'created': True, 'reason': f'Created payment for {member_id}'}
     except Exception as e:
-        logger.exception(f'[AUTOGUESS-DETAIL] {tx_num}: ✗ ERROR creating payment: {e}')
-        return {'created': False, 'reason': f'Error creating payment: {str(e)}'}
+        logger.error(f'[AUTOGUESS] ✗ {tx_num}: {str(e)[:80]}')
+        return {'created': False, 'reason': f'Error: {str(e)[:80]}'}
 
 
 # ============================================================================
