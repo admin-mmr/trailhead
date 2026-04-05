@@ -1,19 +1,17 @@
-### 04-05 17:52 UTC — CRITICAL FIX: Trigger bug causing PaymentDate error in autoguess
+### 04-05 12:50 UTC — FIX: Member card tooltip not working in Payments tab
 
-**Root cause:** `trg_payments_auto_fill` trigger references non-existent `PaymentDate` in gmail_transactions table
-- gmail_transactions has `TransactionDate`, NOT `PaymentDate`
-- Trigger tries: `SELECT PaymentDate, ...` ← should be `SELECT TransactionDate, ...`
-- This was the actual cause of "Unknown column 'PaymentDate' in 'field list'" error
+**Issue:** Hovering over member IDs in pending submissions didn't show tooltip
+**Root cause:** API response format mismatch
+- Frontend expects: `{ok: true, data: {MemberID, FirstName, ...}}`
+- Backend was returning: `{MemberID, FirstName, ...}` (no wrapper)
+- Tooltip code checks `if (r.ok)` before accessing `r.data` (always failed)
 
-**Fix:** MIGRATION_V011_fix_payments_auto_fill_trigger.sql
-- Drops/recreates trigger with correct column name (TransactionDate)
-- Assigns to NEW.PaymentDate in payments table (which does exist)
-- Will auto-run on next main push
+**Fix:** api_payments.py line 803
+- Wrapped `/api/payments/member-quick/<member_id>` response with `ok` flag
+- Now returns: `{ok: true, data: {...}}`
+- Error case also returns `{ok: false, error: '...'}`
 
-**Previous fixes still active:**
-- Autoguess performance: circuit breaker (5 errors) + minimal logging
-- History: admin_email captured before loop
-- All direct INSERT + UPDATE (no stored proc calls)
+**Test:** Hover over member ID chip in pending submissions → tooltip should appear
 
 ### 04-05 17:50 UTC — COMPLETED: Autoguess perf + logging fixes (circuit breaker, reduced verbosity, email capture)
 
