@@ -1,3 +1,15 @@
+### 04-06 15:45 UTC — FIX: MySQL 8.0.20+ VALUES() syntax error in UPSERT statements
+
+**Problem:** import_members sync failing with error 1093: "You can't specify target table 'members' for update in FROM clause"
+
+**Root Cause:** Deprecated `VALUES(col)` syntax in `INSERT...ON DUPLICATE KEY UPDATE` statements causes self-join errors in MySQL 8.0.20+. Affected 5+ files with 40+ occurrences across sync_config, sync_jobs, NYRR event syncs.
+
+**Fix Applied:** Replaced all `VALUES(col)` with `NEW.col` (MySQL 8.0.20+ compatible syntax):
+- basecamp/python/sync_config.py (3 locations: sheets_sync_log, member/payment/event UPSERTs)
+- mmr-admin/sync_jobs.py, api_data.py, api_sync.py
+- basecamp/ops/sync_nyrr_events.py
+- Moved sync_jobs.py to basecamp/python/ as shared module; added to sync script
+
 ### 04-05 18:35 UTC — FIX: Transaction metadata sync (Notes/UpdatedAt only, not full row overwrite)
 
 **Problem:** Python export_transaction_meta was sending all columns via `write_range`, causing Active sheet to append new columns instead of updating Notes + UpdatedAt only.
