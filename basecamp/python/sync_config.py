@@ -238,6 +238,8 @@ def _batch_insert_rows(
                     INSERT IGNORE INTO {table} ({col_names})
                     VALUES {", ".join(values_clauses)}
                 """
+                logger.info(f"Batch {batch_num}: Executing INSERT IGNORE for {len(batch)} rows into {table}")
+                logger.debug(f"Batch {batch_num}: SQL={sql[:250]}")
                 res = db_execute(sql, all_values)
                 inserted += res  # INSERT IGNORE returns affected rows
                 skipped += len(batch) - res  # Remainder were duplicates
@@ -446,6 +448,7 @@ def generic_sync_runner(
     sheet_name = cfg['sheet']
     sync_direction = direction or cfg.get('direction', 'mysql_to_sheet')
     sync_mode = cfg.get('mode', 'upsert')
+    logger.info(f"[JOB {job_id}] Config: key={pk}, sheet={sheet_name}, direction={sync_direction}, mode={sync_mode}, table={table}, config_key={config_key}")
 
     inserted, updated, skipped = 0, 0, 0
     batches_processed = 0
