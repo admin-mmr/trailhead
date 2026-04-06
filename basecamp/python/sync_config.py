@@ -218,6 +218,10 @@ def _batch_insert_rows(
             continue
 
         try:
+            # Log batch details for debugging
+            batch_num = batch_idx // batch_size
+            col_keys = list(batch[0].keys())
+            logger.debug(f"Batch {batch_num}: table={table}, pk={pk_field}, mode={mode}, cols={col_keys}")
             if mode == 'insert_only':
                 # INSERT IGNORE: skip if PK exists
                 col_names = ", ".join(batch[0].keys())
@@ -260,13 +264,16 @@ def _batch_insert_rows(
                     VALUES {", ".join(values_clauses)}
                     ON DUPLICATE KEY UPDATE {update_stmt}
                 """
+                logger.debug(f"Batch {batch_num}: UPSERT SQL (first 300 chars): {sql[:300]}...")
+                logger.debug(f"Batch {batch_num}: Columns being inserted: {col_names}")
                 res = db_execute(sql, all_values)
                 # MySQL returns: affected_rows (inserts + updates)
                 # For simplicity: assume half are inserts, half are updates (approximate)
                 inserted += len(batch)  # Assume all are at least "affected"
 
         except Exception as e:
-            logger.error(f"Batch insert failed: {str(e)}")
+            logger.error(f"Batch {batch_num}: {table} insert FAILED - {str(e)}")
+            logger.error(f"Batch {batch_num}: Attempted columns: {col_names[:200]}")
             skipped += len(batch)
 
     return inserted, updated, skipped
@@ -670,8 +677,9 @@ def generic_sync_runner(
 
             # Apply field mappings (e.g., Source → PaymentMethod)
             # Also convert ISO 8601 datetimes to MySQL format and coerce empty strings to None
+            logger.info(f"[JOB {job_id}] Mapping {len(rows)} rows: cols={cols}, map_fields={cfg.get('map_fields', {})}")
             mapped_rows = []
-            for row in rows:
+            for row_idx, row in enumerate(rows):
                 mapped_row = {}
                 for col in cols:
                     sql_col = cfg.get('map_fields', {}).get(col, col)
@@ -688,6 +696,9 @@ def generic_sync_runner(
                             value = None
                     mapped_row[sql_col] = value
                 mapped_rows.append(mapped_row)
+                # Log first row for debugging
+                if row_idx == 0:
+                    logger.debug(f"[JOB {job_id}] First mapped row keys: {list(mapped_row.keys())}")
 
             action_verb = "Inserting" if sync_mode == 'insert_only' else "Upserting"
             total_rows = len(mapped_rows)
@@ -816,7 +827,7 @@ def generic_sync_runner(
 
                     # Stop on ANY error (strict mode)
                     remaining = total_rows - (batch_idx + len(batch))
-                    stop_msg = f"Stopping sync on batch error. {batch_error}. Remaining: {remaining} rows unprocessed."
+                    stop_msg = f"[JOB {job_id}] {config_key} → {table}: STOPPED after batch {batch_num}. Error: {batch_error}. Remaining: {remaining} rows unprocessed."
                     logger.error(stop_msg)
                     errors.append(stop_msg)
                     skipped += len(batch) + remaining  # Count this batch + remaining as skipped
