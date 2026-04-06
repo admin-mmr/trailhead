@@ -319,7 +319,7 @@ def api_save_user_settings(table_name):
         execute(
             """INSERT INTO viewer_user_settings (email, table_name, visible_columns)
                VALUES (%s, %s, %s)
-               ON DUPLICATE KEY UPDATE visible_columns = VALUES(visible_columns), updated_at = NOW()""",
+               ON DUPLICATE KEY UPDATE visible_columns = NEW.visible_columns, updated_at = NOW()""",
             [email, table_name, json.dumps(visible_columns)],
         )
         return json_response({'ok': True})

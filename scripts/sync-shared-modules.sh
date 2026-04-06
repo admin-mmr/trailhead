@@ -37,4 +37,13 @@ else
     exit 1
 fi
 
+# Copy sync_jobs
+if [ -f basecamp/python/sync_jobs.py ]; then
+    cp basecamp/python/sync_jobs.py mmr-admin/sync_jobs.py
+    echo "✅ Copied: basecamp/python/sync_jobs.py → mmr-admin/sync_jobs.py"
+else
+    echo "❌ Error: basecamp/python/sync_jobs.py not found"
+    exit 1
+fi
+
 echo "🎯 All shared modules synced."

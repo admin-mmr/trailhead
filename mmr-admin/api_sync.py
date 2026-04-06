@@ -469,20 +469,20 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                scan_timestamp)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON DUPLICATE KEY UPDATE
-              runner_name = VALUES(runner_name),
-              first_name = VALUES(first_name),
-              last_name = VALUES(last_name),
-              age = VALUES(age),
-              gender = VALUES(gender),
-              city = VALUES(city),
-              state_province = VALUES(state_province),
-              finish_time = VALUES(finish_time),
-              pace = VALUES(pace),
-              overall_place = VALUES(overall_place),
-              gender_place = VALUES(gender_place),
-              age_grade_time = VALUES(age_grade_time),
-              age_grade_place = VALUES(age_grade_place),
-              age_grade_percent = VALUES(age_grade_percent),
+              runner_name = NEW.runner_name),
+              first_name = NEW.first_name),
+              last_name = NEW.last_name),
+              age = NEW.age),
+              gender = NEW.gender),
+              city = NEW.city),
+              state_province = NEW.state_province),
+              finish_time = NEW.finish_time),
+              pace = NEW.pace),
+              overall_place = NEW.overall_place),
+              gender_place = NEW.gender_place),
+              age_grade_time = NEW.age_grade_time),
+              age_grade_place = NEW.age_grade_place),
+              age_grade_percent = NEW.age_grade_percent),
               scan_timestamp = NOW()
         """
 

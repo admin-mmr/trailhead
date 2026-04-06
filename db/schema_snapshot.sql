@@ -1,5 +1,5 @@
 -- Schema export for mmrdb
--- Timestamp: 2026-04-05T18:33:59.859539 UTC
+-- Timestamp: 2026-04-06T15:41:59.782127 UTC
 
 -- TABLES
 CREATE TABLE `activity_log` (
@@ -333,7 +333,7 @@ CREATE TABLE `sheets_sync_log` (
   KEY `idx_status` (`Status`),
   KEY `idx_started_at` (`StartedAt`),
   CONSTRAINT `fk_sheets_sync_log_jobid` FOREIGN KEY (`JobID`) REFERENCES `sync_jobs` (`JobID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=120 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
+) ENGINE=InnoDB AUTO_INCREMENT=124 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks sheets sync batches for resume capability and monitoring';
 
 CREATE TABLE `submissions` (
   `CreatedAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Timestamp when the user hits submit button',
@@ -602,22 +602,108 @@ BEGIN
 END;
 
 CREATE PROCEDURE `sp_link_transaction`(
-    IN p_TxNum VARCHAR(100),
-    IN p_MemID VARCHAR(10),
-    IN p_Type VARCHAR(50),
-    IN p_Amt DECIMAL(10,2),
-    IN p_Admin VARCHAR(255),
-    IN p_SubID VARCHAR(50)
+    IN p_transaction_number VARCHAR(100),
+    IN p_member_id VARCHAR(10),
+    IN p_payment_type VARCHAR(50),
+    IN p_amount DECIMAL(10,2),
+    IN p_submission_id VARCHAR(50)
+)
+    MODIFIES SQL DATA
+BEGIN
+    -- 1. Validation: Ensure the transaction exists in Gmail records
+    IF NOT EXISTS (SELECT 1 FROM gmail_transactions WHERE TransactionNumber = p_transaction_number) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: TransactionNumber not found in gmail_transactions.';
+    END IF;
+
+    -- 2. Validation: Ensure the member exists
+    IF NOT EXISTS (SELECT 1 FROM members WHERE MemberID = p_member_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: MemberID not found.';
+    END IF;
+
+    -- 3. Create the payment record.
+    -- This single insert will trigger:
+    --   - trg_payments_auto_fill: Pulls Date/Sender/Memo from Gmail
+    --   - trg_payments_sync_membership_only: Updates member status/expiration/fee
+    --   - trg_payments_approve_submission: Marks web form as 'approved'
+    --   - trg_payments_sync_to_gmail_on_change: Updates the Notes on the Gmail record
+    INSERT INTO `payments` (
+        `PaymentID`,
+        `MemberID`,
+        `TransactionNumber`,
+        `PaymentType`,
+        `Amount`,
+        `SubmissionID`,
+        `UpdatedAt`
+    ) VALUES (
+        REPLACE(UUID(), '-', ''), -- Generate a clean ID
+        p_member_id,
+        p_transaction_number,
+        p_payment_type,
+        p_amount,
+        p_submission_id,
+        NOW()
+    );
+
+END;
+
+CREATE PROCEDURE `sp_reconcile_member_payments`(
+    IN p_dry_run BOOLEAN
 )
 BEGIN
-    INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
-    VALUES (UUID(), p_MemID, p_TxNum, p_Amt, p_SubID, p_Type, p_Admin);
+    DECLARE v_start_date DATE;
+    DECLARE v_target_expiration DATE;
 
-    UPDATE gmail_transactions
-    SET
-        UpdatedAt = NOW(),
-        Notes = CONCAT(IFNULL(Notes, ''), '\n[', NOW(), '] Linked: ', p_MemID, ' (', p_Type, ') $', p_Amt)
-    WHERE TransactionNumber = p_TxNum;
+    -- Fetch config
+    SELECT CAST(ConfigValue AS DATE) INTO v_start_date FROM config WHERE ConfigKey = 'MembershipCollectionStart';
+    SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration FROM config WHERE ConfigKey = 'MembershipYearEnd';
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_to_update;
+    CREATE TEMPORARY TABLE tmp_to_update AS
+    SELECT DISTINCT
+        m.MemberID,
+        m.FamilyID,
+        p.TransactionNumber AS actual_tx,
+        p.PaymentDate AS actual_date,
+        p.Amount AS actual_amount
+    FROM members m
+    INNER JOIN payments p ON m.MemberID = p.MemberID
+    WHERE LOWER(p.PaymentType) LIKE '%membership%'
+      AND p.PaymentDate >= v_start_date
+      AND m.Status <> 'lifetime'
+      AND (m.Expiration <> v_target_expiration OR m.PaymentTransaction <> p.TransactionNumber);
+
+    IF p_dry_run THEN
+        SELECT 'DRY RUN' as Status, t.* FROM tmp_to_update t;
+    ELSE
+        -- THE FIX: Start a formal transaction
+        START TRANSACTION;
+        
+        SET @internal_proc = 1;
+
+        -- Step A: Update Primary Payers
+        UPDATE members m
+        INNER JOIN tmp_to_update t ON m.MemberID = t.MemberID
+        SET 
+            m.Status = 'active',
+            m.Expiration = v_target_expiration,
+            m.PaymentTransaction = t.actual_tx,
+            m.PaymentDate = t.actual_date,
+            m.MembershipFeePaid = t.actual_amount,
+            m.UpdatedAt = NOW();
+
+        -- Step B: Update Family (using a subquery to avoid join-locking)
+        UPDATE members 
+        SET 
+            Status = 'active',
+            Expiration = v_target_expiration,
+            UpdatedAt = NOW()
+        WHERE FamilyID IN (SELECT DISTINCT FamilyID FROM tmp_to_update WHERE FamilyID <> '' AND FamilyID IS NOT NULL);
+
+        COMMIT;
+        SET @internal_proc = NULL;
+        
+        SELECT 'SUCCESS' as Status, t.* FROM tmp_to_update t;
+    END IF;
 END;
 
 CREATE PROCEDURE `sp_renewal_audit`(
@@ -1080,25 +1166,6 @@ SIGNAL SQLSTATE '45000'
 END IF;
 END;
 
-  CREATE TRIGGER `trg_payments_sync_membership_only` AFTER INSERT ON `payments` FOR EACH ROW BEGIN
-      DECLARE v_FamilyID VARCHAR(10);
-
-      IF NEW.PaymentType LIKE '%Membership%' THEN
-          SELECT FamilyID INTO v_FamilyID FROM members WHERE MemberID = NEW.MemberID;
-          SET @internal_proc = 1;
-          UPDATE members
-          SET
-              Status = 'active',
-              PaymentDate = NEW.PaymentDate,
-              PaymentTransaction = NEW.TransactionNumber,
-              MembershipFeePaid = NEW.Amount,
-              Expiration = DATE_ADD(NEW.PaymentDate, INTERVAL 1 YEAR)
-          WHERE (v_FamilyID IS NOT NULL and v_FamilyID <> "" AND FamilyID = v_FamilyID)
-            OR MemberID = NEW.MemberID;
-          SET @internal_proc = NULL;
-      END IF;
-  END;
-
 CREATE TRIGGER `trg_payments_approve_submission` AFTER INSERT ON `payments` FOR EACH ROW BEGIN
     IF NEW.SubmissionID IS NOT NULL THEN
         UPDATE submissions
@@ -1168,6 +1235,61 @@ CREATE TRIGGER `trg_payments_auto_fill` BEFORE INSERT ON `payments` FOR EACH ROW
     END IF;
 END;
 
+CREATE TRIGGER `trg_payments_sync_membership_only` AFTER INSERT ON `payments` FOR EACH ROW BEGIN
+    -- Declare local variables at the very top
+    DECLARE v_target_expiration DATE;
+    DECLARE v_calc_expiration DATE;
+    DECLARE v_family_id VARCHAR(50);
+
+    -- 1. Only proceed if this is a membership-related payment
+    -- Note: Used LOWER() to ensure case-insensitive matching
+    IF LOWER(NEW.PaymentType) LIKE '%membership%' THEN
+        
+        -- 2. Fetch config and Member's FamilyID
+        SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration 
+        FROM config 
+        WHERE ConfigKey = 'MembershipYearEnd' 
+        LIMIT 1;
+
+        SELECT FamilyID INTO v_family_id 
+        FROM members 
+        WHERE MemberID = NEW.MemberID 
+        LIMIT 1;
+
+        -- 3. Calculate fallback expiration (the NEW_EXP logic)
+        SET v_calc_expiration = CASE 
+            WHEN MONTH(NEW.PaymentDate) >= 10 
+                THEN DATE(CONCAT(YEAR(NEW.PaymentDate) + 2, '-03-31'))
+            ELSE DATE(CONCAT(YEAR(NEW.PaymentDate) + 1, '-03-31'))
+        END;
+
+        -- 4. LOCK: Prevent recursive trigger firing
+        SET @internal_proc = 1;
+
+        -- 5. UPDATE MEMBERS (Self + Family)
+        -- Handles your logic: Check both NULL and empty string for FamilyID
+        UPDATE members
+        SET 
+            Status = 'active',
+            MembershipFeePaid = NEW.Amount,
+            PaymentDate = NEW.PaymentDate,
+            PaymentTransaction = NEW.TransactionNumber,
+            Expiration = IFNULL(v_target_expiration, v_calc_expiration),
+            UpdatedAt = NOW()
+        WHERE 
+            MemberID = NEW.MemberID 
+            OR (
+                v_family_id IS NOT NULL 
+                AND v_family_id <> '' 
+                AND FamilyID = v_family_id
+            );
+
+        -- 6. UNLOCK
+        SET @internal_proc = NULL;
+        
+    END IF;
+END;
+
 -- EVENTS
 CREATE EVENT `e_daily_member_expiration_check` ON SCHEDULE EVERY 1 DAY STARTS '2026-04-05 01:00:00' ON COMPLETION NOT PRESERVE ENABLE DO BEGIN
     SET @internal_proc = 1;
@@ -1180,83 +1302,3 @@ WHERE Status = 'active'
     SET @internal_proc = NULL;
 END;
 
-CREATE PROCEDURE `sp_reconcile_member_payments`(
-    IN p_dry_run BOOLEAN
-)
-BEGIN
-    DECLARE v_start_date DATE;
-    DECLARE v_end_date DATE;
-    DECLARE v_target_expiration DATE;
-
-    -- 1. Fetch config values
-    SELECT CAST(ConfigValue AS DATE) INTO v_start_date FROM config WHERE ConfigKey = 'MembershipCollectionStart';
-    SELECT CAST(ConfigValue AS DATE) INTO v_end_date FROM config WHERE ConfigKey = 'MembershipCollectionEnd';
-    SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration FROM config WHERE ConfigKey = 'MembershipYearEnd';
-
-    -- 2. Create a temp table of members who SHOULD be active based on payments
-    DROP TEMPORARY TABLE IF EXISTS tmp_to_update;
-    CREATE TEMPORARY TABLE tmp_to_update AS
-    SELECT DISTINCT
-        m.MemberID,
-        m.FamilyID,
-        m.Expiration AS curr_exp,
-        v_target_expiration AS target_exp,
-        m.PaymentTransaction AS curr_tx,
-        m.PaymentDate AS curr_date,
-        p.TransactionNumber AS actual_tx,
-        p.PaymentDate AS actual_date,
-        p.Amount AS actual_amount
-    FROM members m
-    INNER JOIN payments p ON m.MemberID = p.MemberID
-    WHERE LOWER(p.PaymentType) LIKE '%membership%'
-      AND p.PaymentDate >= v_start_date
-      AND m.Status <> 'lifetime'
-      AND (
-          m.Status <> 'active' OR 
-          m.Expiration <> v_target_expiration OR
-          m.PaymentTransaction <> p.TransactionNumber
-      );
-
-    IF p_dry_run THEN
-        -- Show the list of direct payers needing update
-        SELECT 'PAYERS TO UPDATE' as Category, t.* FROM tmp_to_update t;
-        
-        -- Show family members who will be pulled along
-        SELECT 'FAMILY MEMBERS TO UPDATE' as Category, m.MemberID, m.FirstName, m.LastName, m.FamilyID
-        FROM members m
-        INNER JOIN tmp_to_update t ON m.FamilyID = t.FamilyID
-        WHERE m.MemberID <> t.MemberID AND t.FamilyID <> '' AND t.FamilyID IS NOT NULL;
-        
-    ELSE
-        -- REAL UPDATE
-        SET @internal_proc = 1; -- Unlock Expiration column
-
-        -- Step A: Update the Primary Payers
-        UPDATE members m
-        INNER JOIN tmp_to_update t ON m.MemberID = t.MemberID
-        SET 
-            m.Status = 'active',
-            m.Expiration = v_target_expiration,
-            m.PaymentTransaction = t.actual_tx,
-            m.PaymentDate = t.actual_date,
-            m.MembershipFeePaid = t.actual_amount,
-            m.UpdatedAt = NOW();
-
-        -- Step B: Update Family Members (Inheritance)
-        -- This ensures if a Dad pays for a 'Family Membership', the Mom/Kids are updated too
-        UPDATE members m
-        INNER JOIN tmp_to_update t ON m.FamilyID = t.FamilyID
-        SET 
-            m.Status = 'active',
-            m.Expiration = v_target_expiration,
-            m.PaymentTransaction = t.actual_tx,
-            m.PaymentDate = t.actual_date,
-            m.UpdatedAt = NOW()
-        WHERE t.FamilyID <> '' AND t.FamilyID IS NOT NULL;
-
-        SET @internal_proc = NULL;
-        SELECT 'PAYERS UPDATED' as Category, t.* FROM tmp_to_update t;
-    END IF;
-
-    DROP TEMPORARY TABLE IF EXISTS tmp_to_update;
-END;
