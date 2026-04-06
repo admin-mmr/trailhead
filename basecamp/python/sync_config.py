@@ -151,17 +151,19 @@ def _log_sync_batch(
             (JobID, ConfigKey, Direction, BatchNumber, BatchSize, TotalRows, Status, RowsInserted, RowsUpdated, RowsSkipped, ErrorMessage, CompletedAt)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                Status = NEW.Status,
-                RowsInserted = NEW.RowsInserted,
-                RowsUpdated = NEW.RowsUpdated,
-                RowsSkipped = NEW.RowsSkipped,
-                ErrorMessage = NEW.ErrorMessage,
-                CompletedAt = IF(NEW.Status = 'success', NOW(), CompletedAt)
+                Status = %s,
+                RowsInserted = %s,
+                RowsUpdated = %s,
+                RowsSkipped = %s,
+                ErrorMessage = %s,
+                CompletedAt = IF(%s = 'success', NOW(), CompletedAt)
         """
         completed_at = datetime.now() if status == 'success' else None
         db_execute(sql, [
             job_id, config_key, direction, batch_num, batch_size, total_rows,
-            status, rows_inserted, rows_updated, rows_skipped, error_msg, completed_at
+            status, rows_inserted, rows_updated, rows_skipped, error_msg, completed_at,
+            # Duplicate values for ON DUPLICATE KEY UPDATE
+            status, rows_inserted, rows_updated, rows_skipped, error_msg, status
         ])
         logger.debug(f"Logged batch {batch_num} for {job_id}")
     except Exception as e:
