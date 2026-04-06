@@ -1,3 +1,11 @@
+### 04-06 16:30 UTC — FIX: sheets_sync_log logging error + GAS deployment status
+
+**Two issues fixed:**
+
+1. **sheets_sync_log NEW.col error (1054):** Changed ON DUPLICATE KEY UPDATE from `NEW.col` to parameter placeholders (`%s`). MySQL was failing to evaluate NEW.Status in the UPDATE clause. Using placeholders avoids this compatibility issue and works across all MySQL versions.
+
+2. **export_transaction_meta working!** The GAS webhook handler exists (was added in TypeScript source and compiled to dist/webhook.js on Apr 6 00:24). The export now succeeds but batch logging was failing. Fixed above.
+
 ### 04-06 16:15 UTC — FEAT: Enhanced sync logging with job context + column details
 
 **Added:** Comprehensive logging to every sync operation:
