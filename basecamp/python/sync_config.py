@@ -22,6 +22,21 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
+
+def _truncate_log(obj: Any, max_str: int = 60, max_list: int = 3) -> Any:
+    """Recursively truncate long strings and lists for readable debug logging."""
+    if isinstance(obj, dict):
+        return {k: _truncate_log(v, max_str, max_list) for k, v in obj.items()}
+    if isinstance(obj, list):
+        truncated = [_truncate_log(i, max_str, max_list) for i in obj[:max_list]]
+        if len(obj) > max_list:
+            truncated.append(f'...+{len(obj) - max_list} more')
+        return truncated
+    if isinstance(obj, str) and len(obj) > max_str:
+        return obj[:max_str] + f'…[{len(obj)}]'
+    return obj
+
+
 # Default batch size for sync operations
 BATCH_SIZE = 300  # Rows per batch (MySQL insert, GAS API call) — increased for faster syncs
 
@@ -526,7 +541,19 @@ def generic_sync_runner(
                 }
 
             # Convert to Sheets format
-            sheet_rows = _prepare_sheet_rows(rows, cfg)
+            # export_transaction_meta sends dicts (not lists) so GAS can match by named key
+            if config_key == 'export_transaction_meta':
+                def _serialize(v):
+                    if isinstance(v, datetime): return v.isoformat()
+                    if isinstance(v, date): return v.isoformat()
+                    if isinstance(v, Decimal): return float(v)
+                    return v if v is not None else ''
+                sheet_rows = [
+                    {col: _serialize(row.get(col)) for col in cfg['columns']}
+                    for row in rows
+                ]
+            else:
+                sheet_rows = _prepare_sheet_rows(rows, cfg)
             total_rows = len(sheet_rows)
 
             # Batch export to Sheets (send in chunks for large datasets)
@@ -557,7 +584,12 @@ def generic_sync_runner(
                             'keyField': cfg.get('key', 'MemberID')  # Use configured key for upsert
                         }
 
+                    logger.info(f"[GAS SEND] action={webhook_payload['action']}, rows={len(batch_data)}, sample={_truncate_log(batch_data)}")
                     result = gas_webhook(webhook_payload)
+                    logger.info(f"[GAS RECV] raw result: {_truncate_log(result)}")
+                    if result and 'notFound' in result:
+                        not_found = result.get('notFound', [])
+                        logger.warning(f"[GAS RECV] {len(not_found)} rows not matched in sheet: {_truncate_log(not_found, max_list=5)}")
 
                     # GAS webhook wrapper returns only the 'data' field, so check for inserted/updated keys
                     if result and ('inserted' in result or 'updated' in result):
