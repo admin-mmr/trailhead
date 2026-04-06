@@ -178,9 +178,6 @@ def db_cursor(dictionary: bool = True):
         conn.commit()
     except Exception:
         conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
         raise
     finally:
         cur.close()
