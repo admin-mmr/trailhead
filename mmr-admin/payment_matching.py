@@ -224,23 +224,34 @@ def fuzzy_select_transaction_to_submission(submission_id: str, max_candidates: i
     scored_candidates = []
     for gmail in candidates:
         matched, priority = fuzzy_match_transaction_to_member(gmail, member)
+        tx_date = gmail['TransactionDate']
+        # Handle different date formats (string, datetime, None)
+        if tx_date and hasattr(tx_date, 'isoformat'):
+            tx_date_str = tx_date.isoformat()
+        elif isinstance(tx_date, str):
+            tx_date_str = tx_date
+        else:
+            tx_date_str = None
+
         scored_candidates.append({
             'MessageId': gmail['MessageId'],
             'TransactionNumber': gmail['TransactionNumber'],
             'Sender': gmail['Sender'],
             'Amount': float(gmail['Amount']),
             'Memo': gmail['Memo'],
-            'TransactionDate': gmail['TransactionDate'].isoformat() if gmail['TransactionDate'] else None,
+            'TransactionDate': tx_date_str,
             'Notes': gmail['Notes'],
             'priority': priority,
             'matched': matched,
         })
 
     # Sort by priority (descending), then by matched (True first), then by TransactionDate (newest first)
-    scored_candidates.sort(
-        key=lambda x: (x['priority'], x['matched'], x['TransactionDate']),
-        reverse=True
-    )
+    # Handle None dates by converting to empty string (sorts last when reversed)
+    def sort_key(x):
+        date_val = x['TransactionDate'] or ''  # None becomes empty string (sorts last)
+        return (x['priority'], x['matched'], date_val)
+
+    scored_candidates.sort(key=sort_key, reverse=True)
 
     # Return top N
     return {
