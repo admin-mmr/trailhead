@@ -2,6 +2,8 @@
 Payment Matching — Fuzzy matching and autoguess logic for payment reconciliation.
 Pure functions for transaction-to-member matching (no Flask routes).
 """
+from __future__ import annotations
+from typing import Optional
 
 import logging
 from decimal import Decimal
@@ -123,7 +125,7 @@ def fuzzy_match_transaction_to_member(gmail: dict, member: dict) -> tuple[bool, 
     return False, 0
 
 
-def find_best_matching_submission(gmail: dict, amount: Decimal) -> dict | None:
+def find_best_matching_submission(gmail: dict, amount: Decimal) -> Optional[dict]:
     """
     Find the best pending submission for a Gmail transaction using fuzzy matching.
 

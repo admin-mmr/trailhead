@@ -3,12 +3,14 @@ Payment Helpers — Pure database lookups and utility functions (no Flask routes
 Used by api_payments.py for member/config queries and renewal period checks.
 """
 
+from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 from db import query
 
 
-def get_member_by_id(member_id: str) -> dict | None:
+def get_member_by_id(member_id: str) -> Optional[dict]:
     """Fetch member record by MemberID."""
     rows = query(
         "SELECT * FROM members WHERE MemberID = %s",
@@ -17,7 +19,7 @@ def get_member_by_id(member_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
-def get_pending_submissions_for_member(member_id: str) -> list[dict]:
+def get_pending_submissions_for_member(member_id: str) -> list:
     """Fetch pending submissions for a given memberID."""
     return query("""
         SELECT * FROM submissions
@@ -26,7 +28,7 @@ def get_pending_submissions_for_member(member_id: str) -> list[dict]:
     """, (member_id,))
 
 
-def get_config(key: str) -> str | None:
+def get_config(key: str) -> Optional[str]:
     """Fetch config value from config table."""
     rows = query("SELECT ConfigValue FROM config WHERE ConfigKey = %s", (key,))
     return rows[0]['ConfigValue'] if rows else None
@@ -40,7 +42,7 @@ def get_renewal_period():
     return start, end
 
 
-def parse_member_id_from_memo(memo: str) -> str | None:
+def parse_member_id_from_memo(memo: str) -> Optional[str]:
     """Extract memberID from memo (e.g., 'A0001', 'Member: A0001')."""
     if not memo:
         return None

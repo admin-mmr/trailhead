@@ -9,8 +9,9 @@ Handles member status changes (lifetime, inactive) and reversions:
   - View override history (admin_member_overrides audit log)
   - Revert to previous status (restores OldValue from override)
 """
-
 from __future__ import annotations
+from typing import Optional
+
 
 import logging
 from datetime import datetime
@@ -28,7 +29,7 @@ members_status_bp = Blueprint('members_status', __name__)
 ALLOWED_ADMIN_STATUSES = {'lifetime', 'inactive'}
 
 
-def get_member_by_id(member_id: str) -> dict | None:
+def get_member_by_id(member_id: str) -> Optional[dict]:
     """Get a single member by ID."""
     rows = query("""
         SELECT MemberID, FirstName, LastName, Email, PhoneNumber, WeChatID,

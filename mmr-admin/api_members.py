@@ -12,8 +12,9 @@ Implements member operations:
 
 Note: Status management (lifetime/inactive/revert) is in api_members_status.py
 """
-
 from __future__ import annotations
+from typing import Optional
+
 
 import logging
 from datetime import datetime
@@ -38,7 +39,7 @@ def get_admin_id():
     return session.get('user_email', 'unknown')
 
 
-def get_member_by_id(member_id: str) -> dict | None:
+def get_member_by_id(member_id: str) -> Optional[dict]:
     """Get a single member by ID."""
     rows = query("""
         SELECT MemberID, FirstName, LastName, Email, PhoneNumber, WeChatID,
@@ -50,7 +51,7 @@ def get_member_by_id(member_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
-def get_member_card(member_id: str) -> dict | None:
+def get_member_card(member_id: str) -> Optional[dict]:
     """
     Return the minimal member record used for tooltip/card display.
 
