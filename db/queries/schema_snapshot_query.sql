@@ -129,5 +129,21 @@ ORDER BY ROUTINE_TYPE, ROUTINE_NAME;
 
 
 -- ============================================================
+-- 7. TRIGGERS — full body
+-- ============================================================
+SELECT '=== 7. TRIGGERS ===' AS section;
+
+SELECT
+    TRIGGER_NAME       AS trigger_name,
+    EVENT_MANIPULATION AS event,
+    EVENT_OBJECT_TABLE AS `table`,
+    ACTION_TIMING      AS timing,
+    ACTION_STATEMENT   AS body
+FROM information_schema.TRIGGERS
+WHERE TRIGGER_SCHEMA = DATABASE()
+ORDER BY EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION;
+
+
+-- ============================================================
 -- End of schema snapshot query
 -- ============================================================
