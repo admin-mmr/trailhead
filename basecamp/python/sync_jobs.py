@@ -94,8 +94,8 @@ def launch_job(
                 INSERT INTO sync_jobs (JobID, Operation, Status, Message, Progress, StartedAt, UpdatedAt)
                 VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
                 ON DUPLICATE KEY UPDATE
-                    Status = NEW.Status,
-                    Message = NEW.Message,
+                    Status = VALUES(Status),
+                    Message = VALUES(Message),
                     UpdatedAt = NOW()
             """
             db_execute(sql, [job_id, operation, job['status'], job['message'], job['progress']])

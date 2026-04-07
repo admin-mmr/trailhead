@@ -273,9 +273,9 @@ def _batch_insert_rows(
                     all_values.extend(row.values())
 
                 # ON DUPLICATE KEY UPDATE: update non-PK columns
-                # Use NEW.col syntax (MySQL 8.0.20+) instead of deprecated VALUES(col)
+                # Use VALUES(col) syntax — compatible with MySQL 5.7
                 update_stmt = ", ".join(
-                    [f"{c}=NEW.{c}" for c in batch[0].keys() if c != pk_field]
+                    [f"{c}=VALUES({c})" for c in batch[0].keys() if c != pk_field]
                 )
 
                 sql = f"""
@@ -778,9 +778,9 @@ def generic_sync_runner(
                             values_clauses.append(f"({placeholders})")
                             all_values.extend(row.values())
 
-                        # Use NEW.col syntax (MySQL 8.0.20+) instead of deprecated VALUES(col)
+                        # Use VALUES(col) syntax — compatible with MySQL 5.7
                         update_stmt = ", ".join(
-                            [f"{c}=NEW.{c}" for c in batch[0].keys() if c != pk]
+                            [f"{c}=VALUES({c})" for c in batch[0].keys() if c != pk]
                         )
 
                         sql = f"""
