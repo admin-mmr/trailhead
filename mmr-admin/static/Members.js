@@ -1,8 +1,10 @@
 /**
  * Members Panel component for Admin Portal
- * Handles two sub-tabs:
- *   1. Update Family - add/remove members from a family
+ * Sub-tabs:
+ *   1. Update Family   - add/remove members from a family
  *   2. Change District - update a member's district
+ *
+ * Note: Status management (Change Status, Revert Status) moved to MembersStatusPanel.js
  */
 
 const MembersPanel = () => {
@@ -239,18 +241,8 @@ const MembersPanel = () => {
 
       {/* Sub-tabs */}
       <div className="tabs" style={{ marginBottom: 24 }}>
-        <button
-          className={`tab ${subTab === 'update-family' ? 'active' : ''}`}
-          onClick={() => setSubTab('update-family')}
-        >
-          Update Family
-        </button>
-        <button
-          className={`tab ${subTab === 'change-district' ? 'active' : ''}`}
-          onClick={() => setSubTab('change-district')}
-        >
-          Change District
-        </button>
+        <button className={`tab ${subTab === 'update-family' ? 'active' : ''}`} onClick={() => setSubTab('update-family')}>Update Family</button>
+        <button className={`tab ${subTab === 'change-district' ? 'active' : ''}`} onClick={() => setSubTab('change-district')}>Change District</button>
       </div>
 
       {/* Toast */}

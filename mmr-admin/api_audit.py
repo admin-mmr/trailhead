@@ -201,16 +201,20 @@ def api_renewal_audit():
         if membership_type not in ['individual', 'family', 'both']:
             return json_response({'error': f"Invalid membership_type: {membership_type}. Use: individual, family, or both"}, 400)
 
-        logger.info(f"Membership type: {membership_type}")
+        # Only mismatches flag (5th param added to match SP signature)
+        only_mismatches = bool(data.get('only_mismatches', False))
 
-        # Call stored procedure
+        logger.info(f"Membership type: {membership_type}, only_mismatches: {only_mismatches}")
+
+        # Call stored procedure (5 params: start, end, target_exp, type, only_mismatches)
         logger.info("Calling sp_renewal_audit stored procedure...")
         try:
-            results = query("CALL sp_renewal_audit(%s, %s, %s, %s)", [
+            results = query("CALL sp_renewal_audit(%s, %s, %s, %s, %s)", [
                 str(start_date),
                 str(end_date),
                 str(target_expiration),
-                membership_type
+                membership_type,
+                only_mismatches,
             ])
 
             if not results:
@@ -279,3 +283,43 @@ def api_renewal_audit():
         msg = f"Audit error: {type(e).__name__}: {e}"
         logger.error(msg, exc_info=True)
         return json_response({'error': msg}, 500)
+
+
+# ---------------------------------------------------------------------------
+# Reconcile Member Payments Endpoint
+# ---------------------------------------------------------------------------
+
+@audit_bp.route('/api/audit/reconcile', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_reconcile_payments():
+    """
+    Run sp_reconcile_member_payments to fix members whose expiration/status
+    is out of sync with their actual payment records.
+
+    Request body:
+      { "dry_run": true }   → preview only (returns rows that would change)
+      { "dry_run": false }  → execute updates (returns SUCCESS + affected rows)
+
+    Uses config table for MembershipCollectionStart and MembershipYearEnd.
+    """
+    data = request.get_json(silent=True) or {}
+    dry_run = bool(data.get('dry_run', True))  # default safe: dry run
+
+    logger.info(f"Reconcile payments: dry_run={dry_run}")
+
+    try:
+        results = query("CALL sp_reconcile_member_payments(%s)", [dry_run])
+        serialized = _serialize_for_json(results or [])
+
+        return json_response({
+            'success': True,
+            'dry_run': dry_run,
+            'rows': serialized,
+            'count': len(serialized),
+        })
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Reconcile error: {error_msg}")
+        return json_response({'success': False, 'error': error_msg}, 500)

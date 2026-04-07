@@ -1,7 +1,7 @@
 /**
- * District Members Panel with Column Selector and Sorting
- * Allows viewing, filtering, sorting, and exporting members by district.
- * Column selection is persisted to localStorage.
+ * District Members Panel (Core)
+ * State management and data fetching for district member browsing
+ * Sub-components: DistrictMemberFilters, DistrictMemberTable
  */
 
 window.DistrictMembersPanel = () => {
@@ -19,7 +19,6 @@ window.DistrictMembersPanel = () => {
   const [showColumnSelector, setShowColumnSelector] = React.useState(false);
   const [columnFilters, setColumnFilters] = React.useState({});
 
-  // Available columns with labels
   const availableColumns = [
     { key: 'District', label: 'District' },
     { key: 'MemberID', label: 'Member ID' },
@@ -40,14 +39,12 @@ window.DistrictMembersPanel = () => {
     { key: 'LastModified', label: 'Last Modified' },
   ];
 
-  // Default columns
   const defaultColumns = [
     'District', 'MemberID', 'Name', 'Status', 'Expiration', 'Gender',
     'WeChatID', 'Email', 'Type', 'FamilyID', 'PaymentDate',
     'MembershipFeePaid', 'PaymentTransaction'
   ];
 
-  // Load selected columns from localStorage
   const [selectedColumns, setSelectedColumns] = React.useState(() => {
     try {
       const saved = localStorage.getItem('mmr_selected_columns');
@@ -57,16 +54,12 @@ window.DistrictMembersPanel = () => {
     }
   });
 
-  // Save selected columns to localStorage
   React.useEffect(() => {
     try {
       localStorage.setItem('mmr_selected_columns', JSON.stringify(selectedColumns));
-    } catch {
-      // Silently fail if localStorage unavailable
-    }
+    } catch {}
   }, [selectedColumns]);
 
-  // Load sort preferences from localStorage
   React.useEffect(() => {
     try {
       const saved = localStorage.getItem('mmr_sort_preferences');
@@ -75,12 +68,9 @@ window.DistrictMembersPanel = () => {
         setSortBy(prefs.sortBy || 'District');
         setSortOrder(prefs.sortOrder || 'asc');
       }
-    } catch {
-      // Silently fail
-    }
+    } catch {}
   }, []);
 
-  // Save sort preferences to localStorage
   const updateSort = (newSortBy, newSortOrder) => {
     setSortBy(newSortBy);
     setSortOrder(newSortOrder);
@@ -89,17 +79,13 @@ window.DistrictMembersPanel = () => {
         sortBy: newSortBy,
         sortOrder: newSortOrder
       }));
-    } catch {
-      // Silently fail
-    }
+    } catch {}
   };
 
-  // Fetch districts on mount
   React.useEffect(() => {
     fetchDistricts();
   }, []);
 
-  // Fetch members when district or filters change
   React.useEffect(() => {
     if (selectedDistrict) {
       fetchMembers();
@@ -163,14 +149,10 @@ window.DistrictMembersPanel = () => {
   const toggleAll = () => {
     const filteredMembers = getFilteredMembers();
     const filteredIds = filteredMembers.map((m) => m.MemberID);
-
-    // If all filtered members are selected, deselect all; otherwise select all filtered
     const allFilteredSelected = filteredIds.every(id => selectedMembers.has(id));
-
     if (allFilteredSelected && selectedMembers.size === filteredIds.length) {
       setSelectedMembers(new Set());
     } else {
-      // Add filtered members to selection (keep existing selections)
       const newSelected = new Set(selectedMembers);
       filteredIds.forEach(id => newSelected.add(id));
       setSelectedMembers(newSelected);
@@ -190,23 +172,38 @@ window.DistrictMembersPanel = () => {
 
   const handleSort = (columnKey) => {
     if (sortBy === columnKey) {
-      // Toggle order if clicking same column
       updateSort(columnKey, sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
-      // New column, default to ascending
       updateSort(columnKey, 'asc');
     }
   };
 
-  // Format date with optional time
+  const updateColumnFilter = (columnKey, value) => {
+    setColumnFilters(prev => ({
+      ...prev,
+      [columnKey]: value
+    }));
+  };
+
+  const getFilteredMembers = () => {
+    if (Object.keys(columnFilters).length === 0) {
+      return members;
+    }
+    return members.filter(member => {
+      for (const [colKey, filterValue] of Object.entries(columnFilters)) {
+        if (!filterValue) continue;
+        const cellValue = getCellValue(member, colKey).toLowerCase();
+        const searchValue = filterValue.toLowerCase();
+        if (!cellValue.includes(searchValue)) return false;
+      }
+      return true;
+    });
+  };
+
   const formatDate = (dateStr, dateOnly = false) => {
     if (!dateStr) return '—';
     const date = new Date(dateStr);
-    const options = {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    };
+    const options = { year: 'numeric', month: 'short', day: 'numeric' };
     if (!dateOnly) {
       options.hour = '2-digit';
       options.minute = '2-digit';
@@ -214,13 +211,6 @@ window.DistrictMembersPanel = () => {
     return date.toLocaleDateString('en-US', options);
   };
 
-  // Get column label
-  const getColumnLabel = (key) => {
-    const col = availableColumns.find(c => c.key === key);
-    return col ? col.label : key;
-  };
-
-  // Get cell value
   const getCellValue = (member, key) => {
     if (key === 'Name') {
       return `${member.FirstName || ''} ${member.LastName || ''}`.trim();
@@ -235,135 +225,19 @@ window.DistrictMembersPanel = () => {
     return value || '—';
   };
 
-  const updateColumnFilter = (columnKey, value) => {
-    setColumnFilters(prev => ({
-      ...prev,
-      [columnKey]: value
-    }));
+  const handleExportCSV = (includeAll = false) => {
+    const { exportToCSV } = window.DistrictExportHelpers;
+    exportToCSV(selectedMembers, includeAll, selectedDistrict, selectedColumns, statusFilter, renewedFilter, setError, setExportLoading);
   };
 
-  const getFilteredMembers = () => {
-    if (Object.keys(columnFilters).length === 0) {
-      return members;
-    }
-
-    return members.filter(member => {
-      for (const [colKey, filterValue] of Object.entries(columnFilters)) {
-        if (!filterValue) continue; // Skip empty filters
-
-        const cellValue = getCellValue(member, colKey).toLowerCase();
-        const searchValue = filterValue.toLowerCase();
-
-        if (!cellValue.includes(searchValue)) {
-          return false;
-        }
-      }
-      return true;
-    });
+  const handleExportAllDistricts = () => {
+    const { exportAllDistricts } = window.DistrictExportHelpers;
+    exportAllDistricts(statusFilter, renewedFilter, selectedColumns, setError, setExportLoading);
   };
 
-  const exportCSV = async (includeAll = false) => {
-    setExportLoading(true);
-    try {
-      const response = await fetch('/api/district/export-csv', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          memberIds: Array.from(selectedMembers),
-          includeAll,
-          district: selectedDistrict,
-          columns: selectedColumns,
-          filters: { status: statusFilter, renewed: renewedFilter },
-        }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `members_${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } else {
-        const data = await response.json();
-        setError(data.error || 'Export failed');
-      }
-    } catch (err) {
-      setError(`Export error: ${err.message}`);
-    } finally {
-      setExportLoading(false);
-    }
-  };
-
-  const exportAllDistricts = async () => {
-    setExportLoading(true);
-    try {
-      const response = await fetch('/api/district/export-all-districts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: statusFilter,
-          renewed: renewedFilter,
-          columns: selectedColumns,
-        }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `all_districts_members_${new Date().toISOString().slice(0, 10)}.zip`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } else {
-        const data = await response.json();
-        setError(data.error || 'Export failed');
-      }
-    } catch (err) {
-      setError(`Export error: ${err.message}`);
-    } finally {
-      setExportLoading(false);
-    }
-  };
-
-  const exportAllAsSheet = async () => {
-    setExportLoading(true);
-    try {
-      const response = await fetch('/api/district/export-all-sheet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: statusFilter,
-          renewed: renewedFilter,
-          columns: selectedColumns,
-        }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `all_members_${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } else {
-        const data = await response.json();
-        setError(data.error || 'Export failed');
-      }
-    } catch (err) {
-      setError(`Export error: ${err.message}`);
-    } finally {
-      setExportLoading(false);
-    }
+  const handleExportAllAsSheet = () => {
+    const { exportAllAsSheet } = window.DistrictExportHelpers;
+    exportAllAsSheet(statusFilter, renewedFilter, selectedColumns, setError, setExportLoading);
   };
 
   return (
@@ -393,524 +267,43 @@ window.DistrictMembersPanel = () => {
         </div>
       )}
 
-      {/* Filters Row */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '16px',
-          marginBottom: '20px',
-          alignItems: 'flex-end',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ minWidth: '180px' }}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '12px',
-              fontWeight: '600',
-              marginBottom: '6px',
-              color: 'var(--text2)',
-              textTransform: 'uppercase',
-            }}
-          >
-            District *
-          </label>
-          <select
-            value={selectedDistrict}
-            onChange={(e) => setSelectedDistrict(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              background: 'var(--input-bg)',
-              color: 'var(--text)',
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="">-- Select District --</option>
-            {districts.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </div>
+      {window.DistrictMemberFilters && React.createElement(window.DistrictMemberFilters, {
+        districts,
+        selectedDistrict,
+        statusFilter,
+        renewedFilter,
+        onDistrictChange: setSelectedDistrict,
+        onStatusChange: setStatusFilter,
+        onRenewalChange: setRenewedFilter,
+        loading,
+        onRefresh: fetchMembers,
+        onExportAllDistricts: handleExportAllDistricts,
+        onExportAllAsSheet: handleExportAllAsSheet,
+        exportLoading,
+        selectedColumns,
+        availableColumns,
+        onColumnToggle: toggleColumn,
+        onResetColumns: resetColumns,
+        showColumnSelector,
+        onShowColumnSelector: setShowColumnSelector,
+        defaultColumns,
+      })}
 
-        <div style={{ minWidth: '180px' }}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '12px',
-              fontWeight: '600',
-              marginBottom: '6px',
-              color: 'var(--text2)',
-              textTransform: 'uppercase',
-            }}
-          >
-            Membership Status
-          </label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              background: 'var(--input-bg)',
-              color: 'var(--text)',
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="not active">Not Active</option>
-            <option value="pending">Pending</option>
-          </select>
-        </div>
-
-        <div style={{ minWidth: '180px' }}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '12px',
-              fontWeight: '600',
-              marginBottom: '6px',
-              color: 'var(--text2)',
-              textTransform: 'uppercase',
-            }}
-          >
-            Renewal Status
-          </label>
-          <select
-            value={renewedFilter}
-            onChange={(e) => setRenewedFilter(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              background: 'var(--input-bg)',
-              color: 'var(--text)',
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="">All</option>
-            <option value="yes">Renewed</option>
-            <option value="no">Not Renewed</option>
-          </select>
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px', flex: 1, minWidth: '200px' }}>
-          {selectedDistrict && (
-            <button
-              onClick={fetchMembers}
-              disabled={loading}
-              style={{
-                padding: '8px 16px',
-                background: 'var(--accent)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 'var(--radius)',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-                opacity: loading ? 0.6 : 1,
-              }}
-            >
-              {loading ? 'Loading...' : 'Refresh'}
-            </button>
-          )}
-
-          <button
-            onClick={exportAllDistricts}
-            disabled={exportLoading}
-            style={{
-              padding: '8px 16px',
-              background: 'var(--green)',
-              color: '#0f172a',
-              border: 'none',
-              borderRadius: 'var(--radius)',
-              cursor: exportLoading ? 'not-allowed' : 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-              opacity: exportLoading ? 0.6 : 1,
-            }}
-          >
-            {exportLoading ? 'Exporting...' : '⬇ Export All Districts (ZIP)'}
-          </button>
-
-          <button
-            onClick={exportAllAsSheet}
-            disabled={exportLoading}
-            style={{
-              padding: '8px 16px',
-              background: 'var(--accent)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 'var(--radius)',
-              cursor: exportLoading ? 'not-allowed' : 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-              opacity: exportLoading ? 0.6 : 1,
-            }}
-          >
-            {exportLoading ? 'Exporting...' : '⬇ Export All (Single Sheet)'}
-          </button>
-        </div>
-      </div>
-
-      {/* Column Selector */}
-      {selectedDistrict && members.length > 0 && (
-        <div style={{ marginBottom: '20px', position: 'relative' }}>
-          <button
-            onClick={() => setShowColumnSelector(!showColumnSelector)}
-            style={{
-              padding: '8px 16px',
-              background: 'transparent',
-              color: 'var(--accent)',
-              border: '1px solid var(--accent)',
-              borderRadius: 'var(--radius)',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: '500',
-            }}
-          >
-            ⚙ Columns ({selectedColumns.length})
-          </button>
-
-          {showColumnSelector && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                marginTop: '8px',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                padding: '12px',
-                minWidth: '300px',
-                maxHeight: '400px',
-                overflowY: 'auto',
-                zIndex: 1000,
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-              }}
-            >
-              <div style={{ marginBottom: '12px' }}>
-                <button
-                  onClick={resetColumns}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: '11px',
-                    background: 'transparent',
-                    color: 'var(--text2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Reset to Default
-                </button>
-              </div>
-              {availableColumns.map((col) => (
-                <label
-                  key={col.key}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '6px 0',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedColumns.includes(col.key)}
-                    onChange={() => toggleColumn(col.key)}
-                    style={{ marginRight: '8px', cursor: 'pointer' }}
-                  />
-                  {col.label}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Members Table */}
-      {selectedDistrict && members.length > 0 && (
-        <div
-          style={{
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {/* Table Toolbar */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '16px',
-              background: 'var(--surface)',
-              borderBottom: '1px solid var(--border)',
-            }}
-          >
-            <div style={{ fontSize: '13px', color: 'var(--text2)' }}>
-              <input
-                type="checkbox"
-                checked={selectedMembers.size === getFilteredMembers().length && getFilteredMembers().length > 0}
-                onChange={toggleAll}
-                style={{ marginRight: '8px', cursor: 'pointer' }}
-              />
-              {selectedMembers.size} of {getFilteredMembers().length} visible selected
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => exportCSV(false)}
-                disabled={selectedMembers.size === 0 || exportLoading}
-                style={{
-                  padding: '8px 16px',
-                  background: selectedMembers.size > 0 ? 'var(--accent)' : 'var(--surface)',
-                  color: selectedMembers.size > 0 ? '#fff' : 'var(--text2)',
-                  border: `1px solid ${selectedMembers.size > 0 ? 'var(--accent)' : 'var(--border)'}`,
-                  borderRadius: 'var(--radius)',
-                  cursor: selectedMembers.size > 0 ? 'pointer' : 'not-allowed',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                }}
-              >
-                {exportLoading ? 'Exporting...' : '↓ Export Selected'}
-              </button>
-
-              <button
-                onClick={() => exportCSV(true)}
-                disabled={exportLoading}
-                style={{
-                  padding: '8px 16px',
-                  background: 'transparent',
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: 'var(--radius)',
-                  cursor: exportLoading ? 'not-allowed' : 'pointer',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                }}
-              >
-                {exportLoading ? 'Exporting...' : '↓ Export All in District'}
-              </button>
-            </div>
-          </div>
-
-          {/* Table with horizontal scroll */}
-          <div
-            style={{
-              overflowX: 'auto',
-              overflowY: 'visible',
-              flex: 1,
-            }}
-          >
-            <table
-              style={{
-                width: '100%',
-                borderCollapse: 'collapse',
-                fontSize: '13px',
-                minWidth: 'min-content',
-              }}
-            >
-              <thead>
-                {/* Header Row */}
-                <tr style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-                  <th
-                    style={{
-                      padding: '12px 16px',
-                      textAlign: 'left',
-                      fontWeight: '600',
-                      color: 'var(--text2)',
-                      width: '40px',
-                      minWidth: '40px',
-                      position: 'sticky',
-                      left: 0,
-                      background: 'var(--surface)',
-                      zIndex: 2,
-                    }}
-                  >
-                    □
-                  </th>
-                  {selectedColumns.map((colKey) => (
-                    <th
-                      key={colKey}
-                      onClick={() => handleSort(colKey)}
-                      style={{
-                        padding: '12px 16px',
-                        textAlign: 'left',
-                        fontWeight: '600',
-                        color: sortBy === colKey ? 'var(--accent)' : 'var(--text2)',
-                        cursor: 'pointer',
-                        userSelect: 'none',
-                        background: sortBy === colKey ? 'rgba(var(--accent-rgb), 0.05)' : 'transparent',
-                        transition: 'background 0.15s',
-                        whiteSpace: 'nowrap',
-                        minWidth: '120px',
-                      }}
-                      title="Click to sort"
-                    >
-                      {getColumnLabel(colKey)}
-                      {sortBy === colKey && (
-                        <span style={{ marginLeft: '6px', fontSize: '11px' }}>
-                          {sortOrder === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-
-                {/* Filter Row */}
-                <tr style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-                  <th
-                    style={{
-                      padding: '8px 16px',
-                      width: '40px',
-                      minWidth: '40px',
-                      position: 'sticky',
-                      left: 0,
-                      background: 'var(--surface)',
-                      zIndex: 2,
-                    }}
-                  />
-                  {selectedColumns.map((colKey) => (
-                    <th
-                      key={`filter-${colKey}`}
-                      style={{
-                        padding: '8px 16px',
-                        minWidth: '120px',
-                      }}
-                    >
-                      <input
-                        type="text"
-                        placeholder={`Filter ${getColumnLabel(colKey)}`}
-                        value={columnFilters[colKey] || ''}
-                        onChange={(e) => updateColumnFilter(colKey, e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '6px 8px',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          background: 'var(--input-bg)',
-                          color: 'var(--text)',
-                          fontSize: '12px',
-                          boxSizing: 'border-box',
-                        }}
-                      />
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody>
-                {getFilteredMembers().map((member) => (
-                  <tr
-                    key={member.MemberID}
-                    style={{
-                      borderBottom: '1px solid var(--border)',
-                      background: selectedMembers.has(member.MemberID) ? 'rgba(var(--accent-rgb), 0.05)' : 'transparent',
-                      transition: 'background 0.15s',
-                    }}
-                  >
-                    <td
-                      style={{
-                        padding: '12px 16px',
-                        textAlign: 'center',
-                        width: '40px',
-                        minWidth: '40px',
-                        position: 'sticky',
-                        left: 0,
-                        background: selectedMembers.has(member.MemberID)
-                          ? 'rgba(var(--accent-rgb), 0.05)'
-                          : 'transparent',
-                        zIndex: 1,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedMembers.has(member.MemberID)}
-                        onChange={() => toggleMember(member.MemberID)}
-                        style={{ cursor: 'pointer' }}
-                      />
-                    </td>
-                    {selectedColumns.map((colKey) => (
-                      <td
-                        key={`${member.MemberID}-${colKey}`}
-                        style={{
-                          padding: '12px 16px',
-                          color: colKey === 'MemberID' ? 'var(--accent)' : 'var(--text)',
-                          fontSize: colKey === 'MemberID' ? '12px' : '13px',
-                          fontFamily: colKey === 'MemberID' ? 'monospace' : 'inherit',
-                          wordBreak: colKey === 'Email' ? 'break-all' : 'normal',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {colKey === 'Status' ? (
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '3px 8px',
-                              borderRadius: '4px',
-                              fontSize: '11px',
-                              fontWeight: '600',
-                              textTransform: 'uppercase',
-                              background:
-                                member.Status === 'active'
-                                  ? 'rgba(34, 197, 94, 0.1)'
-                                  : member.Status === 'pending'
-                                    ? 'rgba(234, 179, 8, 0.1)'
-                                    : 'rgba(107, 114, 128, 0.1)',
-                              color:
-                                member.Status === 'active'
-                                  ? '#22c55e'
-                                  : member.Status === 'pending'
-                                    ? '#eab308'
-                                    : '#6b7280',
-                            }}
-                          >
-                            {member.Status}
-                          </span>
-                        ) : (
-                          getCellValue(member, colKey)
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Empty filtered results message */}
-          {members.length > 0 && getFilteredMembers().length === 0 && (
-            <div
-              style={{
-                padding: '20px',
-                textAlign: 'center',
-                color: 'var(--text2)',
-                fontSize: '13px',
-              }}
-            >
-              No members match the current filters
-            </div>
-          )}
-        </div>
-      )}
+      {selectedDistrict && members.length > 0 && window.DistrictMemberTable && React.createElement(window.DistrictMemberTable, {
+        members,
+        selectedMembers,
+        sortBy,
+        sortOrder,
+        onSort: handleSort,
+        onSelectMember: toggleMember,
+        onSelectAll: toggleAll,
+        selectedColumns,
+        columnFilters,
+        onUpdateColumnFilter: updateColumnFilter,
+        onExportSelected: () => handleExportCSV(false),
+        onExportAll: () => handleExportCSV(true),
+        exportLoading,
+      })}
 
       {selectedDistrict && !loading && members.length === 0 && (
         <div

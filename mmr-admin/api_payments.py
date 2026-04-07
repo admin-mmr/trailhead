@@ -27,321 +27,18 @@ from flask import Blueprint, request, session
 from auth import login_required, require_role
 from db import query, execute
 from helpers import json_response, handle_api_errors
+from payment_helpers import get_member_by_id, get_renewal_period, parse_member_id_from_memo
+from payment_matching import (
+    fuzzy_select_transaction_to_submission,
+    fuzzy_match_transaction_to_member,
+    build_member_text,
+    build_transaction_text,
+    autoguess_single_transaction,
+)
 
 logger = logging.getLogger(__name__)
 
 payments_bp = Blueprint('payments', __name__)
-
-
-# ============================================================================
-# HELPERS: Member & Config Lookups
-# ============================================================================
-
-def get_member_by_id(member_id: str) -> dict | None:
-    """Fetch member record by MemberID."""
-    rows = query(
-        "SELECT * FROM members WHERE MemberID = %s",
-        (member_id,)
-    )
-    return rows[0] if rows else None
-
-
-def get_pending_submissions_for_member(member_id: str) -> list[dict]:
-    """Fetch pending submissions for a given memberID."""
-    return query("""
-        SELECT * FROM submissions
-        WHERE MemberID = %s AND Status = 'pending'
-        ORDER BY CreatedAt DESC
-    """, (member_id,))
-
-
-def get_config(key: str) -> str | None:
-    """Fetch config value from config table."""
-    rows = query("SELECT ConfigValue FROM config WHERE ConfigKey = %s", (key,))
-    return rows[0]['ConfigValue'] if rows else None
-
-
-def get_renewal_period():
-    """Get renewal period (start, end) from config as (start_date, end_date)."""
-    # Try new keys first, then fall back to old keys for backwards compatibility
-    start = get_config('renewal_start_date') or get_config('MembershipCollectionStart')
-    end = get_config('renewal_end_date') or get_config('MembershipCollectionEnd')
-    return start, end
-
-
-def parse_member_id_from_memo(memo: str) -> str | None:
-    """Extract memberID from memo (e.g., 'A0001', 'Member: A0001')."""
-    if not memo:
-        return None
-    import re
-    # Look for pattern like A0001, A0002, etc.
-    match = re.search(r'\bA\d{4}\b', memo)
-    return match.group(0) if match else None
-
-
-def partial_name_match(submission_memberid: str, gmail_sender: str, gmail_memo: str) -> bool:
-    """
-    Check if pending submission's member name can be partially matched
-    in Gmail sender or memo fields.
-    """
-    member = get_member_by_id(submission_memberid)
-    if not member:
-        return False
-
-    name = f"{member['FirstName']} {member['LastName']}".lower()
-    first_name = member['FirstName'].lower()
-    last_name = member['LastName'].lower()
-
-    sender_lower = (gmail_sender or "").lower()
-    memo_lower = (gmail_memo or "").lower()
-
-    # Exact name or first+last in sender/memo
-    return (
-        name in sender_lower or name in memo_lower or
-        (first_name in sender_lower and last_name in sender_lower) or
-        (first_name in memo_lower and last_name in memo_lower)
-    )
-
-
-def build_member_text(member: dict) -> str:
-    """
-    Build searchable member text from member record.
-    Format: "FirstName LastName WeChatID email_local NYRRRunnerName"
-    """
-    parts = [
-        member.get('FirstName', ''),
-        member.get('LastName', ''),
-        member.get('WeChatID', ''),
-    ]
-
-    # Extract email local part (before @)
-    email = member.get('Email', '')
-    if email and '@' in email:
-        parts.append(email.split('@')[0])
-
-    # Add NYRR runner name if available
-    if member.get('NYRRRunnerName'):
-        parts.append(member['NYRRRunnerName'])
-
-    # Join and normalize: lowercase, remove empty parts, single space separation
-    text = ' '.join(p for p in parts if p).lower()
-    return text
-
-
-def build_transaction_text(gmail: dict) -> str:
-    """
-    Build searchable transaction text from Gmail transaction.
-    Format: "Sender Memo Notes"
-    """
-    parts = [
-        gmail.get('Sender', ''),
-        gmail.get('Memo', ''),
-        gmail.get('Notes', ''),
-    ]
-    text = ' '.join(p for p in parts if p).lower()
-    return text
-
-
-def fuzzy_match_transaction_to_member(gmail: dict, member: dict) -> tuple[bool, int]:
-    """
-    Fuzzy match a Gmail transaction to a member using 4 priority rules.
-
-    Rules (in priority order):
-    1. MemberID is substring of transaction text
-    2. Last 4 digits of TransactionNumber match MemberID
-    3. Every word in Sender is substring of member_text
-    4. Any word in member_text is substring of transaction_text
-
-    Returns: (matched: bool, priority: int)
-      - priority 1 = rule 1, 2 = rule 2, 3 = rule 3, 4 = rule 4, 0 = no match
-    """
-    member_id = member.get('MemberID', '').upper()
-    tx_number = gmail.get('TransactionNumber', '')
-    sender = gmail.get('Sender', '').lower()
-    memo = gmail.get('Memo', '').lower()
-    notes = gmail.get('Notes', '').lower()
-
-    member_text = build_member_text(member)
-    tx_text = build_transaction_text(gmail)
-
-    # Rule 1: MemberID is substring of transaction text
-    if member_id and member_id.lower() in tx_text:
-        return True, 1
-
-    # Rule 2: Last 4 digits of TransactionNumber match MemberID (without A prefix)
-    if tx_number and len(member_id) >= 2 and member_id[1:].isdigit():
-        member_digits = member_id[1:]  # Remove 'A' prefix
-        tx_last_4 = tx_number[-4:] if len(tx_number) >= 4 else tx_number
-        if tx_last_4 == member_digits:
-            return True, 2
-
-    # Rule 3: Every word in Sender is substring of member_text
-    if sender:
-        sender_words = sender.split()
-        if sender_words and all(word in member_text for word in sender_words):
-            return True, 3
-
-    # Rule 4: Any word in member_text is substring of transaction_text
-    if member_text:
-        member_words = member_text.split()
-        if any(word in tx_text for word in member_words):
-            return True, 4
-
-    return False, 0
-
-
-def find_best_matching_submission(gmail: dict, amount: Decimal) -> dict | None:
-    """
-    Find the best pending submission for a Gmail transaction using fuzzy matching.
-
-    Returns: {submission_id, member_id, score} or None if no match found
-
-    Algorithm:
-      1. Get all pending membership submissions with matching amount
-      2. For each submission's member, apply fuzzy_match_transaction_to_member
-      3. Return submission with highest priority match (priority 1 > 2 > 3 > 4)
-    """
-    # Fetch pending submissions with matching amount
-    pending_subs = query("""
-        SELECT s.SubmissionID, s.MemberID, s.Amount
-        FROM submissions s
-        WHERE s.Status = 'pending' AND s.SubmissionType LIKE '%Membership%'
-          AND s.Amount = %s
-        ORDER BY s.CreatedAt DESC
-    """, (amount,))
-
-    best_match = None
-    best_priority = 0
-
-    for sub in pending_subs:
-        member_id = sub['MemberID']
-        member = get_member_by_id(member_id)
-        if not member:
-            continue
-
-        matched, priority = fuzzy_match_transaction_to_member(gmail, member)
-        if matched and priority > best_priority:
-            best_match = {
-                'submission_id': sub['SubmissionID'],
-                'member_id': member_id,
-                'priority': priority,
-            }
-            best_priority = priority
-
-    return best_match
-
-
-def fuzzy_select_transaction_to_submission(submission_id: str, max_candidates: int = 20) -> dict:
-    """
-    Find candidate Gmail transactions for a pending submission, ranked by fuzzy match score.
-
-    Used in quick-approve UI to show admin a short list of transactions to choose from.
-
-    Returns: {
-      'submission': {SubmissionID, MemberID, Amount},
-      'member': {MemberID, FirstName, LastName, Email, ...},
-      'candidates': [
-        {
-          'TransactionNumber', 'Sender', 'Amount', 'Memo', 'TransactionDate',
-          'priority': int (1-4, 0 if no match),
-          'matched': bool
-        },
-        ...
-      ]
-    }
-
-    Algorithm:
-      1. Get submission + member
-      2. Query unmatched Gmail transactions matching amount
-      3. For each transaction, apply fuzzy_match_transaction_to_member
-      4. Sort by priority (highest first), then by TransactionDate (newest first)
-      5. Return top N candidates
-    """
-    # Get submission
-    sub = query(
-        "SELECT * FROM submissions WHERE SubmissionID = %s",
-        (submission_id,)
-    )
-    if not sub or len(sub) == 0:
-        return {'error': 'Submission not found', 'candidates': []}
-
-    sub = sub[0]
-    member_id = sub['MemberID']
-    amount = sub['Amount']
-
-    # Get member
-    member = get_member_by_id(member_id)
-    if not member:
-        return {'error': f'Member {member_id} not found', 'candidates': []}
-
-    # Get unmatched Gmail transactions matching amount
-    candidates = query("""
-        SELECT MessageId, TransactionNumber, Sender, Amount, Memo, TransactionDate,
-               Notes, UpdatedAt, Timestamp
-        FROM gmail_transactions
-        WHERE (Notes IS NULL OR UpdatedAt IS NULL)
-          AND Amount = %s
-        ORDER BY TransactionDate DESC
-        LIMIT 100
-    """, (amount,))
-
-    # Score each candidate using fuzzy matching
-    scored_candidates = []
-    for gmail in candidates:
-        matched, priority = fuzzy_match_transaction_to_member(gmail, member)
-        scored_candidates.append({
-            'MessageId': gmail['MessageId'],
-            'TransactionNumber': gmail['TransactionNumber'],
-            'Sender': gmail['Sender'],
-            'Amount': float(gmail['Amount']),
-            'Memo': gmail['Memo'],
-            'TransactionDate': gmail['TransactionDate'].isoformat() if gmail['TransactionDate'] else None,
-            'Notes': gmail['Notes'],
-            'priority': priority,
-            'matched': matched,
-        })
-
-    # Sort by priority (descending), then by matched (True first), then by TransactionDate (newest first)
-    scored_candidates.sort(
-        key=lambda x: (x['priority'], x['matched'], x['TransactionDate']),
-        reverse=True
-    )
-
-    # Return top N
-    return {
-        'submission': {
-            'SubmissionID': sub['SubmissionID'],
-            'MemberID': sub['MemberID'],
-            'Amount': float(sub['Amount']),
-        },
-        'member': {
-            'MemberID': member['MemberID'],
-            'FirstName': member['FirstName'],
-            'LastName': member['LastName'],
-            'Email': member['Email'],
-            'WeChatID': member.get('WeChatID'),
-            'Type': member.get('Type'),
-            'Expiration': member.get('Expiration'),
-        },
-        'candidates': scored_candidates[:max_candidates],
-        'total_candidates': len(scored_candidates),
-        'count': len(scored_candidates[:max_candidates]),
-    }
-
-
-def is_within_renewal_period(payment_date) -> bool:
-    """Check if payment_date falls within renewal period from config."""
-    start_str, end_str = get_renewal_period()
-    if not start_str or not end_str:
-        return False
-    try:
-        start = datetime.strptime(start_str, '%Y-%m-%d').date()
-        end = datetime.strptime(end_str, '%Y-%m-%d').date()
-        if isinstance(payment_date, str):
-            payment_date = datetime.strptime(payment_date, '%Y-%m-%d').date()
-        return start <= payment_date <= end
-    except (ValueError, TypeError):
-        return False
 
 
 # ============================================================================
@@ -454,23 +151,26 @@ def api_unmatched_gmail():
     limit = int(request.args.get('limit', 50))
     search = request.args.get('search', '').strip()
 
-    sql = """
-        SELECT TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate,
-               PaymentMethod, Notes, UpdatedAt
-        FROM gmail_transactions
-        WHERE (Notes IS NULL OR UpdatedAt IS NULL)
-    """
-    params = []
+    base_where = " FROM gmail_transactions WHERE (Notes IS NULL OR UpdatedAt IS NULL)"
+    search_clause = ""
+    search_params = []
 
     if search:
-        sql += " AND (Sender LIKE %s OR Memo LIKE %s OR TransactionNumber LIKE %s)"
-        params.extend([f"%{search}%"] * 3)
+        search_clause = " AND (Sender LIKE %s OR Memo LIKE %s OR TransactionNumber LIKE %s OR Amount LIKE %s)"
+        search_params = [f"%{search}%"] * 4
 
-    sql += " ORDER BY TransactionDate DESC LIMIT %s OFFSET %s"
-    params.extend([limit, skip])
+    total_rows = query(
+        f"SELECT COUNT(*) AS cnt{base_where}{search_clause}",
+        tuple(search_params)
+    )
+    total = total_rows[0]['cnt'] if total_rows else 0
 
-    rows = query(sql, tuple(params))
-    return json_response({'transactions': rows})
+    sql = f"""SELECT MessageId, TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate,
+               PaymentMethod, Notes, UpdatedAt
+        {base_where}{search_clause}
+        ORDER BY TransactionDate DESC LIMIT %s OFFSET %s"""
+    rows = query(sql, tuple(search_params + [limit, skip]))
+    return json_response({'transactions': rows, 'total': total, 'skip': skip, 'limit': limit})
 
 
 # ============================================================================
@@ -509,11 +209,32 @@ def api_autoguess_all():
 
     logger.info(f'[AUTOGUESS] Starting autoguess for {len(unmatched)} unmatched transactions')
 
-    # Log renewal period once
+    # Pre-load everything once — avoids N×2 config queries + N member lookups
     start_str, end_str = get_renewal_period()
     if not start_str or not end_str:
         logger.error(f'[AUTOGUESS] ⚠️ Renewal period NOT configured!')
         return json_response({'error': 'Renewal period not configured'}, status=400)
+
+    try:
+        renewal_start = datetime.strptime(start_str, '%Y-%m-%d').date()
+        renewal_end   = datetime.strptime(end_str,   '%Y-%m-%d').date()
+    except ValueError:
+        return json_response({'error': 'Invalid renewal period dates in config'}, status=400)
+
+    # All members keyed by MemberID
+    all_members = {m['MemberID']: m for m in query("SELECT * FROM members")}
+
+    # All pending membership submissions keyed by MemberID (take first/latest per member)
+    pending_rows = query("""
+        SELECT SubmissionID, MemberID FROM submissions
+        WHERE Status = 'pending' AND SubmissionType LIKE '%Membership%'
+        ORDER BY CreatedAt DESC
+    """)
+    pending_subs_map = {}
+    for row in pending_rows:
+        pending_subs_map.setdefault(row['MemberID'], row['SubmissionID'])
+
+    logger.info(f'[AUTOGUESS] Pre-loaded {len(all_members)} members, {len(pending_subs_map)} pending subs')
 
     for idx, tx in enumerate(unmatched, 1):
         # Circuit breaker: stop on too many errors
@@ -522,7 +243,13 @@ def api_autoguess_all():
             break
 
         try:
-            result = _autoguess_single_transaction(tx, admin_email)
+            result = autoguess_single_transaction(
+                tx, admin_email,
+                all_members=all_members,
+                pending_subs_map=pending_subs_map,
+                renewal_start=renewal_start,
+                renewal_end=renewal_end,
+            )
             if result['created']:
                 created_count += 1
             else:
@@ -568,80 +295,6 @@ def api_autoguess_all():
             'errors': errors,
         }
     })
-
-
-def _autoguess_single_transaction(tx: dict, admin_email: str) -> dict:
-    """
-    Strict autoguess: Only link if memberID is explicitly in memo AND all conditions met.
-
-    Returns {'created': bool, 'reason': str}
-
-    Algorithm (FIRM):
-      1. Extract memberID from memo (regex: \bA\d{4}\b)
-      2. If memberID not found: skip
-      3. Verify member exists
-      4. Check amount matches membership type ($30 individual, $50 family)
-      5. Check transaction date within renewal period (from config)
-      6. Look for pending membership submission (optional, not required)
-      7. Create payment directly (INSERT + UPDATE)
-    """
-    tx_num = tx['TransactionNumber']
-    memo = tx['Memo'] or ''
-    amount = Decimal(str(tx['Amount'])) if tx['Amount'] else None
-    tx_date = tx['TransactionDate']
-
-    if not amount:
-        return {'created': False, 'reason': 'Invalid amount'}
-
-    # Step 1: Extract memberID from memo (REQUIRED)
-    member_id = parse_member_id_from_memo(memo)
-    if not member_id:
-        return {'created': False, 'reason': 'No memberID in memo'}
-
-    # Step 2: Verify member exists
-    member = get_member_by_id(member_id)
-    if not member:
-        return {'created': False, 'reason': f'Member {member_id} not found'}
-
-    # Step 3: Check amount matches membership type
-    expected_amt = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
-    if amount != expected_amt:
-        return {'created': False, 'reason': f'Amount {amount} != {expected_amt}'}
-
-    # Step 4: Check within renewal period
-    if not is_within_renewal_period(tx_date):
-        return {'created': False, 'reason': 'Date outside renewal period'}
-
-    # Step 5: Check for pending membership submission (optional)
-    pending_subs = query("""
-        SELECT SubmissionID FROM submissions
-        WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
-        LIMIT 1
-    """, (member_id,))
-    submission_id = pending_subs[0]['SubmissionID'] if pending_subs else None
-
-    # Step 6: Create payment
-    try:
-        payment_id = str(uuid.uuid4())
-        # Set PaymentType based on member type
-        payment_type = 'Family Membership' if member['Type'] == 'Family' else 'Individual Membership'
-        execute("""
-            INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (payment_id, member_id, tx_num, amount, submission_id, payment_type, admin_email))
-
-        execute("""
-            UPDATE gmail_transactions
-            SET UpdatedAt = NOW(),
-                Notes = CONCAT(IFNULL(Notes, ''), '\n[', NOW(), '] Linked: ', %s, ' (Membership) $', %s)
-            WHERE TransactionNumber = %s
-        """, (member_id, amount, tx_num))
-
-        logger.info(f'[AUTOGUESS] ✓ {tx_num}: {member_id} ${amount}')
-        return {'created': True, 'reason': f'Created payment for {member_id}'}
-    except Exception as e:
-        logger.error(f'[AUTOGUESS] ✗ {tx_num}: {str(e)[:80]}')
-        return {'created': False, 'reason': f'Error: {str(e)[:80]}'}
 
 
 # ============================================================================
@@ -708,22 +361,13 @@ def api_manual_approve():
 
     logger.info(f'[MANUAL-APPROVE] Linking transaction: amount={tx["Amount"]}, submissionID={submission_id}, admin={admin_email}')
 
-    try:
-        # Direct INSERT + UPDATE (workaround for old sp_link_transaction procedure)
-        payment_id = str(uuid.uuid4())
-        # Set PaymentType based on member type
-        payment_type = 'Family Membership' if member['Type'] == 'Family' else 'Individual Membership'
-        execute("""
-            INSERT INTO payments (PaymentID, MemberID, TransactionNumber, Amount, SubmissionID, PaymentType, ProcessedBy)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (payment_id, member_id, tx_num, tx['Amount'], submission_id, payment_type, admin_email))
+    payment_type = 'Family Membership' if member['Type'] == 'Family' else 'Individual Membership'
 
-        execute("""
-            UPDATE gmail_transactions
-            SET UpdatedAt = NOW(),
-                Notes = CONCAT(IFNULL(Notes, ''), '\n[', NOW(), '] Linked: ', %s, ' (Membership) $', %s)
-            WHERE TransactionNumber = %s
-        """, (member_id, tx['Amount'], tx_num))
+    try:
+        execute(
+            "CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)",
+            (tx_num, member_id, payment_type, tx['Amount'], admin_email, submission_id)
+        )
 
         logger.info(f'[MANUAL-APPROVE] Success: tx={tx_num}, member={member_id}, submission={submission_id}')
         return json_response({
@@ -791,6 +435,31 @@ def api_gmail_matching_candidates(member_id: str):
 # MISSING ENDPOINTS FOR FRONTEND
 # ============================================================================
 
+@payments_bp.route('/api/payments/member-quick/all', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_member_quick_all():
+    """
+    Fetch all members for fuzzy search in quick-approve popover.
+    Must be registered BEFORE /<member_id> to avoid Flask routing /all as a member_id.
+    Returns: {ok: true, data: [{MemberID, FirstName, LastName, Email, Expiration, Type, District}]}
+    """
+    members = query("""
+        SELECT MemberID, FirstName, LastName, Email, Expiration, Type, District
+        FROM members
+        ORDER BY FirstName, LastName
+    """)
+    logger.info(f'[MEMBER-QUICK/ALL] query returned {len(members)} rows')
+    if members:
+        logger.info(f'[MEMBER-QUICK/ALL] sample: {members[0]}')
+    else:
+        # Diagnose: check if table is accessible and has rows at all
+        cnt = query("SELECT COUNT(*) as cnt FROM members")
+        logger.warning(f'[MEMBER-QUICK/ALL] members table COUNT(*) = {cnt[0]["cnt"] if cnt else "ERROR"}')
+    return json_response({'ok': True, 'data': members})
+
+
 @payments_bp.route('/api/payments/member-quick/<member_id>', methods=['GET'])
 @login_required
 @require_role('admin')
@@ -820,21 +489,70 @@ def api_member_quick(member_id: str):
     })
 
 
-@payments_bp.route('/api/payments/member-quick/all', methods=['GET'])
+@payments_bp.route('/api/payments/debug-candidates/<submission_id>', methods=['GET'])
 @login_required
 @require_role('admin')
 @handle_api_errors
-def api_member_quick_all():
+def api_debug_candidates(submission_id: str):
     """
-    Fetch all members for fuzzy search in quick-approve popover.
-    Returns: [{MemberID, FirstName, LastName, Email, Expiration, Type, District}]
+    Step-by-step trace of gmail candidate matching for a submission.
+    GET /api/payments/debug-candidates/<submission_id>
+
+    Returns member_text, and for each candidate: tx_text + result of each rule.
     """
-    members = query("""
-        SELECT MemberID, FirstName, LastName, Email, Expiration, Type, District
-        FROM members
-        ORDER BY FirstName, LastName
-    """)
-    return json_response({'data': members})
+    sub = query("SELECT * FROM submissions WHERE SubmissionID = %s", (submission_id,))
+    if not sub:
+        return json_response({'error': 'Submission not found'}, status=404)
+    sub = sub[0]
+
+    member = get_member_by_id(sub['MemberID'])
+    if not member:
+        return json_response({'error': f'Member {sub["MemberID"]} not found'}, status=404)
+
+    member_text = build_member_text(member)
+    member_id   = member['MemberID'].upper()
+
+    candidates = query("""
+        SELECT MessageId, TransactionNumber, Sender, Amount, Memo, TransactionDate, Notes, UpdatedAt
+        FROM gmail_transactions
+        WHERE (Notes IS NULL OR UpdatedAt IS NULL) AND Amount = %s
+        ORDER BY TransactionDate DESC LIMIT 100
+    """, (sub['Amount'],))
+
+    traced = []
+    for g in candidates:
+        tx_text = build_transaction_text(g)
+        tx_number = g.get('TransactionNumber', '') or ''
+        sender = (g.get('Sender') or '').lower()
+        member_digits = member_id[1:] if len(member_id) >= 2 and member_id[1:].isdigit() else None
+        tx_last4 = tx_number[-4:] if len(tx_number) >= 4 else tx_number
+
+        rules = {
+            'r1_memberid_in_tx': member_id.lower() in tx_text,
+            'r2_tx_last4_eq_member_digits': bool(member_digits and tx_last4 == member_digits),
+            'r3_all_sender_words_in_member': bool(sender and all(w in member_text for w in sender.split())),
+            'r4_any_member_word_in_tx': bool(member_text and any(w in tx_text for w in member_text.split())),
+        }
+        matched_rule = next((k for k, v in rules.items() if v), None)
+        traced.append({
+            'TransactionNumber': tx_number,
+            'Sender': g.get('Sender'),
+            'Memo': g.get('Memo'),
+            'TransactionDate': str(g.get('TransactionDate') or ''),
+            'tx_text': tx_text,
+            'rules': rules,
+            'matched_rule': matched_rule,
+            'priority': int(matched_rule[1]) if matched_rule else 0,
+        })
+
+    traced.sort(key=lambda x: x['priority'], reverse=True)
+
+    return json_response({
+        'submission': {'SubmissionID': submission_id, 'MemberID': sub['MemberID'], 'Amount': float(sub['Amount'])},
+        'member': {'MemberID': member_id, 'Name': f"{member['FirstName']} {member['LastName']}", 'member_text': member_text},
+        'total_unmatched_at_amount': len(candidates),
+        'candidates': traced,
+    })
 
 
 @payments_bp.route('/api/payments/gmail-candidates/<submission_id>', methods=['GET'])
@@ -899,38 +617,31 @@ def api_admin_create():
         return json_response({'error': 'Gmail transaction not found'}, status=404)
 
     gmail = gmail[0]
+    tx_num = gmail.get('TransactionNumber')
+    if not tx_num:
+        return json_response({'error': 'Gmail transaction has no TransactionNumber — cannot link'}, status=400)
+
     amount = gmail.get('Amount')
-    tx_date = gmail.get('TransactionDate')
+    admin_email = session.get('user', {}).get('email', 'admin')
 
-    # Create payment
+    # Find pending membership submission to auto-close
+    pending_subs = query("""
+        SELECT SubmissionID FROM submissions
+        WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
+        ORDER BY CreatedAt DESC LIMIT 1
+    """, (member_id,))
+    submission_id = pending_subs[0]['SubmissionID'] if pending_subs else None
+
     try:
-        execute("""
-            INSERT INTO payments (
-                PaymentID, MemberID, Amount, PaymentType,
-                Source, ProcessedBy, CreatedAt
-            ) VALUES (%s, %s, %s, %s, 'Gmail', %s, NOW())
-        """, (
-            str(uuid.uuid4()),
-            member_id,
-            amount,
-            payment_intent,
-            session.get('user_id', 'admin')
-        ))
-
-        # Update gmail transaction
-        execute("""
-            UPDATE gmail_transactions
-            SET Notes = %s, UpdatedAt = NOW()
-            WHERE MessageId = %s
-        """, (f"Linked to {member_id}: {payment_intent}", message_id))
-
-        # Update member if membership
-        if 'membership' in payment_intent.lower():
-            execute("""
-                UPDATE members
-                SET Status = 'active', Expiration = DATE_ADD(NOW(), INTERVAL 1 YEAR)
-                WHERE MemberID = %s
-            """, (member_id,))
+        # sp_link_transaction fires all 4 triggers:
+        #   trg_payments_auto_fill         → pulls PaymentDate/Sender/Memo from gmail_transactions
+        #   trg_payments_sync_membership_only → updates member Status/Expiration/PaymentTransaction
+        #   trg_payments_approve_submission → marks submission approved
+        #   trg_payments_sync_to_gmail     → writes Notes back to gmail_transactions
+        execute(
+            "CALL sp_link_transaction(%s, %s, %s, %s, %s)",
+            (tx_num, member_id, payment_intent, amount, submission_id)
+        )
 
         return json_response({
             'ok': True,
@@ -1000,12 +711,12 @@ def api_payment_history():
             p.ProcessedBy,
             s.SubmissionID,
             s.Status as SubmissionStatus,
-            p.CreatedAt
+            p.UpdatedAt
         FROM payments p
         JOIN members m ON p.MemberID = m.MemberID
         LEFT JOIN submissions s ON p.SubmissionID = s.SubmissionID
-        WHERE p.CreatedAt >= DATE_SUB(NOW(), INTERVAL %s DAY)
-        ORDER BY p.CreatedAt DESC
+        WHERE p.UpdatedAt >= DATE_SUB(NOW(), INTERVAL %s DAY)
+        ORDER BY p.UpdatedAt DESC
         LIMIT %s OFFSET %s
     """, (days, limit, skip))
 
@@ -1039,7 +750,100 @@ def api_autoguess_log():
         LIMIT %s OFFSET %s
     """, (limit, skip))
 
-    return json_response({'logs': rows})
+    return json_response({'ok': True, 'data': {'logs': rows}})
+
+
+# ============================================================================
+# AUTOGUESS DEBUG
+# ============================================================================
+
+@payments_bp.route('/api/payments/debug-autoguess/<transaction_number>', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_debug_autoguess(transaction_number: str):
+    """
+    Trace autoguess decision for a single transaction — step by step.
+    GET /api/payments/debug-autoguess/85071026
+    """
+    steps = []
+
+    def step(name, passed, detail):
+        steps.append({'step': name, 'passed': passed, 'detail': detail})
+
+    # Fetch transaction
+    rows = query("SELECT * FROM gmail_transactions WHERE TransactionNumber = %s", (transaction_number,))
+    if not rows:
+        return json_response({'ok': False, 'error': f'Transaction {transaction_number} not found'})
+    tx = rows[0]
+
+    step('found', True, {
+        'TransactionNumber': tx.get('TransactionNumber'),
+        'Sender': tx.get('Sender'),
+        'Amount': str(tx.get('Amount')),
+        'Memo': tx.get('Memo'),
+        'TransactionDate': str(tx.get('TransactionDate')),
+        'Notes': tx.get('Notes'),
+        'UpdatedAt': str(tx.get('UpdatedAt')),
+    })
+
+    # Check if already matched
+    already_matched = tx.get('Notes') is not None and tx.get('UpdatedAt') is not None
+    step('unmatched_check', not already_matched,
+         'Already matched (Notes + UpdatedAt both set)' if already_matched else 'Eligible — not yet matched')
+
+    # Step 1: member ID in memo
+    memo = tx.get('Memo') or ''
+    member_id = parse_member_id_from_memo(memo)
+    step('memo_member_id', bool(member_id),
+         f'Extracted: {member_id}' if member_id else f'No A#### pattern found in memo: "{memo}"')
+    if not member_id:
+        return json_response({'ok': True, 'verdict': 'SKIP', 'steps': steps})
+
+    # Step 2: member exists
+    member = get_member_by_id(member_id)
+    step('member_exists', bool(member),
+         f'{member_id}: {member.get("FirstName")} {member.get("LastName")}, Type={member.get("Type")}, Status={member.get("Status")}' if member
+         else f'Member {member_id} not found in DB')
+    if not member:
+        return json_response({'ok': True, 'verdict': 'SKIP', 'steps': steps})
+
+    # Step 3: amount vs member type
+    from decimal import Decimal
+    amount = Decimal(str(tx['Amount'])) if tx.get('Amount') else None
+    expected = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
+    step('amount_match', amount == expected,
+         f'Got ${amount}, expected ${expected} for {member["Type"]} member')
+    if amount != expected:
+        return json_response({'ok': True, 'verdict': 'SKIP', 'steps': steps})
+
+    # Step 4: renewal period
+    start_str, end_str = get_renewal_period()
+    tx_date = tx.get('TransactionDate')
+    in_period = is_within_renewal_period(tx_date)
+    step('renewal_period', in_period,
+         f'TxDate={tx_date}, renewal={start_str} → {end_str}, in_period={in_period}')
+    if not in_period:
+        return json_response({'ok': True, 'verdict': 'SKIP', 'steps': steps})
+
+    # Step 5: pending submission
+    pending = query("""
+        SELECT SubmissionID, Status, SubmissionType FROM submissions
+        WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
+        LIMIT 1
+    """, (member_id,))
+    step('pending_submission', True,
+         f'Found: {pending[0]["SubmissionID"]}' if pending else 'None found (payment will be created without submission link)')
+
+    # Step 6: duplicate payment check
+    existing_payment = query("""
+        SELECT PaymentID FROM payments WHERE TransactionNumber = %s LIMIT 1
+    """, (transaction_number,))
+    step('no_duplicate', not existing_payment,
+         f'Duplicate found: {existing_payment[0]["PaymentID"]}' if existing_payment else 'No existing payment — safe to create')
+
+    verdict = 'SKIP' if existing_payment else 'WOULD_CREATE'
+    return json_response({'ok': True, 'verdict': verdict, 'steps': steps})
 
 
 # ============================================================================

@@ -109,7 +109,7 @@ initComponent('SyncPanel', () => {
       } catch (e) {
         console.error(`[POLL-ERROR] Job ${jobId}: ${e.message}`);
       }
-    }, 1000);
+    }, 10000);
 
     return poll;
   };

@@ -9,6 +9,8 @@ Implements member operations:
   2. Member card data for tooltips        GET /api/members/<id>/card
   3. Update family — add/remove family members
   4. Change district
+
+Note: Status management (lifetime/inactive/revert) is in api_members_status.py
 """
 
 from __future__ import annotations

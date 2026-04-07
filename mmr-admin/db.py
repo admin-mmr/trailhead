@@ -188,6 +188,17 @@ def db_cursor(dictionary: bool = True):
 # Simple query helpers (unchanged API, now pool-backed)
 # ---------------------------------------------------------------------------
 
+def _drain_results(cur) -> None:
+    """Consume all remaining result sets so the connection can be safely returned
+    to the pool. Required after CALL statements which produce multiple result sets;
+    leaving them unread prevents pool_reset_session from working, leaking the slot."""
+    try:
+        while cur.nextset():
+            pass
+    except Exception:
+        pass
+
+
 def query(sql: str, params=None, dictionary=True) -> List[Dict]:
     """Execute a SELECT and return all rows."""
     conn = get_conn()
@@ -195,6 +206,7 @@ def query(sql: str, params=None, dictionary=True) -> List[Dict]:
     try:
         cur.execute(sql, params or [])
         rows = cur.fetchall()
+        _drain_results(cur)  # consume any extra result sets (e.g. from CALL)
         return rows
     finally:
         cur.close()
@@ -205,16 +217,16 @@ def query(sql: str, params=None, dictionary=True) -> List[Dict]:
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Error while closing connection: {e}")
-            # Don't raise here, the main logic is already done
 
 
 def execute(sql: str, params=None) -> int:
-    """Execute an INSERT/UPDATE/DELETE and return affected row count."""
+    """Execute an INSERT/UPDATE/DELETE/CALL and return affected row count."""
     conn = get_conn()
     cur = conn.cursor()
     try:
         cur.execute(sql, params or [])
         affected = cur.rowcount
+        _drain_results(cur)  # consume any result sets from CALL statements
         conn.commit()
         return affected
     except Exception:
@@ -229,7 +241,6 @@ def execute(sql: str, params=None) -> int:
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Error while closing connection: {e}")
-            # Don't raise here, the main logic is already done
 
 
 def get_db_config() -> Dict[str, Any]:

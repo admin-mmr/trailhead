@@ -45,7 +45,7 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 - `generate_member_id()` — Auto-generate sequential IDs on member create
 - `sp_admin_update_member_status()` — Admin override with audit trail
 - `sp_error_summary_report(days_back)` — Error dashboard trends
-- `sp_link_transaction(tx, memberID, type, amount, admin, submissionID)` — Creates payment + updates gmail_transactions
+- `sp_link_transaction(tx, memberID, type, amount, submissionID)` — Creates payment + updates gmail_transactions (5 params, no admin)
 
 ## PAYMENT API (api_payments.py) — REBUILT 04-04
 **Architecture:** Pure MySQL, no Sheets sync. Three action modes: autoguess, manual approval, admin operations.
@@ -62,7 +62,7 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 1. Extract memberID from gmail memo (regex: `\bA\d{4}\b`)
 2. If found: Check renewal period (config table) + amount matches ($30 indiv, $50 family) + pending membership submission exists
 3. If no memberID: Try partial name match against all pending membership submissions
-4. Create payment via `sp_link_transaction(tx, memberID, 'Membership', amount, admin, submissionID|NULL)`
+4. Create payment via `sp_link_transaction(tx, memberID, 'Membership', amount, submissionID|NULL)`
 5. Triggers auto-update: members (status→active, expiration+1yr), submissions (status→approved), gmail_transactions (notes synced)
 
 **Manual Approval:** Admin enters memberID + select gmail_tx → create payment with auto-linked submission (if pending membership exists)

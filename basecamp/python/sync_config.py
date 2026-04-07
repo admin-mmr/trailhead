@@ -22,8 +22,11 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
+from sync_models import SYNC_CONFIG, get_config, list_configs
+from sync_diff import _normalize_for_diff, _row_changed, _filter_changed_rows
+from sync_batch import BATCH_SIZE, _log_sync_batch, _get_last_successful_batch, _batch_insert_rows, _normalize_sheet_rows, _prepare_sheet_rows
 
-def _truncate_log(obj: Any, max_str: int = 60, max_list: int = 3) -> Any:
+def _truncate_log(obj, max_str=60, max_list=3):
     """Recursively truncate long strings and lists for readable debug logging."""
     if isinstance(obj, dict):
         return {k: _truncate_log(v, max_str, max_list) for k, v in obj.items()}
@@ -35,392 +38,6 @@ def _truncate_log(obj: Any, max_str: int = 60, max_list: int = 3) -> Any:
     if isinstance(obj, str) and len(obj) > max_str:
         return obj[:max_str] + f'…[{len(obj)}]'
     return obj
-
-
-# Default batch size for sync operations
-BATCH_SIZE = 300  # Rows per batch (MySQL insert, GAS API call) — increased for faster syncs
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Centralized Sync Configuration
-# ─────────────────────────────────────────────────────────────────────────────
-
-SYNC_CONFIG = {
-    # ─────────────────────────────────────────────────────────────────────────
-    # Direction: Sheets → MySQL (Import)
-    # ─────────────────────────────────────────────────────────────────────────
-    'import_members': {
-        'table': 'members',
-        'sheet': 'Main',
-        'spreadsheet': 'MEMBERSHIP',
-        'key': 'MemberID',
-        'direction': 'sheet_to_mysql',
-        'mode': 'insert_only',  # Only insert new; GAS returns new MemberIDs only
-        'special_handling': 'send_existing_ids_to_gas',  # GAS filters to return only new
-        'columns': [
-            'MemberID', 'Status', 'Created', 'Expiration', 'Email', 'FirstName',
-            'LastName', 'Type', 'FamilyID', 'Gender', 'WeChatID', 'District',
-            'MembershipFeePaid', 'PaymentDate', 'PaymentTransaction', 'JoinYear',
-            'PhoneNumber', 'Notes', 'NYRRRunnerName', 'YearBorn', 'YearBornGuess',
-            'UpdatedAt'
-        ]
-    },
-
-    'import_transactions': {
-        'table': 'gmail_transactions',
-        'sheet': 'Active',
-        'spreadsheet': 'GMAIL',
-        'key': 'MessageId',
-        'direction': 'sheet_to_mysql',
-        'mode': 'upsert',  # Default: insert or update
-        'skip_timestamp_check': True,  # GAS timestamp may not be reliable; sync all rows
-        'columns': [
-            'Timestamp', 'Sender', 'Amount', 'Memo', 'TransactionDate',
-            'TransactionNumber', 'MessageId', 'Subject', 'OriginalMemo', 'Source'
-        ],
-        'map_fields': {'Source': 'PaymentMethod'}  # Rename Source → PaymentMethod for SQL
-    },
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Direction: MySQL → Sheets (Export)
-    # ─────────────────────────────────────────────────────────────────────────
-    'export_members': {
-        'table': 'members',
-        'sheet': 'SQL Members',
-        'spreadsheet': 'MEMBERSHIP',
-        'key': 'MemberID',
-        'direction': 'mysql_to_sheet',
-        'columns': [
-            'MemberID', 'Status', 'Created', 'Expiration', 'Email', 'FirstName',
-            'LastName', 'Type', 'FamilyID', 'Gender', 'WeChatID', 'District',
-            'MembershipFeePaid', 'PaymentDate', 'PaymentTransaction', 'JoinYear',
-            'PhoneNumber', 'Notes', 'NYRRRunnerName', 'YearBorn', 'YearBornGuess',
-            'UpdatedAt'
-        ]
-    },
-
-    'export_payments': {
-        'table': 'payments',
-        'sheet': 'SQL Payments',
-        'spreadsheet': 'MEMBERSHIP',
-        'key': 'PaymentID',
-        'direction': 'mysql_to_sheet',
-        'columns': [
-            'PaymentID', 'MemberID', 'PaymentDate', 'Amount', 'CreatedAt',
-            'TransactionNumber', 'SubmissionID', 'PaymentType', 'PaymentMethod',
-            'PayerName', 'MemoField', 'Last4Digits', 'ProcessedBy', 'Source', 'Notes'
-        ]
-    },
-
-    'export_submissions': {
-        'table': 'submissions',
-        'sheet': 'SQL Submissions',
-        'spreadsheet': 'MEMBERSHIP',
-        'key': 'SubmissionID',
-        'direction': 'mysql_to_sheet',
-        'columns': [
-            'CreatedAt', 'SubmissionID', 'Status', 'MemberID', 'SubmissionType',
-            'ExpiresAt', 'PaymentIntent', 'Amount', 'PaymentMethod', 'PayerName',
-            'PaymentDate', 'MemoField', 'Last4Digits', 'PaymentID', 'UpdatedByID',
-            'UpdatedAt'
-        ]
-    },
-
-    'export_transaction_meta': {
-        'table': 'gmail_transactions',
-        'sheet': 'Active',
-        'spreadsheet': 'GMAIL',
-        'key': 'TransactionNumber',
-        'direction': 'mysql_to_sheet',
-        'columns': ['TransactionNumber', 'MessageId', 'Notes', 'UpdatedAt']  # Include keys for matching + 2 columns to update
-    }
-}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Batch & Logging Functions (must be defined before generic_sync_runner)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _log_sync_batch(
-    db_execute,
-    job_id: str,
-    config_key: str,
-    direction: str,
-    batch_num: int,
-    batch_size: int,
-    total_rows: int,
-    status: str,
-    rows_inserted: int = 0,
-    rows_updated: int = 0,
-    rows_skipped: int = 0,
-    error_msg: str = None
-) -> None:
-    """Log a batch to sheets_sync_log for resume capability.
-
-    Note: Batch logging is optional and won't fail the sync if the job_id
-    doesn't exist in sync_jobs table (e.g., in test/ad-hoc environments).
-    """
-    try:
-        sql = """
-            INSERT INTO sheets_sync_log
-            (JobID, ConfigKey, Direction, BatchNumber, BatchSize, TotalRows, Status, RowsInserted, RowsUpdated, RowsSkipped, ErrorMessage, CompletedAt)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                Status = %s,
-                RowsInserted = %s,
-                RowsUpdated = %s,
-                RowsSkipped = %s,
-                ErrorMessage = %s,
-                CompletedAt = IF(%s = 'success', NOW(), CompletedAt)
-        """
-        completed_at = datetime.now() if status == 'success' else None
-        db_execute(sql, [
-            job_id, config_key, direction, batch_num, batch_size, total_rows,
-            status, rows_inserted, rows_updated, rows_skipped, error_msg, completed_at,
-            # Duplicate values for ON DUPLICATE KEY UPDATE
-            status, rows_inserted, rows_updated, rows_skipped, error_msg, status
-        ])
-        logger.debug(f"Logged batch {batch_num} for {job_id}")
-    except Exception as e:
-        # Foreign key constraint error is expected if job_id doesn't exist in sync_jobs
-        if '23000' in str(e) or 'foreign key' in str(e).lower():
-            logger.debug(f"Batch logging skipped (job {job_id} not in sync_jobs): {str(e)}")
-        else:
-            logger.warning(f"Failed to log sync batch: {str(e)}")
-
-
-def _get_last_successful_batch(db_query, job_id: str, config_key: str) -> int:
-    """Get the last successfully completed batch number for resume."""
-    try:
-        result = db_query("""
-            SELECT MAX(BatchNumber) as LastBatch
-            FROM sheets_sync_log
-            WHERE JobID = %s AND ConfigKey = %s AND Status = 'success'
-        """, [job_id, config_key])
-        if result and result[0].get('LastBatch') is not None:
-            return result[0]['LastBatch'] + 1  # Resume from next batch
-        return 0  # Start from beginning
-    except Exception as e:
-        logger.warning(f"Failed to check last batch: {str(e)}")
-        return 0
-
-
-def _batch_insert_rows(
-    db_execute,
-    table: str,
-    rows: List[Dict[str, Any]],
-    pk_field: str,
-    mode: str = 'upsert',
-    batch_size: int = BATCH_SIZE
-) -> Tuple[int, int, int]:
-    """
-    Batch insert/upsert rows into MySQL.
-
-    Args:
-        db_execute: Callable for SQL execution
-        table: MySQL table name
-        rows: List of row dicts to insert
-        pk_field: Primary key field name
-        mode: 'insert_only' or 'upsert'
-        batch_size: Rows per INSERT statement
-
-    Returns:
-        (inserted, updated, skipped)
-    """
-    inserted, updated, skipped = 0, 0, 0
-
-    for batch_idx in range(0, len(rows), batch_size):
-        batch = rows[batch_idx:batch_idx + batch_size]
-        if not batch:
-            continue
-
-        try:
-            # Log batch details for debugging
-            batch_num = batch_idx // batch_size
-            col_keys = list(batch[0].keys())
-            logger.debug(f"Batch {batch_num}: table={table}, pk={pk_field}, mode={mode}, cols={col_keys}")
-            if mode == 'insert_only':
-                # INSERT IGNORE: skip if PK exists
-                col_names = ", ".join(batch[0].keys())
-                placeholders = ", ".join(["%s"] * len(batch[0]))
-
-                # Build multi-row VALUES clause
-                values_clauses = []
-                all_values = []
-                for row in batch:
-                    values_clauses.append(f"({placeholders})")
-                    all_values.extend(row.values())
-
-                sql = f"""
-                    INSERT IGNORE INTO {table} ({col_names})
-                    VALUES {", ".join(values_clauses)}
-                """
-                logger.info(f"Batch {batch_num}: Executing INSERT IGNORE for {len(batch)} rows into {table}")
-                logger.debug(f"Batch {batch_num}: SQL={sql[:250]}")
-                res = db_execute(sql, all_values)
-                inserted += res  # INSERT IGNORE returns affected rows
-                skipped += len(batch) - res  # Remainder were duplicates
-
-            else:  # upsert
-                col_names = ", ".join(batch[0].keys())
-                placeholders = ", ".join(["%s"] * len(batch[0]))
-
-                # Build multi-row VALUES clause
-                values_clauses = []
-                all_values = []
-                for row in batch:
-                    values_clauses.append(f"({placeholders})")
-                    all_values.extend(row.values())
-
-                # ON DUPLICATE KEY UPDATE: update non-PK columns
-                # Use VALUES(col) syntax — compatible with MySQL 5.7
-                update_stmt = ", ".join(
-                    [f"{c}=VALUES({c})" for c in batch[0].keys() if c != pk_field]
-                )
-
-                sql = f"""
-                    INSERT INTO {table} ({col_names})
-                    VALUES {", ".join(values_clauses)}
-                    ON DUPLICATE KEY UPDATE {update_stmt}
-                """
-                logger.debug(f"Batch {batch_num}: UPSERT SQL (first 300 chars): {sql[:300]}...")
-                logger.debug(f"Batch {batch_num}: Columns being inserted: {col_names}")
-                res = db_execute(sql, all_values)
-                # MySQL returns: affected_rows (inserts + updates)
-                # For simplicity: assume half are inserts, half are updates (approximate)
-                inserted += len(batch)  # Assume all are at least "affected"
-
-        except Exception as e:
-            logger.error(f"Batch {batch_num}: {table} insert FAILED - {str(e)}")
-            logger.error(f"Batch {batch_num}: Attempted columns: {col_names[:200]}")
-            skipped += len(batch)
-
-    return inserted, updated, skipped
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper Functions (must be defined before generic_sync_runner)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _convert_iso_to_mysql_datetime(value: Any) -> Any:
-    """
-    Convert ISO 8601 datetime strings to MySQL datetime format (YYYY-MM-DD HH:MM:SS).
-
-    Handles formats like:
-    - 2026-04-04T11:57:01.000Z
-    - 2026-04-04T11:57:01Z
-    - 2026-04-04T11:57:01
-
-    Returns original value if not a datetime string.
-    """
-    if not isinstance(value, str):
-        return value
-
-    # Check if it looks like an ISO 8601 datetime
-    if 'T' not in value:
-        return value
-
-    try:
-        # Parse ISO 8601 format
-        if value.endswith('Z'):
-            # Remove Z and parse
-            dt = datetime.fromisoformat(value[:-1])
-        else:
-            dt = datetime.fromisoformat(value)
-        # Return MySQL format: YYYY-MM-DD HH:MM:SS
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
-    except (ValueError, AttributeError):
-        # Not a datetime, return as-is
-        return value
-
-
-def _normalize_sheet_rows(raw_rows: List, cols: List[str]) -> List[Dict[str, Any]]:
-    """
-    Convert raw Sheets data (either list-of-lists or list-of-dicts) to list-of-dicts.
-
-    Args:
-        raw_rows: Data from GAS webhook — either List[List] or List[Dict]
-        cols: Column names (used to map list indices to dict keys if needed)
-
-    Returns:
-        List[Dict] where each dict has keys from cols
-    """
-    if not raw_rows:
-        return []
-
-    # Log first row type for debugging
-    if raw_rows:
-        logger.debug(f"First raw_row type: {type(raw_rows[0])}, value: {raw_rows[0]}")
-
-    normalized = []
-    for idx, row in enumerate(raw_rows):
-        try:
-            if isinstance(row, dict):
-                # Already a dict — just ensure all cols are present
-                normalized.append(row)
-            elif isinstance(row, (list, tuple)):
-                # List format — map indices to column names
-                row_dict = {}
-                for i, col in enumerate(cols):
-                    row_dict[col] = row[i] if i < len(row) else None
-                normalized.append(row_dict)
-            else:
-                # Unknown format — skip or log warning
-                logger.warning(f"Row {idx}: unexpected type {type(row)}, skipping")
-        except Exception as e:
-            logger.error(f"Error normalizing row {idx}: {str(e)}")
-
-    logger.debug(f"Normalized {len(normalized)} rows from {len(raw_rows)} raw rows")
-    return normalized
-
-
-def _prepare_sheet_rows(db_rows: List[Dict], cfg: Dict) -> List[List[Any]]:
-    """
-    Convert MySQL rows to Sheets format (list of lists).
-    Applies reverse field mappings if needed.
-    Handles datetime/date/time objects by converting to ISO format strings.
-    """
-    if not db_rows:
-        return []
-
-    cols = cfg['columns']
-    map_fields = cfg.get('map_fields', {})
-    reverse_map = {v: k for k, v in map_fields.items()}  # Reverse: SQL col → Sheet col
-
-    sheet_rows = []
-    for row in db_rows:
-        sheet_row = []
-        for col in cols:
-            # Use reverse mapping: if this Sheet col was mapped from SQL, use the original
-            sql_col = reverse_map.get(col, col)
-            val = row.get(sql_col, '')
-
-            # Serialize complex types for Sheets
-            if isinstance(val, datetime):
-                # Convert datetime to ISO format string (e.g., "2026-04-04T05:42:53")
-                val = val.isoformat()
-            elif isinstance(val, date):
-                # Convert date to ISO format string (e.g., "2026-04-04")
-                val = val.isoformat()
-            elif isinstance(val, time):
-                # Convert time to ISO format string (e.g., "05:42:53")
-                val = val.isoformat()
-            elif isinstance(val, Decimal):
-                # Convert Decimal to string or float (Decimal is not JSON serializable)
-                val = float(val)
-            elif isinstance(val, (dict, list)):
-                # Convert dict/list to string representation
-                val = str(val)
-
-            sheet_row.append(val if val is not None else '')
-        sheet_rows.append(sheet_row)
-
-    return sheet_rows
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Generic Sync Runner
-# ─────────────────────────────────────────────────────────────────────────────
 
 def generic_sync_runner(
     job_id: str,
@@ -544,9 +161,11 @@ def generic_sync_runner(
             # export_transaction_meta sends dicts (not lists) so GAS can match by named key
             if config_key == 'export_transaction_meta':
                 def _serialize(v):
-                    if isinstance(v, datetime): return v.isoformat()
-                    if isinstance(v, date): return v.isoformat()
-                    if isinstance(v, Decimal): return float(v)
+                    if isinstance(v, datetime): return v.strftime('%Y-%m-%d %H:%M:%S')
+                    if isinstance(v, date): return v.strftime('%Y-%m-%d')
+                    if isinstance(v, Decimal):
+                        f = float(v)
+                        return int(f) if f == int(f) else f
                     return v if v is not None else ''
                 sheet_rows = [
                     {col: _serialize(row.get(col)) for col in cfg['columns']}
@@ -737,8 +356,24 @@ def generic_sync_runner(
                 if row_idx == 0:
                     logger.debug(f"[JOB {job_id}] First mapped row keys: {list(mapped_row.keys())}")
 
+            # Diff filter: skip rows that are identical to what's already in MySQL
+            skipped_unchanged = 0
+            if cfg.get('skip_if_unchanged') and sync_mode == 'upsert':
+                sql_cols = [cfg.get('map_fields', {}).get(c, c) for c in cols]
+                mapped_rows, skipped_unchanged = _filter_changed_rows(
+                    db_query, table, pk, mapped_rows, sql_cols, job_id
+                )
+                update_job(job_id, message=f"Diff complete: {len(mapped_rows)} rows changed, {skipped_unchanged} unchanged (skipped)")
+
             action_verb = "Inserting" if sync_mode == 'insert_only' else "Upserting"
             total_rows = len(mapped_rows)
+            if total_rows == 0:
+                logger.info(f"[{job_id}] No changes detected — skipping DB write entirely")
+                return {
+                    'status': 'success',
+                    'message': f'No changes: all {skipped_unchanged} rows already up to date',
+                    'inserted': 0, 'updated': 0, 'skipped': skipped_unchanged
+                }
             update_job(job_id, message=f"{action_verb} {total_rows} rows into {table} (batched)...")
 
             # Batch insert/upsert
@@ -799,24 +434,19 @@ def generic_sync_runner(
                         # So if res=280 and batch_size=280: could be all inserts or mix of both
                         # We can't distinguish without querying, so log for inspection
 
-                        # DIAGNOSTIC: Check if we can determine inserts vs updates
+                        # Count pre-existing keys in one query (IN clause)
                         try:
-                            # Count pre-existing keys in this batch
-                            existing_count = 0
-                            for row in batch:
-                                pk_val = row[pk]
-                                check_sql = f"SELECT COUNT(*) as cnt FROM {table} WHERE {pk}=%s"
-                                check_res = db_query(check_sql, [pk_val])
-                                if check_res and check_res[0].get('cnt', 0) > 0:
-                                    existing_count += 1
-
+                            pk_vals = [row[pk] for row in batch]
+                            placeholders_in = ", ".join(["%s"] * len(pk_vals))
+                            check_sql = f"SELECT COUNT(*) as cnt FROM {table} WHERE {pk} IN ({placeholders_in})"
+                            check_res = db_query(check_sql, pk_vals)
+                            existing_count = check_res[0].get('cnt', 0) if check_res else 0
                             batch_updated = existing_count
                             batch_inserted = len(batch) - existing_count
                             batch_skipped = 0
-                            logger.info(f"Batch {batch_num}: DIAGNOSTIC — pre-existing keys={existing_count}, new={batch_inserted}, total_batch={len(batch)}")
+                            logger.info(f"Batch {batch_num}: pre-existing={existing_count}, new={batch_inserted}, total={len(batch)}")
                         except Exception as diag_e:
-                            logger.warning(f"Batch {batch_num}: diagnostic check failed: {str(diag_e)}, falling back to res={res}")
-                            # Fallback: assume res is accurate count from MySQL
+                            logger.warning(f"Batch {batch_num}: insert/update count check failed: {str(diag_e)}, using res={res}")
                             batch_inserted = res
                             batch_updated = 0
                             batch_skipped = 0
@@ -899,11 +529,3 @@ def generic_sync_runner(
         }
 
 
-def get_config(config_key: str) -> Optional[Dict[str, Any]]:
-    """Retrieve a sync config by key."""
-    return SYNC_CONFIG.get(config_key)
-
-
-def list_configs() -> List[str]:
-    """List all available sync config keys."""
-    return list(SYNC_CONFIG.keys())

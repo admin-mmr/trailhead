@@ -10,12 +10,23 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <script src="/static/utils.js"></script>
   <script src="/static/ManualEventMatchModal.js"></script>
+  <script type="text/babel" src="/static/PaymentsHelpers.js"></script>
+  <script type="text/babel" src="/static/MemberTooltip.js"></script>
+  <script type="text/babel" src="/static/GmailQuickApprove.js"></script>
+  <script type="text/babel" src="/static/PaymentsSubPanels.js"></script>
   <script type="text/babel" src="/static/PaymentsPanel.js"></script>
   <script src="/static/tableGroups.js"></script>
   <script src="/static/component-loader.js"></script>
+  <script type="text/babel" src="/static/DistrictExport.js"></script>
+  <script type="text/babel" src="/static/DistrictMemberTable.js"></script>
+  <script type="text/babel" src="/static/DistrictMemberFilters.js"></script>
   <script type="text/babel" src="/static/DistrictMembersPanel.js"></script>
+  <script type="text/babel" src="/static/AuditResultsTable.js"></script>
+  <script type="text/babel" src="/static/AuditSummaryBar.js"></script>
   <script type="text/babel" src="/static/AuditPanel.js"></script>
+  <script type="text/babel" src="/static/ReconcilePanel.js"></script>
   <script type="text/babel" src="/static/Members.js"></script>
+  <script type="text/babel" src="/static/MembersStatusPanel.js"></script>
   <!-- External components (extracted for modularity) -->
   <script type="text/babel" src="/templates/dashboard-panel.html"></script>
   <script type="text/babel" src="/templates/python-code-editor.html"></script>
@@ -304,7 +315,7 @@ const App = () => {
               <button className={`tab ${view === 'payments' || view === 'autoguess_log' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
-              <button className={`tab ${view === 'members' || view === 'district' || view === 'audit' ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
+              <button className={`tab ${['members', 'district', 'audit', 'reconcile', 'status'].includes(view) ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
               <button className={`tab ${view === 'sync' ? 'active' : ''}`} onClick={() => setView('sync')}>Sync with Google</button>
@@ -328,8 +339,8 @@ const App = () => {
             </div>
           ) : null}
 
-          {/* Members sub-tabs: Members, Members by District, Renewal Audit */}
-          {view === 'members' || view === 'district' || view === 'audit' ? (
+          {/* Members sub-tabs */}
+          {['members', 'district', 'audit', 'reconcile', 'status'].includes(view) ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
               {(userRole === 'super_admin' || userRole === 'admin') && (
                 <button className={`tab ${view === 'members' ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
@@ -337,6 +348,12 @@ const App = () => {
               <button className={`tab ${view === 'district' ? 'active' : ''}`} onClick={() => setView('district')}>Members by District</button>
               {(userRole === 'super_admin' || userRole === 'admin') && (
                 <button className={`tab ${view === 'audit' ? 'active' : ''}`} onClick={() => setView('audit')}>🔍 Renewal Audit</button>
+              )}
+              {(userRole === 'super_admin' || userRole === 'admin') && (
+                <button className={`tab ${view === 'reconcile' ? 'active' : ''}`} onClick={() => setView('reconcile')}>💳 Reconcile Payments</button>
+              )}
+              {(userRole === 'super_admin' || userRole === 'admin') && (
+                <button className={`tab ${view === 'status' ? 'active' : ''}`} onClick={() => setView('status')}>👤 Member Status</button>
               )}
             </div>
           ) : null}
@@ -368,6 +385,8 @@ const App = () => {
       {view === 'members' && window.MembersPanel && React.createElement(window.MembersPanel)}
       {view === 'district' && window.DistrictMembersPanel && React.createElement(window.DistrictMembersPanel)}
       {view === 'audit' && window.AuditPanel && React.createElement(window.AuditPanel)}
+      {view === 'reconcile' && window.ReconcilePanel && React.createElement(window.ReconcilePanel)}
+      {view === 'status' && window.MembersStatusPanel && React.createElement(window.MembersStatusPanel)}
       {view === 'sync' && window.SyncPanel && React.createElement(window.SyncPanel)}
       {view === 'tables' && window.TableBrowser && React.createElement(window.TableBrowser)}
       {view === 'log' && window.ProcessingLog && React.createElement(window.ProcessingLog)}
