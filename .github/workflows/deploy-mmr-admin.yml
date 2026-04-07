@@ -1,13 +1,15 @@
 name: Deploy MMR Admin to Azure App Service
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'mmr-admin/**'
-      - 'basecamp/python/**'
-      - '.github/workflows/deploy-mmr-admin.yml'
+  # DISABLED for April. 
+  # push:
+  #  branches:
+  #    - main
+  #  paths:
+  #    - 'mmr-admin/**'
+  #    - 'basecamp/python/**'
+  #    - '.github/workflows/deploy-mmr-admin.yml'
+  workflow_dispatch:
 
 jobs:
   deploy:
