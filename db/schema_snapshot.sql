@@ -436,27 +436,734 @@ v_unresolved_errors	select `mmrdb`.`error_context`.`ErrorContextID` AS `ErrorCon
 section
 === 6. ROUTINES ===
 type	name	return_type	body
-PROCEDURE	generate_member_id		BEGIN\n    DECLARE max_num INT DEFAULT 0;\n    START TRANSACTION;\n        SELECT COALESCE(MAX(CAST(SUBSTRING(MemberID, 2) AS UNSIGNED)), 0) INTO max_num FROM members FOR UPDATE;\n        SET new_id = CONCAT('A', LPAD(max_num + 1, 4, '0'));\n    COMMIT;\nEND
-PROCEDURE	sp_admin_update_member_status		BEGIN\n    DECLARE v_FamilyID VARCHAR(10);\n    DECLARE v_OldStatus VARCHAR(20);\n    DECLARE v_ImpactedIDs TEXT;\n    DECLARE v_CalculatedAction VARCHAR(50);\n\n    SELECT Status, FamilyID INTO v_OldStatus, v_FamilyID FROM members WHERE MemberID = p_MemberID;\n\n    SET v_CalculatedAction = CASE\n        WHEN p_NewStatus = 'lifetime' THEN 'LIFETIME_SET'\n        WHEN v_OldStatus = 'expired' AND p_NewStatus = 'inactive' THEN 'INACTIVE_SET'\n        WHEN p_NewExpiration IS NOT NULL THEN 'EXPIRATION_OVERRIDE'\n        ELSE 'STATUS_CHANGE'\n    END;\n\n    IF v_FamilyID IS NOT NULL THEN\n        SELECT GROUP_CONCAT(MemberID) INTO v_ImpactedIDs FROM members WHERE FamilyID = v_FamilyID;\n    ELSE\n        SET v_ImpactedIDs = p_MemberID;\n    END IF;\n\n    SET @internal_proc = 1;\n\n    UPDATE members\n    SET\n        Status = IFNULL(p_NewStatus, Status),\n        Expiration = IFNULL(p_NewExpiration, Expiration),\n        Notes = CONCAT(IFNULL(Notes, ''), '\n--- Admin Override (', p_AdminEmail, ' ', NOW(), ') ---\n', p_NewNotes)\n    WHERE (v_FamilyID IS NOT NULL AND FamilyID = v_FamilyID) OR MemberID = p_MemberID;\n\n    SET @internal_proc = NULL;\n\n    INSERT INTO admin_member_overrides (\n        AdminEmail, TargetMemberID, ImpactedMemberIDs, ActionType, OldValue, NewValue, AdminNotes\n    )\n    VALUES (\n        p_AdminEmail, p_MemberID, v_ImpactedIDs, v_CalculatedAction, v_OldStatus, IFNULL(p_NewStatus, v_OldStatus), p_NewNotes\n    );\nEND
-PROCEDURE	sp_error_summary_report		BEGIN\n  \n  SELECT\n    `ErrorCode`,\n    `TableName`,\n    `ColumnName`,\n    `Severity`,\n    `Status`,\n    COUNT(*) as occurrence_count,\n    MIN(`FirstOccurrence`) as first_seen,\n    MAX(`LastOccurrence`) as last_seen,\n    GROUP_CONCAT(DISTINCT `OffendingRowID` SEPARATOR ', ') as sample_row_ids,\n    MAX(`SuggestedFix`) as recommended_fix\n  FROM `error_context`\n  WHERE `DetectedAt` >= NOW() - INTERVAL days_back DAY\n  GROUP BY `ErrorCode`, `Severity`, `Status`\n  ORDER BY occurrence_count DESC, `Severity` DESC;\nEND
-PROCEDURE	sp_link_transaction		BEGIN\n    -- 1. Validation: Ensure the transaction exists in Gmail records\n    IF NOT EXISTS (SELECT 1 FROM gmail_transactions WHERE TransactionNumber = p_transaction_number) THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: TransactionNumber not found in gmail_transactions.';\n    END IF;\n\n    -- 2. Validation: Ensure the member exists\n    IF NOT EXISTS (SELECT 1 FROM members WHERE MemberID = p_member_id) THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: MemberID not found.';\n    END IF;\n\n    -- 3. Create the payment record.\n    -- This single insert will trigger:\n    --   - trg_payments_auto_fill: Pulls Date/Sender/Memo from Gmail\n    --   - trg_payments_sync_membership_only: Updates member status/expiration/fee\n    --   - trg_payments_approve_submission: Marks web form as 'approved'\n    --   - trg_payments_sync_to_gmail_on_change: Updates the Notes on the Gmail record\n    INSERT INTO `payments` (\n        `PaymentID`,\n        `MemberID`,\n        `TransactionNumber`,\n        `PaymentType`,\n        `Amount`,\n        `SubmissionID`,\n        `UpdatedAt`\n    ) VALUES (\n        REPLACE(UUID(), '-', ''), -- Generate a clean ID\n        p_member_id,\n        p_transaction_number,\n        p_payment_type,\n        p_amount,\n        p_submission_id,\n        NOW()\n    );\n\nEND
-PROCEDURE	sp_reconcile_member_payments		BEGIN\n    DECLARE v_start_date DATE;\n    DECLARE v_target_expiration DATE;\n\n    -- Fetch config\n    SELECT CAST(ConfigValue AS DATE) INTO v_start_date FROM config WHERE ConfigKey = 'MembershipCollectionStart';\n    SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration FROM config WHERE ConfigKey = 'MembershipYearEnd';\n\n    DROP TEMPORARY TABLE IF EXISTS tmp_to_update;\n    CREATE TEMPORARY TABLE tmp_to_update AS\n    SELECT DISTINCT\n        m.MemberID,\n        m.FamilyID,\n        p.TransactionNumber AS actual_tx,\n        p.PaymentDate AS actual_date,\n        p.Amount AS actual_amount\n    FROM members m\n    INNER JOIN payments p ON m.MemberID = p.MemberID\n    WHERE LOWER(p.PaymentType) LIKE '%membership%'\n      AND p.PaymentDate >= v_start_date\n      AND m.Status <> 'lifetime'\n      AND (m.Expiration <> v_target_expiration OR m.PaymentTransaction <> p.TransactionNumber);\n\n    IF p_dry_run THEN\n        SELECT 'DRY RUN' as Status, t.* FROM tmp_to_update t;\n    ELSE\n        -- THE FIX: Start a formal transaction\n        START TRANSACTION;\n        \n        SET @internal_proc = 1;\n\n        -- Step A: Update Primary Payers\n        UPDATE members m\n        INNER JOIN tmp_to_update t ON m.MemberID = t.MemberID\n        SET \n            m.Status = 'active',\n            m.Expiration = v_target_expiration,\n            m.PaymentTransaction = t.actual_tx,\n            m.PaymentDate = t.actual_date,\n            m.MembershipFeePaid = t.actual_amount,\n            m.UpdatedAt = NOW();\n\n        -- Step B: Update Family (using a subquery to avoid join-locking)\n        UPDATE members \n        SET \n            Status = 'active',\n            Expiration = v_target_expiration,\n            UpdatedAt = NOW()\n        WHERE FamilyID IN (SELECT DISTINCT FamilyID FROM tmp_to_update WHERE FamilyID <> '' AND FamilyID IS NOT NULL);\n\n        COMMIT;\n        SET @internal_proc = NULL;\n        \n        SELECT 'SUCCESS' as Status, t.* FROM tmp_to_update t;\n    END IF;\nEND
-PROCEDURE	sp_renewal_audit		BEGIN\n  \n  DROP TEMPORARY TABLE IF EXISTS tmp_audit_results;\n  DROP TEMPORARY TABLE IF EXISTS tmp_matching_txns;\n\n  \n  CREATE TEMPORARY TABLE tmp_audit_results (\n    message_id VARCHAR(100),\n    amount DECIMAL(10,2),\n    transaction_date DATE,\n    sender VARCHAR(255),\n    memo TEXT,\n    member_id VARCHAR(10),\n    member_name VARCHAR(255),\n    current_expiration DATE,\n    target_expiration DATE,\n    status_match VARCHAR(20),\n    trace_route VARCHAR(100),\n    family_members_checked INT DEFAULT NULL,\n    family_all_match CHAR(1) DEFAULT NULL\n  );\n\n  \n  CREATE TEMPORARY TABLE tmp_matching_txns (\n    message_id VARCHAR(100),\n    amount DECIMAL(10,2),\n    transaction_date DATE,\n    transaction_number VARCHAR(100),\n    sender VARCHAR(255),\n    memo TEXT,\n    original_memo TEXT,\n    traced BOOLEAN DEFAULT FALSE,\n    member_id VARCHAR(10)\n  );\n\n  \n  INSERT INTO tmp_matching_txns (message_id, amount, transaction_date, transaction_number, sender, memo, original_memo)\n  SELECT MessageId, Amount, TransactionDate, TransactionNumber, Sender, Memo, OriginalMemo\n  FROM gmail_transactions\n  WHERE TransactionDate BETWEEN p_start_date AND p_end_date\n    AND Amount IN (30.00, 50.00);\n\n  \n  UPDATE tmp_matching_txns txn\n  INNER JOIN members m ON txn.transaction_number = m.PaymentTransaction\n  SET txn.member_id = m.MemberID, txn.traced = TRUE;\n\n  \n  UPDATE tmp_matching_txns txn\n  INNER JOIN payments p ON txn.transaction_number = p.TransactionNumber\n  INNER JOIN members m ON p.MemberID = m.MemberID\n  SET txn.member_id = m.MemberID, txn.traced = TRUE\n  WHERE txn.traced = FALSE;\n\n  \n  INSERT INTO tmp_audit_results (\n    message_id, amount, transaction_date, sender, memo,\n    member_id, member_name, current_expiration, target_expiration,\n    status_match, trace_route\n  )\n  SELECT\n    txn.message_id, txn.amount, txn.transaction_date, txn.sender,\n    COALESCE(txn.memo, txn.original_memo, ''),\n    txn.member_id, CONCAT(m.FirstName, ' ', m.LastName),\n    m.Expiration, p_target_expiration,\n    CASE\n      WHEN m.Expiration IS NULL THEN 'ERROR'\n      WHEN m.Expiration >= p_target_expiration THEN 'MATCH'\n      ELSE 'MISMATCH'\n    END,\n    CASE\n      WHEN m.PaymentTransaction = txn.transaction_number THEN 'members.PaymentTransaction'\n      WHEN txn.traced THEN 'payments.TransactionNumber'\n      ELSE 'UNKNOWN'\n    END\n  FROM tmp_matching_txns txn\n  INNER JOIN members m ON txn.member_id = m.MemberID\n  WHERE (p_membership_type = 'both')\n     OR (p_membership_type = 'individual' AND LOWER(m.Type) = 'individual')\n     OR (p_membership_type = 'family' AND LOWER(m.Type) = 'family');\n\n  \n  INSERT INTO tmp_audit_results (message_id, amount, transaction_date, sender, memo, status_match, trace_route)\n  SELECT message_id, amount, transaction_date, sender, COALESCE(memo, original_memo, ''), 'NOT TRACED', 'NOT FOUND'\n  FROM tmp_matching_txns WHERE member_id IS NULL;\n\n  \n  UPDATE tmp_audit_results audit\n  INNER JOIN members m ON audit.member_id = m.MemberID\n  SET\n    audit.family_members_checked = (SELECT COUNT(*) FROM members m2 WHERE m2.FamilyID = m.FamilyID),\n    audit.family_all_match = (\n        SELECT IF(MIN(m3.Expiration >= p_target_expiration) = 1, 'Y', 'N')\n        FROM members m3 WHERE m3.FamilyID = m.FamilyID\n    )\n  WHERE m.FamilyID IS NOT NULL;\n\n  \n  SELECT * FROM tmp_audit_results \n  WHERE (p_only_mismatches IS FALSE OR status_match <> 'MATCH')\n  ORDER BY \n    FIELD(status_match, 'MISMATCH', 'NOT TRACED', 'MATCH', 'ERROR'),\n    transaction_date DESC;\n\n  DROP TEMPORARY TABLE IF EXISTS tmp_audit_results;\n  DROP TEMPORARY TABLE IF EXISTS tmp_matching_txns;\nEND
-PROCEDURE	sp_renewal_audit_default		BEGIN\n    CALL sp_renewal_audit('2025-10-01', CURDATE(), '2027-03-31', 'both', TRUE);\nEND
-PROCEDURE	sp_search_members_advanced		BEGIN\n    DECLARE v_done INT DEFAULT 0;\n    DECLARE v_term VARCHAR(255);\n    DECLARE v_where_clause TEXT DEFAULT '1=1';\n    DECLARE v_remaining_query VARCHAR(255);\n    \n    SET v_remaining_query = TRIM(p_search_string);\n    WHILE CHAR_LENGTH(v_remaining_query) > 0 AND v_done = 0 DO\n        SET v_term = SUBSTRING_INDEX(v_remaining_query, ' ', 1);\n        IF LOCATE(' ', v_remaining_query) > 0 THEN\n            SET v_remaining_query = TRIM(SUBSTRING(v_remaining_query, LOCATE(' ', v_remaining_query) + 1));\n        ELSE\n            SET v_remaining_query = '';\n            SET v_done = 1;\n        END IF;\n        SET v_where_clause = CONCAT(v_where_clause, ' AND (',\n            'FirstName LIKE ', QUOTE(CONCAT('%', v_term, '%')), \n            ' OR LastName LIKE ', QUOTE(CONCAT('%', v_term, '%')), \n            ' OR Email LIKE ', QUOTE(CONCAT('%', v_term, '%')), \n            ' OR Notes LIKE ', QUOTE(CONCAT('%', v_term, '%')), \n            ' OR NYRRunnerName LIKE ', QUOTE(CONCAT('%', v_term, '%')), \n            ' OR WeChatID LIKE ', QUOTE(CONCAT('%', v_term, '%')), \n            ' OR MemberID LIKE ', QUOTE(CONCAT('%', v_term, '%')), \n            ')');\n    END WHILE;\n    SET @final_query = CONCAT(\n        'SELECT MemberID, FirstName, LastName, Email, Type, Status, Expiration, WeChatID, Notes, NYRRRunnerName ',\n        'FROM members ',\n        'WHERE ', v_where_clause, ' ',\n        'ORDER BY FirstName, LastName ',\n        'LIMIT ', p_limit\n    );\n    PREPARE stmt FROM @final_query;\n    EXECUTE stmt;\n    DEALLOCATE PREPARE stmt;\nEND
+PROCEDURE	generate_member_id		BEGIN
+    DECLARE max_num INT DEFAULT 0;
+    START TRANSACTION;
+        SELECT COALESCE(MAX(CAST(SUBSTRING(MemberID, 2) AS UNSIGNED)), 0) INTO max_num FROM members FOR UPDATE;
+        SET new_id = CONCAT('A', LPAD(max_num + 1, 4, '0'));
+    COMMIT;
+END
+PROCEDURE	sp_admin_update_member_status		BEGIN
+    DECLARE v_FamilyID VARCHAR(10);
+    DECLARE v_OldStatus VARCHAR(20);
+    DECLARE v_ImpactedIDs TEXT;
+    DECLARE v_CalculatedAction VARCHAR(50);
+
+    SELECT Status, FamilyID INTO v_OldStatus, v_FamilyID FROM members WHERE MemberID = p_MemberID;
+
+    SET v_CalculatedAction = CASE
+        WHEN p_NewStatus = 'lifetime' THEN 'LIFETIME_SET'
+        WHEN v_OldStatus = 'expired' AND p_NewStatus = 'inactive' THEN 'INACTIVE_SET'
+        WHEN p_NewExpiration IS NOT NULL THEN 'EXPIRATION_OVERRIDE'
+        ELSE 'STATUS_CHANGE'
+    END;
+
+    IF v_FamilyID IS NOT NULL THEN
+        SELECT GROUP_CONCAT(MemberID) INTO v_ImpactedIDs FROM members WHERE FamilyID = v_FamilyID;
+    ELSE
+        SET v_ImpactedIDs = p_MemberID;
+    END IF;
+
+    SET @internal_proc = 1;
+
+    UPDATE members
+    SET
+        Status = IFNULL(p_NewStatus, Status),
+        Expiration = IFNULL(p_NewExpiration, Expiration),
+        Notes = CONCAT(IFNULL(Notes, ''), '
+--- Admin Override (', p_AdminEmail, ' ', NOW(), ') ---
+', p_NewNotes)
+    WHERE (v_FamilyID IS NOT NULL AND FamilyID = v_FamilyID) OR MemberID = p_MemberID;
+
+    SET @internal_proc = NULL;
+
+    INSERT INTO admin_member_overrides (
+        AdminEmail, TargetMemberID, ImpactedMemberIDs, ActionType, OldValue, NewValue, AdminNotes
+    )
+    VALUES (
+        p_AdminEmail, p_MemberID, v_ImpactedIDs, v_CalculatedAction, v_OldStatus, IFNULL(p_NewStatus, v_OldStatus), p_NewNotes
+    );
+END
+PROCEDURE	sp_error_summary_report		BEGIN
+  
+  SELECT
+    `ErrorCode`,
+    `TableName`,
+    `ColumnName`,
+    `Severity`,
+    `Status`,
+    COUNT(*) as occurrence_count,
+    MIN(`FirstOccurrence`) as first_seen,
+    MAX(`LastOccurrence`) as last_seen,
+    GROUP_CONCAT(DISTINCT `OffendingRowID` SEPARATOR ', ') as sample_row_ids,
+    MAX(`SuggestedFix`) as recommended_fix
+  FROM `error_context`
+  WHERE `DetectedAt` >= NOW() - INTERVAL days_back DAY
+  GROUP BY `ErrorCode`, `Severity`, `Status`
+  ORDER BY occurrence_count DESC, `Severity` DESC;
+END
+PROCEDURE	sp_link_transaction		BEGIN
+    -- 1. Validation: Ensure the transaction exists in Gmail records
+    IF NOT EXISTS (SELECT 1 FROM gmail_transactions WHERE TransactionNumber = p_transaction_number) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: TransactionNumber not found in gmail_transactions.';
+    END IF;
+
+    -- 2. Validation: Ensure the member exists
+    IF NOT EXISTS (SELECT 1 FROM members WHERE MemberID = p_member_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: MemberID not found.';
+    END IF;
+
+    -- 3. Create the payment record.
+    -- This single insert will trigger:
+    --   - trg_payments_auto_fill: Pulls Date/Sender/Memo from Gmail
+    --   - trg_payments_sync_membership_only: Updates member status/expiration/fee
+    --   - trg_payments_approve_submission: Marks web form as 'approved'
+    --   - trg_payments_sync_to_gmail_on_change: Updates the Notes on the Gmail record
+    INSERT INTO `payments` (
+        `PaymentID`,
+        `MemberID`,
+        `TransactionNumber`,
+        `PaymentType`,
+        `Amount`,
+        `SubmissionID`,
+        `UpdatedAt`
+    ) VALUES (
+        REPLACE(UUID(), '-', ''), -- Generate a clean ID
+        p_member_id,
+        p_transaction_number,
+        p_payment_type,
+        p_amount,
+        p_submission_id,
+        NOW()
+    );
+
+END
+PROCEDURE	sp_reconcile_member_payments		BEGIN
+    DECLARE v_start_date DATE;
+    DECLARE v_target_expiration DATE;
+
+    
+    SELECT CAST(ConfigValue AS DATE) INTO v_start_date FROM config WHERE ConfigKey = 'MembershipCollectionStart';
+    SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration FROM config WHERE ConfigKey = 'MembershipYearEnd';
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_to_update;
+    CREATE TEMPORARY TABLE tmp_to_update AS
+    SELECT DISTINCT
+        m.MemberID,
+        m.FamilyID,
+        p.TransactionNumber AS actual_tx,
+        p.PaymentDate AS actual_date,
+        p.Amount AS actual_amount
+    FROM members m
+    INNER JOIN payments p ON m.MemberID = p.MemberID
+    WHERE LOWER(p.PaymentType) LIKE '%membership%'
+      AND p.PaymentDate >= v_start_date
+      AND m.Status <> 'lifetime'
+      AND (
+        m.Expiration <> v_target_expiration
+        OR m.PaymentTransaction <> p.TransactionNumber
+        OR (p.PaymentDate IS NOT NULL AND (m.PaymentDate IS NULL OR m.PaymentDate <> p.PaymentDate))
+      );
+
+    IF p_dry_run THEN
+        SELECT
+            'DRY RUN'                       AS run_status,
+            t.MemberID,
+            CONCAT(m.FirstName, ' ', m.LastName) AS member_name,
+            m.Type                          AS member_type,
+            m.Status                        AS current_status,
+            m.Expiration                    AS current_expiration,
+            v_target_expiration             AS target_expiration,
+            m.PaymentTransaction            AS current_tx,
+            t.actual_tx                     AS new_tx,
+            m.PaymentDate                   AS current_payment_date,
+            t.actual_date                   AS new_payment_date,
+            t.actual_amount                 AS new_amount,
+            t.FamilyID
+        FROM tmp_to_update t
+        INNER JOIN members m ON t.MemberID = m.MemberID
+        ORDER BY m.LastName, m.FirstName;
+    ELSE
+        START TRANSACTION;
+
+        SET @internal_proc = 1;
+
+        
+        UPDATE members m
+        INNER JOIN tmp_to_update t ON m.MemberID = t.MemberID
+        SET
+            m.Status = 'active',
+            m.Expiration = v_target_expiration,
+            m.PaymentTransaction = t.actual_tx,
+            m.PaymentDate = t.actual_date,
+            m.MembershipFeePaid = t.actual_amount,
+            m.UpdatedAt = NOW();
+
+        
+        UPDATE members
+        SET
+            Status = 'active',
+            Expiration = v_target_expiration,
+            UpdatedAt = NOW()
+        WHERE FamilyID IN (SELECT DISTINCT FamilyID FROM tmp_to_update WHERE FamilyID <> '' AND FamilyID IS NOT NULL);
+
+        COMMIT;
+        SET @internal_proc = NULL;
+
+        SELECT 'SUCCESS' AS run_status, t.* FROM tmp_to_update t;
+    END IF;
+END
+PROCEDURE	sp_renewal_audit		BEGIN
+  
+  DROP TEMPORARY TABLE IF EXISTS tmp_audit_results;
+  DROP TEMPORARY TABLE IF EXISTS tmp_matching_txns;
+
+  
+  CREATE TEMPORARY TABLE tmp_audit_results (
+    message_id VARCHAR(100),
+    amount DECIMAL(10,2),
+    transaction_date DATE,
+    sender VARCHAR(255),
+    memo TEXT,
+    member_id VARCHAR(10),
+    member_name VARCHAR(255),
+    current_expiration DATE,
+    target_expiration DATE,
+    status_match VARCHAR(20),
+    trace_route VARCHAR(100),
+    family_members_checked INT DEFAULT NULL,
+    family_all_match CHAR(1) DEFAULT NULL
+  );
+
+  
+  CREATE TEMPORARY TABLE tmp_matching_txns (
+    message_id VARCHAR(100),
+    amount DECIMAL(10,2),
+    transaction_date DATE,
+    transaction_number VARCHAR(100),
+    sender VARCHAR(255),
+    memo TEXT,
+    original_memo TEXT,
+    traced BOOLEAN DEFAULT FALSE,
+    member_id VARCHAR(10)
+  );
+
+  
+  INSERT INTO tmp_matching_txns (message_id, amount, transaction_date, transaction_number, sender, memo, original_memo)
+  SELECT MessageId, Amount, TransactionDate, TransactionNumber, Sender, Memo, OriginalMemo
+  FROM gmail_transactions
+  WHERE TransactionDate BETWEEN p_start_date AND p_end_date
+    AND Amount IN (30.00, 50.00);
+
+  
+  UPDATE tmp_matching_txns txn
+  INNER JOIN members m ON txn.transaction_number = m.PaymentTransaction
+  SET txn.member_id = m.MemberID, txn.traced = TRUE;
+
+  
+  UPDATE tmp_matching_txns txn
+  INNER JOIN payments p ON txn.transaction_number = p.TransactionNumber
+  INNER JOIN members m ON p.MemberID = m.MemberID
+  SET txn.member_id = m.MemberID, txn.traced = TRUE
+  WHERE txn.traced = FALSE;
+
+  
+  INSERT INTO tmp_audit_results (
+    message_id, amount, transaction_date, sender, memo,
+    member_id, member_name, current_expiration, target_expiration,
+    status_match, trace_route
+  )
+  SELECT
+    txn.message_id, txn.amount, txn.transaction_date, txn.sender,
+    COALESCE(txn.memo, txn.original_memo, ''),
+    txn.member_id, CONCAT(m.FirstName, ' ', m.LastName),
+    m.Expiration, p_target_expiration,
+    CASE
+      WHEN m.Expiration IS NULL THEN 'ERROR'
+      WHEN m.Expiration >= p_target_expiration THEN 'MATCH'
+      ELSE 'MISMATCH'
+    END,
+    CASE
+      WHEN m.PaymentTransaction = txn.transaction_number THEN 'members.PaymentTransaction'
+      WHEN txn.traced THEN 'payments.TransactionNumber'
+      ELSE 'UNKNOWN'
+    END
+  FROM tmp_matching_txns txn
+  INNER JOIN members m ON txn.member_id = m.MemberID
+  WHERE (p_membership_type = 'both')
+     OR (p_membership_type = 'individual' AND LOWER(m.Type) = 'individual')
+     OR (p_membership_type = 'family' AND LOWER(m.Type) = 'family');
+
+  
+  INSERT INTO tmp_audit_results (message_id, amount, transaction_date, sender, memo, status_match, trace_route)
+  SELECT message_id, amount, transaction_date, sender, COALESCE(memo, original_memo, ''), 'NOT TRACED', 'NOT FOUND'
+  FROM tmp_matching_txns WHERE member_id IS NULL;
+
+  
+  UPDATE tmp_audit_results audit
+  INNER JOIN members m ON audit.member_id = m.MemberID
+  SET
+    audit.family_members_checked = (SELECT COUNT(*) FROM members m2 WHERE m2.FamilyID = m.FamilyID),
+    audit.family_all_match = (
+        SELECT IF(MIN(m3.Expiration >= p_target_expiration) = 1, 'Y', 'N')
+        FROM members m3 WHERE m3.FamilyID = m.FamilyID
+    )
+  WHERE m.FamilyID IS NOT NULL;
+
+  
+  SELECT * FROM tmp_audit_results 
+  WHERE (p_only_mismatches IS FALSE OR status_match <> 'MATCH')
+  ORDER BY 
+    FIELD(status_match, 'MISMATCH', 'NOT TRACED', 'MATCH', 'ERROR'),
+    transaction_date DESC;
+
+  DROP TEMPORARY TABLE IF EXISTS tmp_audit_results;
+  DROP TEMPORARY TABLE IF EXISTS tmp_matching_txns;
+END
+PROCEDURE	sp_renewal_audit_default		BEGIN
+    DECLARE v_start_date DATE;
+    DECLARE v_target_expiration DATE;
+
+    SELECT CAST(ConfigValue AS DATE) INTO v_start_date
+    FROM config WHERE ConfigKey = 'MembershipCollectionStart';
+
+    SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration
+    FROM config WHERE ConfigKey = 'MembershipYearEnd';
+
+    CALL sp_renewal_audit(v_start_date, CURDATE(), v_target_expiration, 'both', TRUE);
+END
+PROCEDURE	sp_search_members_advanced		BEGIN
+    DECLARE v_done INT DEFAULT 0;
+    DECLARE v_term VARCHAR(255);
+    DECLARE v_where_clause TEXT DEFAULT '1=1';
+    DECLARE v_remaining_query VARCHAR(255);
+    
+    SET v_remaining_query = TRIM(p_search_string);
+    WHILE CHAR_LENGTH(v_remaining_query) > 0 AND v_done = 0 DO
+        SET v_term = SUBSTRING_INDEX(v_remaining_query, ' ', 1);
+        IF LOCATE(' ', v_remaining_query) > 0 THEN
+            SET v_remaining_query = TRIM(SUBSTRING(v_remaining_query, LOCATE(' ', v_remaining_query) + 1));
+        ELSE
+            SET v_remaining_query = '';
+            SET v_done = 1;
+        END IF;
+        SET v_where_clause = CONCAT(v_where_clause, ' AND (',
+            'FirstName LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR LastName LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR Email LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR Notes LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR NYRRunnerName LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR WeChatID LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ' OR MemberID LIKE ', QUOTE(CONCAT('%', v_term, '%')), 
+            ')');
+    END WHILE;
+    SET @final_query = CONCAT(
+        'SELECT MemberID, FirstName, LastName, Email, Type, Status, Expiration, WeChatID, Notes, NYRRRunnerName ',
+        'FROM members ',
+        'WHERE ', v_where_clause, ' ',
+        'ORDER BY FirstName, LastName ',
+        'LIMIT ', p_limit
+    );
+    PREPARE stmt FROM @final_query;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+END
 section
 === 7. TRIGGERS ===
 trigger_name	event	table	timing	body
-trg_members_insert_validate	INSERT	members	BEFORE	BEGIN\n  DECLARE error_context_id VARCHAR(50);\n  DECLARE error_msg TEXT;\n\n  SET error_context_id = UUID();\n\n  IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN\n    SET error_msg = CONCAT(\n      'Invalid email format: "', NEW.`Email`, '". Must contain @. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `ValidValueExamples`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, 'MEM_INVALID_EMAIL',\n      CONCAT('Email format invalid: ', NEW.`Email`),\n      'Email validation failed: missing @ symbol',\n      'members', 'Email', NEW.`Email`,\n      '["john@example.com", "jane.doe@company.org"]',\n      'Verify email address format matches standard email pattern (user@domain.com)',\n      'WARNING'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NEW.`Status` NOT IN ('active','expired','inactive','pending', 'pending_upgrade', 'lifetime') THEN\n    SET error_msg = CONCAT(\n      'Invalid Status: "', NEW.`Status`, '". ',\n      'Allowed: active, expired, inactive, pending, pending_upgrade, lifetime. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `AllowedRange`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, 'MEM_INVALID_STATUS',\n      CONCAT('Invalid member status: ', NEW.`Status`),\n      'Status enum constraint violated on members table',\n      'members', 'Status', NEW.`Status`,\n      'active | expired | inactive | pending | pending_upgrade | lifetime',\n      'Status must be one of: active (paying), expired (may renew), inactive (left), pending (awaiting payment), pending_upgrade (upgrading to family), lifetime (lifetime member)',\n      'ERROR'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\nEND
-members_before_update	UPDATE	members	BEFORE	BEGIN\n    IF NEW.Expiration <> OLD.Expiration THEN\n        IF @internal_proc IS NULL OR @internal_proc <> 1 THEN\n            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';\n        END IF;\n    END IF;\nEND
-trg_members_after_insert	INSERT	members	AFTER	BEGIN\n  INSERT INTO member_log (\n    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,\n    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,\n    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,\n    NYRRRunnerName, YearBorn\n  )\n  VALUES (\n    UUID(), NOW(), NEW.MemberID, 'INSERT', NEW.Status, NEW.Created, NEW.Expiration,\n    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,\n    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,\n    NEW.NYRRRunnerName, NEW.YearBorn\n  );\nEND
-trg_members_after_update	UPDATE	members	AFTER	BEGIN\n  INSERT INTO member_log (\n    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,\n    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,\n    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,\n    NYRRRunnerName, YearBorn\n  )\n  VALUES (\n    UUID(), NOW(), NEW.MemberID, 'UPDATE', NEW.Status, NEW.Created, NEW.Expiration,\n    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,\n    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,\n    NEW.NYRRRunnerName, NEW.YearBorn\n  );\nEND
-trg_payments_limit_check_insert	INSERT	payments	BEFORE	BEGIN\n    DECLARE v_max DECIMAL(10,2);\n    DECLARE v_used DECIMAL(10,2);\n    SELECT Amount INTO v_max FROM gmail_transactions WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;\n    SELECT IFNULL(SUM(Amount), 0) INTO v_used FROM payments WHERE TransactionNumber = NEW.TransactionNumber;\n    IF (v_used + NEW.Amount) > v_max THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Split Error: Total payments exceed Gmail Transaction amount.';\n    END IF;\nEND
-trg_payments_insert_validate	INSERT	payments	BEFORE	BEGIN\n  DECLARE error_context_id VARCHAR(50);\n  DECLARE error_msg TEXT;\n\n  SET error_context_id = UUID();\n\n  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN\n    SET error_msg = CONCAT(\n      'Payment amount cannot be negative: ', NEW.`Amount`, '. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `AllowedRange`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, 'PAY_NEGATIVE_AMOUNT',\n      'Payment amount is negative',\n      CONCAT('Amount validation failed: ', NEW.`Amount`),\n      'payments', 'Amount', CAST(NEW.`Amount` AS CHAR),\n      '>= 0',\n      'Check payment amount calculation. Use absolute value if needed.',\n      'WARNING'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NEW.`SubmissionID` IS NOT NULL THEN\n    IF NOT EXISTS (SELECT 1 FROM `submissions` WHERE `SubmissionID` = NEW.`SubmissionID`) THEN\n      SET error_msg = CONCAT(\n        'SubmissionID "', NEW.`SubmissionID`, '" does not exist. ',\n        'Error: ', error_context_id\n      );\n      INSERT INTO `error_context` (\n        `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n        `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,\n        `SuggestedFix`, `Severity`\n      ) VALUES (\n        error_context_id, 'PAY_FK_INVALID_SUBMISSION',\n        CONCAT('Referenced submission not found: ', NEW.`SubmissionID`),\n        'Foreign key validation failed on payments.SubmissionID',\n        'payments', 'SubmissionID', 'fk_payments_submissions',\n        NEW.`SubmissionID`,\n        'Verify SubmissionID exists before linking payment. Or leave NULL if payment is standalone.',\n        'WARNING'\n      );\n      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n    END IF;\n  END IF;\nEND
-trg_payments_auto_fill	INSERT	payments	BEFORE	BEGIN\n    IF NEW.TransactionNumber IS NOT NULL THEN\n        SELECT TransactionDate, PaymentMethod, Sender, Memo\n        INTO @d, @m, @p, @memo\n        FROM gmail_transactions\n        WHERE TransactionNumber = NEW.TransactionNumber\n        LIMIT 1;\n        SET NEW.PaymentDate = @d;\n        SET NEW.PaymentMethod = @m;\n        SET NEW.PayerName = @p;\n        SET NEW.MemoField = @memo;\n    END IF;\nEND
-trg_payments_limit_check_update	UPDATE	payments	BEFORE	BEGIN\n    DECLARE v_max_total DECIMAL(10,2);\nDECLARE v_used_others DECIMAL(10,2);\nDECLARE v_rem DECIMAL(10,2);\nDECLARE v_msg VARCHAR(128);\nSELECT Amount INTO v_max_total \n    FROM gmail_transactions \n    WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;\nSELECT IFNULL(SUM(Amount), 0) INTO v_used_others \n    FROM payments \n    WHERE TransactionNumber = NEW.TransactionNumber AND PaymentID <> OLD.PaymentID;\nSET v_rem = v_max_total - v_used_others;\nIF NEW.Amount > v_rem THEN\n        SET v_msg = CONCAT('Limit Exceeded: Try $', NEW.Amount, ', but only $', v_rem, ' left on TX: ', LEFT(NEW.TransactionNumber, 20));\nSIGNAL SQLSTATE '45000' \n        SET MESSAGE_TEXT = v_msg;\nEND IF;\nEND
-trg_payments_approve_submission	INSERT	payments	AFTER	BEGIN\n    IF NEW.SubmissionID IS NOT NULL THEN\n        UPDATE submissions\n        SET\n            Status = 'approved',\n            PaymentID = NEW.PaymentID,\n            UpdatedByID = NEW.ProcessedBy\n        WHERE SubmissionID = NEW.SubmissionID;\n    END IF;\nEND
-trg_payments_sync_to_gmail_on_change_after_payment_insert	INSERT	payments	AFTER	BEGIN\n    DECLARE v_new_notes TEXT;\n    DECLARE v_old_notes TEXT;\n    DECLARE v_latest_update DATETIME;\n    SELECT \n        GROUP_CONCAT(CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')') SEPARATOR '; '),\n        MAX(UpdatedAt)\n    INTO v_new_notes, v_latest_update\n    FROM payments\n    WHERE TransactionNumber = NEW.TransactionNumber;\n    SELECT Notes INTO v_old_notes \n    FROM gmail_transactions \n    WHERE TransactionNumber = NEW.TransactionNumber;\n    IF v_old_notes IS NULL OR v_new_notes <> v_old_notes THEN\n        UPDATE gmail_transactions\n        SET \n            Notes = v_new_notes,\n            UpdatedAt = v_latest_update\n        WHERE TransactionNumber = NEW.TransactionNumber;\n    END IF;\nEND
-trg_payments_sync_membership_only	INSERT	payments	AFTER	BEGIN\n    -- Declare local variables at the very top\n    DECLARE v_target_expiration DATE;\n    DECLARE v_calc_expiration DATE;\n    DECLARE v_family_id VARCHAR(50);\n\n    -- 1. Only proceed if this is a membership-related payment\n    -- Note: Used LOWER() to ensure case-insensitive matching\n    IF LOWER(NEW.PaymentType) LIKE '%membership%' THEN\n        \n        -- 2. Fetch config and Member's FamilyID\n        SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration \n        FROM config \n        WHERE ConfigKey = 'MembershipYearEnd' \n        LIMIT 1;\n\n        SELECT FamilyID INTO v_family_id \n        FROM members \n        WHERE MemberID = NEW.MemberID \n        LIMIT 1;\n\n        -- 3. Calculate fallback expiration (the NEW_EXP logic)\n        SET v_calc_expiration = CASE \n            WHEN MONTH(NEW.PaymentDate) >= 10 \n                THEN DATE(CONCAT(YEAR(NEW.PaymentDate) + 2, '-03-31'))\n            ELSE DATE(CONCAT(YEAR(NEW.PaymentDate) + 1, '-03-31'))\n        END;\n\n        -- 4. LOCK: Prevent recursive trigger firing\n        SET @internal_proc = 1;\n\n        -- 5. UPDATE MEMBERS (Self + Family)\n        -- Handles your logic: Check both NULL and empty string for FamilyID\n        UPDATE members\n        SET \n            Status = 'active',\n            MembershipFeePaid = NEW.Amount,\n            PaymentDate = NEW.PaymentDate,\n            PaymentTransaction = NEW.TransactionNumber,\n            Expiration = IFNULL(v_target_expiration, v_calc_expiration),\n            UpdatedAt = NOW()\n        WHERE \n            MemberID = NEW.MemberID \n            OR (\n                v_family_id IS NOT NULL \n                AND v_family_id <> '' \n                AND FamilyID = v_family_id\n            );\n\n        -- 6. UNLOCK\n        SET @internal_proc = NULL;\n        \n    END IF;\nEND
-trg_payments_sync_to_gmail_on_change	UPDATE	payments	AFTER	BEGIN\n    DECLARE v_new_notes TEXT;\n    DECLARE v_old_notes TEXT;\n    DECLARE v_latest_update DATETIME;\n    SELECT \n        GROUP_CONCAT(CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')') SEPARATOR '; '),\n        MAX(UpdatedAt)\n    INTO v_new_notes, v_latest_update\n    FROM payments\n    WHERE TransactionNumber = NEW.TransactionNumber;\n    SELECT Notes INTO v_old_notes \n    FROM gmail_transactions \n    WHERE TransactionNumber = NEW.TransactionNumber;\n    IF v_old_notes IS NULL OR v_new_notes <> v_old_notes THEN\n        UPDATE gmail_transactions\n        SET \n            Notes = v_new_notes,\n            UpdatedAt = v_latest_update\n        WHERE TransactionNumber = NEW.TransactionNumber;\n    END IF;\nEND
-trg_submissions_insert_validate	INSERT	submissions	BEFORE	BEGIN\n  DECLARE error_context_id VARCHAR(50);\n  DECLARE error_msg TEXT;\n  DECLARE error_code VARCHAR(50);\n\n  SET error_context_id = UUID();\n\n  IF NEW.`SubmissionID` IS NULL THEN\n    SET error_code = 'SUBM_NULL_ID';\n    SET error_msg = CONCAT(\n      'Submission ID cannot be NULL. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `ValidValueExamples`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      'Cannot create submission without unique ID',\n      'SubmissionID column received NULL value on INSERT',\n      'submissions', 'SubmissionID', 'NULL',\n      '["sub_abc123xyz", "sub_2026_001"]',\n      'Ensure UUID is generated before INSERT. Check application code.',\n      'CRITICAL'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NOT EXISTS (SELECT 1 FROM `members` WHERE `MemberID` = NEW.`MemberID`) THEN\n    SET error_code = 'SUBM_FK_INVALID_MEMBER';\n    SET error_msg = CONCAT(\n      'MemberID "', NEW.`MemberID`, '" does not exist in members table. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,\n      `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      CONCAT('Invalid MemberID: ', NEW.`MemberID`),\n      'Foreign key validation failed: referenced member does not exist',\n      'submissions', 'MemberID', 'fk_submissions_members',\n      NEW.`MemberID`,\n      'Verify MemberID exists in members table before creating submission',\n      'ERROR'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NEW.`Status` NOT IN ('pending','approved','cancelled','expired') THEN\n    SET error_code = 'SUBM_INVALID_STATUS';\n    SET error_msg = CONCAT(\n      'Invalid Status value: "', NEW.`Status`, '". ',\n      'Allowed: pending, approved, cancelled, expired. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `AllowedRange`, `ValidValueExamples`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      CONCAT('Invalid submission status: ', NEW.`Status`),\n      'Status enum constraint violated',\n      'submissions', 'Status', NEW.`Status`,\n      'pending | approved | cancelled | expired',\n      '["pending", "approved"]',\n      'Use one of the allowed status values. Default is "pending".',\n      'ERROR'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN\n    SET error_code = 'SUBM_NEGATIVE_AMOUNT';\n    SET error_msg = CONCAT(\n      'Amount cannot be negative: ', NEW.`Amount`, '. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `AllowedRange`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      'Submission amount is negative',\n      'Amount validation failed: received negative value',\n      'submissions', 'Amount', CAST(NEW.`Amount` AS CHAR),\n      '>= 0',\n      'Ensure amount is positive. Use absolute value or check calculation logic.',\n      'WARNING'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\nEND
+trg_members_insert_validate	INSERT	members	BEFORE	BEGIN
+  DECLARE error_context_id VARCHAR(50);
+  DECLARE error_msg TEXT;
+
+  SET error_context_id = UUID();
+
+  IF NEW.`Email` IS NOT NULL AND NEW.`Email` NOT LIKE '%@%' THEN
+    SET error_msg = CONCAT(
+      'Invalid email format: "', NEW.`Email`, '". Must contain @. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `ValidValueExamples`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'MEM_INVALID_EMAIL',
+      CONCAT('Email format invalid: ', NEW.`Email`),
+      'Email validation failed: missing @ symbol',
+      'members', 'Email', NEW.`Email`,
+      '["john@example.com", "jane.doe@company.org"]',
+      'Verify email address format matches standard email pattern (user@domain.com)',
+      'WARNING'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`Status` NOT IN ('active','expired','inactive','pending', 'pending_upgrade', 'lifetime') THEN
+    SET error_msg = CONCAT(
+      'Invalid Status: "', NEW.`Status`, '". ',
+      'Allowed: active, expired, inactive, pending, pending_upgrade, lifetime. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'MEM_INVALID_STATUS',
+      CONCAT('Invalid member status: ', NEW.`Status`),
+      'Status enum constraint violated on members table',
+      'members', 'Status', NEW.`Status`,
+      'active | expired | inactive | pending | pending_upgrade | lifetime',
+      'Status must be one of: active (paying), expired (may renew), inactive (left), pending (awaiting payment), pending_upgrade (upgrading to family), lifetime (lifetime member)',
+      'ERROR'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+END
+members_before_update	UPDATE	members	BEFORE	BEGIN
+    IF NEW.Expiration <> OLD.Expiration THEN
+        IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';
+        END IF;
+    END IF;
+END
+trg_members_before_update_lifetime	UPDATE	members	BEFORE	BEGIN
+    IF @internal_proc IS NULL AND NEW.Status = 'lifetime' AND OLD.Status <> 'lifetime' THEN
+        SET NEW.Expiration = '2126-03-31';
+    END IF;
+END
+trg_members_after_insert	INSERT	members	AFTER	BEGIN
+  INSERT INTO member_log (
+    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
+    NYRRRunnerName, YearBorn
+  )
+  VALUES (
+    UUID(), NOW(), NEW.MemberID, 'INSERT', NEW.Status, NEW.Created, NEW.Expiration,
+    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
+    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
+    NEW.NYRRRunnerName, NEW.YearBorn
+  );
+END
+trg_members_after_update	UPDATE	members	AFTER	BEGIN
+  INSERT INTO member_log (
+    LogID, LoggingTime, MemberID, ChangeType, Status, Created, Expiration,
+    Email, FirstName, LastName, Type, FamilyID, Gender, WeChatID, District,
+    MembershipFeePaid, PaymentDate, PaymentTransaction, JoinYear, PhoneNumber, Notes,
+    NYRRRunnerName, YearBorn
+  )
+  VALUES (
+    UUID(), NOW(), NEW.MemberID, 'UPDATE', NEW.Status, NEW.Created, NEW.Expiration,
+    NEW.Email, NEW.FirstName, NEW.LastName, NEW.Type, NEW.FamilyID, NEW.Gender, NEW.WeChatID, NEW.District,
+    NEW.MembershipFeePaid, NEW.PaymentDate, NEW.PaymentTransaction, NEW.JoinYear, NEW.PhoneNumber, NEW.Notes,
+    NEW.NYRRRunnerName, NEW.YearBorn
+  );
+END
+trg_payments_limit_check_insert	INSERT	payments	BEFORE	BEGIN
+    DECLARE v_max DECIMAL(10,2);
+    DECLARE v_used DECIMAL(10,2);
+    SELECT Amount INTO v_max FROM gmail_transactions WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;
+    SELECT IFNULL(SUM(Amount), 0) INTO v_used FROM payments WHERE TransactionNumber = NEW.TransactionNumber;
+    IF (v_used + NEW.Amount) > v_max THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Split Error: Total payments exceed Gmail Transaction amount.';
+    END IF;
+END
+trg_payments_insert_validate	INSERT	payments	BEFORE	BEGIN
+  DECLARE error_context_id VARCHAR(50);
+  DECLARE error_msg TEXT;
+
+  SET error_context_id = UUID();
+
+  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN
+    SET error_msg = CONCAT(
+      'Payment amount cannot be negative: ', NEW.`Amount`, '. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, 'PAY_NEGATIVE_AMOUNT',
+      'Payment amount is negative',
+      CONCAT('Amount validation failed: ', NEW.`Amount`),
+      'payments', 'Amount', CAST(NEW.`Amount` AS CHAR),
+      '>= 0',
+      'Check payment amount calculation. Use absolute value if needed.',
+      'WARNING'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`SubmissionID` IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM `submissions` WHERE `SubmissionID` = NEW.`SubmissionID`) THEN
+      SET error_msg = CONCAT(
+        'SubmissionID "', NEW.`SubmissionID`, '" does not exist. ',
+        'Error: ', error_context_id
+      );
+      INSERT INTO `error_context` (
+        `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+        `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,
+        `SuggestedFix`, `Severity`
+      ) VALUES (
+        error_context_id, 'PAY_FK_INVALID_SUBMISSION',
+        CONCAT('Referenced submission not found: ', NEW.`SubmissionID`),
+        'Foreign key validation failed on payments.SubmissionID',
+        'payments', 'SubmissionID', 'fk_payments_submissions',
+        NEW.`SubmissionID`,
+        'Verify SubmissionID exists before linking payment. Or leave NULL if payment is standalone.',
+        'WARNING'
+      );
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+    END IF;
+  END IF;
+END
+trg_payments_auto_fill	INSERT	payments	BEFORE	BEGIN
+    IF NEW.TransactionNumber IS NOT NULL THEN
+        SELECT TransactionDate, PaymentMethod, Sender, Memo
+        INTO @d, @m, @p, @memo
+        FROM gmail_transactions
+        WHERE TransactionNumber = NEW.TransactionNumber
+        LIMIT 1;
+        SET NEW.PaymentDate = @d;
+        SET NEW.PaymentMethod = @m;
+        SET NEW.PayerName = @p;
+        SET NEW.MemoField = @memo;
+    END IF;
+END
+trg_payments_limit_check_update	UPDATE	payments	BEFORE	BEGIN
+    DECLARE v_max_total DECIMAL(10,2);
+DECLARE v_used_others DECIMAL(10,2);
+DECLARE v_rem DECIMAL(10,2);
+DECLARE v_msg VARCHAR(128);
+SELECT Amount INTO v_max_total 
+    FROM gmail_transactions 
+    WHERE TransactionNumber = NEW.TransactionNumber LIMIT 1;
+SELECT IFNULL(SUM(Amount), 0) INTO v_used_others 
+    FROM payments 
+    WHERE TransactionNumber = NEW.TransactionNumber AND PaymentID <> OLD.PaymentID;
+SET v_rem = v_max_total - v_used_others;
+IF NEW.Amount > v_rem THEN
+        SET v_msg = CONCAT('Limit Exceeded: Try $', NEW.Amount, ', but only $', v_rem, ' left on TX: ', LEFT(NEW.TransactionNumber, 20));
+SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = v_msg;
+END IF;
+END
+trg_payments_approve_submission	INSERT	payments	AFTER	BEGIN
+    IF NEW.SubmissionID IS NOT NULL THEN
+        UPDATE submissions
+        SET
+            Status = 'approved',
+            PaymentID = NEW.PaymentID,
+            UpdatedByID = NEW.ProcessedBy
+        WHERE SubmissionID = NEW.SubmissionID;
+    END IF;
+END
+trg_payments_sync_to_gmail_on_change_after_payment_insert	INSERT	payments	AFTER	BEGIN
+    DECLARE v_new_notes TEXT;
+    DECLARE v_old_notes TEXT;
+    DECLARE v_latest_update DATETIME;
+    SELECT 
+        GROUP_CONCAT(CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')') SEPARATOR '; '),
+        MAX(UpdatedAt)
+    INTO v_new_notes, v_latest_update
+    FROM payments
+    WHERE TransactionNumber = NEW.TransactionNumber;
+    SELECT Notes INTO v_old_notes 
+    FROM gmail_transactions 
+    WHERE TransactionNumber = NEW.TransactionNumber;
+    IF v_old_notes IS NULL OR v_new_notes <> v_old_notes THEN
+        UPDATE gmail_transactions
+        SET 
+            Notes = v_new_notes,
+            UpdatedAt = v_latest_update
+        WHERE TransactionNumber = NEW.TransactionNumber;
+    END IF;
+END
+trg_payments_sync_membership_only	INSERT	payments	AFTER	BEGIN
+    -- Declare local variables at the very top
+    DECLARE v_target_expiration DATE;
+    DECLARE v_calc_expiration DATE;
+    DECLARE v_family_id VARCHAR(50);
+
+    -- 1. Only proceed if this is a membership-related payment
+    -- Note: Used LOWER() to ensure case-insensitive matching
+    IF LOWER(NEW.PaymentType) LIKE '%membership%' THEN
+        
+        -- 2. Fetch config and Member's FamilyID
+        SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration 
+        FROM config 
+        WHERE ConfigKey = 'MembershipYearEnd' 
+        LIMIT 1;
+
+        SELECT FamilyID INTO v_family_id 
+        FROM members 
+        WHERE MemberID = NEW.MemberID 
+        LIMIT 1;
+
+        -- 3. Calculate fallback expiration (the NEW_EXP logic)
+        SET v_calc_expiration = CASE 
+            WHEN MONTH(NEW.PaymentDate) >= 10 
+                THEN DATE(CONCAT(YEAR(NEW.PaymentDate) + 2, '-03-31'))
+            ELSE DATE(CONCAT(YEAR(NEW.PaymentDate) + 1, '-03-31'))
+        END;
+
+        -- 4. LOCK: Prevent recursive trigger firing
+        SET @internal_proc = 1;
+
+        -- 5. UPDATE MEMBERS (Self + Family)
+        -- Handles your logic: Check both NULL and empty string for FamilyID
+        UPDATE members
+        SET 
+            Status = 'active',
+            MembershipFeePaid = NEW.Amount,
+            PaymentDate = NEW.PaymentDate,
+            PaymentTransaction = NEW.TransactionNumber,
+            Expiration = IFNULL(v_target_expiration, v_calc_expiration),
+            UpdatedAt = NOW()
+        WHERE 
+            MemberID = NEW.MemberID 
+            OR (
+                v_family_id IS NOT NULL 
+                AND v_family_id <> '' 
+                AND FamilyID = v_family_id
+            );
+
+        -- 6. UNLOCK
+        SET @internal_proc = NULL;
+        
+    END IF;
+END
+trg_payments_sync_to_gmail_on_change	UPDATE	payments	AFTER	BEGIN
+    DECLARE v_new_notes TEXT;
+    DECLARE v_old_notes TEXT;
+    DECLARE v_latest_update DATETIME;
+    SELECT 
+        GROUP_CONCAT(CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')') SEPARATOR '; '),
+        MAX(UpdatedAt)
+    INTO v_new_notes, v_latest_update
+    FROM payments
+    WHERE TransactionNumber = NEW.TransactionNumber;
+    SELECT Notes INTO v_old_notes 
+    FROM gmail_transactions 
+    WHERE TransactionNumber = NEW.TransactionNumber;
+    IF v_old_notes IS NULL OR v_new_notes <> v_old_notes THEN
+        UPDATE gmail_transactions
+        SET 
+            Notes = v_new_notes,
+            UpdatedAt = v_latest_update
+        WHERE TransactionNumber = NEW.TransactionNumber;
+    END IF;
+END
+trg_payments_update_approve_submission	UPDATE	payments	AFTER	BEGIN
+    
+    IF (NEW.SubmissionID IS NOT NULL AND NEW.SubmissionID != '')
+       AND (OLD.SubmissionID IS NULL OR OLD.SubmissionID = '')
+    THEN
+        UPDATE submissions
+        SET
+            Status      = 'approved',
+            PaymentID   = NEW.PaymentID,
+            UpdatedByID = NEW.ProcessedBy
+        WHERE SubmissionID = NEW.SubmissionID
+          AND Status = 'pending';
+    END IF;
+END
+trg_submissions_insert_validate	INSERT	submissions	BEFORE	BEGIN
+  DECLARE error_context_id VARCHAR(50);
+  DECLARE error_msg TEXT;
+  DECLARE error_code VARCHAR(50);
+
+  SET error_context_id = UUID();
+
+  IF NEW.`SubmissionID` IS NULL THEN
+    SET error_code = 'SUBM_NULL_ID';
+    SET error_msg = CONCAT(
+      'Submission ID cannot be NULL. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `ValidValueExamples`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, error_code,
+      'Cannot create submission without unique ID',
+      'SubmissionID column received NULL value on INSERT',
+      'submissions', 'SubmissionID', 'NULL',
+      '["sub_abc123xyz", "sub_2026_001"]',
+      'Ensure UUID is generated before INSERT. Check application code.',
+      'CRITICAL'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM `members` WHERE `MemberID` = NEW.`MemberID`) THEN
+    SET error_code = 'SUBM_FK_INVALID_MEMBER';
+    SET error_msg = CONCAT(
+      'MemberID "', NEW.`MemberID`, '" does not exist in members table. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,
+      `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, error_code,
+      CONCAT('Invalid MemberID: ', NEW.`MemberID`),
+      'Foreign key validation failed: referenced member does not exist',
+      'submissions', 'MemberID', 'fk_submissions_members',
+      NEW.`MemberID`,
+      'Verify MemberID exists in members table before creating submission',
+      'ERROR'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`Status` NOT IN ('pending','approved','cancelled','expired') THEN
+    SET error_code = 'SUBM_INVALID_STATUS';
+    SET error_msg = CONCAT(
+      'Invalid Status value: "', NEW.`Status`, '". ',
+      'Allowed: pending, approved, cancelled, expired. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `ValidValueExamples`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, error_code,
+      CONCAT('Invalid submission status: ', NEW.`Status`),
+      'Status enum constraint violated',
+      'submissions', 'Status', NEW.`Status`,
+      'pending | approved | cancelled | expired',
+      '["pending", "approved"]',
+      'Use one of the allowed status values. Default is "pending".',
+      'ERROR'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+
+  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN
+    SET error_code = 'SUBM_NEGATIVE_AMOUNT';
+    SET error_msg = CONCAT(
+      'Amount cannot be negative: ', NEW.`Amount`, '. ',
+      'Error: ', error_context_id
+    );
+    INSERT INTO `error_context` (
+      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,
+      `TableName`, `ColumnName`, `ProblematicValue`,
+      `AllowedRange`, `SuggestedFix`, `Severity`
+    ) VALUES (
+      error_context_id, error_code,
+      'Submission amount is negative',
+      'Amount validation failed: received negative value',
+      'submissions', 'Amount', CAST(NEW.`Amount` AS CHAR),
+      '>= 0',
+      'Ensure amount is positive. Use absolute value or check calculation logic.',
+      'WARNING'
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
+  END IF;
+END

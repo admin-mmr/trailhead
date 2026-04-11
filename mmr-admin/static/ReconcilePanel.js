@@ -50,7 +50,7 @@ window.ReconcilePanel = () => {
     try {
       const r = await mmrUtils.api('/api/audit/reconcile', {
         method: 'POST',
-        body: JSON.stringify({ dry_run: true }),
+        body: { dry_run: true },
       });
       if (!r.success) { setError(r.error || 'Dry run failed'); return; }
       setDryRows(r.rows || []);
@@ -69,7 +69,7 @@ window.ReconcilePanel = () => {
     try {
       const r = await mmrUtils.api('/api/audit/reconcile', {
         method: 'POST',
-        body: JSON.stringify({ dry_run: false }),
+        body: { dry_run: false },
       });
       if (!r.success) { setError(r.error || 'Execute failed'); return; }
       setExecRows(r.rows || []);

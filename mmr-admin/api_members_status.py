@@ -34,7 +34,7 @@ def get_member_by_id(member_id: str) -> Optional[dict]:
     rows = query("""
         SELECT MemberID, FirstName, LastName, Email, PhoneNumber, WeChatID,
                Type, FamilyID, District, Status, Expiration, MembershipFeePaid,
-               PaymentDate, PaymentTransaction, LastUpdated
+               PaymentDate, PaymentTransaction, UpdatedAt
         FROM members
         WHERE MemberID = %s
     """, (member_id,))
