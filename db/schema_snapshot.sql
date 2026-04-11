@@ -444,12 +444,13 @@ PROCEDURE	generate_member_id		BEGIN
     COMMIT;
 END
 PROCEDURE	sp_admin_update_member_status		BEGIN
-    DECLARE v_FamilyID VARCHAR(10);
-    DECLARE v_OldStatus VARCHAR(20);
-    DECLARE v_ImpactedIDs TEXT;
-    DECLARE v_CalculatedAction VARCHAR(50);
+    DECLARE v_FamilyID        VARCHAR(10)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    DECLARE v_OldStatus       VARCHAR(20)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    DECLARE v_ImpactedIDs     TEXT         CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    DECLARE v_CalculatedAction VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-    SELECT Status, FamilyID INTO v_OldStatus, v_FamilyID FROM members WHERE MemberID = p_MemberID;
+    SELECT Status, FamilyID INTO v_OldStatus, v_FamilyID
+    FROM members WHERE MemberID = p_MemberID;
 
     SET v_CalculatedAction = CASE
         WHEN p_NewStatus = 'lifetime' THEN 'LIFETIME_SET'
@@ -459,7 +460,8 @@ PROCEDURE	sp_admin_update_member_status		BEGIN
     END;
 
     IF v_FamilyID IS NOT NULL THEN
-        SELECT GROUP_CONCAT(MemberID) INTO v_ImpactedIDs FROM members WHERE FamilyID = v_FamilyID;
+        SELECT GROUP_CONCAT(MemberID) INTO v_ImpactedIDs
+        FROM members WHERE FamilyID = v_FamilyID;
     ELSE
         SET v_ImpactedIDs = p_MemberID;
     END IF;
@@ -468,20 +470,25 @@ PROCEDURE	sp_admin_update_member_status		BEGIN
 
     UPDATE members
     SET
-        Status = IFNULL(p_NewStatus, Status),
+        Status     = IFNULL(p_NewStatus, Status),
         Expiration = IFNULL(p_NewExpiration, Expiration),
-        Notes = CONCAT(IFNULL(Notes, ''), '
---- Admin Override (', p_AdminEmail, ' ', NOW(), ') ---
+        Notes      = CONCAT(IFNULL(Notes, ''), '
+--- Admin Override (',
+                        p_AdminEmail, ' ', NOW(), ') ---
 ', p_NewNotes)
-    WHERE (v_FamilyID IS NOT NULL AND FamilyID = v_FamilyID) OR MemberID = p_MemberID;
+    WHERE (v_FamilyID IS NOT NULL AND FamilyID = v_FamilyID)
+       OR MemberID = p_MemberID;
 
     SET @internal_proc = NULL;
 
     INSERT INTO admin_member_overrides (
-        AdminEmail, TargetMemberID, ImpactedMemberIDs, ActionType, OldValue, NewValue, AdminNotes
+        AdminEmail, TargetMemberID, ImpactedMemberIDs,
+        ActionType, OldValue, NewValue, AdminNotes
     )
     VALUES (
-        p_AdminEmail, p_MemberID, v_ImpactedIDs, v_CalculatedAction, v_OldStatus, IFNULL(p_NewStatus, v_OldStatus), p_NewNotes
+        p_AdminEmail, p_MemberID, v_ImpactedIDs,
+        v_CalculatedAction, v_OldStatus,
+        IFNULL(p_NewStatus, v_OldStatus), p_NewNotes
     );
 END
 PROCEDURE	sp_error_summary_report		BEGIN

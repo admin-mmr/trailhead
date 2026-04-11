@@ -391,9 +391,11 @@ def api_manual_approve():
                 """, (payment_id, admin_email, submission_id))
             action = 'linked'
         else:
+            # sp_link_transaction takes exactly 5 params: tx, memberID, type, amount, submissionID
+            # admin_email is logged separately via log_activity — do NOT pass to stored proc
             execute(
-                "CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)",
-                (tx_num, member_id, payment_type, tx['Amount'], admin_email, submission_id)
+                "CALL sp_link_transaction(%s, %s, %s, %s, %s)",
+                (tx_num, member_id, payment_type, tx['Amount'], submission_id)
             )
             action = 'created'
 

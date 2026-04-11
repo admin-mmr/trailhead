@@ -1,3 +1,7 @@
+### 04-11 — TEST COVERAGE: 4 new test files, 1 bug fixed
+
+Changed: Added 4 test files to mmr-admin/tests/ covering recurring bug patterns from recent sessions: (1) test_api_response_format.py — {ok, data} wrapper contract for all payment/member endpoints; (2) test_safe_columns.py — safe_columns whitelist vs schema + sp_link_transaction param count consistency; (3) test_payment_type.py — no bare 'Membership', ternary logic correctness; (4) test_trigger_columns.py — trigger body column refs vs schema. Also fixed real bug caught by tests: api_payments.py manual-approve path called sp_link_transaction with 6 params (added admin_email) but procedure only takes 5. Status: 67 passed, 1 skipped. Next: commit tests + fix, run existing test_sql_columns.py + test_imports.py in CI.
+
 ### 04-07 HH:MM UTC — PHASE 2.2 + 2.3 COMPLETE: All large JS files split
 ✅ **PHASE 2.2 - DistrictMembersPanel.js:** 950L → 4 modules (DistrictExport 112L, DistrictMemberTable 366L, DistrictMemberFilters 282L, core 343L). All <300-366 lines.
 ✅ **PHASE 2.3 - AuditPanel.js:** 574L → 3 modules (AuditResultsTable 251L, AuditSummaryBar 46L, core 347L). All <360 lines.
