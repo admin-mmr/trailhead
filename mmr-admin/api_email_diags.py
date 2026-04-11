@@ -18,8 +18,8 @@ def get_gmail_transactions_recent(limit=20):
     try:
         query = """
             SELECT
-                MessageId, TimeStamp, Sender, Subject, Amount, TransactionNumber,
-                Source, PaymentID, IsArchived, SyncedAt
+                MessageId, Timestamp, Sender, Subject, Amount, TransactionNumber,
+                Source, PaymentID, UpdatedAt
             FROM gmail_transactions
             ORDER BY TimeStamp DESC
             LIMIT %s
@@ -28,7 +28,7 @@ def get_gmail_transactions_recent(limit=20):
         debug['queries'].append(f"✓ Selected {len(rows)} recent gmail_transactions records")
         debug['row_count'] = len(rows)
         debug['sample_columns'] = [
-            'MessageId', 'TimeStamp', 'Sender', 'Subject', 'Source', 'IsArchived'
+            'MessageId', 'Timestamp', 'Sender', 'Subject', 'Source', 'UpdatedAt'
         ] if rows else []
 
         return {
@@ -161,7 +161,7 @@ def analyze_email_flow():
         })
 
         # 2. Check gmail_transactions table stats
-        query_gmail_stats = "SELECT COUNT(*) as total, MAX(TimeStamp) as latest FROM gmail_transactions WHERE IsArchived = FALSE"
+        query_gmail_stats = "SELECT COUNT(*) as total, MAX(Timestamp) as latest FROM gmail_transactions WHERE PaymentID IS NOT NULL"
         gmail_stats = dbmod.query(query_gmail_stats)
         gmail_count = gmail_stats[0].get('total', 0) if gmail_stats else 0
         gmail_latest = gmail_stats[0].get('latest') if gmail_stats else None

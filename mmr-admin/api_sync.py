@@ -127,10 +127,10 @@ def api_sync_membership_fees():
               p.MemberID,
               p.Amount,
               p.PaymentDate,
-              p.TransactionReference,
+              p.TransactionNumber,
               ROW_NUMBER() OVER (PARTITION BY p.MemberID ORDER BY p.PaymentDate DESC) as rn
             FROM payments p
-            WHERE p.MembershipType IN ('Individual Membership', 'Family Membership')
+            WHERE p.PaymentType IN ('Individual Membership', 'Family Membership')
               AND p.MemberID IS NOT NULL
               AND p.PaymentDate IS NOT NULL
         """
@@ -196,7 +196,7 @@ def api_sync_membership_fees():
                           MembershipFeePaid = %s,
                           PaymentDate = %s,
                           PaymentTransaction = %s,
-                          LastUpdated = NOW()
+                          UpdatedAt = NOW()
                         WHERE MemberID = %s
                     """
                     try:
@@ -322,12 +322,12 @@ def api_sync_members_lastupdated():
         member_ids = [m['MemberID'] for m in logs]
         member_ids_str = ','.join(['%s'] * len(member_ids))
         members_sql = f"""
-            SELECT MemberID, LastUpdated
+            SELECT MemberID, UpdatedAt
             FROM members
             WHERE MemberID IN ({member_ids_str})
         """
         members = query(members_sql, member_ids)
-        members_dict = {m['MemberID']: m['LastUpdated'] for m in members}
+        members_dict = {m['MemberID']: m['UpdatedAt'] for m in members}
 
         # Update members table for log entries newer than current LastUpdated
         checked = 0
@@ -352,7 +352,7 @@ def api_sync_members_lastupdated():
                 if should_update:
                     update_sql = """
                         UPDATE members
-                        SET LastUpdated = %s
+                        SET UpdatedAt = %s
                         WHERE MemberID = %s
                     """
                     try:

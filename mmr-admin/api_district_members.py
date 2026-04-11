@@ -71,8 +71,7 @@ def get_district_members():
                 MembershipFeePaid,
                 PaymentTransaction,
                 Status,
-                LastLogin,
-                LastUpdated as LastModified
+                UpdatedAt as LastModified
             FROM members
             WHERE 1=1
         """

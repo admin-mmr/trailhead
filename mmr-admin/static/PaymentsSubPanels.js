@@ -128,7 +128,7 @@
       if (f.sender && !(g.Sender || '').toLowerCase().includes(f.sender.toLowerCase())) return false;
       if (f.amount) {
         const amt = parseFloat(String(g.Amount || '').replace(/[^0-9.]/g, ''));
-        const target = parseFloat(f.amount);
+        const target = parseFloat(String(f.amount).replace(/[^0-9.]/g, ''));
         if (!isNaN(target) && Math.abs(amt - target) > 0.001) return false;
       }
       if (f.memo && !(g.Memo || '').toLowerCase().includes(f.memo.toLowerCase())) return false;

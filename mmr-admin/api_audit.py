@@ -81,7 +81,7 @@ def api_unmatch_transaction():
     try:
         sql = """
             UPDATE gmail_transactions
-            SET ProcessedTime = NULL, PaymentID = NULL
+            SET PaymentID = NULL
             WHERE MessageId = %s
         """
         execute(sql, [message_id])

@@ -33,7 +33,6 @@ def get_column_labels():
         'MembershipFeePaid': 'Membership Fee Paid',
         'PaymentTransaction': 'Payment Transaction',
         'Status': 'Status',
-        'LastLogin': 'Last Login',
         'LastModified': 'Last Modified',
     }
 
@@ -64,8 +63,6 @@ def format_cell_value(col_key, row):
         return row['Expiration'].strftime('%Y-%m-%d') if row['Expiration'] else ''
     elif col_key == 'PaymentDate':
         return row['PaymentDate'].strftime('%Y-%m-%d') if row['PaymentDate'] else ''
-    elif col_key == 'LastLoginDate':
-        return row['LastLoginDate'].strftime('%Y-%m-%d %H:%M') if row['LastLoginDate'] else ''
     elif col_key == 'LastModified':
         return row['LastModified'].strftime('%Y-%m-%d %H:%M') if row['LastModified'] else ''
     elif col_key == 'WeChatID':
@@ -120,7 +117,7 @@ def export_csv():
             SELECT
                 District, MemberID, FirstName, LastName, Expiration, Gender,
                 WeChatID, Email, Type, FamilyID, PaymentDate, MembershipFeePaid,
-                PaymentTransaction, Status, LastLoginDate, LastUpdated as LastModified
+                PaymentTransaction, Status, UpdatedAt as LastModified
             FROM members
             WHERE 1=1
         """
@@ -190,7 +187,7 @@ def export_all_districts():
 
         column_labels = get_column_labels()
         if not selected_columns:
-            selected_columns = ['District', 'MemberID', 'Name', 'Email', 'Status', 'LastLoginDate', 'LastModified', 'Expiration']
+            selected_columns = ['District', 'MemberID', 'Name', 'Email', 'Status', 'LastModified', 'Expiration']
 
         # Fetch all districts
         district_rows = query("SELECT DISTINCT District FROM members WHERE District IS NOT NULL AND District != '' ORDER BY District")
@@ -206,7 +203,7 @@ def export_all_districts():
                 sql = """
                     SELECT District, MemberID, FirstName, LastName, Expiration, Gender,
                            WeChatID, Email, Type, FamilyID, PaymentDate, MembershipFeePaid,
-                           PaymentTransaction, Status, LastLoginDate, LastUpdated as LastModified
+                           PaymentTransaction, Status, UpdatedAt as LastModified
                     FROM members WHERE District = %s
                 """
                 params = [district]
@@ -266,13 +263,13 @@ def export_all_sheet():
 
         column_labels = get_column_labels()
         if not selected_columns:
-            selected_columns = ['District', 'MemberID', 'Name', 'Email', 'Status', 'LastLoginDate', 'LastModified', 'Expiration']
+            selected_columns = ['District', 'MemberID', 'Name', 'Email', 'Status', 'LastModified', 'Expiration']
 
         # Build query for all members
         sql = """
             SELECT District, MemberID, FirstName, LastName, Expiration, Gender,
                    WeChatID, Email, Type, FamilyID, PaymentDate, MembershipFeePaid,
-                   PaymentTransaction, Status, LastLoginDate, LastUpdated as LastModified
+                   PaymentTransaction, Status, UpdatedAt as LastModified
             FROM members WHERE 1=1
         """
         params = []

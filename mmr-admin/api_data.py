@@ -349,54 +349,11 @@ def api_backfill_unix_timestamps():
     try:
         stats = {'members': 0, 'payments': 0, 'submissions': 0}
 
-        # Backfill members.updated_at_unix
-        result = execute(
-            """UPDATE members
-               SET updated_at_unix = UNIX_TIMESTAMP(LastUpdated)
-               WHERE LastUpdated IS NOT NULL AND updated_at_unix = 0""")
-        stats['members'] += result
-
-        # Backfill members.last_login_unix
-        result = execute(
-            """UPDATE members
-               SET last_login_unix = UNIX_TIMESTAMP(LastLogin)
-               WHERE LastLogin IS NOT NULL AND last_login_unix = 0""")
-        stats['members'] += result
-
-        # Backfill members.created_at_unix
-        result = execute(
-            """UPDATE members
-               SET created_at_unix = UNIX_TIMESTAMP(Created)
-               WHERE Created IS NOT NULL AND created_at_unix = 0""")
-        stats['members'] += result
-
-        # Backfill payments.processed_date_unix
-        result = execute(
-            """UPDATE payments
-               SET processed_date_unix = UNIX_TIMESTAMP(ProcessedDate)
-               WHERE ProcessedDate IS NOT NULL AND processed_date_unix = 0""")
-        stats['payments'] += result
-
-        # Backfill submissions.timestamp_unix
-        result = execute(
-            """UPDATE submissions
-               SET timestamp_unix = UNIX_TIMESTAMP(Timestamp)
-               WHERE Timestamp IS NOT NULL AND timestamp_unix = 0""")
-        stats['submissions'] += result
-
-        # Backfill submissions.expires_at_unix
-        result = execute(
-            """UPDATE submissions
-               SET expires_at_unix = UNIX_TIMESTAMP(ExpiresAt)
-               WHERE ExpiresAt IS NOT NULL AND expires_at_unix = 0""")
-        stats['submissions'] += result
-
-        # Backfill submissions.approval_date_unix
-        result = execute(
-            """UPDATE submissions
-               SET approval_date_unix = UNIX_TIMESTAMP(ApprovalDate)
-               WHERE ApprovalDate IS NOT NULL AND approval_date_unix = 0""")
-        stats['submissions'] += result
+        # NOTE: unix timestamp backfill columns (updated_at_unix, last_login_unix,
+        # processed_date_unix, etc.) were removed from the schema. Operations that
+        # referenced deleted columns (LastLogin, ProcessedDate, ApprovalDate) have
+        # been removed. This endpoint is effectively a no-op until new backfill
+        # targets are defined.
 
         total_updated = sum(stats.values())
 
