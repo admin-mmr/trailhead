@@ -83,6 +83,9 @@ def login_required(f):
         if DEV_BYPASS_AUTH:
             return f(*args, **kwargs)
         if not session.get('user'):
+            from flask import request as _req
+            if _req.path.startswith('/api/'):
+                return json_response({'ok': False, 'error': 'Not authenticated'}, 401)
             return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
     return decorated_function

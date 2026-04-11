@@ -88,13 +88,15 @@ def fuzzy_match_transaction_to_member(gmail: dict, member: dict) -> tuple[bool, 
     4. Any word in member_text is substring of transaction_text
 
     Returns: (matched: bool, priority: int)
-      - priority 1 = rule 1, 2 = rule 2, 3 = rule 3, 4 = rule 4, 0 = no match
+      - priority 0 = payment-linked (caller sets; not returned by this fn)
+      - priority 1 = rule 1, 2 = rule 2, 3 = rule 3, 4 = rule 4
+      - priority 0 / matched=False = no match
     """
-    member_id = member.get('MemberID', '').upper()
-    tx_number = gmail.get('TransactionNumber', '')
-    sender = gmail.get('Sender', '').lower()
-    memo = gmail.get('Memo', '').lower()
-    notes = gmail.get('Notes', '').lower()
+    member_id = (member.get('MemberID') or '').upper()
+    tx_number = gmail.get('TransactionNumber') or ''
+    sender = (gmail.get('Sender') or '').lower()
+    memo = (gmail.get('Memo') or '').lower()
+    notes = (gmail.get('Notes') or '').lower()
 
     member_text = build_member_text(member)
     tx_text = build_transaction_text(gmail)
@@ -132,10 +134,32 @@ def find_best_matching_submission(gmail: dict, amount: Decimal) -> Optional[dict
     Returns: {submission_id, member_id, score} or None if no match found
 
     Algorithm:
+      0. Check payments table: if this transaction is already linked to a MemberID,
+         look for that member's pending submission first (priority 0)
       1. Get all pending membership submissions with matching amount
       2. For each submission's member, apply fuzzy_match_transaction_to_member
-      3. Return submission with highest priority match (priority 1 > 2 > 3 > 4)
+      3. Return submission with highest priority match (priority 0 > 1 > 2 > 3 > 4)
     """
+    # Step 0: Check if transaction is already linked to a member via payments table
+    tx_num = gmail.get('TransactionNumber')
+    if tx_num:
+        linked = query("""
+            SELECT MemberID FROM payments
+            WHERE TransactionNumber = %s AND MemberID IS NOT NULL
+            LIMIT 1
+        """, (tx_num,))
+        if linked:
+            hint_id = linked[0]['MemberID']
+            hinted_sub = query("""
+                SELECT SubmissionID, MemberID FROM submissions
+                WHERE MemberID = %s AND Status = 'pending'
+                  AND SubmissionType LIKE '%Membership%'
+                ORDER BY CreatedAt DESC LIMIT 1
+            """, (hint_id,))
+            if hinted_sub:
+                return {'submission_id': hinted_sub[0]['SubmissionID'],
+                        'member_id': hint_id, 'priority': 0}
+
     # Fetch pending submissions with matching amount
     pending_subs = query("""
         SELECT s.SubmissionID, s.MemberID, s.Amount
@@ -209,29 +233,56 @@ def fuzzy_select_transaction_to_submission(submission_id: str, max_candidates: i
     if not member:
         return {'error': f'Member {member_id} not found', 'candidates': []}
 
-    # Get unmatched Gmail transactions matching amount
+    # MemberID in memo is the most reliable signal (system-set) — always show these
+    # regardless of existing payment linkage; admin makes the final call.
+    # Amount-only matches still require the transaction to be unlinked.
+    mid_pattern = f'%{member_id}%'
     candidates = query("""
         SELECT MessageId, TransactionNumber, Sender, Amount, Memo, TransactionDate,
                Notes, UpdatedAt, Timestamp
         FROM gmail_transactions
-        WHERE (Notes IS NULL OR UpdatedAt IS NULL)
-          AND Amount = %s
-        ORDER BY TransactionDate DESC
-        LIMIT 100
-    """, (amount,))
+        WHERE
+            -- MemberID in memo/notes: always a candidate, even if already linked
+            Memo  LIKE %s
+            OR Notes LIKE %s
+            -- Amount match only: exclude already-linked transactions
+            OR (
+                Amount = %s
+                AND NOT EXISTS (
+                    SELECT 1 FROM payments
+                    WHERE payments.TransactionNumber = gmail_transactions.TransactionNumber
+                      AND payments.SubmissionID IS NOT NULL
+                      AND payments.SubmissionID != ''
+                )
+            )
+    """, (mid_pattern, mid_pattern, amount))
+
+    # Batch-load transactions already linked to this member via payments (priority 0)
+    tx_numbers = [c['TransactionNumber'] for c in candidates] or ['']
+    placeholders = ','.join(['%s'] * len(tx_numbers))
+    payment_linked_txns = query(f"""
+        SELECT TransactionNumber FROM payments
+        WHERE MemberID = %s AND TransactionNumber IN ({placeholders})
+    """, (member_id, *tx_numbers))
+    payment_linked_set = {r['TransactionNumber'] for r in payment_linked_txns}
 
     # Score each candidate using fuzzy matching
+    sub_amount = float(amount)
     scored_candidates = []
     for gmail in candidates:
         matched, priority = fuzzy_match_transaction_to_member(gmail, member)
+        # Override: existing payment link to this member = highest confidence
+        if gmail['TransactionNumber'] in payment_linked_set:
+            matched, priority = True, 0
         tx_date = gmail['TransactionDate']
-        # Handle different date formats (string, datetime, None)
         if tx_date and hasattr(tx_date, 'isoformat'):
             tx_date_str = tx_date.isoformat()
         elif isinstance(tx_date, str):
             tx_date_str = tx_date
         else:
             tx_date_str = None
+
+        amount_match = abs(float(gmail['Amount']) - sub_amount) < 0.01
 
         scored_candidates.append({
             'MessageId': gmail['MessageId'],
@@ -243,13 +294,22 @@ def fuzzy_select_transaction_to_submission(submission_id: str, max_candidates: i
             'Notes': gmail['Notes'],
             'priority': priority,
             'matched': matched,
+            'amount_match': amount_match,
         })
 
-    # Sort by priority (descending), then by matched (True first), then by TransactionDate (newest first)
-    # Handle None dates by converting to empty string (sorts last when reversed)
+    # Sort: identity match (MemberID) is the primary signal, amount is secondary.
+    # A strong identity match with wrong amount beats a weak/no identity match
+    # with correct amount.
+    # match_score: priority 0→6 (payment-linked), 1→4, 2→3, 3→2, 4→1, unmatched→-1
     def sort_key(x):
-        date_val = x['TransactionDate'] or ''  # None becomes empty string (sorts last)
-        return (x['priority'], x['matched'], date_val)
+        if not x['matched']:
+            match_score = -1
+        elif x['priority'] == 0:
+            match_score = 6   # payment-linked: above all fuzzy rules
+        else:
+            match_score = 5 - x['priority']
+        date_val = x['TransactionDate'] or ''
+        return (match_score, x['amount_match'], date_val)
 
     scored_candidates.sort(key=sort_key, reverse=True)
 

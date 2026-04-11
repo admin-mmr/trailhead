@@ -181,6 +181,27 @@ const MembersPanel = () => {
   };
 
   // ────────────────────────────────────────────────────
+  // Live search debounces
+  // ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (selectedMember) return;
+    const t = setTimeout(() => searchMembers(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const t = setTimeout(() => searchMembersToAdd(addSearchQuery), 300);
+    return () => clearTimeout(t);
+  }, [addSearchQuery]);
+
+  useEffect(() => {
+    if (selectedDistrictMember) return;
+    const t = setTimeout(() => searchDistrictMembers(districtSearchQuery), 300);
+    return () => clearTimeout(t);
+  }, [districtSearchQuery]);
+
+  // ────────────────────────────────────────────────────
   // Change District helpers
   // ────────────────────────────────────────────────────
 
@@ -275,7 +296,6 @@ const MembersPanel = () => {
                   placeholder="Enter name or MemberID…"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && searchMembers(searchQuery)}
                   style={{
                     flex: 1,
                     padding: '8px 12px',
@@ -286,13 +306,6 @@ const MembersPanel = () => {
                     fontSize: 14,
                   }}
                 />
-                <button
-                  className="btn btn-primary"
-                  onClick={() => searchMembers(searchQuery)}
-                  disabled={loading}
-                >
-                  {loading ? 'Searching…' : 'Search'}
-                </button>
               </div>
 
               {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
@@ -308,25 +321,16 @@ const MembersPanel = () => {
                           <th>Type</th>
                           <th>Family ID</th>
                           <th>Status</th>
-                          <th style={{ width: 80 }}></th>
                         </tr>
                       </thead>
                       <tbody>
                         {searchResults.map(m => (
-                          <tr key={m.MemberID}>
+                          <tr key={m.MemberID} onClick={() => selectPrimaryMember(m)} style={{ cursor: 'pointer' }}>
                             <td style={{ fontWeight: 500 }}>{m.MemberID}</td>
                             <td>{m.FirstName} {m.LastName}</td>
                             <td><span className={`badge ${m.Type === 'Family' ? 'badge-blue' : 'badge-yellow'}`}>{m.Type}</span></td>
                             <td>{m.FamilyID || '—'}</td>
                             <td><span className={`badge ${m.Status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{m.Status}</span></td>
-                            <td>
-                              <button
-                                className="btn btn-sm btn-primary"
-                                onClick={() => selectPrimaryMember(m)}
-                              >
-                                Select
-                              </button>
-                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -387,7 +391,7 @@ const MembersPanel = () => {
                               <td><span className={`badge ${m.Type === 'Family' ? 'badge-blue' : 'badge-yellow'}`}>{m.Type}</span></td>
                               <td><span className={`badge ${m.Status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{m.Status}</span></td>
                               <td style={{ fontSize: 13, color: 'var(--text2)' }}>
-                                {m.Expiration ? new Date(m.Expiration).toLocaleDateString() : '—'}
+                                {m.Expiration ? m.Expiration.split('T')[0] : '—'}
                               </td>
                               <td>
                                 {m.MemberID !== selectedMember.MemberID && (
@@ -419,7 +423,6 @@ const MembersPanel = () => {
                         placeholder="Search member to add…"
                         value={addSearchQuery}
                         onChange={e => setAddSearchQuery(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && searchMembersToAdd(addSearchQuery)}
                         style={{
                           flex: 1,
                           padding: '8px 12px',
@@ -430,13 +433,6 @@ const MembersPanel = () => {
                           fontSize: 14,
                         }}
                       />
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => searchMembersToAdd(addSearchQuery)}
-                        disabled={addSearching}
-                      >
-                        {addSearching ? 'Searching…' : 'Search'}
-                      </button>
                     </div>
 
                     {addError && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{addError}</div>}
@@ -451,24 +447,15 @@ const MembersPanel = () => {
                                 <th>Name</th>
                                 <th>Type</th>
                                 <th>Status</th>
-                                <th style={{ width: 80 }}></th>
                               </tr>
                             </thead>
                             <tbody>
                               {addSearchResults.map(m => (
-                                <tr key={m.MemberID}>
+                                <tr key={m.MemberID} onClick={() => setSelectedNewMember(m)} style={{ cursor: 'pointer' }}>
                                   <td style={{ fontWeight: 500 }}>{m.MemberID}</td>
                                   <td>{m.FirstName} {m.LastName}</td>
                                   <td><span className={`badge ${m.Type === 'Family' ? 'badge-blue' : 'badge-yellow'}`}>{m.Type}</span></td>
                                   <td><span className={`badge ${m.Status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{m.Status}</span></td>
-                                  <td>
-                                    <button
-                                      className="btn btn-sm btn-primary"
-                                      onClick={() => setSelectedNewMember(m)}
-                                    >
-                                      Select
-                                    </button>
-                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -536,7 +523,6 @@ const MembersPanel = () => {
                   placeholder="Enter name or MemberID…"
                   value={districtSearchQuery}
                   onChange={e => setDistrictSearchQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && searchDistrictMembers(districtSearchQuery)}
                   style={{
                     flex: 1,
                     padding: '8px 12px',
@@ -547,13 +533,6 @@ const MembersPanel = () => {
                     fontSize: 14,
                   }}
                 />
-                <button
-                  className="btn btn-primary"
-                  onClick={() => searchDistrictMembers(districtSearchQuery)}
-                  disabled={districtSearching}
-                >
-                  {districtSearching ? 'Searching…' : 'Search'}
-                </button>
               </div>
 
               {districtError && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{districtError}</div>}
@@ -568,24 +547,15 @@ const MembersPanel = () => {
                           <th>Name</th>
                           <th>Current District</th>
                           <th>Status</th>
-                          <th style={{ width: 80 }}></th>
                         </tr>
                       </thead>
                       <tbody>
                         {districtSearchResults.map(m => (
-                          <tr key={m.MemberID}>
+                          <tr key={m.MemberID} onClick={() => selectDistrictMember(m)} style={{ cursor: 'pointer' }}>
                             <td style={{ fontWeight: 500 }}>{m.MemberID}</td>
                             <td>{m.FirstName} {m.LastName}</td>
                             <td style={{ color: 'var(--text2)' }}>{m.District || '—'}</td>
                             <td><span className={`badge ${m.Status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{m.Status}</span></td>
-                            <td>
-                              <button
-                                className="btn btn-sm btn-primary"
-                                onClick={() => selectDistrictMember(m)}
-                              >
-                                Select
-                              </button>
-                            </td>
                           </tr>
                         ))}
                       </tbody>

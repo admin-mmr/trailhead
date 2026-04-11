@@ -55,27 +55,17 @@
     );
   };
 
-  const PendingSubmissionsTable = ({ submissions, selectedSubmissionIds, focusedSubmissionId, onToggle, onSelectAll, onViewMember, onFocus, tooltipHandlers }) => {
+  const PendingSubmissionsTable = ({ submissions, focusedSubmissionId, onViewMember, onFocus, tooltipHandlers }) => {
     const e = React.createElement;
     if (!submissions.length) {
       return e('div', { className: 'empty', style: { padding: 24, textAlign: 'center' } },
         e('div', { className: 'big' }, '✓'), 'No pending submissions'
       );
     }
-    const allChecked  = submissions.length > 0 && submissions.every(sub => selectedSubmissionIds.has(sub.SubmissionID));
-    const someChecked = submissions.some(sub => selectedSubmissionIds.has(sub.SubmissionID));
 
     return e('table', { className: 'data-table' },
       e('thead', null,
         e('tr', null,
-          e('th', null,
-            e('input', {
-              type: 'checkbox', checked: allChecked,
-              ref: el => { if (el) el.indeterminate = someChecked && !allChecked; },
-              onChange: () => onSelectAll(allChecked ? [] : submissions.map(sub => sub.SubmissionID)),
-              title: allChecked ? 'Deselect all' : 'Select all',
-            })
-          ),
           e('th', null, 'Member'),
           e('th', null, 'Type'),
           e('th', null, 'Amount'),
@@ -85,22 +75,18 @@
       ),
       e('tbody', null,
         submissions.map(sub => {
-          const isFocused  = focusedSubmissionId === sub.SubmissionID;
-          const isSelected = selectedSubmissionIds.has(sub.SubmissionID);
+          const isFocused = focusedSubmissionId === sub.SubmissionID;
           return e('tr', {
             key: sub.SubmissionID,
-            title: sub.SubmissionID,
+            title: 'Click to find matching transactions',
             style: {
               cursor: 'pointer',
-              background: isSelected ? 'var(--surface2)' : undefined,
+              background: isFocused ? 'var(--surface2)' : undefined,
               borderLeft: isFocused ? '3px solid var(--yellow)' : '3px solid transparent',
               outline: isFocused ? '1px solid var(--yellow)22' : undefined,
             },
             onClick: () => onFocus(sub.SubmissionID),
           },
-            e('td', { onClick: ev2 => ev2.stopPropagation() },
-              e('input', { type: 'checkbox', checked: isSelected, onChange: () => onToggle(sub.SubmissionID) })
-            ),
             e('td', null,
               e(window.MemberIdChip, { memberId: sub.MemberID, tooltipHandlers, onClick: onViewMember }),
               sub.FirstName
@@ -124,7 +110,7 @@
     );
   };
 
-  const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, selectedMessageId, onSelect, onQuickApproved, onClearFocus, tooltipHandlers, activePopover, onPopoverToggle }) => {
+  const GmailTable = ({ rows, candidates, focusedSubmission, candidatesLoading, selectedMessageId, onSelect, onQuickApproved, onClearFocus, tooltipHandlers, activePopover, onPopoverToggle, onColFilter }) => {
     const [colWidths, setColWidths] = useState({ sender: 120, memo: 200 });
     const [resizing, setResizing] = useState(null);
     const [colFilters, setColFilters] = useState({ sender: '', amount: '', memo: '', date: '', txnum: '' });
@@ -151,8 +137,15 @@
       return true;
     }) : baseRows;
 
-    const setFilter = (col, val) => setColFilters(prev => ({ ...prev, [col]: val }));
-    const clearAllFilters = () => setColFilters({ sender: '', amount: '', memo: '', date: '', txnum: '' });
+    const setFilter = (col, val) => {
+      const next = { ...colFilters, [col]: val };
+      setColFilters(next);
+      if (onColFilter) onColFilter(next);
+    };
+    const clearAllFilters = () => {
+      setColFilters({ sender: '', amount: '', memo: '', date: '', txnum: '' });
+      if (onColFilter) onColFilter({ sender: '', amount: '', memo: '', date: '', txnum: '' });
+    };
     const filterInput = (col, placeholder) => e('div', { style: { position: 'relative', marginTop: 3 } },
       e('input', {
         type: 'text', value: colFilters[col], placeholder,
@@ -301,12 +294,28 @@
             e('td', { style: { fontSize: 11 } }, fmtDate(g.TransactionDate)),
             e('td', { style: { fontSize: 11, fontFamily: 'monospace' } }, fmt(g.TransactionNumber)),
             e('td', { style: { position: 'relative', whiteSpace: 'nowrap' }, onClick: ev => ev.stopPropagation() },
-              !isLinked && e('button', {
-                className: `btn btn-sm ${hasMemoId ? 'btn-green' : 'btn-outline'}`,
-                style: { fontSize: 11, padding: '2px 8px' },
-                title: hasMemoId ? `Quick-approve for ${memoIds.join(', ')}` : 'Create payment',
-                onClick: ev => { ev.stopPropagation(); onPopoverToggle(isOpen ? null : g.MessageId, ev.currentTarget.getBoundingClientRect()); },
-              }, hasMemoId ? '⚡ Quick' : '+ Create'),
+              isLinked && isFilterMode
+                ? e('button', {
+                    className: 'btn btn-sm btn-green',
+                    style: { fontSize: 11, padding: '2px 8px' },
+                    title: `Link this payment to submission for ${focusedSubmission?.MemberID}`,
+                    onClick: ev => {
+                      ev.stopPropagation();
+                      api('/api/payments/manual-approve', {
+                        method: 'POST',
+                        body: JSON.stringify({ transactionNumber: g.TransactionNumber, memberID: focusedSubmission.MemberID, submissionId: focusedSubmission.SubmissionID }),
+                      }).then(r => {
+                        if (r.ok) onQuickApproved(g.MessageId, focusedSubmission.MemberID, 'Payment');
+                        else alert(r.error || 'Approve failed');
+                      });
+                    },
+                  }, '✓ Approve')
+                : !isLinked && e('button', {
+                    className: `btn btn-sm ${hasMemoId ? 'btn-green' : 'btn-outline'}`,
+                    style: { fontSize: 11, padding: '2px 8px' },
+                    title: hasMemoId ? `Quick-approve for ${memoIds.join(', ')}` : 'Create payment',
+                    onClick: ev => { ev.stopPropagation(); onPopoverToggle(isOpen ? null : g.MessageId, ev.currentTarget.getBoundingClientRect()); },
+                  }, hasMemoId ? '⚡ Quick' : '+ Create'),
             ),
           );
         }),

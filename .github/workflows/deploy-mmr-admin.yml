@@ -20,12 +20,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Copy shared Python modules into deploy package
-        run: |
-          cp basecamp/python/nyrr_api.py mmr-admin/nyrr_api.py
-          cp basecamp/python/sync_engine.py mmr-admin/sync_engine.py
-          cp basecamp/python/sync_config.py mmr-admin/sync_config.py
-          cp basecamp/python/sync_jobs.py mmr-admin/sync_jobs.py
-          echo "✅ Synced: nyrr_api.py, sync_engine.py, sync_config.py, sync_jobs.py"
+        run: ./scripts/sync-shared-modules.sh
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5

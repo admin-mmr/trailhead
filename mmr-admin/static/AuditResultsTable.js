@@ -90,7 +90,7 @@ const AuditResultsTable = ({
                       {entry.transaction_id.substring(0, 16)}…
                     </div>
                     <div style={{ color: 'var(--text)', fontSize: '12px', marginBottom: '4px' }}>
-                      ${entry.amount?.toFixed(2) || 'N/A'} · {entry.transaction_date}
+                      ${entry.amount != null ? parseFloat(entry.amount).toFixed(2) : 'N/A'} · {entry.transaction_date}
                     </div>
                     <div style={{ color: 'var(--text2)', fontSize: '11px', marginBottom: '2px', wordBreak: 'break-word' }}>
                       <strong style={{ color: 'var(--text)' }}>From:</strong> {entry.sender || '—'}

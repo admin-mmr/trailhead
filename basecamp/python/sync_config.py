@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 from sync_models import SYNC_CONFIG, get_config, list_configs
 from sync_diff import _normalize_for_diff, _row_changed, _filter_changed_rows
-from sync_batch import BATCH_SIZE, _log_sync_batch, _get_last_successful_batch, _batch_insert_rows, _normalize_sheet_rows, _prepare_sheet_rows
+from sync_batch import BATCH_SIZE, _log_sync_batch, _get_last_successful_batch, _batch_insert_rows, _normalize_sheet_rows, _prepare_sheet_rows, _convert_iso_to_mysql_datetime
 
 def _truncate_log(obj, max_str=60, max_list=3):
     """Recursively truncate long strings and lists for readable debug logging."""

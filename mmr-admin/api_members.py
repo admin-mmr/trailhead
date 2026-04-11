@@ -21,7 +21,7 @@ from datetime import datetime
 from flask import Blueprint, request, session
 
 from auth import login_required, require_role
-from db import query, execute
+from db import query, execute, db_cursor
 from helpers import json_response, handle_api_errors
 from activity_logger import log_activity
 
@@ -36,7 +36,7 @@ members_bp = Blueprint('members', __name__)
 
 def get_admin_id():
     """Get the admin email from the session (serves as admin ID)."""
-    return session.get('user_email', 'unknown')
+    return session.get('user_email', '')
 
 
 def get_member_by_id(member_id: str) -> Optional[dict]:
@@ -44,7 +44,7 @@ def get_member_by_id(member_id: str) -> Optional[dict]:
     rows = query("""
         SELECT MemberID, FirstName, LastName, Email, PhoneNumber, WeChatID,
                Type, FamilyID, District, Status, Expiration, MembershipFeePaid,
-               PaymentDate, PaymentTransaction, LastUpdated
+               PaymentDate, PaymentTransaction, UpdatedAt
         FROM members
         WHERE MemberID = %s
     """, (member_id,))
@@ -73,7 +73,7 @@ def get_family_members(family_id: str) -> list[dict]:
     return query("""
         SELECT MemberID, FirstName, LastName, Email, Type, FamilyID,
                District, Status, Expiration, MembershipFeePaid,
-               PaymentDate, PaymentTransaction, LastUpdated
+               PaymentDate, PaymentTransaction, UpdatedAt
         FROM members
         WHERE FamilyID = %s
         ORDER BY Type DESC, MemberID ASC
@@ -281,6 +281,7 @@ def api_add_member_to_family():
     # Save old state for potential removal
     old_state = {
         'Type': new_member['Type'],
+        'Status': new_member['Status'],
         'FamilyID': new_member['FamilyID'],
         'Expiration': new_member['Expiration'],
         'MembershipFeePaid': new_member['MembershipFeePaid'],
@@ -292,25 +293,30 @@ def api_add_member_to_family():
     admin_id = get_admin_id()
     now = datetime.utcnow()
 
-    execute("""
-        UPDATE members
-        SET FamilyID = %s,
-            Type = 'Family',
-            Expiration = %s,
-            MembershipFeePaid = %s,
-            PaymentDate = %s,
-            PaymentTransaction = %s,
-            LastUpdated = %s
-        WHERE MemberID = %s
-    """, (
-        primary['FamilyID'],
-        primary['Expiration'],
-        primary['MembershipFeePaid'],
-        primary['PaymentDate'],
-        primary['PaymentTransaction'],
-        now,
-        new_member_id
-    ))
+    with db_cursor() as cur:
+        cur.execute("SET @internal_proc = 1")
+        cur.execute("""
+            UPDATE members
+            SET FamilyID = %s,
+                Type = 'Family',
+                Status = %s,
+                Expiration = %s,
+                MembershipFeePaid = %s,
+                PaymentDate = %s,
+                PaymentTransaction = %s,
+                UpdatedAt = %s
+            WHERE MemberID = %s
+        """, (
+            primary['FamilyID'],
+            primary['Status'],
+            primary['Expiration'],
+            primary['MembershipFeePaid'],
+            primary['PaymentDate'],
+            primary['PaymentTransaction'],
+            now,
+            new_member_id
+        ))
+        cur.execute("SET @internal_proc = NULL")
 
     # Log the action
     log_activity(
@@ -373,18 +379,22 @@ def api_remove_member_from_family():
     admin_id = get_admin_id()
     now = datetime.utcnow()
 
-    execute("""
+    with db_cursor() as cur:
+        cur.execute("SET @internal_proc = 1")
+        cur.execute("""
         UPDATE members
         SET Type = %s,
+            Status = %s,
             FamilyID = %s,
             Expiration = %s,
             MembershipFeePaid = %s,
             PaymentDate = %s,
             PaymentTransaction = %s,
-            LastUpdated = %s
+            UpdatedAt = %s
         WHERE MemberID = %s
     """, (
         old_state.get('Type'),
+        old_state.get('Status'),
         old_state.get('FamilyID'),
         old_state.get('Expiration'),
         old_state.get('MembershipFeePaid'),
@@ -393,6 +403,7 @@ def api_remove_member_from_family():
         now,
         member_id
     ))
+        cur.execute("SET @internal_proc = NULL")
 
     # Log the action
     log_activity(
@@ -478,7 +489,7 @@ def api_change_member_district(member_id: str):
     execute("""
         UPDATE members
         SET District = %s,
-            LastUpdated = %s
+            UpdatedAt = %s
         WHERE MemberID = %s
     """, (new_district, now, member_id))
 

@@ -325,11 +325,12 @@ def api_manual_approve():
     data = request.json or {}
     tx_num = data.get('transactionNumber', '').strip()
     member_id = data.get('memberID', '').strip()
+    submission_id_hint = (data.get('submissionId') or '').strip() or None
 
     if not tx_num or not member_id:
         return json_response({'error': 'Missing transactionNumber or memberID'}, status=400)
 
-    logger.info(f'[MANUAL-APPROVE] Approving tx={tx_num}, member={member_id}')
+    logger.info(f'[MANUAL-APPROVE] Approving tx={tx_num}, member={member_id}, hint={submission_id_hint}')
 
     # Fetch Gmail transaction
     tx_rows = query(
@@ -348,15 +349,17 @@ def api_manual_approve():
         logger.warning(f'[MANUAL-APPROVE] Member not found: {member_id}')
         return json_response({'error': 'Member not found'}, status=404)
 
-    # Check for pending membership submissions
-    pending_subs = query("""
-        SELECT SubmissionID FROM submissions
-        WHERE MemberID = %s AND Status = 'pending' AND SubmissionType LIKE '%Membership%'
-        ORDER BY CreatedAt DESC
-        LIMIT 1
-    """, (member_id,))
-
-    submission_id = pending_subs[0]['SubmissionID'] if pending_subs else None
+    # Use client-supplied submissionId if provided, otherwise find the latest pending one
+    if submission_id_hint:
+        submission_id = submission_id_hint
+    else:
+        pending_subs = query("""
+            SELECT SubmissionID FROM submissions
+            WHERE MemberID = %s AND Status = 'pending'
+            ORDER BY CreatedAt DESC
+            LIMIT 1
+        """, (member_id,))
+        submission_id = pending_subs[0]['SubmissionID'] if pending_subs else None
     admin_email = session.get('user', {}).get('email', 'admin')
 
     logger.info(f'[MANUAL-APPROVE] Linking transaction: amount={tx["Amount"]}, submissionID={submission_id}, admin={admin_email}')
@@ -364,18 +367,44 @@ def api_manual_approve():
     payment_type = 'Family Membership' if member['Type'] == 'Family' else 'Individual Membership'
 
     try:
-        execute(
-            "CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)",
-            (tx_num, member_id, payment_type, tx['Amount'], admin_email, submission_id)
-        )
+        # Check for an orphaned payment (AutoGuess created it but left SubmissionID blank)
+        existing = query("""
+            SELECT PaymentID FROM payments
+            WHERE TransactionNumber = %s
+              AND (SubmissionID IS NULL OR SubmissionID = '')
+            LIMIT 1
+        """, (tx_num,))
 
-        logger.info(f'[MANUAL-APPROVE] Success: tx={tx_num}, member={member_id}, submission={submission_id}')
+        if existing:
+            # Patch the orphaned payment and approve the submission directly
+            payment_id = existing[0]['PaymentID']
+            logger.info(f'[MANUAL-APPROVE] Orphaned payment found {payment_id} — patching SubmissionID')
+            execute(
+                "UPDATE payments SET SubmissionID = %s, ProcessedBy = %s WHERE PaymentID = %s",
+                (submission_id, admin_email, payment_id)
+            )
+            if submission_id:
+                execute("""
+                    UPDATE submissions
+                    SET Status = 'approved', PaymentID = %s, UpdatedByID = %s
+                    WHERE SubmissionID = %s
+                """, (payment_id, admin_email, submission_id))
+            action = 'linked'
+        else:
+            execute(
+                "CALL sp_link_transaction(%s, %s, %s, %s, %s, %s)",
+                (tx_num, member_id, payment_type, tx['Amount'], admin_email, submission_id)
+            )
+            action = 'created'
+
+        logger.info(f'[MANUAL-APPROVE] Success ({action}): tx={tx_num}, member={member_id}, submission={submission_id}')
         return json_response({
             'ok': True,
-            'message': f'Payment approved for {member["FirstName"]} {member["LastName"]}',
+            'message': f'Payment {action} for {member["FirstName"]} {member["LastName"]}',
             'transactionNumber': tx_num,
             'memberID': member_id,
             'submissionID': submission_id,
+            'action': action,
         })
     except Exception as e:
         logger.exception(f'[MANUAL-APPROVE] Error: {e}')
@@ -545,7 +574,7 @@ def api_debug_candidates(submission_id: str):
             'priority': int(matched_rule[1]) if matched_rule else 0,
         })
 
-    traced.sort(key=lambda x: x['priority'], reverse=True)
+    traced.sort(key=lambda x: x['priority'] if x['priority'] > 0 else 999)
 
     return json_response({
         'submission': {'SubmissionID': submission_id, 'MemberID': sub['MemberID'], 'Amount': float(sub['Amount'])},
@@ -584,6 +613,92 @@ def api_gmail_candidates(submission_id: str):
         return json_response(result, status=404)
 
     return json_response(result)
+
+
+@payments_bp.route('/api/payments/debug/match/<submission_id>', methods=['GET'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_debug_match(submission_id: str):
+    """
+    Debug endpoint: show intermediate state for gmail-candidates matching.
+    Returns submission, member record, member_text, raw candidate count,
+    and full scored candidate list (up to 50) before truncation.
+    """
+    from db import query as db_query
+
+    # Step 1: submission
+    sub = db_query("SELECT * FROM submissions WHERE SubmissionID = %s", (submission_id,))
+    if not sub:
+        return json_response({'error': 'Submission not found', 'submission_id': submission_id}, 404)
+    sub = sub[0]
+
+    # Step 2: member
+    member = get_member_by_id(sub['MemberID'])
+    if not member:
+        return json_response({'error': f"Member {sub['MemberID']} not found"}, 404)
+
+    member_text = build_member_text(member)
+
+    # Step 3: raw gmail candidates (before scoring)
+    amount = sub['Amount']
+    sub_amount = float(amount)
+    member_id = sub['MemberID']
+    mid_pattern = f'%{member_id}%'
+    raw = db_query("""
+        SELECT MessageId, TransactionNumber, Sender, Amount, Memo, Notes, TransactionDate, UpdatedAt
+        FROM gmail_transactions
+        WHERE (
+            Amount = %s
+            OR Memo  LIKE %s
+            OR Notes LIKE %s
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM payments
+            WHERE payments.TransactionNumber = gmail_transactions.TransactionNumber
+              AND payments.SubmissionID IS NOT NULL
+              AND payments.SubmissionID != ''
+        )
+    """, (amount, mid_pattern, mid_pattern))
+
+    # Step 4: score each
+    scored = []
+    for gmail in raw:
+        matched, priority = fuzzy_match_transaction_to_member(gmail, member)
+        amount_match = abs(float(gmail['Amount']) - sub_amount) < 0.01
+        scored.append({
+            'MessageId': gmail['MessageId'],
+            'TransactionNumber': gmail['TransactionNumber'],
+            'Sender': gmail['Sender'],
+            'Memo': gmail['Memo'],
+            'Notes': gmail['Notes'],
+            'Amount': float(gmail['Amount']),
+            'amount_match': amount_match,
+            'TransactionDate': gmail['TransactionDate'].isoformat() if gmail['TransactionDate'] and hasattr(gmail['TransactionDate'], 'isoformat') else str(gmail['TransactionDate']),
+            'tx_text': build_transaction_text(gmail),
+            'priority': priority,
+            'matched': matched,
+        })
+
+    scored.sort(key=lambda x: (
+        x['amount_match'],
+        6 if (x['matched'] and x['priority'] == 0) else ((5 - x['priority']) if x['priority'] > 0 else -1),
+        x['TransactionDate'] or ''
+    ), reverse=True)
+
+    return json_response({
+        'submission': {k: str(v) if v is not None else None for k, v in sub.items()},
+        'member': {
+            'MemberID': member.get('MemberID'),
+            'FirstName': member.get('FirstName'),
+            'LastName': member.get('LastName'),
+            'Email': member.get('Email'),
+            'WeChatID': member.get('WeChatID'),
+            'member_text': member_text,
+        },
+        'raw_candidate_count': len(raw),
+        'candidates': scored[:50],
+    })
 
 
 @payments_bp.route('/api/payments/admin-create', methods=['POST'])

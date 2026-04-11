@@ -238,6 +238,21 @@ def api_renewal_audit():
 
             logger.info(f"Audit complete: {len(results)} transactions (matched={matched}, mismatched={mismatched}, not_traced={not_traced})")
 
+            # Normalize SP field names → frontend field names:
+            #   message_id         → transaction_id
+            #   status_match       → match_status
+            #   current_expiration → expiration_date
+            def _normalize(r):
+                return {
+                    **r,
+                    'transaction_id':  r.get('message_id') or r.get('transaction_id') or '',
+                    'match_status':    r.get('status_match') or r.get('match_status') or '',
+                    'expiration_date': r.get('current_expiration') or r.get('expiration_date'),
+                    'red_flags':       r.get('red_flags') or [],
+                    'family_check':    r.get('family_check'),
+                }
+            results = [_normalize(r) for r in results]
+
             # Serialize dates to ISO format for JSON response
             serialized = _serialize_for_json({
                 'success': True,

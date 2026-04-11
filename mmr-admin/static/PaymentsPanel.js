@@ -30,7 +30,6 @@ const PaymentsPanel = () => {
   const [unmatchedGmail, setUnmatchedGmail] = useState([]);
   const [paymentHistory, setPaymentHistory] = useState([]);
 
-  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState(new Set());
   const [selectedMessageId, setSelectedMessageId] = useState(null);
 
   const [focusedSubmissionId, setFocusedSubmissionId] = useState(null);
@@ -82,9 +81,10 @@ const PaymentsPanel = () => {
     setCandidatesLoading(true);
     api(`/api/payments/gmail-candidates/${submissionId}`).then(r => {
       setCandidatesLoading(false);
-      if (r.ok) {
-        const candidates = Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.data) ? r.data.data : []);
-        setGmailCandidates(candidates);
+      if (r && Array.isArray(r.candidates)) {
+        setGmailCandidates(r.candidates);
+      } else if (r && r.error) {
+        setGmailCandidates([]);
       }
     });
   }, [focusedSubmissionId]);
@@ -111,6 +111,14 @@ const PaymentsPanel = () => {
     return () => clearTimeout(t);
   }, [gmailSearch, loadGmail]);
 
+  const colFilterTimerRef = React.useRef(null);
+  const handleColFilter = useCallback((filters) => {
+    // Merge non-empty column filters into a server search term
+    const term = [filters.sender, filters.memo, filters.txnum].filter(Boolean).join(' ').trim();
+    clearTimeout(colFilterTimerRef.current);
+    colFilterTimerRef.current = setTimeout(() => loadGmail(term, 0, false), 350);
+  }, [loadGmail]);
+
   const loadAll = useCallback(() => {
     api('/api/payments/dashboard').then(r => {
       if (r.ok) {
@@ -133,8 +141,6 @@ const PaymentsPanel = () => {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 4000); };
 
-  const toggleSubmission = (id) => setSelectedSubmissionIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const selectAllSubmissions = (ids) => setSelectedSubmissionIds(new Set(ids));
 
   const focusedSubmission = pendingSubmissions.find(sub => sub.SubmissionID === focusedSubmissionId) || null;
 
@@ -195,10 +201,7 @@ const PaymentsPanel = () => {
         e('div', { style: { overflowY: 'auto', maxHeight: 520 } },
           e(PendingSubmissionsTable, {
             submissions: pendingSubmissions,
-            selectedSubmissionIds,
             focusedSubmissionId,
-            onToggle: toggleSubmission,
-            onSelectAll: selectAllSubmissions,
             onViewMember: () => {},
             onFocus: handleSubmissionFocus,
             tooltipHandlers,
@@ -253,6 +256,7 @@ const PaymentsPanel = () => {
             tooltipHandlers,
             activePopover: activeGmailPopover,
             onPopoverToggle: (id, rect) => { setActiveGmailPopover(id); setPopoverAnchorRect(rect || null); },
+            onColFilter: handleColFilter,
           }),
           // Load More
           !focusedSubmission && unmatchedGmail.length < gmailTotal && e('div', {
