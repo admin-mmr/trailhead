@@ -49,7 +49,6 @@ const DistrictMemberTable = ({
     { key: 'MembershipFeePaid', label: 'Membership Fee Paid' },
     { key: 'PaymentTransaction', label: 'Payment Transaction' },
     { key: 'Status', label: 'Status' },
-    { key: 'LastLoginDate', label: 'Last Login' },
     { key: 'LastModified', label: 'Last Modified' },
   ];
 
@@ -66,7 +65,7 @@ const DistrictMemberTable = ({
     if (key === 'Expiration' || key === 'PaymentDate') {
       return formatDate(value, true);
     }
-    if (key === 'LastLoginDate' || key === 'LastModified') {
+    if (key === 'LastModified') {
       return formatDate(value, false);
     }
     return value || '—';

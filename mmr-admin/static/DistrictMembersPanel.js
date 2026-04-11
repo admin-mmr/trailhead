@@ -35,7 +35,6 @@ window.DistrictMembersPanel = () => {
     { key: 'MembershipFeePaid', label: 'Membership Fee Paid' },
     { key: 'PaymentTransaction', label: 'Payment Transaction' },
     { key: 'Status', label: 'Status' },
-    { key: 'LastLoginDate', label: 'Last Login' },
     { key: 'LastModified', label: 'Last Modified' },
   ];
 
@@ -65,7 +64,10 @@ window.DistrictMembersPanel = () => {
       const saved = localStorage.getItem('mmr_sort_preferences');
       if (saved) {
         const prefs = JSON.parse(saved);
-        setSortBy(prefs.sortBy || 'District');
+        // Migrate stale column keys that no longer exist in the DB
+        const legacyKeys = new Set(['LastLoginDate', 'LastLogin']);
+        const resolvedSortBy = legacyKeys.has(prefs.sortBy) ? 'District' : (prefs.sortBy || 'District');
+        setSortBy(resolvedSortBy);
         setSortOrder(prefs.sortOrder || 'asc');
       }
     } catch {}
@@ -219,7 +221,7 @@ window.DistrictMembersPanel = () => {
     if (key === 'Expiration' || key === 'PaymentDate') {
       return formatDate(value, true);
     }
-    if (key === 'LastLoginDate' || key === 'LastModified') {
+    if (key === 'LastModified') {
       return formatDate(value, false);
     }
     return value || '—';
