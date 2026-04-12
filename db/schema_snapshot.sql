@@ -523,7 +523,7 @@ PROCEDURE	sp_cancel_payment		BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Payment not found.';
     END IF;
 
-    -- 2. If Membership — restore member from log
+    -- 2. If Membership — restore member from member_log
     IF LOWER(v_payment_type) LIKE '%membership%' THEN
 
         SELECT Status, Expiration, MembershipFeePaid, PaymentDate, PaymentTransaction
@@ -558,9 +558,10 @@ PROCEDURE	sp_cancel_payment		BEGIN
         WHERE SubmissionID = v_submission_id;
     END IF;
 
-    -- 4. Clear gmail_transactions Notes
+    -- 4. Clear gmail_transactions payment-link columns
     IF v_tx_number IS NOT NULL THEN
-        UPDATE gmail_transactions SET Notes = NULL, UpdatedAt = NULL
+        UPDATE gmail_transactions
+        SET Notes = NULL, UpdatedAt = NULL
         WHERE TransactionNumber = v_tx_number;
     END IF;
 
@@ -582,26 +583,22 @@ PROCEDURE	sp_clear_transaction		BEGIN
     DECLARE v_member_id  VARCHAR(10)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     DECLARE v_pay_type   VARCHAR(50)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     DECLARE v_sub_id     VARCHAR(50)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-    DECLARE v_pay_created_at DATETIME;
-
-    -- Member revert vars (used in second cursor)
-    DECLARE v_m_member_id    VARCHAR(10)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-    DECLARE v_m_created_at   DATETIME;
-    DECLARE v_family_id      VARCHAR(10)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    DECLARE v_family_id  VARCHAR(10)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     DECLARE v_prev_status    VARCHAR(50)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     DECLARE v_prev_pay_tx    VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     DECLARE v_prev_expiration DATE;
     DECLARE v_prev_fee_paid   DECIMAL(10,2);
     DECLARE v_prev_pay_date   DATE;
+    DECLARE v_pay_created_at  DATETIME;
     DECLARE done2 INT DEFAULT 0;
 
-    -- Cursor 1: payments (for submissions + deletion)
+    -- Cursor 1: payments → submission revert
     DECLARE cur_payments CURSOR FOR
         SELECT PaymentID, MemberID, PaymentType, SubmissionID, CreatedAt
         FROM payments
         WHERE TransactionNumber = p_tx_number;
 
-    -- Cursor 2: affected members (from temp table, populated before any deletes)
+    -- Cursor 2: membership members snapshot (populated into temp table before any deletes)
     DECLARE cur_members CURSOR FOR
         SELECT member_id, min_created_at FROM tmp_tx_members;
 
@@ -620,9 +617,9 @@ PROCEDURE	sp_clear_transaction		BEGIN
             SET MESSAGE_TEXT = 'TransactionNumber not found in gmail_transactions.';
     END IF;
 
-    -- ================================================================
-    -- DRY RUN
-    -- ================================================================
+    -- =========================================================================
+    -- DRY RUN — preview only, no writes
+    -- =========================================================================
     IF p_dry_run = 1 THEN
 
         SELECT
@@ -677,14 +674,13 @@ PROCEDURE	sp_clear_transaction		BEGIN
         WHERE p.TransactionNumber = p_tx_number
           AND LOWER(p.PaymentType) LIKE '%membership%';
 
-    -- ================================================================
+    -- =========================================================================
     -- EXECUTE
-    -- ================================================================
+    -- =========================================================================
     ELSE
         START TRANSACTION;
 
         -- Step 0: Snapshot affected membership members BEFORE any deletes
-        -- Deduplicated: one row per MemberID, earliest payment CreatedAt for log lookup
         DROP TEMPORARY TABLE IF EXISTS tmp_tx_members;
         CREATE TEMPORARY TABLE tmp_tx_members AS
             SELECT MemberID AS member_id, MIN(CreatedAt) AS min_created_at
@@ -693,7 +689,7 @@ PROCEDURE	sp_clear_transaction		BEGIN
               AND LOWER(PaymentType) LIKE '%membership%'
             GROUP BY MemberID;
 
-        -- Step 1: Submissions — revert to pending for any linked payment
+        -- Step 1: Revert linked submissions → pending
         OPEN cur_payments;
         sub_loop: LOOP
             FETCH cur_payments INTO v_payment_id, v_member_id, v_pay_type, v_sub_id, v_pay_created_at;
@@ -706,7 +702,7 @@ PROCEDURE	sp_clear_transaction		BEGIN
         END LOOP;
         CLOSE cur_payments;
 
-        -- Step 2: Delete payments
+        -- Step 2: Delete all payments for this transaction
         DELETE FROM payments WHERE TransactionNumber = p_tx_number;
 
         -- Step 3: Clear gmail_transactions payment-link columns
@@ -718,18 +714,17 @@ PROCEDURE	sp_clear_transaction		BEGIN
         SET done2 = 0;
         OPEN cur_members;
         member_loop: LOOP
-            FETCH cur_members INTO v_m_member_id, v_m_created_at;
+            FETCH cur_members INTO v_member_id, v_pay_created_at;
             IF done2 THEN LEAVE member_loop; END IF;
 
             SELECT FamilyID INTO v_family_id
-            FROM members WHERE MemberID = v_m_member_id LIMIT 1;
+            FROM members WHERE MemberID = v_member_id LIMIT 1;
 
-            -- Look up member state immediately before the payment was created
             SELECT Status, Expiration, MembershipFeePaid, PaymentDate, PaymentTransaction
             INTO v_prev_status, v_prev_expiration, v_prev_fee_paid, v_prev_pay_date, v_prev_pay_tx
             FROM member_log
-            WHERE MemberID = v_m_member_id
-              AND LoggingTime < v_m_created_at
+            WHERE MemberID = v_member_id
+              AND LoggingTime < v_pay_created_at
             ORDER BY LoggingTime DESC
             LIMIT 1;
 
@@ -742,7 +737,7 @@ PROCEDURE	sp_clear_transaction		BEGIN
                 PaymentDate        = v_prev_pay_date,
                 PaymentTransaction = v_prev_pay_tx,
                 UpdatedAt          = NOW()
-            WHERE MemberID = v_m_member_id
+            WHERE MemberID = v_member_id
                OR (v_family_id IS NOT NULL AND v_family_id <> ''
                    AND FamilyID = v_family_id);
             SET @internal_proc = NULL;
