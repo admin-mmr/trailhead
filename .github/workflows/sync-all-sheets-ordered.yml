@@ -1,0 +1,84 @@
+name: Sync All Sheets (Ordered Sequential)
+
+on:
+  workflow_dispatch:               # Manual trigger only — no scheduled runs
+    inputs:
+      verbose:
+        description: 'Enable verbose logging (shows sample rows and diffs)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+env:
+  ADMIN_URL:           ${{ secrets.MMR_ADMIN_URL }}    # https://mmr-admin.azurewebsites.net
+  CRON_TOKEN:          ${{ secrets.SYNC_CRON_TOKEN }}  # shared secret, set in Azure App Settings too
+  POLL_INTERVAL:       10                              # Start at 10s, grows exponentially to 60s
+  POLL_MAX_INTERVAL:   60                              # Cap exponential backoff at 60s
+  POLL_TIMEOUT:        600                             # 10 min max wait
+  CIRCUIT_BREAKER:     10                              # Give up after 10 consecutive errors
+  VERBOSE:             ${{ inputs.verbose || 'false' }}
+
+# Triggers the server-side full_sync orchestrator which runs all 5 operations
+# in dependency order: gmail_transactions → payments → webapp_events → members (export+import).
+# Uses the same polling infrastructure as bidirectional-sync.
+
+jobs:
+  full-sync:
+    name: "Full Sync (Ordered Sequential)"
+    runs-on: ubuntu-latest
+    outputs:
+      status:  ${{ steps.run.outputs.status }}
+      summary: ${{ steps.run.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run & poll
+        id: run
+        run: bash .github/scripts/run_sync_phase.sh /api/sync/full-sync ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
+
+  notify:
+    name: "Summary Email → admin@mmrunners.org"
+    needs: full-sync
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build report
+        id: report
+        run: |
+          STATUS="${{ needs.full-sync.outputs.status }}"
+          SUMMARY="${{ needs.full-sync.outputs.summary }}"
+
+          if [ "$STATUS" = "done" ]; then
+            echo "subject=✅ Full Sync OK — $(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+          else
+            echo "subject=⚠️ Full Sync ERRORS — $(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+          fi
+
+          {
+            echo "body<<EOF"
+            echo "Sync All Sheets (Ordered Sequential) — $(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo "Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            if [ "$STATUS" = "done" ]; then
+              echo "✅ Full sync completed successfully."
+            else
+              echo "❌ Full sync failed or timed out."
+            fi
+            echo ""
+            echo "Summary: $SUMMARY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port:    ${{ secrets.MAIL_PORT }}
+          username:       ${{ secrets.MAIL_USERNAME }}
+          password:       ${{ secrets.MAIL_PASSWORD }}
+          subject:        ${{ steps.report.outputs.subject }}
+          to:             admin@mmrunners.org
+          from:           "MMR Sync <${{ secrets.MAIL_USERNAME }}>"
+          body:           ${{ steps.report.outputs.body }}

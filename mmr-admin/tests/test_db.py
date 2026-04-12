@@ -90,7 +90,9 @@ class TestDbCursor:
 
     def _mock_conn(self):
         conn = MagicMock()
-        conn.cursor.return_value = MagicMock()
+        cursor = MagicMock()
+        cursor.nextset.return_value = None  # prevent infinite loop in _drain_results
+        conn.cursor.return_value = cursor
         return conn
 
     @patch('db.get_conn')
@@ -157,8 +159,10 @@ class TestExecute:
     @patch('db.get_conn')
     def test_commits_on_success(self, mock_get_conn):
         conn = MagicMock()
-        conn.cursor.return_value = MagicMock()
-        conn.cursor.return_value.rowcount = 1
+        cursor = MagicMock()
+        cursor.rowcount = 1
+        cursor.nextset.return_value = None  # prevent infinite loop in _drain_results
+        conn.cursor.return_value = cursor
         mock_get_conn.return_value = conn
 
         from db import execute
