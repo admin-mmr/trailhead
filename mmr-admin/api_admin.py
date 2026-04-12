@@ -92,10 +92,11 @@ def api_refresh_sheets():
     """
     token = os.environ.get('GITHUB_TOKEN')
     if not token:
+        # 503 = service unavailable due to missing config, not an application error
         return json_response({
             'ok': False,
             'error': 'GITHUB_TOKEN not configured on server — cannot trigger workflow'
-        }, 500)
+        }, 503)
 
     try:
         import requests as req_lib

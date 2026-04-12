@@ -1,3 +1,7 @@
+### 04-11 — TEST COVERAGE: 100% endpoint coverage, 221 tests, 0 skips
+
+Changed: Fixed skipped test (regex excluded `=` operator). Added test_endpoint_coverage.py — enumerates all 95 Flask routes via url_map, enforces every API route is registered in COVERAGE dict and has a test file; fails on new unregistered endpoints. Added test_api_smoke_extended.py — 65 smoke tests for previously uncovered routes (events, runners, admins, sync imports, py-exec, query, etc.). Also fixed api_admin.py refresh-sheets returning 500 on missing GITHUB_TOKEN → now 503. Status: 221 passed, 0 skipped, 0 failed across 7 test files. Next: commit all.
+
 ### 04-11 — TEST COVERAGE: 4 new test files, 1 bug fixed
 
 Changed: Added 4 test files to mmr-admin/tests/ covering recurring bug patterns from recent sessions: (1) test_api_response_format.py — {ok, data} wrapper contract for all payment/member endpoints; (2) test_safe_columns.py — safe_columns whitelist vs schema + sp_link_transaction param count consistency; (3) test_payment_type.py — no bare 'Membership', ternary logic correctness; (4) test_trigger_columns.py — trigger body column refs vs schema. Also fixed real bug caught by tests: api_payments.py manual-approve path called sp_link_transaction with 6 params (added admin_email) but procedure only takes 5. Status: 67 passed, 1 skipped. Next: commit tests + fix, run existing test_sql_columns.py + test_imports.py in CI.

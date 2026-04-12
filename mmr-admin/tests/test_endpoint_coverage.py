@@ -44,6 +44,7 @@ EXCLUDED_PREFIXES = (
     '/logout',
     '/favicon',
     '/templates/',
+    '/static/',      # Flask built-in static file server
 )
 EXCLUDED_EXACT = {'/', '/query'}
 
