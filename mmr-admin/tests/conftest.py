@@ -25,30 +25,37 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault('DEV_BYPASS_AUTH', 'true')
 os.environ.setdefault('TESTING', 'true')
 
-# Add mmr-admin root to path so imports work the same as runtime
+# Add mmr-admin root and tests dir to path so imports work the same as runtime
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(__file__))
 
 # Stub mysql.connector before any app module imports it.
 # This lets us import and test Flask routes without a MySQL installation.
 # MySQLError must be a real Exception subclass — Flask's error handler registration
 # calls issubclass() on it, which fails if it's a MagicMock.
-class _FakeMySQLError(Exception):
-    def __init__(self, msg='', errno=None, **kw):
-        super().__init__(msg)
-        self.errno = errno
+#
+# Skip the mock when --run-integration is active so the real mysql.connector
+# is available for testcontainers to use.
+_run_integration = '--run-integration' in sys.argv
 
-_connector_mock = MagicMock()
-_connector_mock.Error = _FakeMySQLError
-_connector_mock.pooling = MagicMock()
-_connector_mock.pooling.MySQLConnectionPool = MagicMock()
+if not _run_integration:
+    class _FakeMySQLError(Exception):
+        def __init__(self, msg='', errno=None, **kw):
+            super().__init__(msg)
+            self.errno = errno
 
-_mysql_mock = MagicMock()
-_mysql_mock.connector = _connector_mock
+    _connector_mock = MagicMock()
+    _connector_mock.Error = _FakeMySQLError
+    _connector_mock.pooling = MagicMock()
+    _connector_mock.pooling.MySQLConnectionPool = MagicMock()
 
-sys.modules.setdefault('mysql', _mysql_mock)
-sys.modules.setdefault('mysql.connector', _connector_mock)
-sys.modules.setdefault('mysql.connector.pooling', _connector_mock.pooling)
-sys.modules.setdefault('mysql.connector.errors', _connector_mock)
+    _mysql_mock = MagicMock()
+    _mysql_mock.connector = _connector_mock
+
+    sys.modules.setdefault('mysql', _mysql_mock)
+    sys.modules.setdefault('mysql.connector', _connector_mock)
+    sys.modules.setdefault('mysql.connector.pooling', _connector_mock.pooling)
+    sys.modules.setdefault('mysql.connector.errors', _connector_mock)
 
 
 def pytest_addoption(parser):
@@ -143,3 +150,10 @@ def mock_query():
     yield mock
     for p in patches:
         p.stop()
+
+
+# ---------------------------------------------------------------------------
+# Integration fixtures (re-exported so pytest discovers them from conftest.py)
+# ---------------------------------------------------------------------------
+
+from conftest_integration import mysql_container, db_session, db  # noqa: E402, F401

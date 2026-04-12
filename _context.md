@@ -1,3 +1,15 @@
+### 04-11 — V009: fix chk_members_status_valid missing 'lifetime'
+
+Changed: Created MIGRATION_V009_fix_status_check_constraint.sql — drops chk_members_status_valid and recreates with all 6 valid statuses (active/expired/inactive/pending/pending_upgrade/lifetime). V007 had omitted 'lifetime', breaking sp_admin_update_member_status. Status: ready to deploy (push to main triggers GitHub Actions). Next: commit + push.
+
+### 04-11 — MARK ACTIVE: admin override to set member active + year-end expiration
+
+Changed: api_members_status.py — added GET /api/members/config/year-end + POST /api/members/<id>/mark-active (reads MembershipYearEnd from config, calls sp_admin_update_member_status with status=active, cascades to family). MembersStatusPanel.js — added ✅ Mark Active sub-tab (fetches year-end on mount, member search, note required, green confirm button). Status: complete, no DB changes needed. Next: commit.
+
+### 04-11 — INTEGRATION TEST INFRA: testcontainers + full DDL schema
+
+Changed: Created db/schema_integration.sql (1213 lines) — full MySQL 5.7 DDL: 18 tables, 8 views, 8 stored procedures, 15 triggers, seed config rows. Created mmr-admin/tests/conftest_integration.py — testcontainers session fixture (mysql:5.7, auto-skip if Docker not running), per-test rollback isolation. Created test_integration_payments.py — 22 integration tests covering: trigger chain (auto_fill, sync_membership, approve_submission, gmail_notes), split payment limits, sp_link_transaction, member validation triggers, generate_member_id. Status: ready to run once Docker Desktop installed (brew install --cask docker). Next: install Docker, run pytest --run-integration.
+
 ### 04-11 — TEST COVERAGE: 100% endpoint coverage, 221 tests, 0 skips
 
 Changed: Fixed skipped test (regex excluded `=` operator). Added test_endpoint_coverage.py — enumerates all 95 Flask routes via url_map, enforces every API route is registered in COVERAGE dict and has a test file; fails on new unregistered endpoints. Added test_api_smoke_extended.py — 65 smoke tests for previously uncovered routes (events, runners, admins, sync imports, py-exec, query, etc.). Also fixed api_admin.py refresh-sheets returning 500 on missing GITHUB_TOKEN → now 503. Status: 221 passed, 0 skipped, 0 failed across 7 test files. Next: commit all.

@@ -4,9 +4,9 @@
  */
 
 window.MembersStatusPanel = () => {
-  const { useState } = React;
+  const { useState, useEffect } = React;
 
-  // Sub-tab: change-status | revert-status
+  // Sub-tab: change-status | revert-status | mark-active
   const [subTab, setSubTab] = useState('change-status');
 
   // ──────────────────────────────────────────────────
@@ -21,6 +21,19 @@ window.MembersStatusPanel = () => {
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState('');
   const [statusToast, setStatusToast] = useState('');
+
+  // ──────────────────────────────────────────────────
+  // Mark Active state
+  // ──────────────────────────────────────────────────
+  const [activeSearchQuery, setActiveSearchQuery] = useState('');
+  const [activeSearchResults, setActiveSearchResults] = useState([]);
+  const [selectedActiveMember, setSelectedActiveMember] = useState(null);
+  const [activeSearching, setActiveSearching] = useState(false);
+  const [activeNote, setActiveNote] = useState('');
+  const [activeSaving, setActiveSaving] = useState(false);
+  const [activeError, setActiveError] = useState('');
+  const [yearEnd, setYearEnd] = useState(null);
+  const [yearEndLoading, setYearEndLoading] = useState(false);
 
   // ──────────────────────────────────────────────────
   // Revert Status state
@@ -64,6 +77,49 @@ window.MembersStatusPanel = () => {
       setStatusNote('');
     } else {
       setStatusError(r.error || 'Status change failed');
+    }
+  };
+
+  // ──────────────────────────────────────────────────
+  // Mark Active helpers
+  // ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (subTab === 'mark-active' && !yearEnd && !yearEndLoading) {
+      setYearEndLoading(true);
+      api('/api/members/config/year-end').then(r => {
+        setYearEndLoading(false);
+        if (r.ok) setYearEnd(r.data.year_end);
+        else setActiveError(r.error || 'Could not load MembershipYearEnd from config');
+      });
+    }
+  }, [subTab]);
+
+  const searchActiveMembers = async (q) => {
+    if (!q.trim()) { setActiveSearchResults([]); return; }
+    setActiveSearching(true);
+    const r = await api(`/api/members/search?q=${encodeURIComponent(q.trim())}`);
+    setActiveSearching(false);
+    if (r.ok) setActiveSearchResults(r.data);
+    else { setActiveError(r.error || 'Search failed'); setActiveSearchResults([]); }
+  };
+
+  const markActive = async () => {
+    if (!selectedActiveMember) { setActiveError('Please select a member'); return; }
+    if (!activeNote.trim()) { setActiveError('A note is required'); return; }
+    setActiveSaving(true);
+    setActiveError('');
+    const r = await api(`/api/members/${selectedActiveMember.MemberID}/mark-active`, {
+      method: 'POST',
+      body: JSON.stringify({ note: activeNote.trim() }),
+    });
+    setActiveSaving(false);
+    if (r.ok) {
+      setStatusToast(`✓ ${selectedActiveMember.MemberID} marked active — expiration set to ${r.data.expiration_set}`);
+      setSelectedActiveMember(r.data.updated_member);
+      setActiveNote('');
+    } else {
+      setActiveError(r.error || 'Mark active failed');
     }
   };
 
@@ -122,6 +178,7 @@ window.MembersStatusPanel = () => {
       {/* Sub-tabs */}
       <div className="tabs" style={{ marginBottom: 24 }}>
         <button className={`tab ${subTab === 'change-status' ? 'active' : ''}`} onClick={() => setSubTab('change-status')}>👤 Change Status</button>
+        <button className={`tab ${subTab === 'mark-active' ? 'active' : ''}`} onClick={() => setSubTab('mark-active')}>✅ Mark Active</button>
         <button className={`tab ${subTab === 'revert-status' ? 'active' : ''}`} onClick={() => setSubTab('revert-status')}>↩ Revert Status</button>
       </div>
 
@@ -210,6 +267,83 @@ window.MembersStatusPanel = () => {
             style={{ padding: '8px 20px', borderRadius: 4, border: 'none', background: newStatus === 'lifetime' ? '#8b5cf6' : '#6b7280', color: '#fff', fontWeight: 600, cursor: 'pointer', opacity: (statusSaving || !selectedStatusMember || !statusNote.trim()) ? 0.5 : 1 }}
           >
             {statusSaving ? 'Saving…' : `Set ${newStatus}`}
+          </button>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────
+          Mark Active sub-tab
+      ────────────────────────────────────────────── */}
+      {subTab === 'mark-active' && (
+        <div>
+          <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 6, padding: '12px 16px' }}>
+            <strong>Mark Active</strong> — Sets status to <strong>active</strong> and expiration to the year-end date from config (<code>MembershipYearEnd</code>).
+            Cascades to all family members.
+          </div>
+
+          {yearEndLoading && <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>Loading year-end date…</div>}
+          {yearEnd && !yearEndLoading && (
+            <div style={{ marginBottom: 16, fontSize: 13, padding: '8px 14px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 4 }}>
+              Will set expiration to: <strong style={{ color: '#4ade80' }}>{yearEnd}</strong>
+            </div>
+          )}
+
+          {/* Member search */}
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>Search member</label>
+          <input
+            type="text" value={activeSearchQuery} placeholder="Name / ID / WeChat"
+            onChange={e => { setActiveSearchQuery(e.target.value); searchActiveMembers(e.target.value); }}
+            style={{ padding: '8px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text)', width: 280, marginBottom: 8 }}
+          />
+          {activeSearching && <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>Searching…</span>}
+
+          {activeSearchResults.length > 0 && !selectedActiveMember && (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--border)', borderRadius: 4, maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
+              {activeSearchResults.map(m => (
+                <li key={m.MemberID}
+                  onClick={() => { setSelectedActiveMember(m); setActiveSearchResults([]); setActiveError(''); }}
+                  style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)', fontSize: 13 }}
+                >
+                  <strong>{m.MemberID}</strong> — {m.FirstName} {m.LastName} <span style={{ color: 'var(--text-muted)' }}>({m.Status})</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {selectedActiveMember && (
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 6, padding: '14px 16px', marginBottom: 16 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>{selectedActiveMember.MemberID} — {selectedActiveMember.FirstName} {selectedActiveMember.LastName}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                Current status: <strong style={{ color: 'var(--text)' }}>{selectedActiveMember.Status}</strong> &nbsp;|&nbsp;
+                Expiration: <strong style={{ color: 'var(--text)' }}>{selectedActiveMember.Expiration || '—'}</strong> &nbsp;|&nbsp;
+                Type: {selectedActiveMember.Type} &nbsp;|&nbsp;
+                Family: {selectedActiveMember.FamilyID || 'none'}
+              </div>
+              <button style={{ marginTop: 8, fontSize: 12, padding: '2px 8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', color: 'var(--text-muted)' }}
+                onClick={() => { setSelectedActiveMember(null); setActiveSearchQuery(''); setActiveSearchResults([]); }}>
+                ✕ Change
+              </button>
+            </div>
+          )}
+
+          {/* Note */}
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>Note <span style={{ color: '#f87171' }}>*</span></label>
+          <textarea
+            value={activeNote}
+            onChange={e => setActiveNote(e.target.value)}
+            placeholder="Reason for manual activation (required)"
+            rows={2}
+            style={{ width: '100%', maxWidth: 480, padding: '8px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text)', resize: 'vertical', marginBottom: 12 }}
+          />
+
+          {activeError && <div style={{ color: '#f87171', marginBottom: 10, fontSize: 13 }}>⚠ {activeError}</div>}
+
+          <button
+            onClick={markActive}
+            disabled={activeSaving || !selectedActiveMember || !activeNote.trim() || !yearEnd}
+            style={{ padding: '8px 20px', borderRadius: 4, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 600, cursor: 'pointer', opacity: (activeSaving || !selectedActiveMember || !activeNote.trim() || !yearEnd) ? 0.5 : 1 }}
+          >
+            {activeSaving ? 'Saving…' : '✅ Mark Active'}
           </button>
         </div>
       )}

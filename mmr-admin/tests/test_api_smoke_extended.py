@@ -232,6 +232,86 @@ class TestMembersExtended:
         assert r.status_code in (200, 400, 404, 422)
         assert r.status_code < 500
 
+    # ── Mark Active ──────────────────────────────────────────────
+
+    def test_mark_active_no_note(self, client, mock_query):
+        """Missing note → 400."""
+        mock_query.return_value = [{'MemberID': 'A0001', 'Status': 'expired',
+                                    'FirstName': 'Jane', 'LastName': 'Doe',
+                                    'Email': '', 'PhoneNumber': '', 'WeChatID': '',
+                                    'Type': 'individual', 'FamilyID': None,
+                                    'District': '', 'Expiration': None,
+                                    'MembershipFeePaid': None, 'PaymentDate': None,
+                                    'PaymentTransaction': None, 'UpdatedAt': None}]
+        r = _post(client, '/api/members/A0001/mark-active', {})
+        assert r.status_code == 400
+        j = r.get_json()
+        assert j['ok'] is False
+        assert 'note' in j['error'].lower()
+
+    def test_mark_active_member_not_found(self, client, mock_query):
+        """Unknown member → 404."""
+        mock_query.return_value = []  # get_member_by_id returns nothing
+        r = _post(client, '/api/members/ZZZZ/mark-active', {'note': 'test'})
+        assert r.status_code == 404
+        j = r.get_json()
+        assert j['ok'] is False
+
+    def test_mark_active_year_end_not_configured(self, client, mock_query):
+        """MembershipYearEnd missing from config → 400."""
+        member_row = [{'MemberID': 'A0001', 'Status': 'expired',
+                       'FirstName': 'Jane', 'LastName': 'Doe',
+                       'Email': '', 'PhoneNumber': '', 'WeChatID': '',
+                       'Type': 'individual', 'FamilyID': None,
+                       'District': '', 'Expiration': None,
+                       'MembershipFeePaid': None, 'PaymentDate': None,
+                       'PaymentTransaction': None, 'UpdatedAt': None}]
+        # First call (get_member_by_id) returns a member; second (config) returns empty
+        mock_query.side_effect = [member_row, []]
+        r = _post(client, '/api/members/A0001/mark-active', {'note': 'test'})
+        assert r.status_code == 400
+        j = r.get_json()
+        assert j['ok'] is False
+        assert 'MembershipYearEnd' in j['error']
+
+    def test_mark_active_success(self, client, mock_query):
+        """Happy path: member found, year-end in config, SP called, returns updated member."""
+        member_row = [{'MemberID': 'A0001', 'Status': 'expired',
+                       'FirstName': 'Jane', 'LastName': 'Doe',
+                       'Email': '', 'PhoneNumber': '', 'WeChatID': '',
+                       'Type': 'individual', 'FamilyID': None,
+                       'District': '', 'Expiration': None,
+                       'MembershipFeePaid': None, 'PaymentDate': None,
+                       'PaymentTransaction': None, 'UpdatedAt': None}]
+        updated_row = [{**member_row[0], 'Status': 'active', 'Expiration': '2025-12-31'}]
+        config_row = [{'ConfigValue': '2025-12-31'}]
+        # Calls: get_member_by_id → config → get_member_by_id (updated)
+        mock_query.side_effect = [member_row, config_row, updated_row]
+        with patch('api_members_status.execute'):
+            r = _post(client, '/api/members/A0001/mark-active', {'note': 'Manual renewal'})
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j['ok'] is True
+        assert j['data']['expiration_set'] == '2025-12-31'
+        assert j['data']['updated_member']['Status'] == 'active'
+
+    def test_config_year_end_not_set(self, client, mock_query):
+        """GET config/year-end with no row in config → 404."""
+        mock_query.return_value = []
+        r = client.get('/api/members/config/year-end')
+        assert r.status_code == 404
+        j = r.get_json()
+        assert j['ok'] is False
+
+    def test_config_year_end_success(self, client, mock_query):
+        """GET config/year-end returns the date string."""
+        mock_query.return_value = [{'ConfigValue': '2025-12-31'}]
+        r = client.get('/api/members/config/year-end')
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j['ok'] is True
+        assert j['data']['year_end'] == '2025-12-31'
+
     def test_member_district_update(self, client, mock_query):
         mock_query.return_value = []
         r = _post(client, '/api/members/A0001/district', {'district': 'Manhattan'})

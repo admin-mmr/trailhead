@@ -28,6 +28,8 @@ members_status_bp = Blueprint('members_status', __name__)
 
 ALLOWED_ADMIN_STATUSES = {'lifetime', 'inactive'}
 
+CONFIG_KEY_YEAR_END = 'MembershipYearEnd'
+
 
 def get_member_by_id(member_id: str) -> Optional[dict]:
     """Get a single member by ID."""
@@ -43,7 +45,7 @@ def get_member_by_id(member_id: str) -> Optional[dict]:
 
 def get_admin_id():
     """Get the admin email from the session (serves as admin ID)."""
-    return session.get('user_email', 'unknown')
+    return session.get('user_email') or None
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -201,4 +203,83 @@ def api_revert_member_status(member_id: str):
         'updated_member': updated,
         'reverted_to': old_status,
         'message': f'{member_id} status reverted to {old_status}'
+    }})
+
+
+# ─────────────────────────────────────────────────────────────────
+# Config: membership year-end date
+# ─────────────────────────────────────────────────────────────────
+
+@members_status_bp.route('/api/members/config/year-end')
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_get_year_end():
+    """Return the MembershipYearEnd date from the config table."""
+    rows = query(
+        "SELECT ConfigValue FROM config WHERE ConfigKey = %s",
+        (CONFIG_KEY_YEAR_END,)
+    )
+    if not rows:
+        return json_response({'ok': False, 'error': 'MembershipYearEnd not set in config'}, 404)
+    return json_response({'ok': True, 'data': {'year_end': rows[0]['ConfigValue']}})
+
+
+# ─────────────────────────────────────────────────────────────────
+# Mark Active endpoint
+# ─────────────────────────────────────────────────────────────────
+
+@members_status_bp.route('/api/members/<member_id>/mark-active', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_mark_member_active(member_id: str):
+    """
+    Mark a member (and family) as active, setting Expiration to MembershipYearEnd.
+
+    Reads MembershipYearEnd from config, then calls sp_admin_update_member_status
+    with status='active' and the year-end date (EXPIRATION_OVERRIDE action).
+    Cascades to all family members with the same FamilyID.
+
+    POST body:
+      { "note": "Renewed via admin override" }
+    """
+    data = request.get_json() or {}
+    note = (data.get('note') or '').strip()
+
+    if not note:
+        return json_response({'ok': False, 'error': 'note is required'}, 400)
+
+    member = get_member_by_id(member_id)
+    if not member:
+        return json_response({'ok': False, 'error': f'Member {member_id} not found'}, 404)
+
+    # Fetch year-end date from config
+    rows = query(
+        "SELECT ConfigValue FROM config WHERE ConfigKey = %s",
+        (CONFIG_KEY_YEAR_END,)
+    )
+    if not rows:
+        return json_response({'ok': False, 'error': 'MembershipYearEnd not configured — set it in the config table first'}, 400)
+
+    year_end = rows[0]['ConfigValue']
+    admin_id = get_admin_id()
+
+    execute(
+        "CALL sp_admin_update_member_status(%s, %s, %s, %s, %s)",
+        (member_id, 'active', year_end, note, admin_id)
+    )
+
+    log_activity(
+        action='member_mark_active',
+        member_id=member_id,
+        admin_email=admin_id,
+        state=f'old={member["Status"]},new=active,expiration={year_end}'
+    )
+
+    updated = get_member_by_id(member_id)
+    return json_response({'ok': True, 'data': {
+        'updated_member': updated,
+        'expiration_set': year_end,
+        'message': f'{member_id} marked active, expiration set to {year_end}'
     }})

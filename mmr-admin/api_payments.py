@@ -192,7 +192,7 @@ def api_autoguess_all():
       4. [Optional] Link to pending membership submission if exists, otherwise create payment alone
     """
     # Capture admin email BEFORE entering loop (fixes blank history issue)
-    admin_email = session.get('user', {}).get('email', 'admin')
+    admin_email = session.get('user', {}).get('email') or None
 
     # Get unmatched transactions
     unmatched = query("""
@@ -360,7 +360,7 @@ def api_manual_approve():
             LIMIT 1
         """, (member_id,))
         submission_id = pending_subs[0]['SubmissionID'] if pending_subs else None
-    admin_email = session.get('user', {}).get('email', 'admin')
+    admin_email = session.get('user', {}).get('email') or None
 
     logger.info(f'[MANUAL-APPROVE] Linking transaction: amount={tx["Amount"]}, submissionID={submission_id}, admin={admin_email}')
 
@@ -739,7 +739,7 @@ def api_admin_create():
         return json_response({'error': 'Gmail transaction has no TransactionNumber — cannot link'}, status=400)
 
     amount = gmail.get('Amount')
-    admin_email = session.get('user', {}).get('email', 'admin')
+    admin_email = session.get('user', {}).get('email') or None
 
     # Find pending membership submission to auto-close
     pending_subs = query("""
