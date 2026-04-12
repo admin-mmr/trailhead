@@ -13,19 +13,11 @@ import sys
 import pathlib
 import subprocess
 
-# Guard
 try:
     import mysql.connector
     from testcontainers.mysql import MySqlContainer
-except ImportError as e:
-    print(f"Missing dependency: {e}")
-    print("  pip install testcontainers[mysql] mysql-connector-python")
-    sys.exit(1)
-
-result = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
-if result.returncode != 0:
-    print("Docker is not running. Start Docker Desktop first.")
-    sys.exit(1)
+except ImportError:
+    raise  # propagate so test_imports.py classifies as missing-dep (exit 2), not structural error
 
 import platform
 MYSQL_IMAGE    = "mysql:8.0" if platform.machine() in ("arm64", "aarch64") else "mysql:5.7"
@@ -75,6 +67,11 @@ def split_statements(sql: str) -> list[str]:
 
 
 def main():
+    result = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
+    if result.returncode != 0:
+        print("Docker is not running. Start Docker Desktop first.")
+        sys.exit(1)
+
     print(f"Starting {MYSQL_IMAGE} container...")
     errors = []
 
