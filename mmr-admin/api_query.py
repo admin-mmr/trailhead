@@ -130,16 +130,29 @@ def api_execute_query():
         logger.info(f'[QUERY] Executing {query_type} from {user_email}')
         logger.debug(f'[QUERY] SQL: {sql[:200]}...')
 
-        if is_select or is_call:
-            # SELECT or CALL stored procedure: use query() → returns list of dicts
+        if is_select:
+            # SELECT: use query() → returns list of dicts (read-only, no commit needed)
             rows = query(sql)
             columns = list(rows[0].keys()) if rows else []
-            logger.info(f'[QUERY] {query_type} returned {len(rows)} rows')
+            logger.info(f'[QUERY] SELECT returned {len(rows)} rows')
             return json_response({
                 'ok': True,
                 'rows': rows,
                 'count': len(rows),
                 'columns': columns,
+            })
+        elif is_call:
+            # CALL stored procedure: use execute() so the transaction is committed.
+            # query() is SELECT-only and never commits — CALLs that write would be silently rolled back.
+            affected = execute(sql)
+            logger.info(f'[QUERY] CALL completed (affected={affected})')
+            return json_response({
+                'ok': True,
+                'rows': [],
+                'count': 0,
+                'columns': [],
+                'affected': affected,
+                'message': 'Stored procedure executed successfully',
             })
         else:
             # INSERT/UPDATE/DELETE: use execute() → returns affected row count

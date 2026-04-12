@@ -83,6 +83,8 @@ def api_change_member_status(member_id: str):
         return json_response({'ok': False, 'error': f'Member {member_id} not found'}, 404)
 
     admin_id = get_admin_id()
+    if not admin_id:
+        return json_response({'ok': False, 'error': 'Admin session missing — please log out and back in'}, 401)
 
     execute(
         "CALL sp_admin_update_member_status(%s, %s, NULL, %s, %s)",

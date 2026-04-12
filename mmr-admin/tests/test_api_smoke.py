@@ -171,6 +171,21 @@ class TestMembers:
         r = _json_post(client, '/api/members/A0558/status', {'new_status': 'inactive', 'note': 'test'})
         assert r.status_code != 500, f"Unexpected 500: {r.data[:300]}"
 
+    def test_set_inactive_no_admin_session(self, client, mock_query):
+        """Missing session email must return 401, not let NULL reach MySQL (1048 bug)."""
+        mock_query.return_value = [{
+            'MemberID': 'A0558', 'FirstName': 'Yan', 'LastName': 'Zhang',
+            'Email': '', 'PhoneNumber': '', 'WeChatID': '', 'Type': 'Individual',
+            'FamilyID': None, 'District': '', 'Status': 'expired',
+            'Expiration': None, 'MembershipFeePaid': 0,
+            'PaymentDate': None, 'PaymentTransaction': '', 'UpdatedAt': None,
+        }]
+        # Ensure no user_email in session
+        with client.session_transaction() as sess:
+            sess.pop('user_email', None)
+        r = _json_post(client, '/api/members/A0558/status', {'new_status': 'inactive', 'note': 'test'})
+        assert r.status_code == 401, f"Expected 401 for missing admin session, got {r.status_code}: {r.data[:200]}"
+
 
 # ---------------------------------------------------------------------------
 # Sync (structure only — no job execution)

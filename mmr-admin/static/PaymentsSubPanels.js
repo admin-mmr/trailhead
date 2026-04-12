@@ -339,7 +339,7 @@
     );
   };
 
-  const PaymentHistoryTable = ({ payments = [] }) => {
+  const PaymentHistoryTable = ({ payments = [], onCancel }) => {
     const e = React.createElement;
     if (!payments.length) {
       return e('div', { style: { padding: 24, textAlign: 'center', color: 'var(--text2)' } },
@@ -349,23 +349,37 @@
     return e('table', { className: 'data-table' },
       e('thead', null,
         e('tr', null,
+          e('th', null, 'Payment ID'),
           e('th', null, 'Member'),
           e('th', null, 'Amount'),
           e('th', null, 'Payment Type'),
           e('th', null, 'Payment Date'),
           e('th', null, 'Updated'),
           e('th', null, 'Processed By'),
+          onCancel ? e('th', null, '') : null,
         )
       ),
       e('tbody', null,
         payments.map((p, i) =>
           e('tr', { key: i, style: { borderBottom: '1px solid var(--border)' } },
+            e('td', { style: { fontFamily: 'monospace', fontSize: 11, color: 'var(--text2)' } }, p.PaymentID || '—'),
             e('td', null, `${p.FirstName} ${p.LastName} (${p.MemberID})`),
             e('td', null, fmtMoney(p.Amount)),
             e('td', null, p.PaymentType || '—'),
             e('td', null, fmtDate(p.PaymentDate)),
             e('td', { style: { fontSize: 11, color: 'var(--text2)' } }, fmtDate(p.UpdatedAt)),
             e('td', { style: { fontSize: 11, color: 'var(--text2)' } }, p.ProcessedBy || 'auto'),
+            onCancel ? e('td', null,
+              e('button', {
+                className: 'btn btn-danger',
+                style: { fontSize: 11, padding: '2px 8px' },
+                onClick: () => {
+                  if (confirm(`Cancel payment ${p.PaymentID} for ${p.FirstName} ${p.LastName}?\n\nThis will:\n• Restore member to previous status\n• Revert submission to pending\n• Remove Gmail transaction link\n• Delete the payment record`)) {
+                    onCancel(p.PaymentID);
+                  }
+                }
+              }, 'Cancel')
+            ) : null,
           )
         )
       )

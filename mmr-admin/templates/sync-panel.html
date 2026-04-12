@@ -38,7 +38,7 @@ const JobCard = ({ jobId, job }) => {
           <div style={{ height: '100%', background: 'var(--accent)', width: `${job.progress}%`, transition: 'width 0.3s' }} />
         </div>
       )}
-      {(logText || (job.status === 'done' || job.status === 'error')) && (
+      {logText && (
         <details style={{ marginTop: 6, color: 'var(--text2)', fontSize: 12 }}>
           <summary style={{ cursor: 'pointer' }}>View Log</summary>
           <pre style={{
@@ -51,7 +51,7 @@ const JobCard = ({ jobId, job }) => {
             fontSize: 11,
             whiteSpace: 'pre-wrap',
           }}>
-            {logText || '(No log available)'}
+            {logText}
           </pre>
         </details>
       )}
@@ -184,6 +184,12 @@ initComponent('SyncPanel', () => {
           </p>
           <button className="btn btn-primary" onClick={() => triggerSync('Full Sync', 'All Operations', '/api/sync/full-sync')}>🔄 Run Full Sync</button>
           <RecentJobs filterFn={job => job.jobName === 'Full Sync'} />
+        </div>
+      )}
+
+      {jobsList.length > 0 && (
+        <div style={{ marginTop: 32, borderTop: '1px solid var(--border)', paddingTop: 20 }}>
+          <RecentJobs label="All Recent Jobs" />
         </div>
       )}
 

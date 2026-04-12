@@ -840,6 +840,28 @@ def api_payment_history():
     return json_response({'payments': rows})
 
 
+@payments_bp.route('/api/payments/cancel/<payment_id>', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_cancel_payment(payment_id):
+    """
+    Cancel a payment by calling sp_cancel_payment(p_payment_id).
+    Reverses member status, reverts submission to pending, clears gmail link, deletes payment.
+    """
+    if not payment_id:
+        return json_response({'error': 'payment_id required'}, 400)
+
+    admin_email = getattr(current_user, 'email', 'unknown')
+    logger.info(f'[CANCEL-PAYMENT] Admin {admin_email} cancelling payment {payment_id}')
+
+    result = query("CALL sp_cancel_payment(%s)", (payment_id,))
+    msg = result[0]['result'] if result else f'Payment {payment_id} cancelled.'
+    logger.info(f'[CANCEL-PAYMENT] {msg}')
+
+    return json_response({'ok': True, 'message': msg})
+
+
 # ============================================================================
 # AUTOGUESS AUDIT LOG
 # ============================================================================

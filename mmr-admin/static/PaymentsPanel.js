@@ -284,7 +284,19 @@ const PaymentsPanel = () => {
         }, showHistory ? '▼ Collapse' : '▶ Expand'),
       ),
       showHistory && e('div', { style: { border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowY: 'auto', maxHeight: 400 } },
-        e(PaymentHistoryTable, { payments: paymentHistory })
+        e(PaymentHistoryTable, {
+          payments: paymentHistory,
+          onCancel: async (paymentId) => {
+            const r = await api(`/api/payments/cancel/${paymentId}`, { method: 'POST' });
+            if (r.ok) {
+              showToast(`✅ ${r.message}`);
+              const refreshed = await api('/api/payments/history?limit=50&days=30');
+              if (refreshed.payments) setPaymentHistory(refreshed.payments);
+            } else {
+              showToast(`❌ Cancel failed: ${r.error || 'Unknown error'}`);
+            }
+          },
+        })
       ),
     ),
 

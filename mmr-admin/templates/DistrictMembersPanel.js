@@ -120,13 +120,15 @@ window.DistrictMembersPanel = () => {
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'Never';
-    const date = new Date(dateStr);
+    // Append T00:00:00 so date-only strings (YYYY-MM-DD) are parsed as local
+    // time instead of UTC midnight, which would shift the day back in negative
+    // UTC offset timezones (e.g. "2027-03-31" → Mar 30 in ET).
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr + 'T00:00:00' : dateStr;
+    const date = new Date(normalized);
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
     });
   };
 
