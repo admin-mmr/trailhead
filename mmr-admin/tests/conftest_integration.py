@@ -60,6 +60,12 @@ def _split_statements(sql: str) -> list[str]:
             current_delim = parts[1] if len(parts) > 1 else ";"
             continue
 
+        # Don't accumulate standalone comment/blank lines — they cause the
+        # final statement filter (`not s.startswith("--")`) to drop every DDL
+        # block that follows a comment section.
+        if not stripped or stripped.startswith("--"):
+            continue
+
         current_stmt.append(line)
 
         # Check if line ends with the current delimiter
@@ -88,6 +94,11 @@ def _load_schema(conn: mysql.connector.MySQLConnection) -> None:
     for stmt in stmts:
         s = stmt.strip()
         if not s or s.startswith("--"):
+            continue
+        # Skip DB-level statements — container already has the DB and the
+        # connection is already scoped to it; test_user lacks global privileges.
+        upper = s.upper().lstrip()
+        if upper.startswith("CREATE DATABASE") or upper.startswith("USE "):
             continue
         try:
             cursor.execute(s)
@@ -167,6 +178,9 @@ def db_session(mysql_container):
     )
     cur = root_conn.cursor()
     cur.execute("SET GLOBAL log_bin_trust_function_creators = 1")
+    # Match the schema's collation so string literals don't collide with
+    # utf8mb4_0900_ai_ci (MySQL 8.0 default)
+    cur.execute(f"ALTER DATABASE `{MYSQL_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
     cur.close()
     root_conn.close()
 

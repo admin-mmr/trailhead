@@ -857,7 +857,7 @@ END$$
 CREATE TRIGGER members_before_update
 BEFORE UPDATE ON members FOR EACH ROW
 BEGIN
-    IF NEW.Expiration <> OLD.Expiration THEN
+    IF NOT (NEW.Expiration <=> OLD.Expiration) THEN  -- NULL-safe: NULL<>NULL would be NULL, not TRUE
         IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
             SIGNAL SQLSTATE '45000'
                 SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';
@@ -868,7 +868,9 @@ END$$
 CREATE TRIGGER trg_members_before_update_lifetime
 BEFORE UPDATE ON members FOR EACH ROW
 BEGIN
-    IF @internal_proc IS NULL AND NEW.Status = 'lifetime' AND OLD.Status <> 'lifetime' THEN
+    -- Fire regardless of @internal_proc — the expiration lock trigger already
+    -- allows the procedure through; this setter must not be gated the same way.
+    IF NEW.Status = 'lifetime' AND OLD.Status <> 'lifetime' THEN
         SET NEW.Expiration = '2126-03-31';
     END IF;
 END$$
