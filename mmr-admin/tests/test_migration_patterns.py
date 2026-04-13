@@ -41,6 +41,7 @@ LEGACY_MIGRATIONS = {
     'MIGRATION_V011_fix_sp_revert_null_status.sql',   # missing @internal_proc, JSON_TABLE, FK literal
     'MIGRATION_V012_fix_revert_collation.sql',         # missing @internal_proc, FK literal
     'MIGRATION_V013_fix_revert_fk.sql',                # missing @internal_proc
+    'MIGRATION_V014_fix_revert_expiration_trigger.sql', # missing SQLEXCEPTION handler
 }
 
 
@@ -409,7 +410,44 @@ class TestFamilyIDGuard:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. LEAVE must use a declared block label, not the procedure name
+# 9. SPs with audit INSERTs must have a SQLEXCEPTION handler
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSQLExceptionHandler:
+    """
+    Any SP that does a final audit INSERT into admin_member_overrides must have
+    a DECLARE CONTINUE HANDLER FOR SQLEXCEPTION.
+
+    Without it: if the INSERT fails (FK, constraint, etc.), the SP aborts before
+    returning its SELECT result. The calling code sees an error, idempotency
+    never activates, and Sheets sync can overwrite the partially-applied changes.
+    """
+
+    def test_procs_with_audit_insert_have_exception_handler(self, migration_files):
+        bad = []
+        for fname, sql in migration_files:
+            if fname in LEGACY_MIGRATIONS:
+                continue
+            for proc_name, body in _proc_bodies(sql).items():
+                body_nc = _strip_comments(body)
+                has_audit_insert = bool(re.search(
+                    r'INSERT\s+INTO\s+admin_member_overrides', body_nc, re.IGNORECASE
+                ))
+                has_handler = 'CONTINUE HANDLER FOR SQLEXCEPTION' in body_nc.upper()
+                if has_audit_insert and not has_handler:
+                    bad.append(f'{fname}::{proc_name}')
+        assert not bad, (
+            "These procedures INSERT into admin_member_overrides but have no "
+            "DECLARE CONTINUE HANDLER FOR SQLEXCEPTION.\n"
+            "If the audit INSERT fails (FK, constraint, etc.), the SP aborts "
+            "before its SELECT result is returned — idempotency breaks and "
+            "Sheets sync can overwrite the members table changes.\n\n"
+            "Offenders:\n" + '\n'.join(f'  {x}' for x in bad)
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. LEAVE must use a declared block label, not the procedure name
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestLeaveLabels:

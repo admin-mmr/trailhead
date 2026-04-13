@@ -545,13 +545,21 @@ class TestRevertNullStatusRegression:
       members_before_update trigger raises 1644 unless @internal_proc = 1.
       Fix: SET @internal_proc = 1 before cursor loop, NULL after.
 
+    Bug 5 — Audit INSERT aborts the SP before SELECT result (V015):
+      Any constraint/FK failure in the audit INSERT propagates as an unhandled
+      exception, aborting the SP. Members are updated (auto-committed) but no
+      SELECT result is returned, no audit record is written, and idempotency
+      never activates — so every subsequent CALL re-runs the full revert.
+      Fix: DECLARE CONTINUE HANDLER FOR SQLEXCEPTION captures the error into
+      v_AuditError; SELECT always runs; audit_error column surfaces the issue.
+
     All fixes must be present in the latest active migration for sp_revert_admin_override.
     """
 
-    # V014 is the canonical version (supersedes V011–V013 for the revert SP)
+    # V015 is the canonical version (supersedes V011–V014 for the revert SP)
     MIGRATION_PATH = os.path.abspath(
         os.path.join(os.path.dirname(__file__),
-                     '../../db/MIGRATION_V014_fix_revert_expiration_trigger.sql')
+                     '../../db/MIGRATION_V015_fix_revert_audit_insert.sql')
     )
 
     def _proc_body(self, sql: str) -> str:
@@ -639,6 +647,83 @@ class TestRevertNullStatusRegression:
             "because that value doesn't exist in the members table."
         )
 
+    def test_sqlexception_handler_prevents_sp_abort(self):
+        """
+        Regression (V015): without DECLARE CONTINUE HANDLER FOR SQLEXCEPTION,
+        any failure in the audit INSERT aborts the SP before the SELECT result
+        is returned. Members are updated (auto-committed) but:
+          - No result is returned to Python → API errors out
+          - No REVERT audit record is written → idempotency never activates
+          - Every subsequent CALL re-runs the full revert
+          - Sheets sync then overwrites the reverted status
+        Fix: SQLEXCEPTION CONTINUE HANDLER captures failures into v_AuditError.
+        """
+        with open(self.MIGRATION_PATH) as f:
+            sql = f.read()
+        body = self._proc_body(sql)
+        assert 'DECLARE CONTINUE HANDLER FOR SQLEXCEPTION' in body, (
+            "sp_revert_admin_override must have a CONTINUE HANDLER FOR SQLEXCEPTION "
+            "so audit INSERT failures don't abort the SP. Without it: members are "
+            "updated (auto-committed) but no SELECT result is returned and no REVERT "
+            "audit record is written, breaking idempotency."
+        )
+        assert 'v_AuditError' in body, (
+            "SP must capture SQLEXCEPTION message into v_AuditError so the caller "
+            "can see what failed in the audit INSERT."
+        )
+        assert 'audit_error' in body, (
+            "SELECT result must include audit_error column so the API can surface "
+            "the failure to the admin."
+        )
+
+    def test_audit_error_surfaced_in_api_response(self, client, mock_query):
+        """
+        When the SP returns a non-NULL audit_error, the endpoint must include
+        it plus a warning about exporting to Sheets in the response.
+        Without the export, Sheets sync will overwrite the reverted status.
+        """
+        with patch('api_members_status.log_activity'), \
+             patch('api_members_status.get_admin_id', return_value='admin@mmrunners.org'):
+            mock_query.return_value = [{
+                'reverted_override_id':  13,
+                'members_restored':      171,
+                'original_override_time': datetime(2026, 4, 12, 1, 5, 12),
+                'impacted_member_ids':   'A0003,A0005',
+                'audit_error':           "Cannot add or update a child row: fk_override_member",
+            }]
+            r = client.post('/api/members/revert-override', json={'override_id': 13})
+        assert r.status_code == 200
+        data = r.get_json()['data']
+        assert 'audit_error' in data, (
+            "audit_error from SP must be passed through to the API response "
+            "so the admin knows the audit record was not saved."
+        )
+        assert 'warning' in data, (
+            "When audit_error is set, a warning about exporting to Sheets must "
+            "be included — members were restored in DB but idempotency is not "
+            "active, and Sheets sync will overwrite the fix."
+        )
+        assert data['members_restored'] == 171, (
+            "members_restored must reflect the actual count even when audit INSERT fails."
+        )
+
+    def test_audit_error_absent_on_clean_revert(self, client, mock_query):
+        """audit_error must not appear in the response when the SP succeeds cleanly."""
+        with patch('api_members_status.log_activity'), \
+             patch('api_members_status.get_admin_id', return_value='admin@mmrunners.org'):
+            mock_query.return_value = [{
+                'reverted_override_id':  13,
+                'members_restored':      171,
+                'original_override_time': datetime(2026, 4, 12, 1, 5, 12),
+                'impacted_member_ids':   'A0003,A0005',
+                'audit_error':           None,
+            }]
+            r = client.post('/api/members/revert-override', json={'override_id': 13})
+        assert r.status_code == 200
+        data = r.get_json()['data']
+        assert data.get('audit_error') is None
+        assert 'warning' not in data, "No warning should appear on a clean revert."
+
     def test_zero_restored_when_sp_finds_no_snapshots(self, client, mock_query):
         """
         When all member_log Status rows are NULL (common for Sheets-sync members),
@@ -652,6 +737,7 @@ class TestRevertNullStatusRegression:
                 'members_restored':      0,   # SP found no non-NULL Status snapshots
                 'original_override_time': datetime(2026, 4, 12, 1, 5, 12),
                 'impacted_member_ids':   'A0003,A0005',
+                'audit_error':           None,
             }]
             r = client.post('/api/members/revert-override', json={'override_id': 13})
         assert r.status_code == 200

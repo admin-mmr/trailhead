@@ -262,6 +262,9 @@ def api_revert_override():
     rows = query("CALL sp_revert_admin_override(%s)", (override_id,))
     result = rows[0] if rows else {}
 
+    audit_error = result.get('audit_error')
+    members_restored = result.get('members_restored', 0)
+
     admin_id = get_admin_id()
     # member_id intentionally omitted: activity_log.MemberID is VARCHAR(10)
     # and impacted_member_ids can be hundreds of members.
@@ -269,15 +272,27 @@ def api_revert_override():
     log_activity(
         action='revert_admin_override',
         admin_email=admin_id,
-        state=f'ov={override_id},n={result.get("members_restored", 0)}'
+        state=f'ov={override_id},n={members_restored}'
     )
 
-    return json_response({'ok': True, 'data': {
+    response = {
         'reverted_override_id':  result.get('reverted_override_id'),
-        'members_restored':      result.get('members_restored'),
+        'members_restored':      members_restored,
         'impacted_member_ids':   result.get('impacted_member_ids'),
         'original_override_time': str(result.get('original_override_time', '')),
-    }})
+    }
+    if audit_error:
+        # Members were updated but the audit record failed to write.
+        # Surface the error so the admin knows idempotency is not active.
+        # They should also export members to Sheets to prevent sync overwrite.
+        response['audit_error'] = audit_error
+        response['warning'] = (
+            'Members were restored but the audit record could not be saved. '
+            'Export members to Google Sheets now to prevent Sheets sync from '
+            'overwriting the restored status.'
+        )
+
+    return json_response({'ok': True, 'data': response})
 
 
 # ─────────────────────────────────────────────────────────────────
