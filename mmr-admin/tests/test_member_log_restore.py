@@ -242,7 +242,7 @@ class TestRestoreFromLog:
         client.post('/api/members/A0001/restore-from-log',
                     json={'log_id': 'LOG001', 'note': 'Reverting'})
         args = self.mock_exec.call_args[0][1]
-        assert args[2] is None  # restore_expiration param
+        assert args[3] is None  # restore_expiration param (index 3 after param-order fix)
 
     def test_stored_proc_called_with_correct_args(self, client, mock_query):
         self._setup(mock_query, log_row=_log_row(Status='active', Expiration=date(2024, 3, 31)))
@@ -250,11 +250,11 @@ class TestRestoreFromLog:
             client.post('/api/members/A0001/restore-from-log',
                         json={'log_id': 'LOG001', 'note': 'Reverting bad sync'})
         args = self.mock_exec.call_args[0][1]
-        assert args[0] == 'A0001'           # member_id
-        assert args[1] == 'active'          # restored status
-        assert args[2] == '2024-03-31'      # restored expiration as string
-        assert args[3] == 'Reverting bad sync'  # note
-        assert args[4] == 'admin@test.com'  # admin email
+        assert args[0] == 'A0001'               # member_id
+        assert args[1] == 'admin@test.com'      # admin_email (fixed param order)
+        assert args[2] == 'active'              # restored status
+        assert args[3] == '2024-03-31'          # restored expiration as string
+        assert args[4] == 'Reverting bad sync'  # note
 
     def test_log_activity_called(self, client, mock_query):
         self._setup(mock_query)

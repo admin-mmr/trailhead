@@ -88,8 +88,8 @@ def api_change_member_status(member_id: str):
         return json_response({'ok': False, 'error': 'Admin session missing — please log out and back in'}, 401)
 
     execute(
-        "CALL sp_admin_update_member_status(%s, %s, NULL, %s, %s)",
-        (member_id, new_status, note, admin_id)
+        "CALL sp_admin_update_member_status(%s, %s, %s, NULL, %s)",
+        (member_id, admin_id, new_status, note)
     )
 
     log_activity(
@@ -109,6 +109,33 @@ def api_change_member_status(member_id: str):
 # ─────────────────────────────────────────────────────────────────
 # Get Override History endpoint
 # ─────────────────────────────────────────────────────────────────
+
+@members_status_bp.route('/api/members/overrides/all')
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_get_all_overrides():
+    """
+    Return all admin override history, most recent first.
+    Excludes REVERT audit entries so the table only shows original actions.
+    Query params: limit (default 50, max 200)
+    """
+    limit = min(int(request.args.get('limit', 50)), 200)
+    rows = query("""
+        SELECT OverrideID, AdminEmail, TargetMemberID, ImpactedMemberIDs,
+               ActionType, OldValue, NewValue, AdminNotes, Timestamp
+        FROM admin_member_overrides
+        WHERE ActionType != 'REVERT'
+        ORDER BY Timestamp DESC
+        LIMIT %s
+    """, (limit,))
+
+    for r in rows:
+        if isinstance(r.get('Timestamp'), datetime):
+            r['Timestamp'] = r['Timestamp'].isoformat()
+
+    return json_response({'ok': True, 'data': rows})
+
 
 @members_status_bp.route('/api/members/<member_id>/overrides')
 @login_required
@@ -187,7 +214,7 @@ def api_revert_member_status(member_id: str):
 
     execute(
         "CALL sp_admin_update_member_status(%s, %s, %s, %s, %s)",
-        (member_id, old_status, new_expiration, note, admin_id)
+        (member_id, admin_id, old_status, new_expiration, note)
     )
 
     # Note: the SP appends a new revert entry to members.Notes.
@@ -206,6 +233,50 @@ def api_revert_member_status(member_id: str):
         'updated_member': updated,
         'reverted_to': old_status,
         'message': f'{member_id} status reverted to {old_status}'
+    }})
+
+
+# ─────────────────────────────────────────────────────────────────
+# Revert Override endpoint (calls sp_revert_admin_override)
+# Reverts ALL members in ImpactedMemberIDs, not just the target.
+# ─────────────────────────────────────────────────────────────────
+
+@members_status_bp.route('/api/members/revert-override', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_revert_override():
+    """
+    Revert all members impacted by a bad admin override using sp_revert_admin_override.
+    Restores Status + Expiration from member_log and strips the Notes entry.
+    Idempotent: safe to call multiple times with the same override_id.
+
+    POST body: { "override_id": 42 }
+    """
+    data = request.get_json() or {}
+    override_id = data.get('override_id')
+
+    if not override_id:
+        return json_response({'ok': False, 'error': 'override_id is required'}, 400)
+
+    rows = query("CALL sp_revert_admin_override(%s)", (override_id,))
+    result = rows[0] if rows else {}
+
+    admin_id = get_admin_id()
+    # member_id intentionally omitted: activity_log.MemberID is VARCHAR(10)
+    # and impacted_member_ids can be hundreds of members.
+    # state kept short: activity_log.State is VARCHAR(50).
+    log_activity(
+        action='revert_admin_override',
+        admin_email=admin_id,
+        state=f'ov={override_id},n={result.get("members_restored", 0)}'
+    )
+
+    return json_response({'ok': True, 'data': {
+        'reverted_override_id':  result.get('reverted_override_id'),
+        'members_restored':      result.get('members_restored'),
+        'impacted_member_ids':   result.get('impacted_member_ids'),
+        'original_override_time': str(result.get('original_override_time', '')),
     }})
 
 
@@ -270,7 +341,7 @@ def api_mark_member_active(member_id: str):
 
     execute(
         "CALL sp_admin_update_member_status(%s, %s, %s, %s, %s)",
-        (member_id, 'active', year_end, note, admin_id)
+        (member_id, admin_id, 'active', year_end, note)
     )
 
     log_activity(
@@ -392,7 +463,7 @@ def api_restore_from_log(member_id: str):
 
     execute(
         "CALL sp_admin_update_member_status(%s, %s, %s, %s, %s)",
-        (member_id, restore_status, restore_expiration, note, admin_id)
+        (member_id, admin_id, restore_status, restore_expiration, note)
     )
 
     log_activity(

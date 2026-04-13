@@ -38,13 +38,9 @@ window.MembersStatusPanel = () => {
   // ──────────────────────────────────────────────────
   // Revert Status state
   // ──────────────────────────────────────────────────
-  const [revertSearchQuery, setRevertSearchQuery] = useState('');
-  const [revertSearchResults, setRevertSearchResults] = useState([]);
-  const [selectedRevertMember, setSelectedRevertMember] = useState(null);
-  const [revertSearching, setRevertSearching] = useState(false);
   const [overrides, setOverrides] = useState([]);
+  const [overridesLoading, setOverridesLoading] = useState(false);
   const [selectedOverrideId, setSelectedOverrideId] = useState(null);
-  const [revertNote, setRevertNote] = useState('');
   const [revertSaving, setRevertSaving] = useState(false);
   const [revertError, setRevertError] = useState('');
 
@@ -108,7 +104,19 @@ window.MembersStatusPanel = () => {
         else setActiveError(r.error || 'Could not load MembershipYearEnd from config');
       });
     }
+    if (subTab === 'revert-status') {
+      loadAllOverrides();
+    }
   }, [subTab]);
+
+  const loadAllOverrides = async () => {
+    setOverridesLoading(true);
+    setRevertError('');
+    const r = await api('/api/members/overrides/all');
+    setOverridesLoading(false);
+    if (r.ok) setOverrides(r.data);
+    else setRevertError(r.error || 'Failed to load overrides');
+  };
 
   const searchActiveMembers = async (q) => {
     if (!q.trim()) { setActiveSearchResults([]); return; }
@@ -142,41 +150,20 @@ window.MembersStatusPanel = () => {
   // Revert Status helpers
   // ──────────────────────────────────────────────────
 
-  const searchRevertMembers = async (q) => {
-    if (!q.trim()) { setRevertSearchResults([]); return; }
-    setRevertSearching(true);
-    const r = await api(`/api/members/search?q=${encodeURIComponent(q.trim())}`);
-    setRevertSearching(false);
-    if (r.ok) setRevertSearchResults(r.data);
-    else { setRevertError(r.error || 'Search failed'); setRevertSearchResults([]); }
-  };
-
-  const selectRevertMember = async (member) => {
-    setSelectedRevertMember(member);
-    setOverrides([]);
-    setSelectedOverrideId(null);
-    setRevertError('');
-    const r = await api(`/api/members/${member.MemberID}/overrides`);
-    if (r.ok) setOverrides(r.data);
-    else setRevertError(r.error || 'Failed to load history');
-  };
-
   const revertStatus = async () => {
-    if (!selectedRevertMember || !selectedOverrideId) { setRevertError('Select a member and an override to revert'); return; }
+    if (!selectedOverrideId) { setRevertError('Select an override to revert'); return; }
     setRevertSaving(true);
     setRevertError('');
-    const r = await api(`/api/members/${selectedRevertMember.MemberID}/revert-status`, {
+    const r = await api('/api/members/revert-override', {
       method: 'POST',
-      body: JSON.stringify({ override_id: selectedOverrideId, note: revertNote.trim() || 'Status reverted by admin' }),
+      body: JSON.stringify({ override_id: selectedOverrideId }),
     });
     setRevertSaving(false);
     if (r.ok) {
-      setStatusToast(`✓ ${selectedRevertMember.MemberID} reverted to ${r.data.reverted_to}`);
-      setSelectedRevertMember(r.data.updated_member);
-      const refreshed = await api(`/api/members/${r.data.updated_member.MemberID}/overrides`);
-      if (refreshed.ok) setOverrides(refreshed.data);
+      const count = r.data.members_restored;
+      setStatusToast(`✓ Reverted ${count} member${count !== 1 ? 's' : ''} (override #${r.data.reverted_override_id})`);
       setSelectedOverrideId(null);
-      setRevertNote('');
+      loadAllOverrides();
     } else {
       setRevertError(r.error || 'Revert failed');
     }
@@ -424,108 +411,87 @@ window.MembersStatusPanel = () => {
       {subTab === 'revert-status' && (
         <div>
           <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: 6, padding: '12px 16px' }}>
-            Reverts a member to their previous status using the <strong>admin_member_overrides</strong> audit log.
-            Family members are cascaded automatically. The override note is removed from members.Notes.
+            Select any override to revert. Restores Status + Expiration for every member in the Impacted list
+            from their last snapshot before the override ran. The Admin Override entry is stripped from Notes.
+            <button onClick={loadAllOverrides} style={{ marginLeft: 12, fontSize: 12, padding: '2px 8px', background: 'transparent', border: '1px solid rgba(56,189,248,0.4)', borderRadius: 3, cursor: 'pointer', color: 'var(--text-muted)' }}>
+              ↻ Refresh
+            </button>
           </div>
 
-          {/* Member search */}
-          <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>Search member</label>
-          <input
-            type="text" value={revertSearchQuery} placeholder="Name / ID / WeChat"
-            onChange={e => { setRevertSearchQuery(e.target.value); searchRevertMembers(e.target.value); }}
-            style={{ padding: '8px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text)', width: 280, marginBottom: 8 }}
-          />
-          {revertSearching && <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>Searching…</span>}
+          {overridesLoading && <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '12px 0' }}>Loading overrides…</div>}
 
-          {revertSearchResults.length > 0 && !selectedRevertMember && (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--border)', borderRadius: 4, maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
-              {revertSearchResults.map(m => (
-                <li key={m.MemberID}
-                  onClick={() => { selectRevertMember(m); setRevertSearchResults([]); }}
-                  style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)', fontSize: 13 }}
-                >
-                  <strong>{m.MemberID}</strong> — {m.FirstName} {m.LastName} <span style={{ color: 'var(--text-muted)' }}>({m.Status})</span>
-                </li>
-              ))}
-            </ul>
+          {!overridesLoading && overrides.length === 0 && (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '10px 0' }}>No admin overrides on record.</div>
           )}
 
-          {selectedRevertMember && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 16px', marginBottom: 12 }}>
-                <div style={{ fontWeight: 600 }}>{selectedRevertMember.MemberID} — {selectedRevertMember.FirstName} {selectedRevertMember.LastName}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Current status: <strong style={{ color: 'var(--text)' }}>{selectedRevertMember.Status}</strong> &nbsp;|&nbsp;
-                  Expiration: {selectedRevertMember.Expiration || '—'}
-                </div>
-                <button style={{ marginTop: 8, fontSize: 12, padding: '2px 8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', color: 'var(--text-muted)' }}
-                  onClick={() => { setSelectedRevertMember(null); setOverrides([]); setRevertSearchQuery(''); setRevertSearchResults([]); setSelectedOverrideId(null); }}>
-                  ✕ Change
-                </button>
-              </div>
+          {!overridesLoading && overrides.length > 0 && (
+            <>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    {['', 'Date', 'Action', 'Target', 'From → To', 'Admin', 'Note', 'Impacted Members'].map(h => (
+                      <th key={h} style={{ padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {overrides.map(ov => (
+                    <tr key={ov.OverrideID}
+                      onClick={() => setSelectedOverrideId(ov.OverrideID === selectedOverrideId ? null : ov.OverrideID)}
+                      style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer', background: selectedOverrideId === ov.OverrideID ? 'rgba(139,92,246,0.12)' : 'transparent' }}
+                    >
+                      <td style={{ padding: '6px 8px' }}>
+                        <input type="radio" checked={selectedOverrideId === ov.OverrideID} readOnly />
+                      </td>
+                      <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{ov.Timestamp?.split('T')[0]}</td>
+                      <td style={{ padding: '6px 8px' }}>{ov.ActionType}</td>
+                      <td style={{ padding: '6px 8px', fontWeight: 600 }}>{ov.TargetMemberID}</td>
+                      <td style={{ padding: '6px 8px' }}>{ov.OldValue} → {ov.NewValue}</td>
+                      <td style={{ padding: '6px 8px', color: 'var(--text-muted)', fontSize: 12 }}>{ov.AdminEmail}</td>
+                      <td style={{ padding: '6px 8px', color: 'var(--text-muted)', fontSize: 12, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ov.AdminNotes}</td>
+                      <td style={{ padding: '6px 8px', fontSize: 12 }}>
+                        {ov.ImpactedMemberIDs
+                          ? ov.ImpactedMemberIDs.split(',').map(id => (
+                              <span key={id} style={{ display: 'inline-block', background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 3, padding: '1px 5px', marginRight: 3, marginBottom: 2, whiteSpace: 'nowrap' }}>{id.trim()}</span>
+                            ))
+                          : <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-              {/* Override history */}
-              {overrides.length === 0 ? (
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '10px 0' }}>No admin overrides on record for this member.</div>
-              ) : (
-                <>
-                  <div style={{ fontWeight: 500, marginBottom: 8 }}>Select override to revert:</div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                        {['', 'Date', 'Action', 'From → To', 'Admin', 'Note'].map(h => (
-                          <th key={h} style={{ padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {overrides.map(ov => (
-                        <tr key={ov.OverrideID}
-                          onClick={() => setSelectedOverrideId(ov.OverrideID)}
-                          style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer', background: selectedOverrideId === ov.OverrideID ? 'rgba(139,92,246,0.12)' : 'transparent' }}
-                        >
-                          <td style={{ padding: '6px 8px' }}>
-                            <input type="radio" checked={selectedOverrideId === ov.OverrideID} readOnly />
-                          </td>
-                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{ov.Timestamp?.split('T')[0]}</td>
-                          <td style={{ padding: '6px 8px' }}>{ov.ActionType}</td>
-                          <td style={{ padding: '6px 8px' }}>{ov.OldValue} → {ov.NewValue}</td>
-                          <td style={{ padding: '6px 8px', color: 'var(--text-muted)', fontSize: 12 }}>{ov.AdminEmail}</td>
-                          <td style={{ padding: '6px 8px', color: 'var(--text-muted)', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ov.AdminNotes}</td>
-                        </tr>
+              {selectedOverrideId && (() => {
+                const ov = overrides.find(o => o.OverrideID === selectedOverrideId);
+                const ids = ov?.ImpactedMemberIDs ? ov.ImpactedMemberIDs.split(',').map(s => s.trim()) : [];
+                return (
+                  <div style={{ marginBottom: 10, background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>This revert will:</div>
+                    <ul style={{ margin: '0 0 6px 0', paddingLeft: 18, lineHeight: 1.8 }}>
+                      <li>Restore <strong>Status</strong> and <strong>Expiration</strong> for each member from their last snapshot before this override</li>
+                      <li>Strip the <code>--- Admin Override ---</code> entry from <strong>Notes</strong> (prior Notes content preserved)</li>
+                    </ul>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Members affected ({ids.length}): </span>
+                      {ids.map(id => (
+                        <span key={id} style={{ display: 'inline-block', background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.4)', borderRadius: 3, padding: '1px 6px', marginRight: 4, fontWeight: 600 }}>{id}</span>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
-                  {selectedOverrideId && (
-                    <>
-                      <div style={{ marginBottom: 6, fontWeight: 500, fontSize: 13 }}>
-                        Will revert to: <strong style={{ color: '#a78bfa' }}>
-                          {overrides.find(o => o.OverrideID === selectedOverrideId)?.OldValue}
-                        </strong>
-                        {' '}(family members cascaded)
-                      </div>
-                      <input
-                        type="text" value={revertNote}
-                        onChange={e => setRevertNote(e.target.value)}
-                        placeholder="Optional note (default: 'Status reverted by admin')"
-                        style={{ width: '100%', maxWidth: 480, padding: '7px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text)', marginBottom: 10 }}
-                      />
-                    </>
-                  )}
+              {revertError && <div style={{ color: '#f87171', marginBottom: 10, fontSize: 13 }}>⚠ {revertError}</div>}
 
-                  {revertError && <div style={{ color: '#f87171', marginBottom: 10, fontSize: 13 }}>⚠ {revertError}</div>}
-
-                  <button
-                    onClick={revertStatus}
-                    disabled={!selectedOverrideId || revertSaving}
-                    style={{ padding: '8px 20px', borderRadius: 4, border: 'none', background: selectedOverrideId ? '#0ea5e9' : '#374151', color: selectedOverrideId ? '#fff' : '#6b7280', fontWeight: 600, cursor: selectedOverrideId ? 'pointer' : 'not-allowed' }}
-                  >
-                    {revertSaving ? 'Reverting…' : '↩ Revert Status'}
-                  </button>
-                </>
-              )}
-            </div>
+              <button
+                onClick={revertStatus}
+                disabled={!selectedOverrideId || revertSaving}
+                style={{ padding: '8px 20px', borderRadius: 4, border: 'none', background: selectedOverrideId ? '#0ea5e9' : '#374151', color: selectedOverrideId ? '#fff' : '#6b7280', fontWeight: 600, cursor: selectedOverrideId ? 'pointer' : 'not-allowed' }}
+              >
+                {revertSaving ? 'Reverting…' : '↩ Revert Status'}
+              </button>
+            </>
           )}
         </div>
       )}

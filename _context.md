@@ -1,3 +1,7 @@
+### 04-13 — V011: fix "all members inactive" bug + revert-override UI + 48 tests
+
+Changed: api_members_status.py — fixed param order at 4 SP call sites (admin_id was last, must be 2nd), added /api/members/overrides/all + /api/members/revert-override. MembersStatusPanel.js — removed member-search from revert flow, shows full override table. MIGRATION_V011 — FamilyID empty-string guard + sp_revert_admin_override (with AND Status IS NOT NULL fix for Sheets-sync NULL rows). 48 new tests (test_members_status_changes.py). Status: V011 applied to live DB; all 172 tests pass. Next: commit + push.
+
 ### 04-11 — V009: fix chk_members_status_valid missing 'lifetime'
 
 Changed: Created MIGRATION_V009_fix_status_check_constraint.sql — drops chk_members_status_valid and recreates with all 6 valid statuses (active/expired/inactive/pending/pending_upgrade/lifetime). V007 had omitted 'lifetime', breaking sp_admin_update_member_status. Status: ready to deploy (push to main triggers GitHub Actions). Next: commit + push.

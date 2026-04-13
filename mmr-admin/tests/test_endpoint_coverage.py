@@ -101,6 +101,8 @@ COVERAGE: dict[tuple[str, str], str] = {
     ('POST', '/api/members/<member_id>/status'):   'test_api_smoke.py',
     ('POST', '/api/members/<member_id>/revert-status'): 'test_api_smoke_extended.py',
     ('POST', '/api/members/<member_id>/mark-active'):   'test_api_smoke_extended.py',
+    ('GET',  '/api/members/overrides/all'):             'test_members_status_changes.py',
+    ('POST', '/api/members/revert-override'):           'test_members_status_changes.py',
     ('GET',  '/api/members/config/year-end'):           'test_api_smoke_extended.py',
     ('POST', '/api/members/<member_id>/district'): 'test_api_smoke_extended.py',
     ('POST', '/api/members/<member_id>/mark-unused'): 'test_members_unit.py',
