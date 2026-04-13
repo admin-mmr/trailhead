@@ -5,6 +5,7 @@
 
 const DistrictMemberFilters = ({
   districts,
+  statusOptions,
   selectedDistrict,
   statusFilter,
   renewedFilter,
@@ -99,10 +100,18 @@ const DistrictMemberFilters = ({
               cursor: 'pointer',
             }}
           >
-            <option value="">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="not active">Not Active</option>
-            <option value="pending">Pending</option>
+            {(statusOptions && statusOptions.length > 0
+              ? statusOptions
+              : [
+                  { value: '', label: 'All Statuses' },
+                  { value: 'active', label: 'Active' },
+                  { value: 'not_active', label: 'Not Active' },
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'lifetime', label: 'Lifetime' },
+                ]
+            ).map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
         </div>
 

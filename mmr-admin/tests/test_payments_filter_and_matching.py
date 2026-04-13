@@ -306,15 +306,17 @@ class TestAutoguessAll:
         assert r.status_code != 500
 
     def test_response_includes_created_and_skipped_keys(self, client, mock_query):
-        """Response must always include 'created' and 'skipped' counts."""
+        """Response must always include 'created' and 'skipped' counts (under 'details')."""
         self._setup_mocks(mock_query)
-        with patch('api_payments.get_renewal_period', return_value=('2025-10-01', '2026-03-31')):
+        with patch('api_payments.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
+             patch('api_payments.execute', return_value=0):
             r = _post(client, '/api/payments/autoguess-all')
         assert r.status_code in (200, 400)
         if r.status_code == 200:
             j = r.get_json()
-            assert 'created' in j
-            assert 'skipped' in j
+            details = j.get('details', j)  # support both top-level and nested
+            assert 'created' in details
+            assert 'skipped' in details
         mock_query.side_effect = None
 
     def test_wrong_amount_gmail_skipped(self, client, mock_query):
@@ -359,11 +361,14 @@ class TestAutoguessAll:
         self._setup_mocks(mock_query, gmail_rows=gmail, member_rows=members, sub_rows=subs)
 
         with patch('api_payments.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
-             patch('api_payments.execute', return_value=0) as mock_exec:
+             patch('api_payments.execute', return_value=0), \
+             patch('payment_matching.execute', return_value=0):
             r = _post(client, '/api/payments/autoguess-all')
 
         if r.status_code == 200:
-            assert r.get_json().get('created', 0) >= 1
+            j = r.get_json()
+            details = j.get('details', j)
+            assert details.get('created', 0) >= 1
 
         mock_query.side_effect = None
 
@@ -404,8 +409,10 @@ class TestConfigGet:
             assert j.get('success') is True
 
     def test_key_with_value_returned(self, client, mock_query):
-        mock_query.return_value = [{'ConfigValue': '2025-10-01'}]
-        r = client.get('/api/config/get?key=renewal_start_date')
+        # get_config uses config_cache (module-level cache), not query directly,
+        # so patch at the api_audit import binding instead of mock_query.
+        with patch('api_audit.get_config', return_value='2025-10-01'):
+            r = client.get('/api/config/get?key=renewal_start_date')
         assert r.status_code == 200
         j = r.get_json()
         assert j['value'] == '2025-10-01'

@@ -91,6 +91,7 @@ COVERAGE: dict[tuple[str, str], str] = {
     ('POST', '/api/district/export-csv'):          'test_api_smoke_extended.py',
     ('POST', '/api/district/export-all-districts'):'test_api_smoke_extended.py',
     ('POST', '/api/district/export-all-sheet'):    'test_api_smoke_extended.py',
+    ('GET',  '/api/district/member-status-values'): 'test_district_status_filter.py',
 
     # --- members ---
     ('GET',  '/api/members/search'):               'test_api_smoke.py',
@@ -102,6 +103,9 @@ COVERAGE: dict[tuple[str, str], str] = {
     ('POST', '/api/members/<member_id>/mark-active'):   'test_api_smoke_extended.py',
     ('GET',  '/api/members/config/year-end'):           'test_api_smoke_extended.py',
     ('POST', '/api/members/<member_id>/district'): 'test_api_smoke_extended.py',
+    ('POST', '/api/members/<member_id>/mark-unused'): 'test_members_unit.py',
+    ('GET',  '/api/members/<member_id>/log-history'):    'test_member_log_restore.py',
+    ('POST', '/api/members/<member_id>/restore-from-log'): 'test_member_log_restore.py',
     ('POST', '/api/members/family/add-member'):    'test_api_smoke_extended.py',
     ('POST', '/api/members/family/remove-member'): 'test_api_smoke_extended.py',
 

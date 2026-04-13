@@ -47,6 +47,7 @@ class SchemaValidator:
             SELECT TABLE_NAME
             FROM INFORMATION_SCHEMA.TABLES
             WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_TYPE = 'BASE TABLE'
             ORDER BY TABLE_NAME
         """)
         return [row['TABLE_NAME'] for row in self.cursor.fetchall()]
@@ -70,13 +71,17 @@ class SchemaValidator:
         columns = self.cursor.fetchall()
 
         # Constraint info
-        self.cursor.execute(f"""
+        self.cursor.execute("""
             SELECT
-                CONSTRAINT_NAME,
-                CONSTRAINT_TYPE,
-                COLUMN_NAME
-            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s
+                kcu.CONSTRAINT_NAME,
+                tc.CONSTRAINT_TYPE,
+                kcu.COLUMN_NAME
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+            JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+              ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+             AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+             AND tc.TABLE_NAME = kcu.TABLE_NAME
+            WHERE kcu.TABLE_SCHEMA = DATABASE() AND kcu.TABLE_NAME = %s
         """, (table_name,))
         constraints = self.cursor.fetchall()
 
@@ -200,8 +205,23 @@ class SchemaValidator:
                     )
 
     def validate_duplicate_uniques(self, table_name, constraints):
-        """Check for duplicate values in UNIQUE columns"""
-        unique_cols = [c['COLUMN_NAME'] for c in constraints if c['CONSTRAINT_TYPE'] == 'UNIQUE']
+        """Check for duplicate values in single-column UNIQUE constraints.
+        Multi-column composite unique keys are skipped — column-level dup checks
+        would produce false positives (e.g. bib_number unique per event, not globally).
+        """
+        # Count how many columns each UNIQUE constraint covers
+        constraint_col_counts: dict[str, int] = {}
+        for c in constraints:
+            if c['CONSTRAINT_TYPE'] == 'UNIQUE':
+                name = c['CONSTRAINT_NAME']
+                constraint_col_counts[name] = constraint_col_counts.get(name, 0) + 1
+
+        # Only check columns that belong exclusively to single-column unique constraints
+        unique_cols = [
+            c['COLUMN_NAME'] for c in constraints
+            if c['CONSTRAINT_TYPE'] == 'UNIQUE'
+            and constraint_col_counts.get(c['CONSTRAINT_NAME'], 0) == 1
+        ]
 
         for col in unique_cols:
             self.cursor.execute(f"""

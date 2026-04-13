@@ -315,7 +315,7 @@ const App = () => {
               <button className={`tab ${view === 'payments' || view === 'autoguess_log' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
-              <button className={`tab ${['members', 'district', 'audit', 'reconcile', 'status'].includes(view) ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
+              <button className={`tab ${['members', 'district', 'audit', 'reconcile', 'status', 'restore-log'].includes(view) ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
               <button className={`tab ${view === 'sync' ? 'active' : ''}`} onClick={() => setView('sync')}>Sync with Google</button>
@@ -340,7 +340,7 @@ const App = () => {
           ) : null}
 
           {/* Members sub-tabs */}
-          {['members', 'district', 'audit', 'reconcile', 'status'].includes(view) ? (
+          {['members', 'district', 'audit', 'reconcile', 'status', 'restore-log'].includes(view) ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
               {(userRole === 'super_admin' || userRole === 'admin') && (
                 <button className={`tab ${view === 'members' ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>

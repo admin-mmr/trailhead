@@ -6,6 +6,7 @@
 
 window.DistrictMembersPanel = () => {
   const [districts, setDistricts] = React.useState([]);
+  const [statusOptions, setStatusOptions] = React.useState([]);
   const [selectedDistrict, setSelectedDistrict] = React.useState('');
   const [members, setMembers] = React.useState([]);
   const [selectedMembers, setSelectedMembers] = React.useState(new Set());
@@ -86,6 +87,7 @@ window.DistrictMembersPanel = () => {
 
   React.useEffect(() => {
     fetchDistricts();
+    fetchStatusOptions();
   }, []);
 
   React.useEffect(() => {
@@ -109,6 +111,16 @@ window.DistrictMembersPanel = () => {
       }
     } catch (err) {
       setError(`Error: ${err.message}`);
+    }
+  };
+
+  const fetchStatusOptions = async () => {
+    const { api } = window.mmrUtils;
+    try {
+      const data = await api('/api/district/member-status-values');
+      if (data.success) setStatusOptions(data.options);
+    } catch (_) {
+      // Non-fatal: filter will be empty but page still works
     }
   };
 
@@ -271,6 +283,7 @@ window.DistrictMembersPanel = () => {
 
       {window.DistrictMemberFilters && React.createElement(window.DistrictMemberFilters, {
         districts,
+        statusOptions,
         selectedDistrict,
         statusFilter,
         renewedFilter,

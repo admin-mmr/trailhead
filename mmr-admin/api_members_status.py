@@ -286,3 +286,127 @@ def api_mark_member_active(member_id: str):
         'expiration_set': year_end,
         'message': f'{member_id} marked active, expiration set to {year_end}'
     }})
+
+
+# ─────────────────────────────────────────────────────────────────
+# Member Log History endpoint
+# ─────────────────────────────────────────────────────────────────
+
+@members_status_bp.route('/api/members/<member_id>/log-history')
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_member_log_history(member_id: str):
+    """
+    Return member_log rows for a member, most recent first.
+    Includes every recorded change (Sheets sync, payments, admin overrides, etc.)
+    so admins can pick any historical Status + Expiration to restore.
+
+    Query params:
+      limit: max rows to return (default 50, max 200)
+    """
+    member = get_member_by_id(member_id)
+    if not member:
+        return json_response({'ok': False, 'error': f'Member {member_id} not found'}, 404)
+
+    limit = min(int(request.args.get('limit', 50)), 200)
+
+    rows = query("""
+        SELECT LogID, LoggingTime, ChangeType,
+               Status, Expiration,
+               Type, FamilyID,
+               MembershipFeePaid, PaymentDate, PaymentTransaction
+        FROM member_log
+        WHERE MemberID = %s
+        ORDER BY LoggingTime DESC
+        LIMIT %s
+    """, (member_id, limit))
+
+    for r in rows:
+        if isinstance(r.get('LoggingTime'), datetime):
+            r['LoggingTime'] = r['LoggingTime'].isoformat()
+        if r.get('Expiration'):
+            r['Expiration'] = str(r['Expiration'])
+        if r.get('PaymentDate'):
+            r['PaymentDate'] = str(r['PaymentDate'])
+        if r.get('MembershipFeePaid') is not None:
+            r['MembershipFeePaid'] = float(r['MembershipFeePaid'])
+
+    return json_response({'ok': True, 'data': {
+        'member': member,
+        'log': rows,
+        'count': len(rows),
+    }})
+
+
+# ─────────────────────────────────────────────────────────────────
+# Restore from Log endpoint
+# ─────────────────────────────────────────────────────────────────
+
+@members_status_bp.route('/api/members/<member_id>/restore-from-log', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_restore_from_log(member_id: str):
+    """
+    Restore a member's Status and Expiration to a specific member_log snapshot.
+
+    Fetches the target log row, then calls sp_admin_update_member_status with
+    the historical Status and Expiration. Cascades to family members.
+    Requires an admin note.
+
+    POST body:
+      { "log_id": "<LogID>", "note": "Restoring to pre-sync state" }
+    """
+    data = request.get_json() or {}
+    log_id = (data.get('log_id') or '').strip()
+    note = (data.get('note') or '').strip()
+
+    if not log_id:
+        return json_response({'ok': False, 'error': 'log_id is required'}, 400)
+    if not note:
+        return json_response({'ok': False, 'error': 'note is required'}, 400)
+
+    member = get_member_by_id(member_id)
+    if not member:
+        return json_response({'ok': False, 'error': f'Member {member_id} not found'}, 404)
+
+    log_rows = query(
+        "SELECT LogID, Status, Expiration, LoggingTime, ChangeType FROM member_log WHERE LogID = %s AND MemberID = %s",
+        (log_id, member_id)
+    )
+    if not log_rows:
+        return json_response({'ok': False, 'error': 'Log entry not found for this member'}, 404)
+
+    snap = log_rows[0]
+    restore_status = snap.get('Status')
+    restore_expiration = str(snap['Expiration']) if snap.get('Expiration') else None
+    snap_time = snap['LoggingTime'].isoformat() if isinstance(snap.get('LoggingTime'), datetime) else str(snap.get('LoggingTime', ''))
+
+    if not restore_status:
+        return json_response({'ok': False, 'error': 'Log entry has no Status value to restore'}, 400)
+
+    admin_id = get_admin_id()
+    if not admin_id:
+        return json_response({'ok': False, 'error': 'Admin session missing — please log out and back in'}, 401)
+
+    execute(
+        "CALL sp_admin_update_member_status(%s, %s, %s, %s, %s)",
+        (member_id, restore_status, restore_expiration, note, admin_id)
+    )
+
+    log_activity(
+        action='member_restore_from_log',
+        member_id=member_id,
+        admin_email=admin_id,
+        state=f'restored_status={restore_status},restored_expiration={restore_expiration},log_id={log_id},snap_time={snap_time}'
+    )
+
+    updated = get_member_by_id(member_id)
+    return json_response({'ok': True, 'data': {
+        'updated_member': updated,
+        'restored_status': restore_status,
+        'restored_expiration': restore_expiration,
+        'snapshot_time': snap_time,
+        'message': f'{member_id} restored to status={restore_status}, expiration={restore_expiration or "unchanged"} (snapshot from {snap_time[:10]})',
+    }})

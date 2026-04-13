@@ -49,6 +49,21 @@ window.MembersStatusPanel = () => {
   const [revertError, setRevertError] = useState('');
 
   // ──────────────────────────────────────────────────
+  // Restore from Log state
+  // ──────────────────────────────────────────────────
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [logSearchResults, setLogSearchResults] = useState([]);
+  const [logSearching, setLogSearching] = useState(false);
+  const [selectedLogMember, setSelectedLogMember] = useState(null);
+  const [logHistory, setLogHistory] = useState([]);
+  const [logLoading, setLogLoading] = useState(false);
+  const [selectedLogId, setSelectedLogId] = useState(null);
+  const [logNote, setLogNote] = useState('');
+  const [logSaving, setLogSaving] = useState(false);
+  const [logError, setLogError] = useState('');
+  const [logConfirming, setLogConfirming] = useState(false);
+
+  // ──────────────────────────────────────────────────
   // Change Status helpers
   // ──────────────────────────────────────────────────
 
@@ -168,6 +183,60 @@ window.MembersStatusPanel = () => {
   };
 
   // ──────────────────────────────────────────────────
+  // Restore from Log helpers
+  // ──────────────────────────────────────────────────
+
+  const searchLogMembers = async (q) => {
+    if (!q.trim()) { setLogSearchResults([]); return; }
+    setLogSearching(true);
+    const r = await api(`/api/members/search?q=${encodeURIComponent(q.trim())}`);
+    setLogSearching(false);
+    if (r.ok) setLogSearchResults(r.data);
+    else { setLogError(r.error || 'Search failed'); setLogSearchResults([]); }
+  };
+
+  const selectLogMember = async (member) => {
+    setSelectedLogMember(member);
+    setLogSearchResults([]);
+    setSelectedLogId(null);
+    setLogConfirming(false);
+    setLogError('');
+    setLogLoading(true);
+    const r = await api(`/api/members/${member.MemberID}/log-history`);
+    setLogLoading(false);
+    if (r.ok) setLogHistory(r.data.log);
+    else setLogError(r.error || 'Failed to load log history');
+  };
+
+  const restoreFromLog = async () => {
+    if (!selectedLogMember || !selectedLogId) return;
+    setLogSaving(true);
+    setLogError('');
+    const r = await api(`/api/members/${selectedLogMember.MemberID}/restore-from-log`, {
+      method: 'POST',
+      body: JSON.stringify({ log_id: selectedLogId, note: logNote.trim() }),
+    });
+    setLogSaving(false);
+    if (r.ok) {
+      setStatusToast(`✓ ${selectedLogMember.MemberID} restored — status=${r.data.restored_status}, expiration=${r.data.restored_expiration || 'unchanged'}`);
+      setSelectedLogMember(r.data.updated_member);
+      setSelectedLogId(null);
+      setLogNote('');
+      setLogConfirming(false);
+      // Refresh the log so the new entry is visible
+      const refreshed = await api(`/api/members/${r.data.updated_member.MemberID}/log-history`);
+      if (refreshed.ok) setLogHistory(refreshed.data.log);
+    } else {
+      setLogError(r.error || 'Restore failed');
+    }
+  };
+
+  // Returns true if the log row's Status or Expiration differs from current member
+  const logRowDiffers = (row, member) =>
+    (row.Status && row.Status !== member.Status) ||
+    (row.Expiration && row.Expiration !== (member.Expiration || '').split('T')[0]);
+
+  // ──────────────────────────────────────────────────
   // Render
   // ──────────────────────────────────────────────────
 
@@ -180,6 +249,7 @@ window.MembersStatusPanel = () => {
         <button className={`tab ${subTab === 'change-status' ? 'active' : ''}`} onClick={() => setSubTab('change-status')}>👤 Change Status</button>
         <button className={`tab ${subTab === 'mark-active' ? 'active' : ''}`} onClick={() => setSubTab('mark-active')}>✅ Mark Active</button>
         <button className={`tab ${subTab === 'revert-status' ? 'active' : ''}`} onClick={() => setSubTab('revert-status')}>↩ Revert Status</button>
+        <button className={`tab ${subTab === 'restore-log' ? 'active' : ''}`} onClick={() => setSubTab('restore-log')}>📋 Restore from Log</button>
       </div>
 
       {/* Toast */}
@@ -453,6 +523,200 @@ window.MembersStatusPanel = () => {
                   >
                     {revertSaving ? 'Reverting…' : '↩ Revert Status'}
                   </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────────
+          Restore from Log sub-tab
+      ────────────────────────────────────────────── */}
+      {subTab === 'restore-log' && (
+        <div>
+          <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 6, padding: '12px 16px' }}>
+            <strong>Restore from member_log</strong> — Browse the full audit trail (Sheets syncs, payment events, every recorded change)
+            and restore any historical Status + Expiration. Cascades to family members. A note is required.
+          </div>
+
+          {/* Member search */}
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>Search member</label>
+          <input
+            type="text" value={logSearchQuery} placeholder="Name / ID / WeChat"
+            onChange={e => { setLogSearchQuery(e.target.value); searchLogMembers(e.target.value); }}
+            style={{ padding: '8px 12px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text)', width: 280, marginBottom: 8 }}
+          />
+          {logSearching && <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>Searching…</span>}
+
+          {logSearchResults.length > 0 && !selectedLogMember && (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--border)', borderRadius: 4, maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
+              {logSearchResults.map(m => (
+                <li key={m.MemberID}
+                  onClick={() => selectLogMember(m)}
+                  style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)', fontSize: 13 }}
+                >
+                  <strong>{m.MemberID}</strong> — {m.FirstName} {m.LastName} <span style={{ color: 'var(--text-muted)' }}>({m.Status})</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {selectedLogMember && (
+            <div>
+              {/* Current state card */}
+              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 16px', marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  {selectedLogMember.MemberID} — {selectedLogMember.FirstName} {selectedLogMember.LastName}
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  Current status: <strong style={{ color: 'var(--text)' }}>{selectedLogMember.Status}</strong>
+                  &nbsp;|&nbsp;
+                  Expiration: <strong style={{ color: 'var(--text)' }}>{selectedLogMember.Expiration || '—'}</strong>
+                  &nbsp;|&nbsp;
+                  Type: {selectedLogMember.Type}
+                  {selectedLogMember.FamilyID && <>&nbsp;|&nbsp;Family: {selectedLogMember.FamilyID}</>}
+                </div>
+                <button
+                  style={{ marginTop: 8, fontSize: 12, padding: '2px 8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', color: 'var(--text-muted)' }}
+                  onClick={() => { setSelectedLogMember(null); setLogSearchQuery(''); setLogHistory([]); setSelectedLogId(null); setLogConfirming(false); setLogError(''); }}
+                >
+                  ✕ Change
+                </button>
+              </div>
+
+              {logLoading && <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>Loading log history…</div>}
+
+              {!logLoading && logHistory.length === 0 && (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '10px 0' }}>No log entries found for this member.</div>
+              )}
+
+              {!logLoading && logHistory.length > 0 && (
+                <>
+                  <div style={{ fontWeight: 500, marginBottom: 8 }}>
+                    Select snapshot to restore ({logHistory.length} entries — <span style={{ color: '#fbbf24' }}>highlighted rows differ from current</span>):
+                  </div>
+                  <div style={{ maxHeight: 340, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6, marginBottom: 16 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead style={{ position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['', 'Date / Time', 'Change Type', 'Status', 'Expiration', 'Fee Paid'].map(h => (
+                            <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {logHistory.map(row => {
+                          const differs = logRowDiffers(row, selectedLogMember);
+                          const isSelected = selectedLogId === row.LogID;
+                          return (
+                            <tr
+                              key={row.LogID}
+                              onClick={() => { setSelectedLogId(row.LogID); setLogConfirming(false); }}
+                              style={{
+                                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                cursor: 'pointer',
+                                background: isSelected
+                                  ? 'rgba(251,191,36,0.15)'
+                                  : differs
+                                    ? 'rgba(251,191,36,0.04)'
+                                    : 'transparent',
+                              }}
+                            >
+                              <td style={{ padding: '7px 10px' }}>
+                                <input type="radio" readOnly checked={isSelected} />
+                              </td>
+                              <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: 'var(--text-muted)', fontSize: 12 }}>
+                                {row.LoggingTime?.replace('T', ' ').slice(0, 16)}
+                              </td>
+                              <td style={{ padding: '7px 10px', fontSize: 12 }}>{row.ChangeType || '—'}</td>
+                              <td style={{ padding: '7px 10px', fontWeight: row.Status !== selectedLogMember.Status ? 600 : 400,
+                                color: row.Status !== selectedLogMember.Status ? '#fbbf24' : 'inherit' }}>
+                                {row.Status || '—'}
+                              </td>
+                              <td style={{ padding: '7px 10px', whiteSpace: 'nowrap',
+                                fontWeight: row.Expiration && row.Expiration !== (selectedLogMember.Expiration || '').slice(0, 10) ? 600 : 400,
+                                color: row.Expiration && row.Expiration !== (selectedLogMember.Expiration || '').slice(0, 10) ? '#fbbf24' : 'inherit' }}>
+                                {row.Expiration || '—'}
+                              </td>
+                              <td style={{ padding: '7px 10px', color: 'var(--text-muted)', fontSize: 12 }}>
+                                {row.MembershipFeePaid != null ? `$${row.MembershipFeePaid}` : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Confirmation step */}
+                  {selectedLogId && (() => {
+                    const snap = logHistory.find(r => r.LogID === selectedLogId);
+                    return snap ? (
+                      <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 6, padding: '14px 16px', marginBottom: 16 }}>
+                        <div style={{ fontWeight: 600, marginBottom: 8 }}>Preview restore</div>
+                        <table style={{ fontSize: 13, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ padding: '4px 16px 4px 0', color: 'var(--text-muted)', fontWeight: 400, textAlign: 'left' }}></th>
+                              <th style={{ padding: '4px 24px 4px 0', color: 'var(--text-muted)', fontWeight: 500 }}>Current</th>
+                              <th style={{ padding: '4px 0', color: '#fbbf24', fontWeight: 500 }}>→ Will become</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td style={{ padding: '3px 16px 3px 0', color: 'var(--text-muted)' }}>Status</td>
+                              <td style={{ padding: '3px 24px 3px 0' }}>{selectedLogMember.Status}</td>
+                              <td style={{ fontWeight: snap.Status !== selectedLogMember.Status ? 700 : 400, color: snap.Status !== selectedLogMember.Status ? '#fbbf24' : 'inherit' }}>
+                                {snap.Status || '(unchanged)'}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style={{ padding: '3px 16px 3px 0', color: 'var(--text-muted)' }}>Expiration</td>
+                              <td style={{ padding: '3px 24px 3px 0' }}>{(selectedLogMember.Expiration || '').slice(0, 10) || '—'}</td>
+                              <td style={{ fontWeight: snap.Expiration && snap.Expiration !== (selectedLogMember.Expiration || '').slice(0, 10) ? 700 : 400,
+                                color: snap.Expiration && snap.Expiration !== (selectedLogMember.Expiration || '').slice(0, 10) ? '#fbbf24' : 'inherit' }}>
+                                {snap.Expiration || '(unchanged)'}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                          Snapshot from: {snap.LoggingTime?.replace('T', ' ').slice(0, 16)} ({snap.ChangeType || 'unknown change type'})
+                          {selectedLogMember.FamilyID && ' · Family members will be cascaded'}
+                        </div>
+
+                        <label style={{ display: 'block', marginTop: 12, marginBottom: 6, fontWeight: 500, fontSize: 13 }}>
+                          Note <span style={{ color: '#f87171' }}>*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={logNote}
+                          onChange={e => setLogNote(e.target.value)}
+                          placeholder="e.g. Reverting erroneous sync from April 10"
+                          style={{ width: '100%', maxWidth: 460, padding: '7px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text)', marginBottom: 12 }}
+                        />
+
+                        {logError && <div style={{ color: '#f87171', marginBottom: 10, fontSize: 13 }}>⚠ {logError}</div>}
+
+                        <div style={{ display: 'flex', gap: 10 }}>
+                          <button
+                            onClick={restoreFromLog}
+                            disabled={logSaving || !logNote.trim()}
+                            style={{ padding: '8px 20px', borderRadius: 4, border: 'none', background: logNote.trim() ? '#d97706' : '#374151', color: logNote.trim() ? '#fff' : '#6b7280', fontWeight: 600, cursor: logNote.trim() ? 'pointer' : 'not-allowed' }}
+                          >
+                            {logSaving ? 'Restoring…' : '📋 Confirm Restore'}
+                          </button>
+                          <button
+                            onClick={() => { setSelectedLogId(null); setLogNote(''); setLogError(''); }}
+                            style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
                 </>
               )}
             </div>

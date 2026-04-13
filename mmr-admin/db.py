@@ -302,6 +302,48 @@ def handle_mysql_error(e: MySQLError) -> Tuple[Dict[str, Any], int]:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Schema introspection
+# ---------------------------------------------------------------------------
+
+_enum_cache: Dict[str, List[str]] = {}
+
+
+def get_enum_values(table: str, column: str) -> List[str]:
+    """
+    Return the ENUM values for a column by querying INFORMATION_SCHEMA.
+    Result is cached for the lifetime of the process (schema rarely changes).
+
+    Example:
+        get_enum_values('members', 'Status')
+        # ['active', 'expired', 'inactive', 'pending', 'pending_upgrade', 'lifetime']
+    """
+    cache_key = f"{table}.{column}"
+    if cache_key in _enum_cache:
+        return _enum_cache[cache_key]
+
+    rows = query(
+        """
+        SELECT COLUMN_TYPE
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = %s
+          AND COLUMN_NAME  = %s
+        """,
+        [table, column],
+    )
+    if not rows:
+        return []
+
+    # COLUMN_TYPE looks like: enum('active','expired','inactive')
+    raw = rows[0]['COLUMN_TYPE']  # e.g. "enum('active','expired',...)"
+    import re
+    values = re.findall(r"'([^']+)'", raw)
+    _enum_cache[cache_key] = values
+    return values
+
+
+# ---------------------------------------------------------------------------
 # Table initialization
 # ---------------------------------------------------------------------------
 

@@ -156,8 +156,12 @@ app.register_blueprint(payments_bp)
 
 from api_members import members_bp
 from api_members_status import members_status_bp
+from api_members_family import members_family_bp
+from api_members_district import members_district_bp
 app.register_blueprint(members_bp)
 app.register_blueprint(members_status_bp)
+app.register_blueprint(members_family_bp)
+app.register_blueprint(members_district_bp)
 
 from api_district_members import district_members_bp
 from api_district_export import district_export_bp

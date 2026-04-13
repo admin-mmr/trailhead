@@ -8,6 +8,7 @@ import csv
 import io
 import os
 import zipfile
+from api_district_members import get_member_status_options, _NOT_ACTIVE_SENTINEL, _NOT_ACTIVE_DB_VALUES
 from datetime import datetime
 from db import query
 from auth import login_required
@@ -74,6 +75,28 @@ def format_cell_value(col_key, row):
         return row.get(col_key, '') or ''
 
 
+def apply_status_filter(sql, params, status_filter):
+    """
+    Apply membership status filter.
+    Valid values come from INFORMATION_SCHEMA (via get_member_status_options).
+    'not_active' sentinel expands to IN (expired, inactive).
+    """
+    status_filter = (status_filter or '').strip()
+    if not status_filter:
+        return sql, params, None
+    _, valid_statuses = get_member_status_options()
+    if status_filter == _NOT_ACTIVE_SENTINEL:
+        placeholders = ', '.join(['%s'] * len(_NOT_ACTIVE_DB_VALUES))
+        sql += f" AND Status IN ({placeholders})"
+        params.extend(_NOT_ACTIVE_DB_VALUES)
+    elif status_filter in valid_statuses:
+        sql += " AND Status = %s"
+        params.append(status_filter)
+    else:
+        return sql, params, f'Invalid status: {status_filter}'
+    return sql, params, None
+
+
 def apply_renewal_filter(sql, params, renewed_filter):
     """Apply renewal status filter to SQL query."""
     year_end_date = get_year_end_date()
@@ -135,9 +158,9 @@ def export_csv():
 
         # Apply filters
         status_filter = filters.get('status', '').strip()
-        if status_filter:
-            sql += " AND Status = %s"
-            params.append(status_filter)
+        sql, params, err = apply_status_filter(sql, params, status_filter)
+        if err:
+            return jsonify({'success': False, 'error': err}), 400
 
         renewed_filter = filters.get('renewed', '').strip().lower()
         sql, params = apply_renewal_filter(sql, params, renewed_filter)
@@ -196,6 +219,12 @@ def export_all_districts():
         if not districts:
             return jsonify({'success': False, 'error': 'No districts found'}), 400
 
+        # Validate status once before looping
+        if status_filter:
+            _, _, err = apply_status_filter("", [], status_filter)
+            if err:
+                return jsonify({'success': False, 'error': err}), 400
+
         # Create ZIP
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -207,10 +236,7 @@ def export_all_districts():
                     FROM members WHERE District = %s
                 """
                 params = [district]
-
-                if status_filter:
-                    sql += " AND Status = %s"
-                    params.append(status_filter)
+                sql, params, _ = apply_status_filter(sql, params, status_filter)
 
                 sql, params = apply_renewal_filter(sql, params, renewed_filter)
                 sql += " ORDER BY LastName, FirstName"
@@ -250,7 +276,7 @@ def export_all_sheet():
     """
     Export all members from all districts as a single CSV sheet.
     Body: {
-        "status": "active/not active/pending/empty" (optional),
+        "status": "active/not_active/pending/expired/inactive/pending_upgrade/lifetime/empty" (optional),
         "renewed": "yes/no/empty" (optional),
         "columns": ["District", "MemberID", "Name", ...] (optional, column KEYS)
     }
@@ -274,9 +300,9 @@ def export_all_sheet():
         """
         params = []
 
-        if status_filter:
-            sql += " AND Status = %s"
-            params.append(status_filter)
+        sql, params, err = apply_status_filter(sql, params, status_filter)
+        if err:
+            return jsonify({'success': False, 'error': err}), 400
 
         sql, params = apply_renewal_filter(sql, params, renewed_filter)
         sql += " ORDER BY District, LastName, FirstName"

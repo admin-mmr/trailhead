@@ -7,8 +7,34 @@ Export functionality moved to api_district_export.py
 from flask import Blueprint, jsonify, request
 import os
 from datetime import datetime
-from db import query
+from db import query, get_enum_values
 from auth import login_required
+
+# Sentinel value the UI sends to mean "expired OR inactive"
+_NOT_ACTIVE_SENTINEL = 'not_active'
+_NOT_ACTIVE_DB_VALUES = ('expired', 'inactive')
+
+
+def get_member_status_options():
+    """
+    Return frontend-ready status options derived from the DB ENUM.
+    Injects the 'not_active' sentinel to group expired+inactive.
+    """
+    raw = get_enum_values('members', 'Status')
+    grouped = {v for v in _NOT_ACTIVE_DB_VALUES}  # values collapsed into sentinel
+
+    options = [{'value': '', 'label': 'All Statuses'}]
+    for v in raw:
+        if v not in grouped:
+            options.append({'value': v, 'label': v.replace('_', ' ').title()})
+        # Insert sentinel after 'active'
+        if v == 'active':
+            options.append({
+                'value': _NOT_ACTIVE_SENTINEL,
+                'label': 'Not Active',
+                'expands_to': list(_NOT_ACTIVE_DB_VALUES),
+            })
+    return options, set(raw)
 
 district_members_bp = Blueprint('district_members', __name__, url_prefix='/api/district')
 
@@ -20,7 +46,7 @@ def get_district_members():
     Fetch members by district with flexible column selection and sorting.
     Query params:
     - district: filter by district (optional)
-    - status: filter by status (active/not active/pending, optional)
+    - status: filter by status (active/not_active/pending/expired/inactive/pending_upgrade/lifetime, optional)
     - renewed: filter by renewal status (yes/no, optional) — yes if Expiration >= MEMBERSHIP_YEAR_END
     - sortBy: column to sort by (default: District)
     - sortOrder: 'asc' or 'desc' (default: asc)
@@ -82,8 +108,15 @@ def get_district_members():
             params.append(district)
 
         if status:
-            sql += " AND Status = %s"
-            params.append(status)
+            _, valid_statuses = get_member_status_options()
+            if status == _NOT_ACTIVE_SENTINEL:
+                sql += f" AND Status IN ({', '.join(['%s'] * len(_NOT_ACTIVE_DB_VALUES))})"
+                params.extend(_NOT_ACTIVE_DB_VALUES)
+            elif status in valid_statuses:
+                sql += " AND Status = %s"
+                params.append(status)
+            else:
+                return jsonify({'success': False, 'error': f'Invalid status: {status}'}), 400
 
         if renewed and year_end_date:
             if renewed == 'yes':
@@ -143,5 +176,33 @@ def get_districts():
             'districts': districts
         })
 
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@district_members_bp.route('/member-status-values', methods=['GET'])
+@login_required
+def get_member_status_values():
+    """
+    Return Status ENUM values from INFORMATION_SCHEMA, shaped for the frontend dropdown.
+    Response includes both raw DB values and frontend-ready options with the
+    'not_active' sentinel (groups expired + inactive into one UI option).
+
+    Response:
+      {
+        "success": true,
+        "raw": ["active", "expired", "inactive", ...],
+        "options": [
+          {"value": "",           "label": "All Statuses"},
+          {"value": "active",     "label": "Active"},
+          {"value": "not_active", "label": "Not Active", "expands_to": ["expired","inactive"]},
+          {"value": "pending",    "label": "Pending"},
+          ...
+        ]
+      }
+    """
+    try:
+        options, raw = get_member_status_options()
+        return jsonify({'success': True, 'raw': sorted(raw), 'options': options})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
