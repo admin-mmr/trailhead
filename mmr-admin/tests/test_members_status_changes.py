@@ -525,7 +525,7 @@ class TestRevertOverride:
 
 class TestRevertNullStatusRegression:
     """
-    Regression tests for two bugs in sp_revert_admin_override:
+    Regression tests for three bugs in sp_revert_admin_override:
 
     Bug 1 — NULL-Status Sheets-sync rows (V011):
       member_log rows written by Sheets sync have Status = NULL.
@@ -537,13 +537,17 @@ class TestRevertNullStatusRegression:
       while members.MemberID uses utf8mb4_unicode_ci → Illegal mix of collations.
       Fix: replace JSON_TABLE cursor with FIND_IN_SET (collation-neutral, MySQL 5.7+).
 
-    Both fixes must be present in the latest active migration for sp_revert_admin_override.
+    Bug 3 — FK violation in audit INSERT (V013):
+      Audit row used TargetMemberID = 'REVERT', which fails fk_override_member.
+      Fix: read TargetMemberID from the original override row and reuse it.
+
+    All fixes must be present in the latest active migration for sp_revert_admin_override.
     """
 
-    # V012 is the canonical version (supersedes V011 for the revert SP)
+    # V013 is the canonical version (supersedes V011/V012 for the revert SP)
     MIGRATION_PATH = os.path.abspath(
         os.path.join(os.path.dirname(__file__),
-                     '../../db/MIGRATION_V012_fix_revert_collation.sql')
+                     '../../db/MIGRATION_V013_fix_revert_fk.sql')
     )
 
     def _proc_body(self, sql: str) -> str:
@@ -592,6 +596,24 @@ class TestRevertNullStatusRegression:
         assert 'JSON_TABLE' not in body, (
             "JSON_TABLE must not appear in sp_revert_admin_override — it "
             "triggers 'Illegal mix of collations' on Azure MySQL."
+        )
+
+    def test_audit_insert_uses_original_target_not_literal_string(self):
+        """
+        Regression (V013): audit INSERT must not use a literal string such as
+        'REVERT' for TargetMemberID — that value doesn't exist in members,
+        violating fk_override_member (1452 Cannot add or update a child row).
+        Fix: read TargetMemberID from the original override row and reuse it.
+        """
+        with open(self.MIGRATION_PATH) as f:
+            sql = f.read()
+        body = self._proc_body(sql)
+        # Proc must declare and use a variable to hold the original TargetMemberID
+        # rather than passing a literal string that doesn't exist in members.
+        assert 'v_OriginalTarget' in body, (
+            "Proc must declare v_OriginalTarget and use it in the audit INSERT. "
+            "Passing a literal string as TargetMemberID fails fk_override_member "
+            "because that value doesn't exist in the members table."
         )
 
     def test_zero_restored_when_sp_finds_no_snapshots(self, client, mock_query):
