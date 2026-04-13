@@ -28,6 +28,7 @@ env:
 jobs:
   full-sync:
     name: "Full Sync (Ordered Sequential)"
+    if: false  # DISABLED — re-enable when action minutes reset (remove this line)
     runs-on: ubuntu-latest
     outputs:
       status:  ${{ steps.run.outputs.status }}
