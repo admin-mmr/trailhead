@@ -4,12 +4,12 @@ Membership renewal audit routes for mmr-admin.
 Blueprint: audit_bp
 Prefix: /api/audit
 
-Implements membership renewal audit via stored procedure (sp_renewal_audit):
-  1. Admin specifies date range, target expiration date, and membership type
-  2. Stored procedure traces transactions through members, payments, submissions
-  3. Verifies expiration dates match target date
-  4. Checks family consistency for family memberships
-  5. Returns audit report with trace routes and matching status
+Routes:
+  POST /api/audit/unmatch   — unlink a gmail transaction from a payment
+  GET  /api/config/get      — read config table key/value pairs
+  POST /api/audit/renewal   — run sp_renewal_audit (renewal trace report)
+
+Member data-quality routes (reconcile, expiration-drift) live in api_audit_members.py.
 """
 
 from __future__ import annotations

@@ -59,7 +59,8 @@ EXCLUDED_EXACT = {'/', '/query'}
 
 COVERAGE: dict[tuple[str, str], str] = {
     # --- audit ---
-    ('POST', '/api/audit/reconcile'):              'test_api_smoke.py',
+    ('POST', '/api/audit/reconcile'):              'test_audit_members.py',
+    ('GET',  '/api/audit/expiration-drift'):       'test_audit_members.py',
     ('POST', '/api/audit/renewal'):                'test_api_smoke.py',
     ('POST', '/api/audit/unmatch'):                'test_api_smoke_extended.py',
 

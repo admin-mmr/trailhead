@@ -20,7 +20,11 @@ const DistrictMemberTable = ({
 }) => {
   const formatDate = (dateStr, dateOnly = false) => {
     if (!dateStr) return '—';
-    const date = new Date(dateStr);
+    // Append T00:00:00 to date-only strings so JS parses as local time, not UTC midnight
+    const normalized = dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+      ? dateStr + 'T00:00:00'
+      : dateStr;
+    const date = new Date(normalized);
     const options = {
       year: 'numeric',
       month: 'short',

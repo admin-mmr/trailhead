@@ -4,11 +4,12 @@ name: MySQL - Run Database Migrations
 # 1. Pushes to main that modify db/* migration files
 # 2. Manual trigger from Actions UI
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'db/MIGRATION_V*.sql'
+  # Auto-run on push disabled — migrations are run locally via mysql-mmr
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'db/MIGRATION_V*.sql'
   workflow_dispatch:
     inputs:
       migration_version:

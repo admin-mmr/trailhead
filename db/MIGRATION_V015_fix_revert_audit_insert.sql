@@ -1,21 +1,10 @@
--- ============================================================
--- MIGRATION V015: Fix sp_revert_admin_override audit INSERT + Sheets sync note
--- ============================================================
--- Root cause of 0 REVERT records:
---   The audit INSERT at the end of the SP aborts the procedure before the
---   SELECT result is returned. Members are updated (auto-committed) but the
---   SP exits with an error, no audit record is created, and idempotency never
---   activates. Each new call re-runs the revert → Sheets sync overwrites again.
---
--- Fix: capture any SQL exception from the audit INSERT into v_AuditError.
---   The SELECT always runs and now includes audit_error so the caller can see
---   what (if anything) went wrong with the audit INSERT.
---
--- Workflow note (not a code bug):
---   After running the revert, export members to Google Sheets immediately
---   so the corrected status replaces the stale inactive data in Sheets.
---   Without this, the next Sheets import sync will overwrite the revert.
--- ============================================================
+-- MIGRATION_V015_fix_revert_audit_insert.sql
+-- Rebuilds sp_revert_admin_override with all regression fixes accumulated from V011–V015:
+--   V011: AND Status IS NOT NULL guard in member_log SELECT (avoids COALESCE(NULL) silently keeping wrong value)
+--   V012: FIND_IN_SET instead of JSON_TABLE (avoids Illegal mix of collations on Azure MySQL)
+--   V013: Use v_OriginalTarget (from original override row) in audit INSERT, not literal string (avoids fk_override_member violation)
+--   V014: SET @internal_proc = 1 before cursor loop, reset to NULL after (members_before_update trigger guard)
+--   V015: DECLARE CONTINUE HANDLER FOR SQLEXCEPTION into v_AuditError (prevents SP abort on audit INSERT failure)
 
 DROP PROCEDURE IF EXISTS sp_revert_admin_override;
 
@@ -125,7 +114,7 @@ proc_body: BEGIN
     -- Restore trigger guard
     SET @internal_proc = NULL;
 
-    -- Audit record: reuse original TargetMemberID so fk_override_member is satisfied.
+    -- Audit record: reuse original TargetMemberID so fk_override_member is satisfied (V013).
     -- SQLEXCEPTION handler above captures any failure into v_AuditError without aborting.
     INSERT INTO admin_member_overrides
         (AdminEmail, TargetMemberID, ImpactedMemberIDs, ActionType,
@@ -149,7 +138,6 @@ END$$
 
 DELIMITER ;
 
--- Self-registration
 INSERT INTO schema_migrations (version, description, executed_at)
-VALUES ('V015', 'Fix sp_revert_admin_override: SQLEXCEPTION handler prevents audit INSERT from aborting SP', NOW())
+VALUES ('V015', 'fix_revert_audit_insert: rebuild sp_revert_admin_override with V011-V015 regression fixes', NOW())
 ON DUPLICATE KEY UPDATE executed_at = NOW();

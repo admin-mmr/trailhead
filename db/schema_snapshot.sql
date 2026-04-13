@@ -444,51 +444,56 @@ PROCEDURE	generate_member_id		BEGIN
     COMMIT;
 END
 PROCEDURE	sp_admin_update_member_status		BEGIN
-    DECLARE v_FamilyID         VARCHAR(10)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-    DECLARE v_OldStatus        VARCHAR(20)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-    DECLARE v_ImpactedIDs      TEXT         CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-    DECLARE v_CalculatedAction VARCHAR(50)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    DECLARE v_OldStatus     VARCHAR(50);
+    DECLARE v_OldExpiration DATE;
+    DECLARE v_OldNotes      TEXT;
+    DECLARE v_FamilyID      VARCHAR(20);
 
-    SELECT Status, FamilyID INTO v_OldStatus, v_FamilyID
-    FROM members WHERE MemberID = p_MemberID;
+    -- Snapshot current state
+    SELECT Status, Expiration, Notes, FamilyID
+    INTO v_OldStatus, v_OldExpiration, v_OldNotes, v_FamilyID
+    FROM members
+    WHERE MemberID = p_MemberID;
 
-    SET v_CalculatedAction = CASE
-        WHEN p_NewStatus = 'lifetime' THEN 'LIFETIME_SET'
-        WHEN v_OldStatus = 'expired' AND p_NewStatus = 'inactive' THEN 'INACTIVE_SET'
-        WHEN p_NewExpiration IS NOT NULL THEN 'EXPIRATION_OVERRIDE'
-        ELSE 'STATUS_CHANGE'
-    END;
-
-    -- Only cascade to family if FamilyID is a real non-empty value
+    -- Update target member (and family if applicable)
     IF v_FamilyID IS NOT NULL AND v_FamilyID != '' THEN
-        SELECT GROUP_CONCAT(MemberID) INTO v_ImpactedIDs
-        FROM members WHERE FamilyID = v_FamilyID;
+        UPDATE members
+        SET Status    = p_NewStatus,
+            Notes     = CONCAT(IFNULL(Notes, ''), '
+', p_NewNotes),
+            UpdatedAt = NOW()
+        WHERE FamilyID = v_FamilyID
+           OR MemberID = p_MemberID;
     ELSE
-        SET v_ImpactedIDs = p_MemberID;
+        UPDATE members
+        SET Status    = p_NewStatus,
+            Notes     = CONCAT(IFNULL(Notes, ''), '
+', p_NewNotes),
+            UpdatedAt = NOW()
+        WHERE MemberID = p_MemberID;
     END IF;
 
-    SET @internal_proc = 1;
+    -- Log to member_log — UUID() required (varchar PK, no default, no auto_increment)
+    INSERT INTO member_log (LogID, MemberID, ChangeType, Status, Expiration, LoggingTime)
+    VALUES (UUID(), p_MemberID, 'ADMIN_OVERRIDE', p_NewStatus, p_NewExpiration, NOW());
 
-    UPDATE members
-    SET
-        Status     = IFNULL(p_NewStatus,     Status),
-        Expiration = IFNULL(p_NewExpiration, Expiration),
-        Notes      = CONCAT(IFNULL(Notes, ''), '
---- Admin Override (', p_AdminEmail, ' ', NOW(), ') ---
-', p_NewNotes)
-    WHERE (v_FamilyID IS NOT NULL AND v_FamilyID != '' AND FamilyID = v_FamilyID)
-       OR MemberID = p_MemberID;
+    -- Build impacted member ID list for audit
+    SET @impacted_ids = p_MemberID;
+    IF v_FamilyID IS NOT NULL AND v_FamilyID != '' THEN
+        SELECT GROUP_CONCAT(MemberID ORDER BY MemberID SEPARATOR ',')
+        INTO @impacted_ids
+        FROM members
+        WHERE FamilyID = v_FamilyID;
+    END IF;
 
-    SET @internal_proc = NULL;
+    -- Audit trail
+    INSERT INTO admin_member_overrides
+        (AdminEmail, TargetMemberID, ImpactedMemberIDs, ActionType,
+         OldValue, NewValue, AdminNotes, Timestamp)
+    VALUES
+        (p_AdminEmail, p_MemberID, @impacted_ids,
+         'INACTIVE_SET', v_OldStatus, p_NewStatus, p_NewNotes, NOW());
 
-    INSERT INTO admin_member_overrides (
-        AdminEmail, TargetMemberID, ImpactedMemberIDs,
-        ActionType, OldValue, NewValue, AdminNotes
-    ) VALUES (
-        p_AdminEmail, p_MemberID, v_ImpactedIDs,
-        v_CalculatedAction, v_OldStatus,
-        IFNULL(p_NewStatus, v_OldStatus), p_NewNotes
-    );
 END
 PROCEDURE	sp_cancel_payment		BEGIN
     DECLARE v_member_id      VARCHAR(10)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -815,8 +820,7 @@ PROCEDURE	sp_reconcile_member_payments		BEGIN
     DECLARE v_start_date DATE;
     DECLARE v_target_expiration DATE;
 
-    
-    SELECT CAST(ConfigValue AS DATE) INTO v_start_date FROM config WHERE ConfigKey = 'MembershipCollectionStart';
+    SELECT CAST(ConfigValue AS DATE) INTO v_start_date      FROM config WHERE ConfigKey = 'MembershipCollectionStart';
     SELECT CAST(ConfigValue AS DATE) INTO v_target_expiration FROM config WHERE ConfigKey = 'MembershipYearEnd';
 
     DROP TEMPORARY TABLE IF EXISTS tmp_to_update;
@@ -825,59 +829,62 @@ PROCEDURE	sp_reconcile_member_payments		BEGIN
         m.MemberID,
         m.FamilyID,
         p.TransactionNumber AS actual_tx,
-        p.PaymentDate AS actual_date,
-        p.Amount AS actual_amount
+        p.PaymentDate       AS actual_date,
+        p.Amount            AS actual_amount
     FROM members m
     INNER JOIN payments p ON m.MemberID = p.MemberID
     WHERE LOWER(p.PaymentType) LIKE '%membership%'
       AND p.PaymentDate >= v_start_date
       AND m.Status <> 'lifetime'
       AND (
-        m.Expiration <> v_target_expiration
+        m.Status         <> 'active'                     -- NEW: catch inactive despite valid payment
+        OR m.Expiration  <> v_target_expiration
         OR m.PaymentTransaction <> p.TransactionNumber
         OR (p.PaymentDate IS NOT NULL AND (m.PaymentDate IS NULL OR m.PaymentDate <> p.PaymentDate))
       );
 
     IF p_dry_run THEN
         SELECT
-            'DRY RUN'                       AS run_status,
+            'DRY RUN'                            AS run_status,
             t.MemberID,
             CONCAT(m.FirstName, ' ', m.LastName) AS member_name,
-            m.Type                          AS member_type,
-            m.Status                        AS current_status,
-            m.Expiration                    AS current_expiration,
-            v_target_expiration             AS target_expiration,
-            m.PaymentTransaction            AS current_tx,
-            t.actual_tx                     AS new_tx,
-            m.PaymentDate                   AS current_payment_date,
-            t.actual_date                   AS new_payment_date,
-            t.actual_amount                 AS new_amount,
+            m.Type                               AS member_type,
+            m.Status                             AS current_status,
+            'active'                             AS target_status,
+            CASE WHEN m.Status <> 'active' THEN 'STATUS MISMATCH' ELSE 'ok' END AS status_match,
+            m.Expiration                         AS current_expiration,
+            v_target_expiration                  AS target_expiration,
+            CASE WHEN m.Expiration <> v_target_expiration THEN 'EXP MISMATCH' ELSE 'ok' END AS exp_match,
+            m.PaymentTransaction                 AS current_tx,
+            t.actual_tx                          AS new_tx,
+            m.PaymentDate                        AS current_payment_date,
+            t.actual_date                        AS new_payment_date,
+            t.actual_amount                      AS new_amount,
             t.FamilyID
         FROM tmp_to_update t
         INNER JOIN members m ON t.MemberID = m.MemberID
-        ORDER BY m.LastName, m.FirstName;
+        ORDER BY status_match DESC, exp_match DESC, m.LastName, m.FirstName;
     ELSE
         START TRANSACTION;
-
         SET @internal_proc = 1;
 
-        
+        -- Fix primary members
         UPDATE members m
         INNER JOIN tmp_to_update t ON m.MemberID = t.MemberID
         SET
-            m.Status = 'active',
-            m.Expiration = v_target_expiration,
+            m.Status             = 'active',
+            m.Expiration         = v_target_expiration,
             m.PaymentTransaction = t.actual_tx,
-            m.PaymentDate = t.actual_date,
-            m.MembershipFeePaid = t.actual_amount,
-            m.UpdatedAt = NOW();
+            m.PaymentDate        = t.actual_date,
+            m.MembershipFeePaid  = t.actual_amount,
+            m.UpdatedAt          = NOW();
 
-        
+        -- Cascade to family members
         UPDATE members
         SET
-            Status = 'active',
+            Status     = 'active',
             Expiration = v_target_expiration,
-            UpdatedAt = NOW()
+            UpdatedAt  = NOW()
         WHERE FamilyID IN (SELECT DISTINCT FamilyID FROM tmp_to_update WHERE FamilyID <> '' AND FamilyID IS NOT NULL);
 
         COMMIT;
@@ -885,6 +892,8 @@ PROCEDURE	sp_reconcile_member_payments		BEGIN
 
         SELECT 'SUCCESS' AS run_status, t.* FROM tmp_to_update t;
     END IF;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_to_update;
 END
 PROCEDURE	sp_renewal_audit		BEGIN
   
@@ -1005,129 +1014,127 @@ PROCEDURE	sp_renewal_audit_default		BEGIN
 
     CALL sp_renewal_audit(v_start_date, CURDATE(), v_target_expiration, 'both', TRUE);
 END
-PROCEDURE	sp_revert_admin_override		BEGIN
-    DECLARE v_AdminEmail      VARCHAR(255);
-    DECLARE v_TargetMemberID  VARCHAR(10);
-    DECLARE v_ImpactedIDs     TEXT;
-    DECLARE v_OverrideTS      DATETIME;
+PROCEDURE	sp_revert_admin_override		proc_body: BEGIN
+    DECLARE v_Done              TINYINT DEFAULT 0;
+    DECLARE v_MemberID          VARCHAR(10);
+    DECLARE v_PreStatus         VARCHAR(50);
+    DECLARE v_PreExpiration     DATE;
+    DECLARE v_OverrideTS        DATETIME;
+    DECLARE v_ImpactedIDs       TEXT;
+    DECLARE v_OriginalTarget    VARCHAR(10);
+    DECLARE v_RevertedCount     INT DEFAULT 0;
+    DECLARE v_AuditError        TEXT DEFAULT NULL;
 
-    DECLARE v_MemberID        VARCHAR(10);
-    DECLARE v_PreStatus       VARCHAR(50);
-    DECLARE v_PreExpiration   DATE;
-    DECLARE v_NotePattern     VARCHAR(100);
-    DECLARE v_Done            INT DEFAULT 0;
-    DECLARE v_RevertedCount   INT DEFAULT 0;
-    DECLARE v_Pos             INT DEFAULT 1;
-    DECLARE v_Next            INT;
-    DECLARE v_Token           VARCHAR(10);
+    -- FIND_IN_SET: collation-neutral, no derived-column mismatch (V012)
+    DECLARE cur CURSOR FOR
+        SELECT MemberID FROM members
+        WHERE FIND_IN_SET(MemberID, (
+            SELECT ImpactedMemberIDs
+            FROM admin_member_overrides
+            WHERE OverrideID = p_OverrideID
+        )) > 0;
 
-    -- ── 1. Load the override record ──────────────────────────────────────
-    SELECT AdminEmail, TargetMemberID, ImpactedMemberIDs, `Timestamp`
-    INTO   v_AdminEmail, v_TargetMemberID, v_ImpactedIDs, v_OverrideTS
-    FROM   admin_member_overrides
-    WHERE  OverrideID = p_OverrideID;
-
-    IF v_ImpactedIDs IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'OverrideID not found in admin_member_overrides';
-    END IF;
-
-    SET v_NotePattern = CONCAT(
-        '
---- Admin Override (',
-        v_AdminEmail, ' ',
-        DATE_FORMAT(v_OverrideTS, '%Y-%m-%d')
-    );
-
-    -- ── 2. Split ImpactedMemberIDs into a temp table ─────────────────────
-    DROP TEMPORARY TABLE IF EXISTS _revert_members;
-    CREATE TEMPORARY TABLE _revert_members (MemberID VARCHAR(10));
-
-    SET v_ImpactedIDs = CONCAT(TRIM(v_ImpactedIDs), ',');
-    SET v_Pos = 1;
-
-    WHILE LOCATE(',', v_ImpactedIDs, v_Pos) > 0 DO
-        SET v_Next  = LOCATE(',', v_ImpactedIDs, v_Pos);
-        SET v_Token = TRIM(SUBSTRING(v_ImpactedIDs, v_Pos, v_Next - v_Pos));
-        IF v_Token != '' THEN
-            INSERT INTO _revert_members VALUES (v_Token);
-        END IF;
-        SET v_Pos = v_Next + 1;
-    END WHILE;
-
-    -- ── 3. Cursor: restore each impacted member ───────────────────────────
-    BEGIN
-        DECLARE cur CURSOR FOR SELECT MemberID FROM _revert_members;
-        DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_Done = 1;
-
-        OPEN cur;
-
-        revert_loop: LOOP
-            FETCH cur INTO v_MemberID;
-            IF v_Done THEN LEAVE revert_loop; END IF;
-
-            -- KEY FIX (V011): AND Status IS NOT NULL
-            -- Sheets sync and payment log rows write NULL for Status.
-            -- Without this filter, COALESCE(NULL, Status) falls back to
-            -- the current wrong status and nothing gets restored.
-            SELECT Status, Expiration
-            INTO   v_PreStatus, v_PreExpiration
-            FROM   member_log
-            WHERE  MemberID    = v_MemberID
-              AND  LoggingTime < v_OverrideTS
-              AND  Status IS NOT NULL
-            ORDER BY LoggingTime DESC
-            LIMIT 1;
-
-            SET @internal_proc = 1;
-
-            UPDATE members
-            SET
-                Status     = COALESCE(v_PreStatus,     Status),
-                Expiration = COALESCE(v_PreExpiration, Expiration),
-                Notes      = TRIM(
-                    CASE
-                        WHEN Notes LIKE CONCAT('%', v_NotePattern, '%')
-                        THEN SUBSTRING_INDEX(Notes, v_NotePattern, 1)
-                        ELSE Notes
-                    END
-                )
-            WHERE MemberID = v_MemberID;
-
-            SET @internal_proc = NULL;
-            SET v_RevertedCount = v_RevertedCount + 1;
-        END LOOP;
-
-        CLOSE cur;
+    -- Catch audit INSERT failures without aborting the SP.
+    -- Members are already updated at this point; we don't want to lose
+    -- the SELECT result just because the audit record has a constraint issue.
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN
+        GET DIAGNOSTICS CONDITION 1 v_AuditError = MESSAGE_TEXT;
     END;
 
-    DROP TEMPORARY TABLE IF EXISTS _revert_members;
+    -- NOT FOUND handler must be declared after SQLEXCEPTION handler.
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_Done = 1;
 
-    -- ── 4. Audit the revert (idempotent) ─────────────────────────────────
-    IF NOT EXISTS (
-        SELECT 1 FROM admin_member_overrides
-        WHERE  ActionType = 'REVERT'
-          AND  OldValue   = CONCAT('override_', p_OverrideID)
-    ) THEN
-        INSERT INTO admin_member_overrides
-            (AdminEmail, TargetMemberID, ImpactedMemberIDs, ActionType, OldValue, NewValue, AdminNotes)
-        VALUES (
-            'system_revert',
-            v_TargetMemberID,
-            v_ImpactedIDs,
-            'REVERT',
-            CONCAT('override_', p_OverrideID),
-            'restored_from_member_log',
-            CONCAT('Reverted OverrideID=', p_OverrideID, '; ', v_RevertedCount, ' members restored')
-        );
+    -- Look up override metadata (TargetMemberID reused in audit INSERT for FK, V013)
+    SELECT Timestamp, ImpactedMemberIDs, TargetMemberID
+    INTO v_OverrideTS, v_ImpactedIDs, v_OriginalTarget
+    FROM admin_member_overrides
+    WHERE OverrideID = p_OverrideID;
+
+    IF v_OverrideTS IS NULL THEN
+        SELECT
+            NULL  AS reverted_override_id,
+            0     AS members_restored,
+            NULL  AS impacted_member_ids,
+            NULL  AS original_override_time,
+            NULL  AS audit_error;
+        LEAVE proc_body;
     END IF;
 
-    -- ── 5. Summary ────────────────────────────────────────────────────────
+    -- Idempotency guard: skip if already reverted
+    IF EXISTS (
+        SELECT 1 FROM admin_member_overrides
+        WHERE ActionType = 'REVERT'
+          AND OldValue = CONCAT('override_', p_OverrideID)
+    ) THEN
+        SELECT
+            p_OverrideID            AS reverted_override_id,
+            0                       AS members_restored,
+            v_ImpactedIDs           AS impacted_member_ids,
+            v_OverrideTS            AS original_override_time,
+            'already_reverted'      AS audit_error;
+        LEAVE proc_body;
+    END IF;
+
+    -- Allow Expiration updates inside this procedure (V014).
+    -- The members_before_update trigger checks @internal_proc = 1.
+    SET @internal_proc = 1;
+
+    -- Cursor-based restore: one member at a time
+    OPEN cur;
+
+    read_loop: LOOP
+        FETCH cur INTO v_MemberID;
+        IF v_Done THEN LEAVE read_loop; END IF;
+
+        -- Skip NULL-Status rows written by Sheets sync (V011).
+        SELECT Status, Expiration INTO v_PreStatus, v_PreExpiration
+        FROM member_log
+        WHERE MemberID = v_MemberID
+          AND LoggingTime < v_OverrideTS
+          AND Status IS NOT NULL
+        ORDER BY LoggingTime DESC LIMIT 1;
+
+        IF v_PreStatus IS NOT NULL THEN
+            UPDATE members
+            SET Status     = v_PreStatus,
+                Expiration = v_PreExpiration,
+                UpdatedAt  = NOW()
+            WHERE MemberID = v_MemberID;
+
+            SET v_RevertedCount = v_RevertedCount + 1;
+        END IF;
+
+        -- Reset for next iteration
+        SET v_PreStatus = NULL;
+        SET v_PreExpiration = NULL;
+        SET v_Done = 0;
+    END LOOP;
+
+    CLOSE cur;
+
+    -- Restore trigger guard
+    SET @internal_proc = NULL;
+
+    -- Audit record: reuse original TargetMemberID so fk_override_member is satisfied (V013).
+    -- SQLEXCEPTION handler above captures any failure into v_AuditError without aborting.
+    INSERT INTO admin_member_overrides
+        (AdminEmail, TargetMemberID, ImpactedMemberIDs, ActionType,
+         OldValue, NewValue, AdminNotes, Timestamp)
+    VALUES
+        ('system', v_OriginalTarget, v_ImpactedIDs, 'REVERT',
+         CONCAT('override_', p_OverrideID), 'pre_override_snapshot',
+         CONCAT('Reverted override #', p_OverrideID), NOW());
+
+    -- Always return a result, even if audit INSERT failed.
+    -- audit_error = NULL means success; non-NULL means the audit record was
+    -- not written (but members were updated — check and export to Sheets).
     SELECT
-        p_OverrideID     AS reverted_override_id,
-        v_RevertedCount  AS members_restored,
-        v_OverrideTS     AS original_override_time,
-        v_ImpactedIDs    AS impacted_member_ids;
+        p_OverrideID    AS reverted_override_id,
+        v_RevertedCount AS members_restored,
+        v_ImpactedIDs   AS impacted_member_ids,
+        v_OverrideTS    AS original_override_time,
+        v_AuditError    AS audit_error;
+
 END
 PROCEDURE	sp_search_members_advanced		BEGIN
     DECLARE v_done INT DEFAULT 0;
