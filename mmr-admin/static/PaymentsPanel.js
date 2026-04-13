@@ -114,7 +114,7 @@ const PaymentsPanel = () => {
   const colFilterTimerRef = React.useRef(null);
   const handleColFilter = useCallback((filters) => {
     // Merge non-empty column filters into a server search term
-    const term = [filters.sender, filters.memo, filters.txnum].filter(Boolean).join(' ').trim();
+    const term = [filters.sender, filters.amount, filters.memo, filters.txnum].filter(Boolean).join(' ').trim();
     clearTimeout(colFilterTimerRef.current);
     colFilterTimerRef.current = setTimeout(() => loadGmail(term, 0, false), 350);
   }, [loadGmail]);
@@ -186,7 +186,7 @@ const PaymentsPanel = () => {
 
     showDashboard && e(StatsCards, { stats, onAutoguess: handleAutoguess, autoguessLoading: loading }),
 
-    e('div', { style: { display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 16 } },
+    e('div', { className: 'payments-layout', style: { display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 16 } },
 
       // LEFT: Submissions panel
       showSubmissions && e('div', {
