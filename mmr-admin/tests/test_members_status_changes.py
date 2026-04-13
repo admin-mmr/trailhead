@@ -43,6 +43,7 @@ POST /api/members/revert-override
   ├── 400 on empty body
   └── SP result fields correctly mapped to response
 """
+import os
 import pytest
 from datetime import datetime, date
 from unittest.mock import patch, MagicMock, call
@@ -537,9 +538,9 @@ class TestRevertNullStatusRegression:
     assuming success).
     """
 
-    MIGRATION_PATH = (
-        '/sessions/amazing-nifty-sagan/mnt/trailhead/db/'
-        'MIGRATION_V011_fix_sp_revert_null_status.sql'
+    MIGRATION_PATH = os.path.abspath(
+        os.path.join(os.path.dirname(__file__),
+                     '../../db/MIGRATION_V011_fix_sp_revert_null_status.sql')
     )
 
     def test_migration_contains_status_is_not_null_guard(self):
