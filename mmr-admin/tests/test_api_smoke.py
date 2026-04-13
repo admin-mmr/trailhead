@@ -16,6 +16,7 @@ Run
 Add --run-integration to also run @pytest.mark.integration tests.
 """
 import pytest
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +173,8 @@ class TestMembers:
         assert r.status_code != 500, f"Unexpected 500: {r.data[:300]}"
 
     def test_set_inactive_no_admin_session(self, client, mock_query):
-        """Missing session email must return 401, not let NULL reach MySQL (1048 bug)."""
+        """Missing session['user'] must return 401, not let NULL reach MySQL (1048 bug).
+        Guards against get_admin_id() using the wrong session key."""
         mock_query.return_value = [{
             'MemberID': 'A0558', 'FirstName': 'Yan', 'LastName': 'Zhang',
             'Email': '', 'PhoneNumber': '', 'WeChatID': '', 'Type': 'Individual',
@@ -180,11 +182,157 @@ class TestMembers:
             'Expiration': None, 'MembershipFeePaid': 0,
             'PaymentDate': None, 'PaymentTransaction': '', 'UpdatedAt': None,
         }]
-        # Ensure no user_email in session
+        # Ensure session['user'] is absent (the key get_admin_id actually reads)
         with client.session_transaction() as sess:
-            sess.pop('user_email', None)
+            sess.pop('user', None)
         r = _json_post(client, '/api/members/A0558/status', {'new_status': 'inactive', 'note': 'test'})
         assert r.status_code == 401, f"Expected 401 for missing admin session, got {r.status_code}: {r.data[:200]}"
+
+    def test_set_inactive_with_valid_session(self, client, mock_query):
+        """Happy path: valid session['user']['email'] must reach the stored proc without error.
+        Guards against get_admin_id() returning None when auth is correct."""
+        member_row = {
+            'MemberID': 'A0558', 'FirstName': 'Yan', 'LastName': 'Zhang',
+            'Email': '', 'PhoneNumber': '', 'WeChatID': '', 'Type': 'Individual',
+            'FamilyID': None, 'District': '', 'Status': 'expired',
+            'Expiration': None, 'MembershipFeePaid': 0,
+            'PaymentDate': None, 'PaymentTransaction': '', 'UpdatedAt': None,
+        }
+        mock_query.return_value = [member_row]
+        with client.session_transaction() as sess:
+            sess['user'] = {'email': 'admin@mmrunners.org', 'role': 'admin'}
+        with patch('api_members_status.execute', return_value=0):
+            r = _json_post(client, '/api/members/A0558/status', {'new_status': 'inactive', 'note': 'test'})
+        assert r.status_code == 200, f"Expected 200 with valid session, got {r.status_code}: {r.data[:300]}"
+
+
+# ---------------------------------------------------------------------------
+# Status endpoint — input validation
+# ---------------------------------------------------------------------------
+
+class TestMemberStatus:
+    def test_invalid_status_rejected(self, client, mock_query):
+        """Status values outside {lifetime, inactive} must return 400.
+        Guards against arbitrary status injection (e.g. 'active', 'pending')."""
+        r = _json_post(client, '/api/members/A0001/status', {'new_status': 'active', 'note': 'test'})
+        assert r.status_code == 400, f"Expected 400 for invalid status, got {r.status_code}"
+
+    def test_missing_note_rejected(self, client, mock_query):
+        """Note is required — empty/missing must return 400, not reach the proc."""
+        r = _json_post(client, '/api/members/A0001/status', {'new_status': 'inactive', 'note': ''})
+        assert r.status_code == 400, f"Expected 400 for missing note, got {r.status_code}"
+
+    def test_missing_note_key_rejected(self, client, mock_query):
+        """Completely absent note key must also return 400."""
+        r = _json_post(client, '/api/members/A0001/status', {'new_status': 'inactive'})
+        assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Data Query — SQL routing (CALL vs SELECT vs write)
+# ---------------------------------------------------------------------------
+
+class TestDataQuery:
+    def _super_admin_session(self, client):
+        with client.session_transaction() as sess:
+            sess['user'] = {'email': 'admin@mmrunners.org', 'role': 'super_admin'}
+
+    def test_call_uses_execute_not_query(self, client, mock_query):
+        """CALL must go through execute() (which commits), not query().
+        Guards against the silent-rollback bug where CALL ran but changes were lost."""
+        self._super_admin_session(client)
+        with patch('api_query.execute', return_value=0) as mock_exec, \
+             patch('api_query.query') as mock_q:
+            r = _json_post(client, '/api/query/execute',
+                           {'sql': "CALL sp_admin_update_member_status('A0001', 'inactive', NULL, 'test', 'admin@mmrunners.org')"})
+        mock_exec.assert_called_once(), "CALL must use execute() to commit"
+        mock_q.assert_not_called(), "CALL must NOT use query() (no commit)"
+        assert r.status_code == 200
+
+    def test_select_uses_query_not_execute(self, client, mock_query):
+        """SELECT must go through query(), not execute()."""
+        self._super_admin_session(client)
+        mock_query.return_value = [{'Status': 'active'}]
+        with patch('api_query.execute') as mock_exec:
+            r = _json_post(client, '/api/query/execute', {'sql': 'SELECT Status FROM members LIMIT 1'})
+        mock_exec.assert_not_called(), "SELECT must not call execute()"
+        assert r.status_code == 200
+        assert r.get_json()['rows'] == [{'Status': 'active'}]
+
+    def test_non_super_admin_blocked_from_write(self, client, mock_query):
+        """Regular admins must be blocked from INSERT/UPDATE/DELETE/CALL writes.
+        Only super_admins can execute non-SELECT queries."""
+        with client.session_transaction() as sess:
+            sess['user'] = {'email': 'regular@mmrunners.org', 'role': 'admin'}
+        r = _json_post(client, '/api/query/execute',
+                       {'sql': "UPDATE members SET Status='inactive' WHERE MemberID='A0001'"})
+        assert r.status_code == 403, f"Expected 403 for non-super-admin write, got {r.status_code}"
+
+    def test_empty_sql_rejected(self, client, mock_query):
+        """Empty SQL must return 400."""
+        self._super_admin_session(client)
+        r = _json_post(client, '/api/query/execute', {'sql': ''})
+        assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# parse_member_id_from_memo — unit tests (pure function, high-value logic)
+# ---------------------------------------------------------------------------
+
+class TestParseMemberIdFromMemo:
+    def setup_method(self):
+        from payment_helpers import parse_member_id_from_memo
+        self.parse = parse_member_id_from_memo
+
+    @pytest.mark.parametrize('memo,expected', [
+        ('A0001 renewal',          'A0001'),   # simple prefix
+        ('Member: A0558',          'A0558'),   # label format
+        ('a0001',                  'A0001'),   # lowercase normalised to upper
+        ('renew A0123 thanks',     'A0123'),   # surrounded by words
+        ('BA0001',                 None),      # letter immediately before — not a match
+        ('A00011',                 None),      # digit immediately after — not a match
+        ('A001',                   None),      # only 3 digits — too short
+        ('A00001',                 None),      # 5 digits — too long
+        ('no id here',             None),      # no ID at all
+        ('',                       None),      # empty string
+        (None,                     None),      # None input
+    ])
+    def test_parse_cases(self, memo, expected):
+        """parse_member_id_from_memo must extract exactly A#### with word-boundary guards."""
+        assert self.parse(memo) == expected, f"memo={memo!r} → expected {expected!r}"
+
+
+# ---------------------------------------------------------------------------
+# Payments — input validation
+# ---------------------------------------------------------------------------
+
+class TestPaymentsValidation:
+    def test_manual_approve_missing_fields(self, client, mock_query):
+        """manual-approve with missing transactionNumber or memberID must return 400."""
+        r = _json_post(client, '/api/payments/manual-approve', {'memberID': 'A0001'})
+        assert r.status_code == 400
+        r = _json_post(client, '/api/payments/manual-approve', {'transactionNumber': 'tx_123'})
+        assert r.status_code == 400
+
+    def test_manual_approve_tx_not_found(self, client, mock_query):
+        """Unknown transactionNumber must return 404."""
+        mock_query.return_value = []   # no gmail_transaction found
+        r = _json_post(client, '/api/payments/manual-approve',
+                       {'transactionNumber': 'tx_NOPE', 'memberID': 'A0001'})
+        assert r.status_code == 404
+
+    def test_manual_approve_member_not_found(self, client, mock_query):
+        """Valid tx but unknown member must return 404."""
+        def side_effect(sql, *a, **kw):
+            if 'gmail_transactions' in sql:
+                return [{'TransactionNumber': 'tx_1', 'Amount': 30, 'Sender': 'x',
+                         'Memo': 'A0001', 'Timestamp': None, 'TransactionDate': None}]
+            return []  # member not found
+        mock_query.side_effect = side_effect
+        r = _json_post(client, '/api/payments/manual-approve',
+                       {'transactionNumber': 'tx_1', 'memberID': 'A9999'})
+        assert r.status_code == 404
+        mock_query.side_effect = None
 
 
 # ---------------------------------------------------------------------------

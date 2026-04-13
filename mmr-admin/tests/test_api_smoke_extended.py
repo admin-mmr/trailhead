@@ -142,14 +142,14 @@ class TestAdminEndpoints:
     def test_refresh_sheets(self, client, mock_query):
         """
         Must never return 500 (unhandled crash).
-        - 503 = GITHUB_TOKEN not configured
+        - 503 = GITHUB_TOKEN not configured (expected in CI/sandbox)
         - 200 = workflow triggered successfully
         - 422 = token present but workflow lacks workflow_dispatch trigger (config issue, not a crash)
         - other 4xx = GitHub API error passthrough
         """
         mock_query.return_value = []
         r = _post(client, '/api/admin/refresh-sheets')
-        assert r.status_code < 500, \
+        assert r.status_code != 500, \
             f"Expected non-500, got {r.status_code}: {r.data[:200]}"
 
 
@@ -386,6 +386,14 @@ class TestPaymentsExtended:
         mock_query.return_value = []
         r = client.get('/api/payments/test-fuzzy-match/SUB001')
         assert r.status_code < 500
+
+    def test_cancel_payment_returns_ok(self, client, mock_query):
+        """Cancel must return 200 ok:true. Uses execute() (commits), not query()."""
+        with patch('api_payments.execute', return_value=1):
+            r = _post(client, '/api/payments/cancel/PAY_NOPE')
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j is not None and j.get('ok') is True
 
     def test_admin_create_no_body(self, client, mock_query):
         """Missing body must return 4xx not 5xx."""

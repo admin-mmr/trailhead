@@ -130,20 +130,11 @@ def api_execute_query():
         logger.info(f'[QUERY] Executing {query_type} from {user_email}')
         logger.debug(f'[QUERY] SQL: {sql[:200]}...')
 
-        if is_select:
-            # SELECT: use query() → returns list of dicts (read-only, no commit needed)
-            rows = query(sql)
-            columns = list(rows[0].keys()) if rows else []
-            logger.info(f'[QUERY] SELECT returned {len(rows)} rows')
-            return json_response({
-                'ok': True,
-                'rows': rows,
-                'count': len(rows),
-                'columns': columns,
-            })
-        elif is_call:
+        if is_call:
             # CALL stored procedure: use execute() so the transaction is committed.
-            # query() is SELECT-only and never commits — CALLs that write would be silently rolled back.
+            # Must be checked BEFORE is_select — _is_select_query() also matches CALL
+            # (legacy behaviour), so is_call must take priority.
+            # query() never commits; CALLs that write would be silently rolled back.
             affected = execute(sql)
             logger.info(f'[QUERY] CALL completed (affected={affected})')
             return json_response({
@@ -153,6 +144,17 @@ def api_execute_query():
                 'columns': [],
                 'affected': affected,
                 'message': 'Stored procedure executed successfully',
+            })
+        elif is_select:
+            # Pure SELECT: use query() → returns list of dicts (read-only, no commit needed)
+            rows = query(sql)
+            columns = list(rows[0].keys()) if rows else []
+            logger.info(f'[QUERY] SELECT returned {len(rows)} rows')
+            return json_response({
+                'ok': True,
+                'rows': rows,
+                'count': len(rows),
+                'columns': columns,
             })
         else:
             # INSERT/UPDATE/DELETE: use execute() → returns affected row count

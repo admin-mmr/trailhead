@@ -36,7 +36,8 @@ members_bp = Blueprint('members', __name__)
 
 def get_admin_id():
     """Get the admin email from the session (serves as admin ID)."""
-    return session.get('user_email', '')
+    user = session.get('user') or {}
+    return user.get('email') or ''
 
 
 def get_member_by_id(member_id: str) -> Optional[dict]:

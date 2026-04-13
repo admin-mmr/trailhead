@@ -117,6 +117,7 @@ COVERAGE: dict[tuple[str, str], str] = {
     ('GET',  '/api/payments/unmatched-gmail'):     'test_api_smoke.py',
     ('POST', '/api/payments/autoguess-all'):       'test_api_smoke.py',
     ('POST', '/api/payments/manual-approve'):      'test_api_response_format.py',
+    ('POST', '/api/payments/cancel/<payment_id>'): 'test_api_smoke_extended.py',
     ('POST', '/api/payments/admin-create'):        'test_api_smoke_extended.py',
     ('GET',  '/api/payments/search-members'):      'test_api_smoke.py',
     ('GET',  '/api/payments/history'):             'test_api_smoke_extended.py',

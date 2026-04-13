@@ -852,11 +852,11 @@ def api_cancel_payment(payment_id):
     if not payment_id:
         return json_response({'error': 'payment_id required'}, 400)
 
-    admin_email = getattr(current_user, 'email', 'unknown')
+    admin_email = session.get('user', {}).get('email') or None
     logger.info(f'[CANCEL-PAYMENT] Admin {admin_email} cancelling payment {payment_id}')
 
-    result = query("CALL sp_cancel_payment(%s)", (payment_id,))
-    msg = result[0]['result'] if result else f'Payment {payment_id} cancelled.'
+    execute("CALL sp_cancel_payment(%s)", (payment_id,))
+    msg = f'Payment {payment_id} cancelled.'
     logger.info(f'[CANCEL-PAYMENT] {msg}')
 
     return json_response({'ok': True, 'message': msg})
