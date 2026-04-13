@@ -541,13 +541,17 @@ class TestRevertNullStatusRegression:
       Audit row used TargetMemberID = 'REVERT', which fails fk_override_member.
       Fix: read TargetMemberID from the original override row and reuse it.
 
+    Bug 4 — Expiration trigger blocks direct UPDATE (V014):
+      members_before_update trigger raises 1644 unless @internal_proc = 1.
+      Fix: SET @internal_proc = 1 before cursor loop, NULL after.
+
     All fixes must be present in the latest active migration for sp_revert_admin_override.
     """
 
-    # V013 is the canonical version (supersedes V011/V012 for the revert SP)
+    # V014 is the canonical version (supersedes V011–V013 for the revert SP)
     MIGRATION_PATH = os.path.abspath(
         os.path.join(os.path.dirname(__file__),
-                     '../../db/MIGRATION_V013_fix_revert_fk.sql')
+                     '../../db/MIGRATION_V014_fix_revert_expiration_trigger.sql')
     )
 
     def _proc_body(self, sql: str) -> str:
@@ -596,6 +600,25 @@ class TestRevertNullStatusRegression:
         assert 'JSON_TABLE' not in body, (
             "JSON_TABLE must not appear in sp_revert_admin_override — it "
             "triggers 'Illegal mix of collations' on Azure MySQL."
+        )
+
+    def test_migration_sets_internal_proc_flag(self):
+        """
+        Regression (V014): members_before_update trigger blocks direct Expiration
+        updates unless @internal_proc = 1 is set for the session.
+        Without the flag the cursor loop raises 1644 on every member.
+        """
+        with open(self.MIGRATION_PATH) as f:
+            sql = f.read()
+        body = self._proc_body(sql)
+        assert 'SET @internal_proc = 1' in body, (
+            "sp_revert_admin_override must SET @internal_proc = 1 before the "
+            "cursor loop. The members_before_update trigger blocks direct "
+            "Expiration changes unless this session flag is set."
+        )
+        assert 'SET @internal_proc = NULL' in body, (
+            "sp_revert_admin_override must reset @internal_proc = NULL after "
+            "the cursor loop so the trigger guard is restored for other callers."
         )
 
     def test_audit_insert_uses_original_target_not_literal_string(self):
