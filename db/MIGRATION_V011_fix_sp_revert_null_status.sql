@@ -88,7 +88,7 @@ DELIMITER $$
 CREATE PROCEDURE sp_revert_admin_override(
     IN p_OverrideID INT
 )
-BEGIN
+proc_body: BEGIN
     DECLARE v_Done              TINYINT DEFAULT 0;
     DECLARE v_MemberID          VARCHAR(10);
     DECLARE v_PreStatus         VARCHAR(50);
@@ -121,7 +121,7 @@ BEGIN
             0     AS members_restored,
             NULL  AS impacted_member_ids,
             NULL  AS original_override_time;
-        LEAVE sp_revert_admin_override;
+        LEAVE proc_body;
     END IF;
 
     -- Idempotency guard: skip if already reverted
@@ -135,7 +135,7 @@ BEGIN
             0                       AS members_restored,
             v_ImpactedIDs           AS impacted_member_ids,
             v_OverrideTS            AS original_override_time;
-        LEAVE sp_revert_admin_override;
+        LEAVE proc_body;
     END IF;
 
     -- Cursor-based restore: one member at a time
