@@ -525,52 +525,73 @@ class TestRevertOverride:
 
 class TestRevertNullStatusRegression:
     """
-    Regression tests for the bug where sp_revert_admin_override reported
-    success but left members inactive because member_log rows written by
-    Sheets sync have Status = NULL.
+    Regression tests for two bugs in sp_revert_admin_override:
 
-    COALESCE(NULL, Status) = Status (current wrong value) → no change.
-    Fix: AND Status IS NOT NULL in the member_log SELECT.
+    Bug 1 — NULL-Status Sheets-sync rows (V011):
+      member_log rows written by Sheets sync have Status = NULL.
+      COALESCE(NULL, current_status) silently keeps wrong value → no change.
+      Fix: AND Status IS NOT NULL in the member_log SELECT.
 
-    These tests verify the migration SQL contains the fix and that the
-    endpoint correctly surfaces a zero-restored result when the SP finds
-    no valid snapshots (so the admin knows to investigate rather than
-    assuming success).
+    Bug 2 — Collation mismatch (V012):
+      JSON_TABLE derived columns default to utf8mb4_0900_ai_ci (MySQL 8 default)
+      while members.MemberID uses utf8mb4_unicode_ci → Illegal mix of collations.
+      Fix: replace JSON_TABLE cursor with FIND_IN_SET (collation-neutral, MySQL 5.7+).
+
+    Both fixes must be present in the latest active migration for sp_revert_admin_override.
     """
 
+    # V012 is the canonical version (supersedes V011 for the revert SP)
     MIGRATION_PATH = os.path.abspath(
         os.path.join(os.path.dirname(__file__),
-                     '../../db/MIGRATION_V011_fix_sp_revert_null_status.sql')
+                     '../../db/MIGRATION_V012_fix_revert_collation.sql')
     )
 
-    def test_migration_contains_status_is_not_null_guard(self):
-        """
-        Regression: the member_log SELECT must filter out NULL-Status rows.
-        Without this, COALESCE(NULL, current_status) silently keeps wrong value.
-        """
-        with open(self.MIGRATION_PATH) as f:
-            sql = f.read()
-        assert 'Status IS NOT NULL' in sql, (
-            "Migration must include 'AND Status IS NOT NULL' in the member_log "
-            "SELECT inside sp_revert_admin_override. Without it, Sheets-sync log "
-            "rows (which have NULL Status) cause COALESCE to fall back to the "
-            "current wrong status, so the revert silently does nothing."
-        )
-
-    def test_migration_applies_fix_inside_cursor_loop(self):
-        """Fix must be inside sp_revert_admin_override body, not just anywhere in the file."""
-        with open(self.MIGRATION_PATH) as f:
-            sql = f.read()
-        # Locate the CREATE PROCEDURE statement for sp_revert_admin_override
-        # (robust: not fragile to the number of DROP/mention occurrences before it)
+    def _proc_body(self, sql: str) -> str:
+        """Return the text starting at CREATE PROCEDURE sp_revert_admin_override."""
         create_pos = sql.find('CREATE PROCEDURE sp_revert_admin_override')
         assert create_pos != -1, (
             "sp_revert_admin_override CREATE PROCEDURE not found in migration file."
         )
-        revert_proc_body = sql[create_pos:]
-        assert 'Status IS NOT NULL' in revert_proc_body, (
-            "'AND Status IS NOT NULL' must be in sp_revert_admin_override, "
-            "not only in sp_admin_update_member_status."
+        return sql[create_pos:]
+
+    def test_migration_contains_status_is_not_null_guard(self):
+        """
+        Regression (V011): member_log SELECT must filter out NULL-Status rows.
+        Without this, COALESCE(NULL, current_status) silently keeps wrong value.
+        """
+        with open(self.MIGRATION_PATH) as f:
+            sql = f.read()
+        assert 'Status IS NOT NULL' in self._proc_body(sql), (
+            "Migration must include 'AND Status IS NOT NULL' in the member_log "
+            "SELECT inside sp_revert_admin_override."
+        )
+
+    def test_migration_applies_fix_inside_cursor_loop(self):
+        """NULL-Status guard must be inside sp_revert_admin_override, not elsewhere."""
+        with open(self.MIGRATION_PATH) as f:
+            sql = f.read()
+        assert 'Status IS NOT NULL' in self._proc_body(sql), (
+            "'AND Status IS NOT NULL' must be in sp_revert_admin_override body."
+        )
+
+    def test_migration_uses_find_in_set_not_json_table(self):
+        """
+        Regression (V012): JSON_TABLE columns get utf8mb4_0900_ai_ci (MySQL 8
+        default) which conflicts with members.MemberID utf8mb4_unicode_ci,
+        raising 'Illegal mix of collations'. Fix: use FIND_IN_SET instead.
+        """
+        with open(self.MIGRATION_PATH) as f:
+            sql = f.read()
+        body = self._proc_body(sql)
+        assert 'FIND_IN_SET' in body, (
+            "sp_revert_admin_override cursor must use FIND_IN_SET to iterate "
+            "ImpactedMemberIDs. JSON_TABLE causes collation mismatch between "
+            "its derived columns (utf8mb4_0900_ai_ci) and members.MemberID "
+            "(utf8mb4_unicode_ci)."
+        )
+        assert 'JSON_TABLE' not in body, (
+            "JSON_TABLE must not appear in sp_revert_admin_override — it "
+            "triggers 'Illegal mix of collations' on Azure MySQL."
         )
 
     def test_zero_restored_when_sp_finds_no_snapshots(self, client, mock_query):
