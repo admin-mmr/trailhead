@@ -116,7 +116,6 @@ COVERAGE: dict[tuple[str, str], str] = {
     ('GET',  '/api/admins'):                       'test_api_smoke_extended.py',
     ('POST', '/api/admins'):                       'test_api_smoke_extended.py',
     ('DELETE','/api/admins/<email>'):              'test_api_smoke_extended.py',
-    ('POST', '/api/admin/refresh-sheets'):         'test_api_smoke_extended.py',
 
     # --- payments ---
     ('GET',  '/api/payments/dashboard'):           'test_api_smoke.py',

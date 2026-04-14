@@ -2,7 +2,7 @@
 Admin CRUD routes for mmr-admin.
 
 Blueprint: admin_bp
-Routes: /api/admins (GET, POST, DELETE), /api/admin/refresh-sheets (POST)
+Routes: /api/admins (GET, POST, DELETE)
 """
 
 from __future__ import annotations
@@ -72,55 +72,4 @@ def api_delete_admin(email):
     except Exception as e:
         return json_response({'ok': False, 'error': str(e)[:300]}, 500)
 
-
-# ---------------------------------------------------------------------------
-# Trigger Google Sheets → MySQL refresh via GitHub Actions
-# ---------------------------------------------------------------------------
-
-GITHUB_REPO = 'admin-mmr/trailhead'
-WORKFLOW_FILE = 'sync-all-sheets-ordered.yml'
-
-
-@admin_bp.route('/api/admin/refresh-sheets', methods=['POST'])
-@login_required
-@require_role('admin')
-def api_refresh_sheets():
-    """
-    Trigger the 'Sync All Sheets (Ordered Sequential)' GitHub Action.
-    Syncs: gmail_transactions → payments → webapp_events → members.
-    Requires GITHUB_TOKEN env var on the server (a PAT with workflow scope).
-    """
-    token = os.environ.get('GITHUB_TOKEN')
-    if not token:
-        # 503 = service unavailable due to missing config, not an application error
-        return json_response({
-            'ok': False,
-            'error': 'GITHUB_TOKEN not configured on server — cannot trigger workflow'
-        }, 503)
-
-    try:
-        import requests as req_lib
-        resp = req_lib.post(
-            f'https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches',
-            headers={
-                'Authorization': f'token {token}',
-                'Accept': 'application/vnd.github.v3+json',
-            },
-            json={'ref': 'main'},
-            timeout=15,
-        )
-        if resp.status_code == 204:
-            user_email = session.get('user', {}).get('email', 'unknown')
-            print(f'[refresh-sheets] Workflow triggered by {user_email}', flush=True)
-            return json_response({
-                'ok': True,
-                'message': 'Sync workflow triggered. Sheets will sync in order: gmail_transactions → payments → webapp_events → members. This takes ~5 minutes.'
-            })
-        else:
-            return json_response({
-                'ok': False,
-                'error': f'GitHub API returned {resp.status_code}: {resp.text[:300]}'
-            }, resp.status_code)
-    except Exception as e:
-        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
 

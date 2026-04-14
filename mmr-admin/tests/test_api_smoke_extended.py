@@ -139,18 +139,6 @@ class TestAdminEndpoints:
             f"Unexpected status {r.status_code}: {r.data[:200]}"
         assert r.status_code < 500
 
-    def test_refresh_sheets(self, client, mock_query):
-        """
-        Must never return 500 (unhandled crash).
-        - 503 = GITHUB_TOKEN not configured (expected in CI/sandbox)
-        - 200 = workflow triggered successfully
-        - 422 = token present but workflow lacks workflow_dispatch trigger (config issue, not a crash)
-        - other 4xx = GitHub API error passthrough
-        """
-        mock_query.return_value = []
-        r = _post(client, '/api/admin/refresh-sheets')
-        assert r.status_code != 500, \
-            f"Expected non-500, got {r.status_code}: {r.data[:200]}"
 
 
 # ---------------------------------------------------------------------------

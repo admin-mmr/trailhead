@@ -50,7 +50,7 @@ if not _ON_AZURE:
     # for user input that will never come.
     if 'test_imports.py' not in sys.argv[0]:
         if shutil.which('security'):
-            keychain_vars = ['MMR_DATABASE_URL', 'MMR_GITHUB_TOKEN']
+            keychain_vars = ['MMR_DATABASE_URL']
             for kchn_name in keychain_vars:
                 env_name = kchn_name.replace('MMR_', '')
                 if not os.environ.get(env_name, '').strip():
