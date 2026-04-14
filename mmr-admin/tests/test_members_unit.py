@@ -703,6 +703,7 @@ class TestAssignFamilyId:
         mock_cursor.__exit__ = MagicMock(return_value=False)
 
         with patch('api_members_family.execute', return_value=[]) as mock_exec, \
+             patch('api_members_family.query', return_value=[]), \
              patch('api_members_family.db_cursor', return_value=mock_cursor), \
              patch('api_members_family.log_activity'):
             r = self._post(client, {'member_id': 'A0001'})
@@ -728,6 +729,7 @@ class TestAssignFamilyId:
         mock_cursor.__exit__ = MagicMock(return_value=False)
 
         with patch('api_members_family.execute', return_value=[]), \
+             patch('api_members_family.query', return_value=[]), \
              patch('api_members_family.db_cursor', return_value=mock_cursor), \
              patch('api_members_family.log_activity') as mock_log:
             self._post(client, {'member_id': 'A0001'})
@@ -751,6 +753,7 @@ class TestAssignFamilyId:
         mock_cursor.__exit__ = MagicMock(return_value=False)
 
         with patch('api_members_family.execute', return_value=[]), \
+             patch('api_members_family.query', return_value=[]), \
              patch('api_members_family.db_cursor', return_value=mock_cursor), \
              patch('api_members_family.log_activity'):
             self._post(client, {'member_id': 'A0001'})
