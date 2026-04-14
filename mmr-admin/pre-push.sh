@@ -5,17 +5,19 @@
 # Usage:    ./pre-push.sh [OPTIONS]
 #
 # Options:
-#   --step N          Run only step N (1–6)
+#   --step N          Run only step N (0–6)
 #   --no-integration  Skip steps 3 & 4 (no live DB needed)
 #   --no-ts           Skip step 5 (TypeScript check)
+#   --no-schema-sync  Skip step 0 (schema file refresh)
 #   --help            Show this help
 #
 # Steps:
-#   1  Import sanity       python3 test_imports.py
-#   2  Unit tests          pytest tests/ (mocked DB, no live connection)
-#   3  Integration tests   pytest test_integration_*.py (requires live DB)
-#   4  Schema validation   db/validate_schema.py (requires live DB)
-#   5  TypeScript check    npx tsc --noEmit (mmr-webapp)
+#   0  Schema sync        Refresh schema_snapshot.sql + schema_integration.sql
+#   1  Import sanity      python3 test_imports.py
+#   2  Unit tests         pytest tests/ (mocked DB, no live connection)
+#   3  Integration tests  pytest test_integration_*.py (requires Docker)
+#   4  Schema validation  db/validate_schema.py (requires live DB)
+#   5  TypeScript check   npx tsc --noEmit (mmr-webapp)
 #   6  Flask startup smoke python3 -c "from app import app"
 # =============================================================================
 
@@ -23,10 +25,13 @@ set -uo pipefail   # NOTE: no -e — we handle exit codes manually per step
 
 SKIP_INTEGRATION=false
 SKIP_TS=false
+SKIP_SCHEMA_SYNC=false
 ONLY_STEP=""
 PASS=0
 FAIL=0
 SKIP=0
+
+MMR_HOST="https://mmr-nyrr-viewer-e9gugyf4gqc4gmgv.swedencentral-01.azurewebsites.net"
 
 # --- Arg parsing ---
 while [[ $# -gt 0 ]]; do
@@ -39,6 +44,8 @@ while [[ $# -gt 0 ]]; do
       SKIP_INTEGRATION=true; shift ;;
     --no-ts)
       SKIP_TS=true; shift ;;
+    --no-schema-sync)
+      SKIP_SCHEMA_SYNC=true; shift ;;
     --help|-h)
       sed -n '/^# Usage/,/^# ====/p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -68,6 +75,38 @@ else
 fi
 echo "=================================================="
 echo ""
+
+# ------------------------------------------------------------------
+# Step 0 — Schema sync (refresh both schema files from live DB)
+# ------------------------------------------------------------------
+if should_run 0; then
+  echo "▶ Step 0: Schema sync"
+  if $SKIP_SCHEMA_SYNC; then
+    skip "Skipped (--no-schema-sync)"
+  elif ! curl -sf --max-time 10 "$MMR_HOST/api/export-schema" -o /dev/null; then
+    skip "Admin API unreachable — skipping schema sync"
+  else
+    SNAPSHOT_OUT="$REPO_ROOT/db/schema_snapshot.sql"
+    DDL_OUT="$REPO_ROOT/db/schema_integration.sql"
+    SNAP_OK=true; DDL_OK=true
+
+    curl -sf --max-time 30 "$MMR_HOST/api/export-schema" -o "$SNAPSHOT_OUT" \
+      || { SNAP_OK=false; }
+    curl -sf --max-time 30 "$MMR_HOST/api/export-schema-ddl" -o "$DDL_OUT" \
+      || { DDL_OK=false; }
+
+    if $SNAP_OK && $DDL_OK; then
+      pass "Schema files refreshed (schema_snapshot.sql + schema_integration.sql)"
+    elif $SNAP_OK; then
+      fail "schema_integration.sql refresh failed (schema_snapshot.sql OK)"
+    elif $DDL_OK; then
+      fail "schema_snapshot.sql refresh failed (schema_integration.sql OK)"
+    else
+      fail "Both schema file refreshes failed"
+    fi
+  fi
+  echo ""
+fi
 
 # ------------------------------------------------------------------
 # Step 1 — Import sanity (circular imports, syntax errors)
@@ -102,27 +141,22 @@ if should_run 2; then
 fi
 
 # ------------------------------------------------------------------
-# Step 3 — Integration tests (live Azure DB)
+# Step 3 — Integration tests (testcontainers / Docker)
 # ------------------------------------------------------------------
 if should_run 3; then
-  echo "▶ Step 3: Integration tests (live DB)"
+  echo "▶ Step 3: Integration tests (testcontainers)"
   if $SKIP_INTEGRATION; then
     skip "Skipped (--no-integration)"
+  elif ! docker info > /dev/null 2>&1; then
+    skip "Docker not running — skipping integration tests"
   else
-    ENV_FILE="$REPO_ROOT/load-env.sh"
-    if [[ ! -f "$ENV_FILE" ]]; then
-      skip "load-env.sh not found — skipping"
+    if pytest tests/test_integration_payments.py tests/test_integration_stored_procs.py \
+        --run-integration --tb=short -q > /tmp/mmr_integration.log 2>&1; then
+      INT_SUMMARY=$(tail -1 /tmp/mmr_integration.log)
+      pass "Integration tests passed — $INT_SUMMARY"
     else
-      # shellcheck disable=SC1090
-      source "$ENV_FILE"
-      if pytest tests/test_integration_payments.py tests/test_integration_stored_procs.py \
-          --tb=short -q > /tmp/mmr_integration.log 2>&1; then
-        INT_SUMMARY=$(tail -1 /tmp/mmr_integration.log)
-        pass "Integration tests passed — $INT_SUMMARY"
-      else
-        fail "Integration tests failed"
-        cat /tmp/mmr_integration.log
-      fi
+      fail "Integration tests failed"
+      cat /tmp/mmr_integration.log
     fi
   fi
   echo ""

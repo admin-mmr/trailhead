@@ -161,6 +161,7 @@ def api_run_automatch(event_id):
     if not rows:
         return json_response({'ok': False, 'error': 'Event not found'}, 404)
 
+    conn = None
     try:
         conn = get_conn()
         cursor = conn.cursor()
@@ -320,7 +321,12 @@ def api_run_automatch(event_id):
         return json_response({'ok': True, 'matched': matched,
                                'message': f'Auto-matched {matched} runner(s){detail}.'})
     except Exception as e:
+        if conn:
+            conn.rollback()
         return json_response({'ok': False, 'error': str(e)[:300]}, 500)
+    finally:
+        if conn:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
