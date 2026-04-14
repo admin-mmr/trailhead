@@ -23,6 +23,36 @@
 
 set -uo pipefail   # NOTE: no -e — we handle exit codes manually per step
 
+# Resolve pytest — prefer repo venv, fall back to PATH
+PYTEST="$(dirname "$0")/../.venv/bin/pytest"
+if [ ! -x "$PYTEST" ]; then PYTEST="pytest"; fi
+
+# Resolve timeout — GNU coreutils (gtimeout on macOS), Python fallback (always available)
+if command -v gtimeout &>/dev/null; then TIMEOUT="gtimeout"
+elif command -v timeout &>/dev/null; then TIMEOUT="timeout"
+else TIMEOUT=""; fi
+run_with_timeout() {
+  local secs=$1; shift
+  if [ -n "$TIMEOUT" ]; then
+    "$TIMEOUT" "$secs" "$@"
+  else
+    # Python fallback: works on macOS without coreutils.
+    # sys.argv = ['-c', secs, cmd, args...]
+    python3 -c "
+import subprocess, sys
+secs = int(sys.argv[1])
+with subprocess.Popen(sys.argv[2:]) as proc:
+    try:
+        proc.communicate(timeout=secs)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        sys.exit(124)
+sys.exit(proc.returncode)
+" "$secs" "$@"
+  fi
+}
+
 SKIP_INTEGRATION=false
 SKIP_TS=false
 SKIP_SCHEMA_SYNC=false
@@ -127,10 +157,10 @@ fi
 # ------------------------------------------------------------------
 if should_run 2; then
   echo "▶ Step 2: Unit tests (mocked DB)"
-  if pytest tests/ \
+  if "$PYTEST" tests/ \
       --ignore=tests/test_integration_payments.py \
       --ignore=tests/test_integration_stored_procs.py \
-      --tb=short -q -rN > /tmp/mmr_unit.log 2>&1; then
+      --tb=short -q -rs > /tmp/mmr_unit.log 2>&1; then
     UNIT_SUMMARY=$(tail -1 /tmp/mmr_unit.log)
     pass "Unit tests passed — $UNIT_SUMMARY"
     SKIPPED=$(grep -E "^SKIPPED" /tmp/mmr_unit.log || true)
@@ -152,13 +182,18 @@ if should_run 3; then
   elif ! docker info > /dev/null 2>&1; then
     skip "Docker not running — skipping integration tests"
   else
-    if pytest tests/test_integration_payments.py tests/test_integration_stored_procs.py \
+    if run_with_timeout 300 "$PYTEST" tests/test_integration_payments.py tests/test_integration_stored_procs.py \
         --run-integration --tb=short -q > /tmp/mmr_integration.log 2>&1; then
       INT_SUMMARY=$(tail -1 /tmp/mmr_integration.log)
       pass "Integration tests passed — $INT_SUMMARY"
     else
-      fail "Integration tests failed"
-      cat /tmp/mmr_integration.log
+      EXIT_CODE=$?
+      if [ $EXIT_CODE -eq 124 ]; then
+        fail "Integration tests timed out (300s) — Docker/testcontainers likely hung"
+      else
+        fail "Integration tests failed"
+        cat /tmp/mmr_integration.log
+      fi
     fi
   fi
   echo ""

@@ -5,9 +5,10 @@ Blueprint: members_family_bp
 Prefix: /api/members
 
 Routes:
-  GET  /api/members/<id>/family          — get all members in a family
-  POST /api/members/family/add-member    — add a member to a family
-  POST /api/members/family/remove-member — remove a member from a family
+  GET  /api/members/<id>/family             — get all members in a family
+  POST /api/members/family/assign-family-id — assign a new FamilyID to an orphaned Family member
+  POST /api/members/family/add-member       — add a member to a family
+  POST /api/members/family/remove-member    — remove a member from a family
 """
 from __future__ import annotations
 
@@ -24,6 +25,25 @@ from api_members import get_admin_id, get_member_by_id, get_family_members
 logger = logging.getLogger(__name__)
 
 members_family_bp = Blueprint('members_family', __name__)
+
+
+def generate_family_id() -> str:
+    """
+    Return the lowest unused FamilyID in the B001–B999 range.
+    Queries MySQL for all existing B### values and picks the next gap.
+    Raises ValueError if all 999 slots are taken.
+    """
+    rows = execute("SELECT DISTINCT FamilyID FROM members WHERE FamilyID LIKE 'B___'")
+    used: set[int] = set()
+    for row in rows:
+        fid = (row.get('FamilyID') or '').strip()
+        # LIKE 'B___' matches any 4-char string starting with B; validate digits here
+        if len(fid) == 4 and fid[0] == 'B' and fid[1:].isdigit():
+            used.add(int(fid[1:]))
+    for n in range(1, 1000):
+        if n not in used:
+            return f'B{n:03d}'
+    raise ValueError('No available FamilyIDs B001–B999; all 999 slots are in use.')
 
 
 @members_family_bp.route('/api/members/<member_id>/family')
@@ -58,6 +78,77 @@ def api_get_family(member_id: str):
         'family_id': family_id,
         'primary_member': member,
         'members': family_members,
+    }})
+
+
+@members_family_bp.route('/api/members/family/assign-family-id', methods=['POST'])
+@login_required
+@require_role('admin')
+@handle_api_errors
+def api_assign_family_id():
+    """
+    Assign a new generated FamilyID to a Family-type member that has none.
+
+    POST body: { "member_id": "A0278" }
+
+    Only allowed when:
+      - member exists
+      - member.Type == 'Family'
+      - member.FamilyID is NULL / empty
+
+    Generates the next available B### FamilyID from MySQL and writes it.
+    """
+    data = request.get_json() or {}
+    member_id = data.get('member_id', '').strip()
+
+    if not member_id:
+        return json_response({'ok': False, 'error': 'Missing member_id'}, 400)
+
+    member = get_member_by_id(member_id)
+    if not member:
+        return json_response({'ok': False, 'error': f'Member {member_id} not found'}, 404)
+
+    if member['Type'] != 'Family':
+        return json_response({
+            'ok': False,
+            'error': f'Member {member_id} is not Family type (Type: {member["Type"]}); cannot assign FamilyID'
+        }, 400)
+
+    if member['FamilyID']:
+        return json_response({
+            'ok': False,
+            'error': f'Member {member_id} already has FamilyID={member["FamilyID"]}'
+        }, 409)
+
+    try:
+        new_family_id = generate_family_id()
+    except ValueError as exc:
+        return json_response({'ok': False, 'error': str(exc)}, 500)
+
+    admin_id = get_admin_id()
+    now = datetime.utcnow()
+
+    with db_cursor() as cur:
+        cur.execute("SET @internal_proc = 1")
+        cur.execute(
+            "UPDATE members SET FamilyID = %s, UpdatedAt = %s WHERE MemberID = %s",
+            (new_family_id, now, member_id)
+        )
+        cur.execute("SET @internal_proc = NULL")
+
+    log_activity(
+        action='member_family_assign_id',
+        member_id=member_id,
+        admin_email=admin_id,
+        state=f'assigned_family_id={new_family_id}'
+    )
+
+    updated_member = get_member_by_id(member_id)
+    return json_response({'ok': True, 'data': {
+        'family_id': new_family_id,
+        'primary_member': updated_member,
+        'members': [updated_member],
+        'message': f'Assigned FamilyID {new_family_id} to member {member_id}'
     }})
 
 

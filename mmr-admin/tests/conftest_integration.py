@@ -143,20 +143,29 @@ def mysql_container(request):
     if not request.config.getoption("--run-integration", default=False):
         pytest.skip("Pass --run-integration to run integration tests")
 
+    # Ryuk (testcontainers reaper) can hang on macOS — disable it
+    os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+
     if not _TC_AVAILABLE:
         pytest.skip("testcontainers not installed: pip3 install testcontainers[mysql]")
 
     if not _docker_available():
         pytest.skip("Docker not running — start Docker Desktop first")
 
-    with MySqlContainer(
+    container = MySqlContainer(
         image=MYSQL_IMAGE,
         root_password=MYSQL_ROOT_PASSWORD,
         dbname=MYSQL_DATABASE,
         username=MYSQL_USER,
         password=MYSQL_PASSWORD,
-    ) as container:
-        yield container
+    )
+    # Bound startup wait to 60s (API varies by testcontainers version)
+    try:
+        container.with_startup_timeout(60)   # testcontainers >= 4.x
+    except AttributeError:
+        container._timeout = 60              # testcontainers 3.x fallback
+    with container as c:
+        yield c
 
 
 @pytest.fixture(scope="session")
@@ -182,6 +191,11 @@ def db_session(mysql_container):
     # CREATE ... DEFINER=`mmradmin`@`%` VIEW/TRIGGER statements in the schema).
     # SET_USER_ID is the MySQL 8.0 replacement for the old SUPER requirement.
     cur.execute(f"GRANT SET_USER_ID ON *.* TO '{MYSQL_USER}'@'%'")
+    # Create the mmradmin definer user so triggers/procedures execute without
+    # error 1449 ("definer does not exist"). SET_USER_ID only covers CREATE;
+    # MySQL still validates the definer on every invocation at runtime.
+    cur.execute(f"CREATE USER IF NOT EXISTS 'mmradmin'@'%' IDENTIFIED BY 'placeholder'")
+    cur.execute(f"GRANT ALL PRIVILEGES ON `{MYSQL_DATABASE}`.* TO 'mmradmin'@'%'")
     # Match the schema's collation so string literals don't collide with
     # utf8mb4_0900_ai_ci (MySQL 8.0 default)
     cur.execute(f"ALTER DATABASE `{MYSQL_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")

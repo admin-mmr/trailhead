@@ -586,3 +586,146 @@ class TestRemoveMemberFromFamily:
         calls = [str(c) for c in mock_cursor.execute.call_args_list]
         assert any('@internal_proc = 1' in c for c in calls)
         assert any('@internal_proc = NULL' in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# generate_family_id() helper
+# ---------------------------------------------------------------------------
+
+class TestGenerateFamilyId:
+
+    def test_first_available_when_none_used(self):
+        with patch('api_members_family.execute', return_value=[]):
+            from api_members_family import generate_family_id
+            assert generate_family_id() == 'B001'
+
+    def test_skips_used_ids(self):
+        used = [{'FamilyID': 'B001'}, {'FamilyID': 'B002'}, {'FamilyID': 'B003'}]
+        with patch('api_members_family.execute', return_value=used):
+            from api_members_family import generate_family_id
+            assert generate_family_id() == 'B004'
+
+    def test_ignores_non_b_format(self):
+        # FAM001 should not count toward B### namespace
+        rows = [{'FamilyID': 'FAM001'}, {'FamilyID': 'B001'}]
+        with patch('api_members_family.execute', return_value=rows):
+            from api_members_family import generate_family_id
+            assert generate_family_id() == 'B002'
+
+    def test_raises_when_all_slots_full(self):
+        used = [{'FamilyID': f'B{n:03d}'} for n in range(1, 1000)]
+        with patch('api_members_family.execute', return_value=used):
+            from api_members_family import generate_family_id
+            with pytest.raises(ValueError, match='all 999 slots are in use'):
+                generate_family_id()
+
+
+# ---------------------------------------------------------------------------
+# POST /api/members/family/assign-family-id
+# ---------------------------------------------------------------------------
+
+class TestAssignFamilyId:
+
+    URL = '/api/members/family/assign-family-id'
+
+    def _post(self, client, body):
+        return client.post(self.URL, json=body,
+                           headers={'Content-Type': 'application/json'})
+
+    def test_missing_member_id_returns_400(self, client, mock_query):
+        r = self._post(client, {})
+        assert r.status_code == 400
+        assert 'Missing member_id' in r.get_json()['error']
+
+    def test_member_not_found_returns_404(self, client, mock_query):
+        mock_query.return_value = []
+        r = self._post(client, {'member_id': 'A9999'})
+        assert r.status_code == 404
+
+    def test_non_family_type_returns_400(self, client, mock_query):
+        mock_query.return_value = [_member(type_='Individual')]
+        r = self._post(client, {'member_id': 'A0001'})
+        assert r.status_code == 400
+        assert 'not Family type' in r.get_json()['error']
+
+    def test_already_has_family_id_returns_409(self, client, mock_query):
+        mock_query.return_value = [_member(type_='Family', family_id='B001')]
+        r = self._post(client, {'member_id': 'A0001'})
+        assert r.status_code == 409
+        assert 'already has FamilyID' in r.get_json()['error']
+
+    def test_assigns_next_available_family_id(self, client, mock_query):
+        call_count = 0
+
+        def side_effect(sql, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # get_member_by_id (orphaned member)
+                return [_member(type_='Family', family_id=None)]
+            # get_member_by_id after update
+            return [_member(type_='Family', family_id='B001')]
+
+        mock_query.side_effect = side_effect
+
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        with patch('api_members_family.execute', return_value=[]) as mock_exec, \
+             patch('api_members_family.db_cursor', return_value=mock_cursor), \
+             patch('api_members_family.log_activity'):
+            r = self._post(client, {'member_id': 'A0001'})
+
+        assert r.status_code == 200
+        data = r.get_json()['data']
+        assert data['family_id'] == 'B001'
+        assert 'Assigned FamilyID B001' in data['message']
+        mock_query.side_effect = None
+
+    def test_logs_assign_action(self, client, mock_query):
+        call_count = 0
+
+        def side_effect(sql, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ([_member(type_='Family', family_id=None)] if call_count == 1
+                    else [_member(type_='Family', family_id='B001')])
+
+        mock_query.side_effect = side_effect
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        with patch('api_members_family.execute', return_value=[]), \
+             patch('api_members_family.db_cursor', return_value=mock_cursor), \
+             patch('api_members_family.log_activity') as mock_log:
+            self._post(client, {'member_id': 'A0001'})
+
+        mock_log.assert_called_once()
+        assert mock_log.call_args[1]['action'] == 'member_family_assign_id'
+        mock_query.side_effect = None
+
+    def test_internal_proc_flag_wrapped(self, client, mock_query):
+        call_count = 0
+
+        def side_effect(sql, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ([_member(type_='Family', family_id=None)] if call_count == 1
+                    else [_member(type_='Family', family_id='B001')])
+
+        mock_query.side_effect = side_effect
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        with patch('api_members_family.execute', return_value=[]), \
+             patch('api_members_family.db_cursor', return_value=mock_cursor), \
+             patch('api_members_family.log_activity'):
+            self._post(client, {'member_id': 'A0001'})
+
+        calls = [str(c) for c in mock_cursor.execute.call_args_list]
+        assert any('@internal_proc = 1' in c for c in calls)
+        assert any('@internal_proc = NULL' in c for c in calls)
+        mock_query.side_effect = None

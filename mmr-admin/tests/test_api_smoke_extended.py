@@ -323,6 +323,12 @@ class TestMembersExtended:
         assert r.status_code in (200, 400, 422)
         assert r.status_code < 500
 
+    def test_family_assign_family_id_no_body(self, client, mock_query):
+        mock_query.return_value = []
+        r = _post(client, '/api/members/family/assign-family-id')
+        assert r.status_code in (200, 400, 422)
+        assert r.status_code < 500
+
 
 # ---------------------------------------------------------------------------
 # Payments (extended — routes not in test_api_smoke.py or test_api_response_format.py)

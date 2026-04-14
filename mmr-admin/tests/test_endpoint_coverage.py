@@ -110,8 +110,9 @@ COVERAGE: dict[tuple[str, str], str] = {
     ('POST', '/api/members/<member_id>/mark-unused'): 'test_members_unit.py',
     ('GET',  '/api/members/<member_id>/log-history'):    'test_member_log_restore.py',
     ('POST', '/api/members/<member_id>/restore-from-log'): 'test_member_log_restore.py',
-    ('POST', '/api/members/family/add-member'):    'test_api_smoke_extended.py',
-    ('POST', '/api/members/family/remove-member'): 'test_api_smoke_extended.py',
+    ('POST', '/api/members/family/assign-family-id'): 'test_api_smoke_extended.py',
+    ('POST', '/api/members/family/add-member'):       'test_api_smoke_extended.py',
+    ('POST', '/api/members/family/remove-member'):    'test_api_smoke_extended.py',
 
     # --- admins ---
     ('GET',  '/api/admins'):                       'test_api_smoke_extended.py',
