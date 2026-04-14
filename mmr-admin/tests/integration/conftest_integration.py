@@ -15,6 +15,7 @@ Skip behaviour:
 """
 
 import os
+import re
 import pathlib
 import pytest
 import mysql.connector
@@ -100,6 +101,10 @@ def _load_schema(conn: mysql.connector.MySQLConnection) -> None:
         upper = s.upper().lstrip()
         if upper.startswith("CREATE DATABASE") or upper.startswith("USE "):
             continue
+        # Strip DEFINER clauses so triggers/procs run as the current user.
+        # Mirrors what mysqldump --no-definer does; avoids error 1449 when
+        # the named definer account doesn't exist in the test container.
+        s = re.sub(r'\bDEFINER\s*=\s*`[^`]+`@`[^`]+`\s*', '', s)
         try:
             cursor.execute(s)
             # Drain any results (procedures/triggers return nothing but cursor

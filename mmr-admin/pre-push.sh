@@ -182,13 +182,13 @@ if should_run 3; then
     skip "Docker not running — skipping integration tests"
   else
     if run_with_timeout 600 "$PYTEST" tests/integration/ \
-        --run-integration --tb=short -q > /tmp/mmr_integration.log 2>&1; then
+        --run-integration --tb=short -q --durations=20 -v > /tmp/mmr_integration.log 2>&1; then
       INT_SUMMARY=$(tail -1 /tmp/mmr_integration.log)
       pass "Integration tests passed — $INT_SUMMARY"
     else
       EXIT_CODE=$?
       if [ $EXIT_CODE -eq 124 ]; then
-        fail "Integration tests timed out (300s) — Docker/testcontainers likely hung"
+        fail "Integration tests timed out (600s) — Docker/testcontainers likely hung"
       else
         fail "Integration tests failed"
         cat /tmp/mmr_integration.log
