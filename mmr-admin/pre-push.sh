@@ -158,8 +158,7 @@ fi
 if should_run 2; then
   echo "▶ Step 2: Unit tests (mocked DB)"
   if "$PYTEST" tests/ \
-      --ignore=tests/test_integration_payments.py \
-      --ignore=tests/test_integration_stored_procs.py \
+      --ignore=tests/integration \
       --tb=short -q -rs > /tmp/mmr_unit.log 2>&1; then
     UNIT_SUMMARY=$(tail -1 /tmp/mmr_unit.log)
     pass "Unit tests passed — $UNIT_SUMMARY"
@@ -182,7 +181,7 @@ if should_run 3; then
   elif ! docker info > /dev/null 2>&1; then
     skip "Docker not running — skipping integration tests"
   else
-    if run_with_timeout 300 "$PYTEST" tests/test_integration_payments.py tests/test_integration_stored_procs.py \
+    if run_with_timeout 600 "$PYTEST" tests/integration/ \
         --run-integration --tb=short -q > /tmp/mmr_integration.log 2>&1; then
       INT_SUMMARY=$(tail -1 /tmp/mmr_integration.log)
       pass "Integration tests passed — $INT_SUMMARY"

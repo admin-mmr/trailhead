@@ -26,7 +26,7 @@ try:
 except ImportError:
     _TC_AVAILABLE = False
 
-SCHEMA_SQL = pathlib.Path(__file__).parent.parent.parent / "db" / "schema_integration.sql"
+SCHEMA_SQL = pathlib.Path(__file__).parent.parent.parent.parent / "db" / "schema_integration.sql"
 import platform as _platform
 # mysql:5.7 has no ARM64 image (EOL Oct 2023); use mysql:8.0 on Apple Silicon
 # MySQL 8.0 is syntax-compatible with 5.7 for triggers, procs, and DML we test

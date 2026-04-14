@@ -156,4 +156,4 @@ def mock_query():
 # Integration fixtures (re-exported so pytest discovers them from conftest.py)
 # ---------------------------------------------------------------------------
 
-from conftest_integration import mysql_container, db_session, db  # noqa: E402, F401
+from tests.integration.conftest_integration import mysql_container, db_session, db  # noqa: E402, F401

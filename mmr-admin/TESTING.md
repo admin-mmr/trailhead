@@ -29,7 +29,7 @@ Optional flags:
 |---|---|---|---|
 | 1 | Import sanity | `test_imports.py` | No |
 | 2 | Unit tests | `pytest tests/` (mocked) | No |
-| 3 | Integration tests | `pytest tests/test_integration_*.py` | **Yes** |
+| 3 | Integration tests | `pytest tests/integration/` | **Yes** |
 | 4 | Schema validation | `db/validate_schema.py` | **Yes** |
 | 5 | TypeScript check | `npx tsc --noEmit` | No |
 | 6 | Flask startup smoke | inline python3 check | No |
@@ -47,9 +47,7 @@ cd mmr-admin && python3 test_imports.py
 ### Step 2 — Unit tests (no live DB)
 All tests use mocked DB via `conftest.py` (`DEV_BYPASS_AUTH=true`, `db.get_conn` mocked).
 ```bash
-pytest tests/ -v \
-  --ignore=tests/test_integration_payments.py \
-  --ignore=tests/test_integration_stored_procs.py
+pytest tests/ --ignore=tests/integration -v
 ```
 
 **Test files:**
@@ -73,7 +71,7 @@ pytest tests/ -v \
 Requires environment loaded from macOS Keychain via `load-env.sh`.
 ```bash
 source ../load-env.sh
-pytest tests/test_integration_payments.py tests/test_integration_stored_procs.py -v
+pytest tests/integration/ -v
 ```
 
 ### Step 4 — Schema validation
@@ -101,9 +99,7 @@ from app import app; print('OK:', app.name)
 ## Quick No-DB Check (CI / fast iteration)
 ```bash
 cd mmr-admin && python3 test_imports.py && \
-  pytest tests/ -v \
-    --ignore=tests/test_integration_payments.py \
-    --ignore=tests/test_integration_stored_procs.py
+  pytest tests/ --ignore=tests/integration -v
 ```
 
 ---
@@ -111,7 +107,7 @@ cd mmr-admin && python3 test_imports.py && \
 ## Adding New Tests
 
 - **Unit tests** → `tests/` (mock DB via `conftest.py` `client` fixture)
-- **Integration tests** → `tests/test_integration_*.py` (use `conftest_integration.py`)
+- **Integration tests** → `tests/integration/` (use `conftest_integration.py`)
 - **New module** → `test_imports.py` auto-discovers it; no changes needed
 
 ---

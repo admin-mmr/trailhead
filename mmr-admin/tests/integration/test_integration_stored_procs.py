@@ -13,7 +13,7 @@ so seed data never persists between tests.
 import uuid
 import pytest
 import mysql.connector
-from conftest_integration import query, execute
+from tests.integration.conftest_integration import query, execute
 
 pytestmark = pytest.mark.integration
 

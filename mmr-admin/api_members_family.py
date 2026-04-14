@@ -17,7 +17,7 @@ from datetime import datetime
 from flask import Blueprint, request
 
 from auth import login_required, require_role
-from db import execute, db_cursor
+from db import execute, query, db_cursor
 from helpers import json_response, handle_api_errors
 from activity_logger import log_activity
 from api_members import get_admin_id, get_member_by_id, get_family_members
@@ -33,7 +33,7 @@ def generate_family_id() -> str:
     Queries MySQL for all existing B### values and picks the next gap.
     Raises ValueError if all 999 slots are taken.
     """
-    rows = execute("SELECT DISTINCT FamilyID FROM members WHERE FamilyID LIKE 'B___'")
+    rows = query("SELECT DISTINCT FamilyID FROM members WHERE FamilyID LIKE 'B___'")
     used: set[int] = set()
     for row in rows:
         fid = (row.get('FamilyID') or '').strip()
@@ -67,10 +67,15 @@ def api_get_family(member_id: str):
 
     family_id = member['FamilyID']
     if not family_id:
-        return json_response({
-            'ok': False,
-            'error': f'Member {member_id} is Family type but has no FamilyID'
-        }, 400)
+        # Auto-assign the next available FamilyID rather than blocking the user
+        now = datetime.utcnow().isoformat()
+        family_id = generate_family_id()
+        execute(
+            "UPDATE members SET FamilyID = %s, UpdatedAt = %s WHERE MemberID = %s",
+            (family_id, now, member_id)
+        )
+        member['FamilyID'] = family_id
+        logger.info("Auto-assigned FamilyID %s to %s", family_id, member_id)
 
     family_members = get_family_members(family_id)
 

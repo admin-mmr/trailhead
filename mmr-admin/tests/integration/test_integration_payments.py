@@ -13,7 +13,7 @@ Run:
 
 import uuid
 import pytest
-from conftest_integration import query, execute
+from tests.integration.conftest_integration import query, execute
 
 pytestmark = pytest.mark.integration
 

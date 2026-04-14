@@ -372,10 +372,31 @@ class TestGetFamily:
         assert r.status_code == 400
         assert 'not a Family' in r.get_json()['error']
 
-    def test_family_member_missing_family_id_returns_400(self, client, mock_query):
-        mock_query.return_value = [_member(type_='Family', family_id=None)]
-        r = client.get('/api/members/A0001/family')
-        assert r.status_code == 400
+    def test_family_member_no_family_id_auto_assigns(self, client, mock_query):
+        """Regression: GET /family on a member with no FamilyID must auto-assign
+        and return 200, not 400. Previously returned 'has no FamilyID' error."""
+        call_count = 0
+
+        def side_effect(sql, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [_member(type_='Family', family_id=None)]   # get_member_by_id
+            return [_family_member(member_id='A0001')]             # get_family_members
+
+        mock_query.side_effect = side_effect
+
+        with patch('api_members_family.query', return_value=[]) as mock_gen_query, \
+             patch('api_members_family.execute') as mock_exec:
+            r = client.get('/api/members/A0001/family')
+
+        assert r.status_code == 200, (
+            f"Expected 200 (auto-assign), got {r.status_code}: {r.get_json()}"
+        )
+        data = r.get_json()['data']
+        assert data['family_id'] == 'B001'
+        mock_exec.assert_called_once()   # UPDATE to persist the new FamilyID
+        mock_query.side_effect = None
 
     def test_member_not_found_returns_404(self, client, mock_query):
         mock_query.return_value = []
@@ -593,30 +614,39 @@ class TestRemoveMemberFromFamily:
 # ---------------------------------------------------------------------------
 
 class TestGenerateFamilyId:
+    # Note: generate_family_id uses query() (SELECT), not execute() (INSERT/UPDATE).
+    # Previously it called execute() which returns int, causing 'int object is not iterable'.
 
     def test_first_available_when_none_used(self):
-        with patch('api_members_family.execute', return_value=[]):
+        with patch('api_members_family.query', return_value=[]):
             from api_members_family import generate_family_id
             assert generate_family_id() == 'B001'
 
     def test_skips_used_ids(self):
         used = [{'FamilyID': 'B001'}, {'FamilyID': 'B002'}, {'FamilyID': 'B003'}]
-        with patch('api_members_family.execute', return_value=used):
+        with patch('api_members_family.query', return_value=used):
             from api_members_family import generate_family_id
             assert generate_family_id() == 'B004'
 
     def test_ignores_non_b_format(self):
         # FAM001 should not count toward B### namespace
         rows = [{'FamilyID': 'FAM001'}, {'FamilyID': 'B001'}]
-        with patch('api_members_family.execute', return_value=rows):
+        with patch('api_members_family.query', return_value=rows):
             from api_members_family import generate_family_id
             assert generate_family_id() == 'B002'
 
     def test_raises_when_all_slots_full(self):
         used = [{'FamilyID': f'B{n:03d}'} for n in range(1, 1000)]
-        with patch('api_members_family.execute', return_value=used):
+        with patch('api_members_family.query', return_value=used):
             from api_members_family import generate_family_id
             with pytest.raises(ValueError, match='all 999 slots are in use'):
+                generate_family_id()
+
+    def test_execute_int_return_would_fail(self):
+        """Regression: execute() returns int, not iterable — must use query() instead."""
+        with patch('api_members_family.query', return_value=42):
+            from api_members_family import generate_family_id
+            with pytest.raises(TypeError):
                 generate_family_id()
 
 

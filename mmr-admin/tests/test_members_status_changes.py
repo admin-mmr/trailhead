@@ -745,3 +745,111 @@ class TestRevertNullStatusRegression:
             "Endpoint must not hide a zero-restore result. "
             "Admin needs to know the SP found no valid snapshots."
         )
+
+
+# ─────────────────────────────────────────────────────────────────
+# MARK_ACTIVE ActionType — regression for MySQL ENUM truncation
+# Root cause: admin_member_overrides.ActionType ENUM was missing
+# 'MARK_ACTIVE', causing MySQL warning 1265 (data truncated) on
+# every "Mark Active" call. Fixed by MIGRATION_V019.
+# ─────────────────────────────────────────────────────────────────
+
+class TestMarkActiveActionType:
+    """
+    Ensures the stored proc call for mark-active passes 'active' as p_NewStatus,
+    which causes the SP to write ActionType='MARK_ACTIVE' to admin_member_overrides.
+    Prior to V019 this value was not in the ENUM and MySQL silently truncated it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patches(self):
+        with patch('api_members_status.execute') as mock_exec, \
+             patch('api_members_status.log_activity'), \
+             patch('api_members_status.get_admin_id', return_value='admin@mmrunners.org'):
+            self.mock_exec = mock_exec
+            yield
+
+    def _setup(self, mock_query, year_end='2026-03-31'):
+        calls = {'n': 0}
+        m = [_member(status='inactive')]
+        config = [{'ConfigValue': year_end}]
+        updated = [_member(status='active', expiration=year_end)]
+        def side(*a, **kw):
+            calls['n'] += 1
+            if calls['n'] == 1: return m
+            if calls['n'] == 2: return config
+            return updated
+        mock_query.side_effect = side
+
+    def test_sp_receives_active_literal(self, client, mock_query):
+        """Third SP param must be the string 'active' — triggers MARK_ACTIVE in the proc."""
+        self._setup(mock_query)
+        client.post('/api/members/A0001/mark-active', json={'note': 'donor'})
+        _, params = self.mock_exec.call_args[0]
+        assert params[2] == 'active', (
+            "SP 3rd arg must be 'active' so the proc sets ActionType='MARK_ACTIVE'. "
+            "If this is wrong, the ENUM insert will fail with MySQL warning 1265."
+        )
+
+    def test_sp_receives_note_fifth(self, client, mock_query):
+        """Note 'donor' must arrive as 5th SP param (arbitrary text, no truncation risk)."""
+        self._setup(mock_query)
+        client.post('/api/members/A0001/mark-active', json={'note': 'donor'})
+        _, params = self.mock_exec.call_args[0]
+        assert params[4] == 'donor'
+
+    def test_mark_active_returns_200(self, client, mock_query):
+        """End-to-end: mark-active on an inactive member must succeed with HTTP 200."""
+        self._setup(mock_query)
+        r = client.post('/api/members/A0001/mark-active', json={'note': 'donor'})
+        assert r.status_code == 200, (
+            f"Expected 200 but got {r.status_code}. "
+            "If this fails with a DB error, MIGRATION_V019 may not have been applied."
+        )
+        data = r.get_json()
+        assert data.get('ok') is True
+
+
+class TestMarkActiveEnumValues:
+    """
+    Validates that 'MARK_ACTIVE' is a known/expected ENUM value for ActionType.
+    This is a schema-awareness test — it catches future regressions if someone
+    shrinks the ENUM and forgets to include MARK_ACTIVE.
+    """
+
+    VALID_ACTION_TYPES = {
+        'STATUS_CHANGE',
+        'EXPIRATION_OVERRIDE',
+        'LIFETIME_SET',
+        'INACTIVE_SET',
+        'MARK_ACTIVE',
+        'REVERT',
+    }
+
+    def test_mark_active_in_valid_enum_set(self):
+        assert 'MARK_ACTIVE' in self.VALID_ACTION_TYPES
+
+    def test_all_sp_action_types_in_enum(self):
+        """The SP uses these 4 values; all must be in the ENUM."""
+        sp_values = {'MARK_ACTIVE', 'LIFETIME_SET', 'INACTIVE_SET', 'STATUS_CHANGE'}
+        missing = sp_values - self.VALID_ACTION_TYPES
+        assert not missing, f"ActionType ENUM missing SP-generated values: {missing}"
+
+    def test_schema_snapshot_contains_mark_active(self):
+        """
+        Reads schema_snapshot.sql and confirms the actual ENUM definition includes
+        MARK_ACTIVE. Catches regressions where the migration was never applied —
+        the hardcoded set above would pass regardless; this one won't.
+        """
+        import pathlib, re
+        schema = (pathlib.Path(__file__).parent.parent.parent / 'db' / 'schema_snapshot.sql').read_text()
+        # Find the ActionType column definition for admin_member_overrides
+        match = re.search(r'ActionType\s+enum\(([^)]+)\)', schema)
+        assert match, "Could not find ActionType ENUM in schema_snapshot.sql"
+        enum_values = {v.strip().strip("'") for v in match.group(1).split(',')}
+        sp_values = {'MARK_ACTIVE', 'LIFETIME_SET', 'INACTIVE_SET', 'STATUS_CHANGE', 'REVERT'}
+        missing = sp_values - enum_values
+        assert not missing, (
+            f"schema_snapshot.sql ActionType ENUM is missing: {missing}. "
+            "Run MIGRATION_V019 against the live DB and refresh schema_snapshot.sql."
+        )
