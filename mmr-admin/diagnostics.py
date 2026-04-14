@@ -40,30 +40,32 @@ def get_sheet_vs_db_counts():
         }
 
         conn = dbmod.get_conn()
-        cursor = conn.cursor(dictionary=True)
-        debug['connection_status'] = 'connected'
+        try:
+            cursor = conn.cursor(dictionary=True)
+            debug['connection_status'] = 'connected'
 
-        # Total count of all gmail transactions (including archived)
-        query1 = "SELECT COUNT(*) as cnt FROM gmail_transactions"
-        cursor.execute(query1)
-        db_count = cursor.fetchone()['cnt']
-        debug['queries_executed'].append(f"✓ {query1} → {db_count}")
+            # Total count of all gmail transactions (including archived)
+            query1 = "SELECT COUNT(*) as cnt FROM gmail_transactions"
+            cursor.execute(query1)
+            db_count = cursor.fetchone()['cnt']
+            debug['queries_executed'].append(f"✓ {query1} → {db_count}")
 
-        # Active (non-archived) count
-        query2 = "SELECT COUNT(*) as cnt FROM gmail_transactions WHERE IsArchived = 0"
-        cursor.execute(query2)
-        db_active = cursor.fetchone()['cnt']
-        debug['queries_executed'].append(f"✓ {query2} → {db_active}")
+            # Active (non-archived) count
+            query2 = "SELECT COUNT(*) as cnt FROM gmail_transactions WHERE IsArchived = 0"
+            cursor.execute(query2)
+            db_active = cursor.fetchone()['cnt']
+            debug['queries_executed'].append(f"✓ {query2} → {db_active}")
 
-        # Last sync metadata
-        query3 = "SELECT sheet_name, last_synced_at, sync_status FROM sync_metadata WHERE sheet_name LIKE '%transaction%' OR sheet_name LIKE '%gmail%' ORDER BY last_synced_at DESC LIMIT 1"
-        cursor.execute(query3)
-        last_sync = cursor.fetchone()
-        debug['queries_executed'].append(f"✓ Fetched last sync metadata entry")
+            # Last sync metadata
+            query3 = "SELECT sheet_name, last_synced_at, sync_status FROM sync_metadata WHERE sheet_name LIKE '%transaction%' OR sheet_name LIKE '%gmail%' ORDER BY last_synced_at DESC LIMIT 1"
+            cursor.execute(query3)
+            last_sync = cursor.fetchone()
+            debug['queries_executed'].append(f"✓ Fetched last sync metadata entry")
 
-        cursor.close()
-        conn.close()
-        debug['connection_status'] = 'closed'
+            cursor.close()
+            debug['connection_status'] = 'closed'
+        finally:
+            conn.close()
 
         return {
             'status': 'ok',
@@ -277,22 +279,24 @@ def test_db_connection():
     """Test database connection and return basic info."""
     try:
         conn = dbmod.get_conn()
-        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor = conn.cursor(dictionary=True)
 
-        # Get version
-        cursor.execute("SELECT VERSION() as version")
-        version = cursor.fetchone()
+            # Get version
+            cursor.execute("SELECT VERSION() as version")
+            version = cursor.fetchone()
 
-        # Get database name
-        cursor.execute("SELECT DATABASE() as database")
-        database = cursor.fetchone()
+            # Get database name
+            cursor.execute("SELECT DATABASE() as database")
+            database = cursor.fetchone()
 
-        # Get table count
-        cursor.execute("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE()")
-        table_count = cursor.fetchone()
+            # Get table count
+            cursor.execute("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE()")
+            table_count = cursor.fetchone()
 
-        cursor.close()
-        conn.close()
+            cursor.close()
+        finally:
+            conn.close()
 
         return {
             'status': 'ok',
@@ -314,26 +318,28 @@ def dump_schema():
     """Dump MySQL schema (CREATE TABLE statements) for inspection."""
     try:
         conn = dbmod.get_conn()
-        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor = conn.cursor(dictionary=True)
 
-        # Get all table names
-        cursor.execute("""
-            SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = DATABASE()
-            ORDER BY TABLE_NAME
-        """)
-        tables = cursor.fetchall()
+            # Get all table names
+            cursor.execute("""
+                SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                ORDER BY TABLE_NAME
+            """)
+            tables = cursor.fetchall()
 
-        schema = {}
-        for table_row in tables:
-            table_name = table_row['TABLE_NAME']
-            cursor.execute(f"SHOW CREATE TABLE {table_name}")
-            create_stmt = cursor.fetchone()
-            if create_stmt:
-                schema[table_name] = create_stmt.get('Create Table', '')
+            schema = {}
+            for table_row in tables:
+                table_name = table_row['TABLE_NAME']
+                cursor.execute(f"SHOW CREATE TABLE {table_name}")
+                create_stmt = cursor.fetchone()
+                if create_stmt:
+                    schema[table_name] = create_stmt.get('Create Table', '')
 
-        cursor.close()
-        conn.close()
+            cursor.close()
+        finally:
+            conn.close()
 
         return {
             'status': 'ok',

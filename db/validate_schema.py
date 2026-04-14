@@ -256,6 +256,55 @@ class SchemaValidator:
         except Exception as e:
             self.errors.append(f"TABLE '{table_name}': Validation error — {str(e)}")
 
+    def check_payment_member_mismatch(self):
+        """
+        Reconciliation check: members whose PaymentTransaction points to a payment
+        row owned by a different member (cross-member stamp).
+
+        Rules:
+          - Individual: payment.MemberID must equal member.MemberID
+          - Family: payment.MemberID must share the same FamilyID as the member
+        """
+        self.cursor.execute("""
+            SELECT
+                m.MemberID,
+                m.Type,
+                m.FamilyID,
+                m.PaymentTransaction AS member_tx_ref,
+                p.PaymentID,
+                p.MemberID           AS payment_linked_to,
+                p.PayerName,
+                p.Amount,
+                p.PaymentDate
+            FROM members m
+            JOIN payments p ON p.TransactionNumber = m.PaymentTransaction
+            WHERE p.MemberID != m.MemberID
+              AND m.PaymentTransaction IS NOT NULL
+              AND m.PaymentTransaction != ''
+              AND (
+                m.Type = 'Individual'
+                OR (
+                    m.Type = 'Family'
+                    AND m.FamilyID IS NOT NULL
+                    AND m.FamilyID != ''
+                    AND m.FamilyID != (
+                        SELECT m2.FamilyID FROM members m2
+                        WHERE m2.MemberID = p.MemberID LIMIT 1
+                    )
+                )
+              )
+        """)
+        rows = self.cursor.fetchall()
+        if rows:
+            for r in rows:
+                self.errors.append(
+                    f"PAYMENT MISMATCH: member {r['MemberID']} ({r['Type']}) has "
+                    f"PaymentTransaction={r['member_tx_ref']} but payment {r['PaymentID']} "
+                    f"belongs to {r['payment_linked_to']} (payer: {r['PayerName']}, "
+                    f"${r['Amount']}, {r['PaymentDate']}). "
+                    f"Use: CALL sp_delink_member_payment('{r['MemberID']}', 1); to preview fix."
+                )
+
     def run(self):
         """Run complete schema validation"""
         try:
@@ -269,6 +318,8 @@ class SchemaValidator:
 
             for table in tables:
                 self.validate_table(table)
+
+            self.check_payment_member_mismatch()
 
             # Print results
             print("\n" + "=" * 80)

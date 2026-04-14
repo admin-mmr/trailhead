@@ -448,6 +448,12 @@ PROCEDURE	sp_admin_update_member_status		BEGIN
     DECLARE v_OldExpiration DATE;
     DECLARE v_OldNotes      TEXT;
     DECLARE v_FamilyID      VARCHAR(20);
+    DECLARE v_ActionType    VARCHAR(50);
+
+    -- If the audit INSERT into admin_member_overrides fails (FK, constraint, etc.),
+    -- continue so the members table changes are not rolled back and the SP still
+    -- returns normally (idempotency preserved; Sheets sync cannot overwrite changes).
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN END;
 
     -- Snapshot current state
     SELECT Status, Expiration, Notes, FamilyID
@@ -455,27 +461,48 @@ PROCEDURE	sp_admin_update_member_status		BEGIN
     FROM members
     WHERE MemberID = p_MemberID;
 
-    -- Update target member (and family if applicable)
+    -- Dynamic ActionType for audit trail
+    SET v_ActionType = CASE p_NewStatus
+        WHEN 'active'   THEN 'MARK_ACTIVE'
+        WHEN 'lifetime' THEN 'LIFETIME_SET'
+        ELSE                 'INACTIVE_SET'
+    END;
+
+    -- Allow Expiration changes (members_before_update trigger guard)
+    SET @internal_proc = 1;
+
     IF v_FamilyID IS NOT NULL AND v_FamilyID != '' THEN
         UPDATE members
-        SET Status    = p_NewStatus,
-            Notes     = CONCAT(IFNULL(Notes, ''), '
+        SET Status     = p_NewStatus,
+            Expiration = CASE
+                WHEN p_NewExpiration IS NOT NULL THEN p_NewExpiration
+                WHEN p_NewStatus = 'lifetime'    THEN '2126-03-31'
+                ELSE Expiration
+            END,
+            Notes      = CONCAT(IFNULL(Notes, ''), '
 ', p_NewNotes),
-            UpdatedAt = NOW()
+            UpdatedAt  = NOW()
         WHERE FamilyID = v_FamilyID
            OR MemberID = p_MemberID;
     ELSE
         UPDATE members
-        SET Status    = p_NewStatus,
-            Notes     = CONCAT(IFNULL(Notes, ''), '
+        SET Status     = p_NewStatus,
+            Expiration = CASE
+                WHEN p_NewExpiration IS NOT NULL THEN p_NewExpiration
+                WHEN p_NewStatus = 'lifetime'    THEN '2126-03-31'
+                ELSE Expiration
+            END,
+            Notes      = CONCAT(IFNULL(Notes, ''), '
 ', p_NewNotes),
-            UpdatedAt = NOW()
+            UpdatedAt  = NOW()
         WHERE MemberID = p_MemberID;
     END IF;
 
-    -- Log to member_log — UUID() required (varchar PK, no default, no auto_increment)
+    SET @internal_proc = NULL;
+
+    -- Log to member_log (ChangeType reflects the actual action)
     INSERT INTO member_log (LogID, MemberID, ChangeType, Status, Expiration, LoggingTime)
-    VALUES (UUID(), p_MemberID, 'ADMIN_OVERRIDE', p_NewStatus, p_NewExpiration, NOW());
+    VALUES (UUID(), p_MemberID, v_ActionType, p_NewStatus, p_NewExpiration, NOW());
 
     -- Build impacted member ID list for audit
     SET @impacted_ids = p_MemberID;
@@ -492,7 +519,7 @@ PROCEDURE	sp_admin_update_member_status		BEGIN
          OldValue, NewValue, AdminNotes, Timestamp)
     VALUES
         (p_AdminEmail, p_MemberID, @impacted_ids,
-         'INACTIVE_SET', v_OldStatus, p_NewStatus, p_NewNotes, NOW());
+         v_ActionType, v_OldStatus, p_NewStatus, p_NewNotes, NOW());
 
 END
 PROCEDURE	sp_cancel_payment		BEGIN
@@ -758,6 +785,164 @@ PROCEDURE	sp_clear_transaction		BEGIN
         COMMIT;
 
         SELECT CONCAT('Transaction ', p_tx_number, ' cleared successfully.') AS result;
+
+    END IF;
+
+END
+PROCEDURE	sp_delink_member_payment		BEGIN
+    DECLARE v_current_tx        VARCHAR(100);
+    DECLARE v_tx_first_set_at   DATETIME;
+    DECLARE v_prev_status       VARCHAR(50);
+    DECLARE v_prev_expiration   DATE;
+    DECLARE v_prev_fee_paid     DECIMAL(10,2);
+    DECLARE v_prev_pay_date     DATE;
+    DECLARE v_prev_pay_tx       VARCHAR(100);
+    DECLARE v_payment_id        VARCHAR(100) DEFAULT NULL;
+    DECLARE v_recomputed_notes  TEXT DEFAULT NULL;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        IF p_dry_run = 0 THEN ROLLBACK; END IF;
+        RESIGNAL;
+    END;
+
+    -- 1. Validate member exists and has a PaymentTransaction set
+    SELECT PaymentTransaction
+    INTO v_current_tx
+    FROM members
+    WHERE MemberID = p_member_id
+    LIMIT 1;
+
+    IF v_current_tx IS NULL OR v_current_tx = '' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Member has no PaymentTransaction to delink.';
+    END IF;
+
+    -- 2. Find when PaymentTransaction was first set to the current value in member_log
+    SELECT MIN(LoggingTime)
+    INTO v_tx_first_set_at
+    FROM member_log
+    WHERE MemberID = p_member_id
+      AND PaymentTransaction = v_current_tx;
+
+    IF v_tx_first_set_at IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No member_log entry found where PaymentTransaction matches current value. Cannot safely determine restore point.';
+    END IF;
+
+    -- 3. Get the member_log snapshot just BEFORE the bad stamp
+    --    If no prior entry exists (member was new when stamped), all v_prev_* stay NULL —
+    --    payment fields will be cleared to NULL, status falls back to 'inactive'.
+    SELECT Status, Expiration, MembershipFeePaid, PaymentDate, PaymentTransaction
+    INTO v_prev_status, v_prev_expiration, v_prev_fee_paid, v_prev_pay_date, v_prev_pay_tx
+    FROM member_log
+    WHERE MemberID = p_member_id
+      AND LoggingTime < v_tx_first_set_at
+    ORDER BY LoggingTime DESC
+    LIMIT 1;
+
+    -- 4. Validate restored Status against members ENUM; fall back to 'inactive' if invalid/null
+    SET v_prev_status = CASE
+        WHEN v_prev_status IN ('active','expired','inactive','pending','pending_upgrade','lifetime')
+        THEN v_prev_status
+        ELSE 'inactive'
+    END;
+
+    -- 5. Check whether a payments record exists for this member+transaction
+    SELECT PaymentID INTO v_payment_id
+    FROM payments
+    WHERE MemberID = p_member_id
+      AND TransactionNumber = v_current_tx
+    LIMIT 1;
+
+    -- =========================================================
+    -- DRY RUN — preview only
+    -- =========================================================
+    IF p_dry_run = 1 THEN
+
+        SELECT
+            p_member_id                             AS MemberID,
+            v_current_tx                            AS current_PaymentTransaction,
+            v_tx_first_set_at                       AS bad_stamp_first_logged_at,
+            (SELECT Status      FROM members WHERE MemberID = p_member_id) AS current_Status,
+            v_prev_status                           AS restore_Status,
+            (SELECT Expiration  FROM members WHERE MemberID = p_member_id) AS current_Expiration,
+            v_prev_expiration                       AS restore_Expiration,
+            (SELECT MembershipFeePaid FROM members WHERE MemberID = p_member_id) AS current_FeePaid,
+            v_prev_fee_paid                         AS restore_FeePaid,
+            (SELECT PaymentDate FROM members WHERE MemberID = p_member_id) AS current_PaymentDate,
+            v_prev_pay_date                         AS restore_PaymentDate,
+            v_prev_pay_tx                           AS restore_PaymentTransaction,
+            v_payment_id                            AS payments_record_to_delete,
+            (SELECT Notes FROM gmail_transactions WHERE TransactionNumber = v_current_tx LIMIT 1)
+                                                    AS current_gmail_Notes,
+            IF(v_payment_id IS NOT NULL,
+                'payments record will be deleted + Notes recomputed',
+                'no payments record found for this member+tx'
+            )                                       AS payments_action,
+            IF(v_prev_pay_tx IS NULL,
+                'NOTE: no prior log entry — payment fields will be cleared to NULL',
+                'DRY RUN — no changes made'
+            )                                       AS note;
+
+    -- =========================================================
+    -- EXECUTE
+    -- =========================================================
+    ELSE
+        START TRANSACTION;
+
+        -- A. Restore members fields to pre-mismatch state
+        SET @internal_proc = 1;
+        UPDATE members
+        SET
+            Status             = v_prev_status,
+            Expiration         = v_prev_expiration,
+            MembershipFeePaid  = v_prev_fee_paid,
+            PaymentDate        = v_prev_pay_date,
+            PaymentTransaction = v_prev_pay_tx,
+            UpdatedAt          = NOW()
+        WHERE MemberID = p_member_id;
+        SET @internal_proc = NULL;
+
+        -- B. Delete the bad payments record if one exists for this member+tx.
+        --    No DELETE trigger on payments updates gmail_transactions.Notes,
+        --    so we recompute it manually below.
+        IF v_payment_id IS NOT NULL THEN
+            DELETE FROM payments
+            WHERE PaymentID = v_payment_id;
+        END IF;
+
+        -- C. Recompute gmail_transactions.Notes based on remaining payments for this tx.
+        --    Uses the same GROUP_CONCAT logic as trg_payments_sync_to_gmail_on_change_after_payment_insert.
+        SELECT GROUP_CONCAT(
+                   CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')')
+                   SEPARATOR '; '
+               )
+        INTO v_recomputed_notes
+        FROM payments
+        WHERE TransactionNumber = v_current_tx;
+
+        UPDATE gmail_transactions
+        SET
+            Notes     = v_recomputed_notes,
+            UpdatedAt = NOW()
+        WHERE TransactionNumber = v_current_tx;
+
+        -- D. Audit log
+        INSERT INTO activity_log (LogID, Timestamp, MemberID, Action, State, ErrorSeverity)
+        VALUES (
+            UUID(), NOW(), p_member_id,
+            'PAYMENT_DELINKED',
+            LEFT(CONCAT('tx=', v_current_tx, IF(v_payment_id IS NOT NULL, ' +del', '')), 50),
+            'INFO'
+        );
+
+        COMMIT;
+
+        SELECT
+            CONCAT('Member ', p_member_id, ' delinked from tx ', v_current_tx) AS result,
+            IF(v_payment_id IS NOT NULL, 'deleted', 'none found')               AS payments_record,
+            v_recomputed_notes                                                   AS new_gmail_Notes;
 
     END IF;
 

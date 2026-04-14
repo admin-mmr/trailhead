@@ -87,6 +87,9 @@ def api_change_member_status(member_id: str):
     if not admin_id:
         return json_response({'ok': False, 'error': 'Admin session missing — please log out and back in'}, 401)
 
+    # Pass NULL for expiration — the SP keeps the existing value when NULL is supplied
+    # (ELSE Expiration in the CASE). Expiration restoration is handled by the
+    # dedicated revert-override endpoint, not here.
     execute(
         "CALL sp_admin_update_member_status(%s, %s, %s, NULL, %s)",
         (member_id, admin_id, new_status, note)
