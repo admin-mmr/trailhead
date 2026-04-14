@@ -111,6 +111,11 @@ class TestDataEndpoints:
         r = client.get('/api/export-schema')
         assert r.status_code < 500
 
+    def test_export_schema_ddl(self, client, mock_query):
+        mock_query.return_value = []
+        r = client.get('/api/export-schema-ddl')
+        assert r.status_code < 500
+
     def test_me_endpoint(self, client, mock_query):
         """GET /api/me returns current user or 401."""
         r = client.get('/api/me')

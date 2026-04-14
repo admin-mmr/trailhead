@@ -107,7 +107,7 @@ class TestSessionEmailFallbacks:
         """
         path = ADMIN_ROOT / 'api_payments.py'
         if not path.exists():
-            pytest.skip("api_payments.py not found")
+            pytest.fail("api_payments.py not found")
         source = path.read_text()
         bad = _extract_bad_admin_email_fallbacks(source)
         assert not bad, (
@@ -123,7 +123,7 @@ class TestSessionEmailFallbacks:
         """
         path = ADMIN_ROOT / 'api_members_status.py'
         if not path.exists():
-            pytest.skip("api_members_status.py not found")
+            pytest.fail("api_members_status.py not found")
         source = path.read_text()
 
         # Find get_admin_id function body (up to next def)
@@ -161,7 +161,7 @@ class TestActivityLoggerNullGuard:
     def test_activity_logger_uses_or_none_guard(self):
         path = ADMIN_ROOT / 'activity_logger.py'
         if not path.exists():
-            pytest.skip("activity_logger.py not found")
+            pytest.fail("activity_logger.py not found")
         source = path.read_text()
 
         # Expect the pattern `admin_email or None` somewhere before the INSERT
@@ -178,7 +178,7 @@ class TestActivityLoggerNullGuard:
         """
         path = ADMIN_ROOT / 'activity_logger.py'
         if not path.exists():
-            pytest.skip("activity_logger.py not found")
+            pytest.fail("activity_logger.py not found")
         source = path.read_text()
         tree = ast.parse(source)
 
@@ -199,7 +199,7 @@ class TestActivityLoggerNullGuard:
                         )
                         return
         # If we reach here, admin_email param wasn't found — skip rather than fail
-        pytest.skip("Could not locate admin_email parameter in log_activity()")
+        pytest.fail("Could not locate admin_email parameter in log_activity()")
 
 
 # ---------------------------------------------------------------------------

@@ -178,6 +178,10 @@ def db_session(mysql_container):
     )
     cur = root_conn.cursor()
     cur.execute("SET GLOBAL log_bin_trust_function_creators = 1")
+    # Allow test_user to create objects with a foreign DEFINER (needed for
+    # CREATE ... DEFINER=`mmradmin`@`%` VIEW/TRIGGER statements in the schema).
+    # SET_USER_ID is the MySQL 8.0 replacement for the old SUPER requirement.
+    cur.execute(f"GRANT SET_USER_ID ON *.* TO '{MYSQL_USER}'@'%'")
     # Match the schema's collation so string literals don't collide with
     # utf8mb4_0900_ai_ci (MySQL 8.0 default)
     cur.execute(f"ALTER DATABASE `{MYSQL_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")

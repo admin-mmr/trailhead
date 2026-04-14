@@ -137,7 +137,7 @@ class TestPaymentTypeExpressions:
         """Both branches of payment_type ternary must be valid membership types."""
         assignments = self._find_ternary_payment_types()
         if not assignments:
-            pytest.skip("No payment_type ternary assignments found")
+            pytest.fail("No payment_type ternary assignments found")
 
         for fname, lineno, true_val, false_val in assignments:
             assert true_val in VALID_MEMBERSHIP_TYPES, (
@@ -240,7 +240,7 @@ class TestPaymentTypeSchema:
         # Find sp_reconcile_member_payments body
         idx = schema.find('sp_reconcile_member_payments')
         if idx < 0:
-            pytest.skip("sp_reconcile_member_payments not found in schema")
+            pytest.fail("sp_reconcile_member_payments not found in schema")
         body = schema[idx:idx + 2000]
         assert 'membership' in body.lower(), (
             "sp_reconcile_member_payments doesn't filter by 'membership' — "
@@ -257,7 +257,7 @@ class TestPaymentTypeSchema:
         # Find sp_link_transaction body
         idx = schema.find('PROCEDURE\tsp_link_transaction')
         if idx < 0:
-            pytest.skip("sp_link_transaction not found")
+            pytest.fail("sp_link_transaction not found")
         end = schema.find('\nPROCEDURE\t', idx + 1)
         body = schema[idx: end if end > 0 else idx + 2000]
 

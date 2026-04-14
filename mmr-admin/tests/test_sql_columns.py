@@ -244,21 +244,27 @@ def test_schema_has_expected_columns():
         assert col in known, f"Expected column '{col}' not in schema — parser broken?"
 
 
-@pytest.mark.parametrize('filename,lineno,snippet,column', _collect_violations())
-def test_no_unknown_column(filename, lineno, snippet, column):
+def test_no_unknown_column():
     """
     Every column reference in a SQL string must exist in schema_snapshot.sql.
     Failure = MySQL 1054 'Unknown column' at runtime.
+    Passes immediately (no parametrize skip) when there are zero violations.
     """
     known = _load_known_columns()
     known_lower = {c.lower() for c in known}
-    hint = ', '.join(
-        c for c in sorted(known)
-        if c[:3].lower() == column[:3].lower()
-    ) or '(no close matches)'
-    assert column.lower() in known_lower, (
-        f"\n  File:    {filename}:{lineno}"
-        f"\n  SQL:     {snippet}"
-        f"\n  Unknown: '{column}'"
-        f"\n  Hint:    Did you mean one of: {hint}"
-    )
+    violations = _collect_violations()
+    if not violations:
+        return
+    lines = []
+    for filename, lineno, snippet, column in violations:
+        hint = ', '.join(
+            c for c in sorted(known)
+            if c[:3].lower() == column[:3].lower()
+        ) or '(no close matches)'
+        lines.append(
+            f"\n  File:    {filename}:{lineno}"
+            f"\n  SQL:     {snippet}"
+            f"\n  Unknown: '{column}'"
+            f"\n  Hint:    Did you mean one of: {hint}"
+        )
+    pytest.fail("\n".join(lines))

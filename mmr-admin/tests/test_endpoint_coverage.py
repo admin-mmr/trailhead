@@ -81,6 +81,7 @@ COVERAGE: dict[tuple[str, str], str] = {
 
     # --- schema ---
     ('GET',  '/api/export-schema'):                'test_api_smoke_extended.py',
+    ('GET',  '/api/export-schema-ddl'):            'test_api_smoke_extended.py',
 
     # --- me ---
     ('GET',  '/api/me'):                           'test_api_smoke_extended.py',

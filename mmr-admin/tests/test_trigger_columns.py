@@ -199,7 +199,7 @@ class TestTriggerColumnReferences:
             None,
         )
         if trigger is None:
-            pytest.skip("trg_payments_auto_fill not found in schema")
+            pytest.fail("trg_payments_auto_fill not found in schema")
 
         body = trigger['body']
         # Must use TransactionDate
@@ -276,7 +276,7 @@ class TestTriggerColumnReferences:
             None,
         )
         if trigger is None:
-            pytest.skip("trg_payments_auto_fill not found")
+            pytest.fail("trg_payments_auto_fill not found")
 
         payments_cols = schema_data['cols_by_table'].get('payments', set())
         payments_lower = {c.lower() for c in payments_cols}

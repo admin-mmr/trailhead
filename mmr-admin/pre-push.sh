@@ -130,9 +130,11 @@ if should_run 2; then
   if pytest tests/ \
       --ignore=tests/test_integration_payments.py \
       --ignore=tests/test_integration_stored_procs.py \
-      --tb=short -q > /tmp/mmr_unit.log 2>&1; then
+      --tb=short -q -rN > /tmp/mmr_unit.log 2>&1; then
     UNIT_SUMMARY=$(tail -1 /tmp/mmr_unit.log)
     pass "Unit tests passed — $UNIT_SUMMARY"
+    SKIPPED=$(grep -E "^SKIPPED" /tmp/mmr_unit.log || true)
+    [ -n "$SKIPPED" ] && echo "  ⚠️  Skipped:" && grep -E "^SKIPPED" /tmp/mmr_unit.log | sed 's/^/     /'
   else
     fail "Unit tests failed"
     cat /tmp/mmr_unit.log

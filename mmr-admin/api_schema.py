@@ -11,6 +11,7 @@ Executable DDL (testcontainers seed):
 """
 
 import os
+import re
 from flask import Blueprint, Response
 import mysql.connector
 
@@ -214,7 +215,14 @@ def _run_ddl_export():
                 row = cur.fetchone()
                 ddl = row[2]  # col 2 = Create Procedure
                 out.append(f'DROP PROCEDURE IF EXISTS `{proc}`$$')
-                out.append(f'CREATE PROCEDURE `{proc}` {ddl.split(None, 3)[3]}$$')
+                # SHOW CREATE PROCEDURE returns the full statement including name;
+                # strip everything up to and including the proc name so we don't
+                # emit `CREATE PROCEDURE `name` `name`(...)`.
+                body = re.sub(
+                    r'^CREATE\s+(DEFINER\s*=\s*\S+\s+)?PROCEDURE\s+`[^`]+`',
+                    '', ddl, count=1
+                ).lstrip()
+                out.append(f'CREATE PROCEDURE `{proc}`{body}$$')
                 out.append('')
             out.append('DELIMITER ;')
             out.append('')

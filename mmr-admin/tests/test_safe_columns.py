@@ -66,7 +66,7 @@ def _extract_safe_columns() -> set[str]:
     """
     src_file = ADMIN_ROOT / 'api_district_members.py'
     if not src_file.exists():
-        pytest.skip(f"{src_file.name} not found")
+        pytest.fail(f"{src_file.name} not found")
 
     source = src_file.read_text()
     tree = ast.parse(source, filename=str(src_file))
@@ -90,7 +90,7 @@ def _extract_safe_columns() -> set[str]:
     if m:
         return {s.strip().strip("'\"") for s in m.group(1).split(',') if s.strip().strip("'\"")}
 
-    pytest.skip("Could not find safe_columns assignment in api_district_members.py")
+    pytest.fail("Could not find safe_columns assignment in api_district_members.py")
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ def _sp_link_transaction_param_count() -> int:
     # Find the procedure body
     idx = text.find('PROCEDURE\tsp_link_transaction')
     if idx < 0:
-        pytest.skip("sp_link_transaction not found in schema_snapshot.sql")
+        pytest.fail("sp_link_transaction not found in schema_snapshot.sql")
 
     # Extract until next PROCEDURE or end
     end_idx = text.find('\nPROCEDURE\t', idx + 1)
@@ -236,7 +236,7 @@ class TestSpLinkTransactionParams:
         """All CALL sp_link_transaction sites must agree on parameter count."""
         sites = _find_sp_call_sites()
         if not sites:
-            pytest.skip("No sp_link_transaction call sites found")
+            pytest.fail("No sp_link_transaction call sites found")
 
         counts = {count for _, _, count in sites}
         assert len(counts) == 1, (
@@ -255,11 +255,11 @@ class TestSpLinkTransactionParams:
         """
         sites = _find_sp_call_sites()
         if not sites:
-            pytest.skip("No sp_link_transaction call sites found")
+            pytest.fail("No sp_link_transaction call sites found")
 
         expected = _sp_link_transaction_param_count()
         if expected == 0:
-            pytest.skip("Could not determine expected param count from schema")
+            pytest.fail("Could not determine expected param count from schema")
 
         for fname, lineno, count in sites:
             assert count == expected, (
