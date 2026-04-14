@@ -29,6 +29,7 @@ const MembersPanel = () => {
   const [addSearching, setAddSearching] = useState(false);
   const [addError, setAddError] = useState('');
   const [savingAdd, setSavingAdd] = useState(false);
+  const [assigningFamilyId, setAssigningFamilyId] = useState(false);
 
   // Change District state
   const [districtSearchQuery, setDistrictSearchQuery] = useState('');
@@ -92,6 +93,25 @@ const MembersPanel = () => {
       setAddError('');
     } else {
       setError(r.error || 'Failed to load family info');
+    }
+  };
+
+  const assignFamilyId = async () => {
+    if (!selectedMember) return;
+    setAssigningFamilyId(true);
+    setError('');
+    const r = await api('/api/members/family/assign-family-id', {
+      method: 'POST',
+      body: JSON.stringify({ member_id: selectedMember.MemberID }),
+    });
+    setAssigningFamilyId(false);
+    if (r.ok) {
+      setToast(`✓ Assigned FamilyID ${r.data.family_id} to ${selectedMember.MemberID}`);
+      // Re-fetch family info now that ID is assigned
+      const refreshR = await api(`/api/members/${selectedMember.MemberID}/family`);
+      if (refreshR.ok) setFamilyInfo(refreshR.data);
+    } else {
+      setError(r.error || 'Failed to assign FamilyID');
     }
   };
 
@@ -362,7 +382,20 @@ const MembersPanel = () => {
                 </span>
               </div>
 
-              {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+              {error && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: error.includes('has no FamilyID') ? 8 : 0 }}>{error}</div>
+                  {error.includes('has no FamilyID') && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={assignFamilyId}
+                      disabled={assigningFamilyId}
+                    >
+                      {assigningFamilyId ? 'Assigning…' : 'Assign FamilyID'}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {loading ? (
                 <div className="loading"><span className="spinner" /> Loading family…</div>

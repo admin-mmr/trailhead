@@ -39,7 +39,7 @@ admin_member_overrides	1	OverrideID	int	NO	NULL	auto_increment	PRI
 admin_member_overrides	2	AdminEmail	varchar(255)	NO	NULL			Admin who performed the manual change
 admin_member_overrides	3	TargetMemberID	varchar(10)	NO	NULL		MUL	
 admin_member_overrides	4	ImpactedMemberIDs	text	YES	NULL			Family members affected
-admin_member_overrides	5	ActionType	enum('STATUS_CHANGE','EXPIRATION_OVERRIDE','LIFETIME_SET','INACTIVE_SET','REVERT')	NO	NULL			
+admin_member_overrides	5	ActionType	enum('STATUS_CHANGE','EXPIRATION_OVERRIDE','LIFETIME_SET','INACTIVE_SET','MARK_ACTIVE','REVERT')	NO	NULL			
 admin_member_overrides	6	OldValue	varchar(255)	YES	NULL			
 admin_member_overrides	7	NewValue	varchar(255)	YES	NULL			
 admin_member_overrides	8	AdminNotes	text	NO	NULL			
@@ -351,6 +351,8 @@ error_context	idx_table_column	1	2	ColumnName	BTREE	YES
 error_context	PRIMARY	0	1	ErrorContextID	BTREE	
 gmail_transactions	PRIMARY	0	1	TransactionNumber	BTREE	
 member_log	idx_loggingtime	1	1	LoggingTime	BTREE	
+member_log	idx_member_log_member_time	1	1	MemberID	BTREE	
+member_log	idx_member_log_member_time	1	2	LoggingTime	BTREE	
 member_log	idx_memberid	1	1	MemberID	BTREE	
 member_log	PRIMARY	0	1	LogID	BTREE	
 members	google_sub	0	1	google_sub	BTREE	YES

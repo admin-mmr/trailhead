@@ -286,7 +286,9 @@ window.MembersStatusPanel = () => {
                 Current status: <strong style={{ color: 'var(--text)' }}>{selectedStatusMember.Status}</strong> &nbsp;|&nbsp;
                 Expiration: <strong style={{ color: 'var(--text)' }}>{selectedStatusMember.Expiration || '—'}</strong> &nbsp;|&nbsp;
                 Type: {selectedStatusMember.Type} &nbsp;|&nbsp;
-                Family: {selectedStatusMember.FamilyID || 'none'}
+                Family: {selectedStatusMember.FamilyID || 'none'} &nbsp;|&nbsp;
+                District: {selectedStatusMember.District || '—'} &nbsp;|&nbsp;
+                WeChat: {selectedStatusMember.WeChatID || '—'}
               </div>
               <button style={{ marginTop: 8, fontSize: 12, padding: '2px 8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', color: 'var(--text-muted)' }}
                 onClick={() => { setSelectedStatusMember(null); setStatusSearchQuery(''); setStatusSearchResults([]); }}>
@@ -374,7 +376,9 @@ window.MembersStatusPanel = () => {
                 Current status: <strong style={{ color: 'var(--text)' }}>{selectedActiveMember.Status}</strong> &nbsp;|&nbsp;
                 Expiration: <strong style={{ color: 'var(--text)' }}>{selectedActiveMember.Expiration || '—'}</strong> &nbsp;|&nbsp;
                 Type: {selectedActiveMember.Type} &nbsp;|&nbsp;
-                Family: {selectedActiveMember.FamilyID || 'none'}
+                Family: {selectedActiveMember.FamilyID || 'none'} &nbsp;|&nbsp;
+                District: {selectedActiveMember.District || '—'} &nbsp;|&nbsp;
+                WeChat: {selectedActiveMember.WeChatID || '—'}
               </div>
               <button style={{ marginTop: 8, fontSize: 12, padding: '2px 8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', color: 'var(--text-muted)' }}
                 onClick={() => { setSelectedActiveMember(null); setActiveSearchQuery(''); setActiveSearchResults([]); }}>
