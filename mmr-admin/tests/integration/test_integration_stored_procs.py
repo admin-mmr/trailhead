@@ -145,6 +145,8 @@ class TestSpCancelPaymentMemberRevert:
     def test_membership_payment_reverts_member_status(self, db):
         mid, tid, pid = _mid(), _tid(), _pid()
         _insert_member(db, mid, status="pending")
+        # Backdate INSERT log so LoggingTime < payment.CreatedAt holds even within same second
+        execute(db, "UPDATE member_log SET LoggingTime = DATE_SUB(LoggingTime, INTERVAL 2 SECOND) WHERE MemberID=%s AND ChangeType='INSERT'", [mid])
         _insert_gmail_tx(db, tid)
         _insert_payment(db, pid, mid, tid, pay_type="Individual Membership")
         # After insert, trigger sets member active
@@ -176,7 +178,9 @@ class TestSpCancelPaymentMemberRevert:
         mid1, mid2 = _mid(), _mid()
         tid, pid = _tid(), _pid()
         _insert_member(db, mid1, status="pending", family_id=fid, type_="Family")
+        execute(db, "UPDATE member_log SET LoggingTime = DATE_SUB(LoggingTime, INTERVAL 2 SECOND) WHERE MemberID=%s AND ChangeType='INSERT'", [mid1])
         _insert_member(db, mid2, status="pending", family_id=fid, type_="Family")
+        execute(db, "UPDATE member_log SET LoggingTime = DATE_SUB(LoggingTime, INTERVAL 2 SECOND) WHERE MemberID=%s AND ChangeType='INSERT'", [mid2])
         _insert_gmail_tx(db, tid, amount=50.00)
         _insert_payment(db, pid, mid1, tid, pay_type="Family Membership", amount=50.00)
 
@@ -194,6 +198,7 @@ class TestSpCancelPaymentMemberRevert:
         """If member was 'expired' before payment, should revert to 'expired', not 'inactive'."""
         mid, tid, pid = _mid(), _tid(), _pid()
         _insert_member(db, mid, status="expired")
+        execute(db, "UPDATE member_log SET LoggingTime = DATE_SUB(LoggingTime, INTERVAL 2 SECOND) WHERE MemberID=%s AND ChangeType='INSERT'", [mid])
         _insert_gmail_tx(db, tid)
         _insert_payment(db, pid, mid, tid, pay_type="Individual Membership")
 

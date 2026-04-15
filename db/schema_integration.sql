@@ -665,7 +665,9 @@ BEGIN
     DECLARE cur_members CURSOR FOR
         SELECT member_id, min_created_at FROM tmp_tx_members;
 
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+    -- Fix V023: handler sets BOTH done and done2 so member_loop exits correctly
+    -- when tmp_tx_members is empty (no membership payments for the transaction).
+    DECLARE CONTINUE HANDLER FOR NOT FOUND BEGIN SET done = 1; SET done2 = 1; END;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN

@@ -113,6 +113,7 @@ COVERAGE: dict[tuple[str, str], str] = {
     ('POST', '/api/members/family/assign-family-id'): 'test_api_smoke_extended.py',
     ('POST', '/api/members/family/add-member'):       'test_api_smoke_extended.py',
     ('POST', '/api/members/family/remove-member'):    'test_api_smoke_extended.py',
+    ('POST', '/api/members/family/upgrade-and-add'):  'test_members_family_upgrade.py',
 
     # --- admins ---
     ('GET',  '/api/admins'):                       'test_api_smoke_extended.py',
