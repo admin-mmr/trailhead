@@ -75,20 +75,32 @@ def _insert_payment(db, pay_id, member_id, tx_num, pay_type="Individual Membersh
 def _call_cancel_payment(db, pay_id, cancelled_by="admin@test.com"):
     cursor = db.cursor()
     cursor.callproc("sp_cancel_payment", [pay_id, cancelled_by])
+    try:
+        while cursor.nextset():
+            pass
+    except Exception:
+        pass
     cursor.close()
-    db.commit()
+    # Transaction owned by the `db` fixture — no commit here.
 
 
 def _call_clear_transaction(db, tx_num, dry_run=0, cleared_by="admin@test.com"):
     cursor = db.cursor()
     results = []
     cursor.callproc("sp_clear_transaction", [tx_num, dry_run, cleared_by])
-    # Collect all result sets (dry run returns 4)
+    # stored_results() works with use_pure=True; with the C extension the wire
+    # buffer still holds unread result sets. Drain via nextset() on the same
+    # cursor to avoid "Commands out of sync" on the next statement.
     for rs in cursor.stored_results():
         results.append(rs.fetchall())
+    try:
+        while cursor.nextset():
+            pass
+    except Exception:
+        pass
     cursor.close()
-    if not dry_run:
-        db.commit()
+    # Do NOT commit here — the `db` fixture owns the transaction boundary.
+    # Committing inside the helper breaks rollback-based test isolation.
     return results
 
 

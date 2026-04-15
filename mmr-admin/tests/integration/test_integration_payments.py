@@ -319,9 +319,16 @@ class TestMemberTriggers:
         assert "UPDATE" in change_types
 
     def test_direct_expiration_update_blocked(self, db):
-        """members_before_update prevents direct Expiration changes."""
+        """members_before_update prevents direct Expiration changes.
+        Member must have an existing non-NULL Expiration so the trigger's
+        inequality check (NEW <> OLD) evaluates to TRUE rather than NULL.
+        """
         import mysql.connector
         _insert_member(db, "A0044")
+        # Seed a non-NULL Expiration via @internal_proc bypass so the trigger fires
+        execute(db, "SET @internal_proc = 1")
+        execute(db, "UPDATE members SET Expiration='2025-12-31' WHERE MemberID='A0044'")
+        execute(db, "SET @internal_proc = NULL")
         with pytest.raises(mysql.connector.Error, match="Direct update to Expiration"):
             execute(db, "UPDATE members SET Expiration='2099-01-01' WHERE MemberID='A0044'")
 

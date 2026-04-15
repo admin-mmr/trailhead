@@ -191,12 +191,18 @@ class TestSpDelinkMemberPayment:
         assert "no PaymentTransaction" in str(exc_info.value)
 
     def test_error_no_log_entry_for_tx(self, db):
-        """Proc raises error if PaymentTransaction value never appears in member_log."""
+        """Proc raises error if PaymentTransaction value never appears in member_log.
+
+        trg_members_after_insert auto-logs the INSERT row (including PaymentTransaction),
+        so we delete that entry afterward to simulate a member whose PaymentTransaction
+        was set outside the normal trigger flow (e.g. direct DB edit) with no log history.
+        """
         mid = _mid()
         tx = _tid()
         _insert_member(db, mid, status="active", payment_tx=tx,
                        fee=30.00, pay_date="2026-03-24", expiration="2027-03-31")
-        # No member_log entries at all
+        # Delete the trigger-generated INSERT log so no entry matches the current tx
+        execute(db, "DELETE FROM member_log WHERE MemberID=%s", [mid])
 
         with pytest.raises(mysql.connector.Error) as exc_info:
             _call(db, mid, dry_run=0)

@@ -121,19 +121,27 @@ def _load_schema(conn: mysql.connector.MySQLConnection, host: str, port: int) ->
         # Pipe the file via stdin — `source` is an interactive-only command and
         # fails when passed via --execute.
         cli_host = "127.0.0.1" if host in ("localhost", "127.0.0.1") else host
-        with open(tmp_path) as sql_file:
-            result = subprocess.run(
-                [
-                    "mysql",
-                    "--protocol=TCP",
-                    f"--host={cli_host}", f"--port={port}",
-                    f"--user={MYSQL_USER}", f"--password={MYSQL_PASSWORD}",
-                    MYSQL_DATABASE,
-                ],
-                stdin=sql_file,
-                capture_output=True, text=True,
-            )
-        import os; os.unlink(tmp_path)
+        try:
+            with open(tmp_path) as sql_file:
+                result = subprocess.run(
+                    [
+                        "mysql",
+                        "--protocol=TCP",
+                        "--connect-timeout=10",
+                        f"--host={cli_host}", f"--port={port}",
+                        f"--user={MYSQL_USER}", f"--password={MYSQL_PASSWORD}",
+                        MYSQL_DATABASE,
+                    ],
+                    stdin=sql_file,
+                    capture_output=True, text=True,
+                    timeout=120,
+                )
+        except subprocess.TimeoutExpired:
+            print("❌ Schema load timed out (120s) — mysql CLI likely can't reach the container")
+            raise RuntimeError("Schema load timed out — check container port and TCP connectivity")
+        finally:
+            import os as _os
+            _os.path.exists(tmp_path) and _os.unlink(tmp_path)
 
         if result.returncode != 0:
             print(f"❌ Schema load error:\n{result.stderr}")
@@ -268,10 +276,46 @@ def db_session(mysql_container):
         user=MYSQL_USER,
         password=MYSQL_PASSWORD,
         autocommit=False,
+        # use_pure=True forces the Python implementation instead of the C extension.
+        # The C extension (_mysql_connector) refuses rollback/reset while result sets
+        # from stored procedures are pending, causing "Commands out of sync" errors
+        # that corrupt the shared session connection across tests.
+        use_pure=True,
     )
     _load_schema(conn, host, port)
     yield conn
     conn.close()
+
+
+def _drain_and_reset(conn) -> None:
+    """
+    Drain any pending result sets and roll back any open transaction.
+
+    Layered recovery — each step is a fallback for the one before:
+    1. rollback()              — clean path; works when connection is healthy
+    2. autocommit toggle       — SET autocommit=1 implicitly commits/closes any
+                                 open transaction AND flushes pending result sets
+                                 on MySQL's side, then we restore autocommit=0
+    3. cmd_reset_connection()  — COM_RESET_CONNECTION: nuclear option, clears
+                                 everything including session variables
+    """
+    try:
+        conn.rollback()
+        return
+    except Exception:
+        pass
+
+    try:
+        conn.autocommit = True
+        conn.autocommit = False
+        return
+    except Exception:
+        pass
+
+    try:
+        conn.cmd_reset_connection()
+    except Exception:
+        pass
 
 
 @pytest.fixture()
@@ -280,20 +324,45 @@ def db(db_session):
     Per-test transactional fixture.
     Each test runs inside a transaction that is rolled back on teardown,
     so tests are fully isolated without dropping/recreating the schema.
+
+    _drain_and_reset() guards both entry and exit so a stored procedure
+    that leaks result sets (causing "Commands out of sync") cannot corrupt
+    subsequent tests.
     """
+    _drain_and_reset(db_session)       # recover from any prior dirty state
+    if db_session.in_transaction:
+        db_session.rollback()          # last-resort: force-close a stuck transaction
     db_session.start_transaction()
     yield db_session
-    db_session.rollback()
+    _drain_and_reset(db_session)       # clean up after this test
 
 
 # ---------------------------------------------------------------------------
 # Helper: execute a query and return rows as list-of-dicts
 # ---------------------------------------------------------------------------
 
+def _drain_cursor(cursor) -> None:
+    """Consume any result sets left on the cursor after execute/callproc.
+
+    Stored procedures called via CALL or callproc() can return multiple result
+    sets. If they aren't all consumed the connection enters "Commands out of
+    sync" state and every subsequent command fails until the connection is reset.
+    """
+    try:
+        while cursor.nextset():
+            try:
+                cursor.fetchall()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def query(conn, sql: str, params=None) -> list[dict]:
     cursor = conn.cursor(dictionary=True)
     cursor.execute(sql, params or [])
     rows = cursor.fetchall()
+    _drain_cursor(cursor)
     cursor.close()
     return rows
 
@@ -303,5 +372,6 @@ def execute(conn, sql: str, params=None) -> int:
     cursor = conn.cursor()
     cursor.execute(sql, params or [])
     result = cursor.lastrowid or cursor.rowcount
+    _drain_cursor(cursor)
     cursor.close()
     return result

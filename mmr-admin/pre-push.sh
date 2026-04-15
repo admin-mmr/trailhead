@@ -173,6 +173,9 @@ fi
 
 # ------------------------------------------------------------------
 # Step 3 — Integration tests (testcontainers / Docker)
+#
+# Runs each test file separately so partial progress is preserved.
+# Re-run just failed tests with: ./pre-push.sh --step 3 --lf
 # ------------------------------------------------------------------
 if should_run 3; then
   echo "▶ Step 3: Integration tests (testcontainers)"
@@ -181,18 +184,39 @@ if should_run 3; then
   elif ! docker info > /dev/null 2>&1; then
     skip "Docker not running — skipping integration tests"
   else
-    if run_with_timeout 600 "$PYTEST" tests/integration/ \
-        --run-integration --tb=short -q --durations=20 -v > /tmp/mmr_integration.log 2>&1; then
-      INT_SUMMARY=$(tail -1 /tmp/mmr_integration.log)
-      pass "Integration tests passed — $INT_SUMMARY"
-    else
-      EXIT_CODE=$?
-      if [ $EXIT_CODE -eq 124 ]; then
-        fail "Integration tests timed out (600s) — Docker/testcontainers likely hung"
+    INT_PASS=0; INT_FAIL=0
+    INT_FILES=$(find tests/integration -name "test_*.py" | sort)
+    INT_EXTRA_FLAGS=""
+    [[ " $* " =~ " --lf " ]] && INT_EXTRA_FLAGS="--last-failed --last-failed-no-failures=all"
+
+    for test_file in $INT_FILES; do
+      file_label=$(basename "$test_file" .py)
+      echo ""
+      echo "  ── $file_label ──"
+      # Stream output live (tee to log); -s shows fixture prints (schema load progress)
+      if run_with_timeout 300 "$PYTEST" "$test_file" \
+          --run-integration --tb=short -q -s $INT_EXTRA_FLAGS \
+          2>&1 | tee "/tmp/mmr_int_${file_label}.log"; then
+        INT_PASS=$((INT_PASS + 1))
+        echo -e "  ${GREEN}✅ $file_label passed${NC}"
       else
-        fail "Integration tests failed"
-        cat /tmp/mmr_integration.log
+        EXIT_CODE=${PIPESTATUS[0]}
+        INT_FAIL=$((INT_FAIL + 1))
+        if [ $EXIT_CODE -eq 124 ]; then
+          echo -e "  ${RED}❌ $file_label timed out (300s)${NC}"
+        else
+          echo -e "  ${RED}❌ $file_label failed${NC}"
+        fi
+        echo "  → Re-run: $PYTEST $test_file --run-integration -s -v"
       fi
+    done
+
+    echo ""
+    if [ $INT_FAIL -eq 0 ]; then
+      pass "All integration files passed ($INT_PASS files)"
+    else
+      fail "$INT_FAIL/$((INT_PASS + INT_FAIL)) integration files failed"
+      echo "  → Resume failed only: ./pre-push.sh --step 3 --lf"
     fi
   fi
   echo ""

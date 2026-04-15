@@ -1503,7 +1503,7 @@ END$$
 
 DROP TRIGGER IF EXISTS `members_before_update`$$
 CREATE DEFINER=`mmradmin`@`%` TRIGGER `members_before_update` BEFORE UPDATE ON `members` FOR EACH ROW BEGIN
-    IF NEW.Expiration <> OLD.Expiration THEN
+    IF NOT (NEW.Expiration <=> OLD.Expiration) THEN
         IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';
         END IF;
