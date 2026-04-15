@@ -275,11 +275,14 @@ def db_session(mysql_container):
         database=MYSQL_DATABASE,
         user=MYSQL_USER,
         password=MYSQL_PASSWORD,
-        autocommit=False,
-        # use_pure=True forces the Python implementation instead of the C extension.
-        # The C extension (_mysql_connector) refuses rollback/reset while result sets
-        # from stored procedures are pending, causing "Commands out of sync" errors
-        # that corrupt the shared session connection across tests.
+        # autocommit=True: each INSERT/UPDATE gets its own real CURRENT_TIMESTAMP.
+        # With autocommit=False, MySQL uses the transaction-start time for NOW() across
+        # all statements, so _insert_member and _insert_payment get the same timestamp,
+        # causing sp_cancel_payment's LoggingTime < CreatedAt comparison to find nothing.
+        # Tests use UUID-based IDs so accumulated rows across tests don't interfere.
+        # Stored procedures manage their own transactions internally (START TRANSACTION
+        # + COMMIT), which is incompatible with an outer start_transaction() anyway.
+        autocommit=True,
         use_pure=True,
     )
     _load_schema(conn, host, port)
@@ -321,20 +324,23 @@ def _drain_and_reset(conn) -> None:
 @pytest.fixture()
 def db(db_session):
     """
-    Per-test transactional fixture.
-    Each test runs inside a transaction that is rolled back on teardown,
-    so tests are fully isolated without dropping/recreating the schema.
+    Per-test connection fixture.
 
-    _drain_and_reset() guards both entry and exit so a stored procedure
-    that leaks result sets (causing "Commands out of sync") cannot corrupt
-    subsequent tests.
+    autocommit=True means each statement commits immediately with its own
+    real CURRENT_TIMESTAMP, which is required for stored procedures that
+    compare LoggingTime < payment.CreatedAt to find prior member_log entries.
+
+    Stored procedures (sp_cancel_payment, sp_clear_transaction) manage their
+    own START TRANSACTION / COMMIT internally, so an outer start_transaction()
+    would conflict. Tests use UUID-based IDs, so accumulated rows across tests
+    do not interfere with each other.
+
+    _drain_and_reset() clears any pending result sets from stored proc calls
+    so the shared session connection stays healthy between tests.
     """
-    _drain_and_reset(db_session)       # recover from any prior dirty state
-    if db_session.in_transaction:
-        db_session.rollback()          # last-resort: force-close a stuck transaction
-    db_session.start_transaction()
+    _drain_and_reset(db_session)
     yield db_session
-    _drain_and_reset(db_session)       # clean up after this test
+    _drain_and_reset(db_session)
 
 
 # ---------------------------------------------------------------------------
