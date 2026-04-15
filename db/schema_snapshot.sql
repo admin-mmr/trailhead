@@ -1427,16 +1427,17 @@ trg_members_insert_validate	INSERT	members	BEFORE	BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;
   END IF;
 END
-members_before_update	UPDATE	members	BEFORE	BEGIN
-    IF NEW.Expiration <> OLD.Expiration THEN
-        IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';
-        END IF;
-    END IF;
-END
 trg_members_before_update_lifetime	UPDATE	members	BEFORE	BEGIN
     IF @internal_proc IS NULL AND NEW.Status = 'lifetime' AND OLD.Status <> 'lifetime' THEN
         SET NEW.Expiration = '2126-03-31';
+    END IF;
+END
+members_before_update	UPDATE	members	BEFORE	BEGIN
+    IF NOT (NEW.Expiration <=> OLD.Expiration) THEN
+        IF @internal_proc IS NULL OR @internal_proc <> 1 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Direct update to Expiration column is not allowed. Use the approved Procedure.';
+        END IF;
     END IF;
 END
 trg_members_after_insert	INSERT	members	AFTER	BEGIN
