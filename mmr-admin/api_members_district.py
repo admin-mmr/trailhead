@@ -122,6 +122,7 @@ def api_mark_member_unused(member_id: str):
             Email     = %s,
             Type      = 'Individual',
             FamilyID  = NULL,
+            District  = 'Other',
             UpdatedAt = %s
         WHERE MemberID = %s
     """, (member_id, new_email, now, member_id))

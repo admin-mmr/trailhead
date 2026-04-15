@@ -189,6 +189,16 @@ class TestMarkUnused:
         update_sql = mock_exec.call_args_list[0][0][0]
         assert 'FamilyID  = NULL' in update_sql or 'FamilyID = NULL' in update_sql
 
+    def test_district_set_to_other(self, client, mock_query):
+        """mark-unused must always set District = 'Other' regardless of prior value."""
+        mock_query.return_value = [_member(district='Manhattan')]
+        with patch('api_members_district.execute') as mock_exec, \
+             patch('api_members_district.log_activity'):
+            self._do(client)
+
+        update_sql = mock_exec.call_args_list[0][0][0]
+        assert "District  = 'Other'" in update_sql or "District = 'Other'" in update_sql
+
     # ── admin_member_overrides INSERT ────────────────────────────────────────
 
     def test_inserts_into_admin_member_overrides(self, client, mock_query):
