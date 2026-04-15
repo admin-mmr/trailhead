@@ -1,6 +1,6 @@
 /**
  * District Member Filters Component
- * District selector, status filter, renewal filter, column visibility, export buttons
+ * District selector, status filter, column visibility, export buttons
  */
 
 const DistrictMemberFilters = ({
@@ -8,10 +8,8 @@ const DistrictMemberFilters = ({
   statusOptions,
   selectedDistrict,
   statusFilter,
-  renewedFilter,
   onDistrictChange,
   onStatusChange,
-  onRenewalChange,
   loading,
   onRefresh,
   onExportAllDistricts,
@@ -104,47 +102,16 @@ const DistrictMemberFilters = ({
               ? statusOptions
               : [
                   { value: '', label: 'All Statuses' },
-                  { value: 'active', label: 'Active' },
-                  { value: 'not_active', label: 'Not Active' },
-                  { value: 'pending', label: 'Pending' },
-                  { value: 'lifetime', label: 'Lifetime' },
+                  { value: 'active', label: 'active' },
+                  { value: 'expired', label: 'expired' },
+                  { value: 'inactive', label: 'inactive' },
+                  { value: 'lifetime', label: 'lifetime' },
+                  { value: 'pending', label: 'pending' },
+                  { value: 'pending_upgrade', label: 'pending_upgrade' },
                 ]
             ).map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </select>
-        </div>
-
-        <div style={{ minWidth: '180px' }}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '12px',
-              fontWeight: '600',
-              marginBottom: '6px',
-              color: 'var(--text2)',
-              textTransform: 'uppercase',
-            }}
-          >
-            Renewal Status
-          </label>
-          <select
-            value={renewedFilter}
-            onChange={(e) => onRenewalChange(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
-              background: 'var(--input-bg)',
-              color: 'var(--text)',
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="">All</option>
-            <option value="yes">Renewed</option>
-            <option value="no">Not Renewed</option>
           </select>
         </div>
 

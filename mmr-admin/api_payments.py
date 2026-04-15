@@ -809,14 +809,44 @@ def api_search_members():
 def api_payment_history():
     """
     Get payment history, sorted by most recent first.
-    Query params: ?skip=0&limit=50&days=30
-    Returns: approved and rejected payments from the last N days.
+    Query params: ?skip=0&limit=50&days=30&search=
+      days=0  → all time (no date filter)
+      search  → filter by member name, MemberID, or PaymentID
+    Returns: { payments, total, skip, limit }
     """
     skip = int(request.args.get('skip', 0))
     limit = int(request.args.get('limit', 50))
     days = int(request.args.get('days', 30))
+    search = request.args.get('search', '').strip()
 
-    rows = query("""
+    where_clauses = []
+    params = []
+
+    if days > 0:
+        where_clauses.append('p.UpdatedAt >= DATE_SUB(NOW(), INTERVAL %s DAY)')
+        params.append(days)
+
+    if search:
+        like = f'%{search}%'
+        where_clauses.append(
+            '(m.MemberID LIKE %s OR m.FirstName LIKE %s OR m.LastName LIKE %s'
+            ' OR CONCAT(m.FirstName, " ", m.LastName) LIKE %s OR p.PaymentID LIKE %s)'
+        )
+        params.extend([like, like, like, like, like])
+
+    where_sql = ('WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
+
+    base_sql = f"""
+        FROM payments p
+        JOIN members m ON p.MemberID = m.MemberID
+        LEFT JOIN submissions s ON p.SubmissionID = s.SubmissionID
+        {where_sql}
+    """
+
+    total_rows = query(f'SELECT COUNT(*) as cnt {base_sql}', params)
+    total = total_rows[0]['cnt'] if total_rows else 0
+
+    rows = query(f"""
         SELECT
             p.PaymentID,
             p.MemberID,
@@ -829,15 +859,12 @@ def api_payment_history():
             s.SubmissionID,
             s.Status as SubmissionStatus,
             p.UpdatedAt
-        FROM payments p
-        JOIN members m ON p.MemberID = m.MemberID
-        LEFT JOIN submissions s ON p.SubmissionID = s.SubmissionID
-        WHERE p.UpdatedAt >= DATE_SUB(NOW(), INTERVAL %s DAY)
+        {base_sql}
         ORDER BY p.UpdatedAt DESC
         LIMIT %s OFFSET %s
-    """, (days, limit, skip))
+    """, params + [limit, skip])
 
-    return json_response({'payments': rows})
+    return json_response({'payments': rows, 'total': total, 'skip': skip, 'limit': limit})
 
 
 @payments_bp.route('/api/payments/cancel/<payment_id>', methods=['POST'])
@@ -846,7 +873,7 @@ def api_payment_history():
 @handle_api_errors
 def api_cancel_payment(payment_id):
     """
-    Cancel a payment by calling sp_cancel_payment(p_payment_id).
+    Cancel a payment by calling sp_cancel_payment(p_payment_id, p_cancelled_by).
     Reverses member status, reverts submission to pending, clears gmail link, deletes payment.
     """
     if not payment_id:
@@ -855,7 +882,7 @@ def api_cancel_payment(payment_id):
     admin_email = session.get('user', {}).get('email') or None
     logger.info(f'[CANCEL-PAYMENT] Admin {admin_email} cancelling payment {payment_id}')
 
-    execute("CALL sp_cancel_payment(%s)", (payment_id,))
+    execute("CALL sp_cancel_payment(%s, %s)", (payment_id, admin_email))
     msg = f'Payment {payment_id} cancelled.'
     logger.info(f'[CANCEL-PAYMENT] {msg}')
 

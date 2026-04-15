@@ -12,7 +12,6 @@ window.DistrictMembersPanel = () => {
   const [selectedMembers, setSelectedMembers] = React.useState(new Set());
   const [loading, setLoading] = React.useState(false);
   const [statusFilter, setStatusFilter] = React.useState('');
-  const [renewedFilter, setRenewedFilter] = React.useState('');
   const [error, setError] = React.useState('');
   const [exportLoading, setExportLoading] = React.useState(false);
   const [sortBy, setSortBy] = React.useState('District');
@@ -97,7 +96,7 @@ window.DistrictMembersPanel = () => {
       setMembers([]);
       setSelectedMembers(new Set());
     }
-  }, [selectedDistrict, statusFilter, renewedFilter, sortBy, sortOrder]);
+  }, [selectedDistrict, statusFilter, sortBy, sortOrder]);
 
   const fetchDistricts = async () => {
     const { api } = window.mmrUtils;
@@ -132,7 +131,6 @@ window.DistrictMembersPanel = () => {
       const params = new URLSearchParams();
       if (selectedDistrict) params.append('district', selectedDistrict);
       if (statusFilter) params.append('status', statusFilter);
-      if (renewedFilter) params.append('renewed', renewedFilter);
       params.append('sortBy', sortBy);
       params.append('sortOrder', sortOrder);
 
@@ -245,17 +243,17 @@ window.DistrictMembersPanel = () => {
 
   const handleExportCSV = (includeAll = false) => {
     const { exportToCSV } = window.DistrictExportHelpers;
-    exportToCSV(selectedMembers, includeAll, selectedDistrict, selectedColumns, statusFilter, renewedFilter, setError, setExportLoading);
+    exportToCSV(selectedMembers, includeAll, selectedDistrict, selectedColumns, statusFilter, setError, setExportLoading);
   };
 
   const handleExportAllDistricts = () => {
     const { exportAllDistricts } = window.DistrictExportHelpers;
-    exportAllDistricts(statusFilter, renewedFilter, selectedColumns, setError, setExportLoading);
+    exportAllDistricts(statusFilter, selectedColumns, setError, setExportLoading);
   };
 
   const handleExportAllAsSheet = () => {
     const { exportAllAsSheet } = window.DistrictExportHelpers;
-    exportAllAsSheet(statusFilter, renewedFilter, selectedColumns, setError, setExportLoading);
+    exportAllAsSheet(statusFilter, selectedColumns, setError, setExportLoading);
   };
 
   return (
@@ -290,10 +288,8 @@ window.DistrictMembersPanel = () => {
         statusOptions,
         selectedDistrict,
         statusFilter,
-        renewedFilter,
         onDistrictChange: setSelectedDistrict,
         onStatusChange: setStatusFilter,
-        onRenewalChange: setRenewedFilter,
         loading,
         onRefresh: fetchMembers,
         onExportAllDistricts: handleExportAllDistricts,

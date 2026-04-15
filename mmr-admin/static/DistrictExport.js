@@ -4,7 +4,7 @@
  */
 
 window.DistrictExportHelpers = (() => {
-  const exportToCSV = async (selectedMembers, includeAll, selectedDistrict, selectedColumns, statusFilter, renewedFilter, setError, setExportLoading) => {
+  const exportToCSV = async (selectedMembers, includeAll, selectedDistrict, selectedColumns, statusFilter, setError, setExportLoading) => {
     setExportLoading(true);
     try {
       const response = await fetch('/api/district/export-csv', {
@@ -15,7 +15,7 @@ window.DistrictExportHelpers = (() => {
           includeAll,
           district: selectedDistrict,
           columns: selectedColumns,
-          filters: { status: statusFilter, renewed: renewedFilter },
+          filters: { status: statusFilter },
         }),
       });
 
@@ -40,7 +40,7 @@ window.DistrictExportHelpers = (() => {
     }
   };
 
-  const exportAllDistricts = async (statusFilter, renewedFilter, selectedColumns, setError, setExportLoading) => {
+  const exportAllDistricts = async (statusFilter, selectedColumns, setError, setExportLoading) => {
     setExportLoading(true);
     try {
       const response = await fetch('/api/district/export-all-districts', {
@@ -48,7 +48,6 @@ window.DistrictExportHelpers = (() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: statusFilter,
-          renewed: renewedFilter,
           columns: selectedColumns,
         }),
       });
@@ -74,7 +73,7 @@ window.DistrictExportHelpers = (() => {
     }
   };
 
-  const exportAllAsSheet = async (statusFilter, renewedFilter, selectedColumns, setError, setExportLoading) => {
+  const exportAllAsSheet = async (statusFilter, selectedColumns, setError, setExportLoading) => {
     setExportLoading(true);
     try {
       const response = await fetch('/api/district/export-all-sheet', {
@@ -82,7 +81,6 @@ window.DistrictExportHelpers = (() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: statusFilter,
-          renewed: renewedFilter,
           columns: selectedColumns,
         }),
       });

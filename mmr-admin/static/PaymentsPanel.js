@@ -29,6 +29,10 @@ const PaymentsPanel = () => {
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
   const [unmatchedGmail, setUnmatchedGmail] = useState([]);
   const [paymentHistory, setPaymentHistory] = useState([]);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyDays, setHistoryDays] = useState(30);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
 
   const [selectedMessageId, setSelectedMessageId] = useState(null);
 
@@ -106,10 +110,26 @@ const PaymentsPanel = () => {
     });
   }, []);
 
+  const loadHistory = useCallback((search = '', days = 30, skip = 0, append = false) => {
+    const qs = new URLSearchParams({ limit: 50, days, skip, ...(search ? { search } : {}) });
+    if (append) setHistoryLoadingMore(true);
+    api(`/api/payments/history?${qs}`).then(r => {
+      const rows = Array.isArray(r.payments) ? r.payments : [];
+      setPaymentHistory(prev => append ? [...prev, ...rows] : rows);
+      setHistoryTotal(r.total || 0);
+      setHistoryLoadingMore(false);
+    });
+  }, []);
+
   useEffect(() => {
     const t = setTimeout(() => loadGmail(gmailSearch, 0, false), 300);
     return () => clearTimeout(t);
   }, [gmailSearch, loadGmail]);
+
+  useEffect(() => {
+    const t = setTimeout(() => loadHistory(historySearch, historyDays, 0, false), 300);
+    return () => clearTimeout(t);
+  }, [historySearch, historyDays, loadHistory]);
 
   const colFilterTimerRef = React.useRef(null);
   const handleColFilter = useCallback((filters) => {
@@ -131,10 +151,7 @@ const PaymentsPanel = () => {
       setPendingSubmissions(submissions);
     });
     loadGmail('', 0, false);
-    api('/api/payments/history?limit=50&days=30').then(r => {
-      const payments = Array.isArray(r.payments) ? r.payments : [];
-      setPaymentHistory(payments);
-    });
+    loadHistory('', 30, 0, false);
   }, [loadGmail]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -275,13 +292,38 @@ const PaymentsPanel = () => {
 
     // Payment history section
     e('div', { style: { marginTop: 32 } },
-      e('div', { style: { marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-        e('h3', { style: { fontSize: 14, fontWeight: 600, margin: 0 } }, `Payment History (Last 30 Days)`),
+      e('div', { style: { marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+        e('h3', { style: { fontSize: 14, fontWeight: 600, margin: 0 } },
+          `Payment History`,
+          historyTotal > 0
+            ? e('span', { style: { fontWeight: 400, color: 'var(--text2)', marginLeft: 6, fontSize: 12 } },
+                `${paymentHistory.length} of ${historyTotal}`)
+            : null,
+        ),
         e('button', {
           className: 'btn btn-sm btn-outline',
           onClick: () => setShowHistory(v => !v),
           style: { fontSize: 11, padding: '2px 7px' },
         }, showHistory ? '▼ Collapse' : '▶ Expand'),
+      ),
+      showHistory && e('div', { style: { marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
+        e('input', {
+          type: 'text',
+          placeholder: 'Search member name, ID, or payment ID…',
+          value: historySearch,
+          onChange: ev => setHistorySearch(ev.target.value),
+          style: { flex: 1, minWidth: 220, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 13 },
+        }),
+        e('select', {
+          value: historyDays,
+          onChange: ev => setHistoryDays(Number(ev.target.value)),
+          style: { padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 13 },
+        },
+          e('option', { value: 30 }, 'Last 30 days'),
+          e('option', { value: 90 }, 'Last 90 days'),
+          e('option', { value: 365 }, 'Last year'),
+          e('option', { value: 0 }, 'All time'),
+        ),
       ),
       showHistory && e('div', { style: { border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowY: 'auto', maxHeight: 400 } },
         e(PaymentHistoryTable, {
@@ -290,13 +332,19 @@ const PaymentsPanel = () => {
             const r = await api(`/api/payments/cancel/${paymentId}`, { method: 'POST' });
             if (r.ok) {
               showToast(`✅ ${r.message}`);
-              const refreshed = await api('/api/payments/history?limit=50&days=30');
-              if (refreshed.payments) setPaymentHistory(refreshed.payments);
+              loadHistory(historySearch, historyDays, 0, false);
             } else {
               showToast(`❌ Cancel failed: ${r.error || 'Unknown error'}`);
             }
           },
         })
+      ),
+      showHistory && paymentHistory.length > 0 && paymentHistory.length < historyTotal && e('div', { style: { marginTop: 8, textAlign: 'center' } },
+        e('button', {
+          className: 'btn btn-sm btn-outline',
+          disabled: historyLoadingMore,
+          onClick: () => loadHistory(historySearch, historyDays, paymentHistory.length, true),
+        }, historyLoadingMore ? 'Loading…' : `Load more (${historyTotal - paymentHistory.length} remaining)`),
       ),
     ),
 

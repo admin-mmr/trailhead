@@ -87,6 +87,7 @@ def generic_sync_runner(
     inserted, updated, skipped = 0, 0, 0
     batches_processed = 0
     errors = []
+    log_entries = []
 
     try:
         if sync_direction == 'mysql_to_sheet':
@@ -119,10 +120,12 @@ def generic_sync_runner(
                             sql = f"SELECT {col_list} FROM {table} WHERE UpdatedAt > %s"
                             rows = db_query(sql, [last_sync_time])
                             logger.info(f"[TIMESTAMP FILTER] ✓ Applied UpdatedAt > {last_sync_time}. Result: {len(rows)} rows to export")
+                            log_entries.append(f"Incremental: {len(rows)} rows changed since {last_sync_time}")
                         else:
                             logger.info(f"[TIMESTAMP CHECK] ⚠ No prior successful sync found for {config_key} — treating as first sync")
                             rows = db_query(f"SELECT {col_list} FROM {table}")
                             logger.info(f"[TIMESTAMP FILTER] ⚠ First sync detected: exporting all {len(rows)} rows")
+                            log_entries.append(f"First sync: exporting all {len(rows)} rows from {table}")
                     except Exception as ts_err:
                         # Fallback if query fails — don't hide the error
                         logger.error(f"[TIMESTAMP CHECK] ✗ Failed to query sheets_sync_log: {str(ts_err)}")
@@ -217,6 +220,7 @@ def generic_sync_runner(
                         inserted += batch_inserted
                         updated += batch_updated
                         batches_processed += 1
+                        log_entries.append(f"Batch {batch_num + 1}: +{batch_inserted} inserted, {batch_updated} updated → {sheet_name}")
 
                         # Log batch success
                         _log_sync_batch(
@@ -233,6 +237,7 @@ def generic_sync_runner(
                             batch_num, len(batch_data), total_rows,
                             'error', 0, 0, len(batch_data), batch_error
                         )
+                        log_entries.append(f"❌ Batch {batch_num + 1} error: {batch_error}")
                         errors.append(batch_error)
 
                         # Stop on ANY error (strict mode)
@@ -455,6 +460,7 @@ def generic_sync_runner(
                     updated += batch_updated
                     skipped += batch_skipped
                     batches_processed += 1
+                    log_entries.append(f"Batch {batch_num + 1}: +{batch_inserted} inserted, {batch_updated} updated, {batch_skipped} skipped → {table}")
 
                     # Log batch success
                     _log_sync_batch(
@@ -513,7 +519,9 @@ def generic_sync_runner(
             'updated': updated,
             'skipped': skipped,
             'message': f"{inserted} inserted, {updated} updated, {skipped} skipped" + (f". Errors: {errors[0]}" if errors else ""),
-            'batches_processed': batches_processed
+            'batches_processed': batches_processed,
+            'errors': errors,
+            'log': '\n'.join(log_entries) if log_entries else None,
         }
 
     except Exception as e:
@@ -525,7 +533,9 @@ def generic_sync_runner(
             'updated': 0,
             'skipped': 0,
             'message': msg,
-            'batches_processed': 0
+            'batches_processed': 0,
+            'errors': [msg],
+            'log': '\n'.join(log_entries) if log_entries else None,
         }
 
 

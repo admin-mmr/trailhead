@@ -375,7 +375,7 @@
                 style: { fontSize: 11, padding: '2px 8px' },
                 onClick: () => {
                   if (confirm(`Cancel payment ${p.PaymentID} for ${p.FirstName} ${p.LastName}?\n\nThis will:\n• Restore member to previous status\n• Revert submission to pending\n• Remove Gmail transaction link\n• Delete the payment record`)) {
-                    onCancel(p.PaymentID);
+                    onCancel(p.PaymentID).catch(err => console.error('Cancel failed:', err));
                   }
                 }
               }, 'Cancel')

@@ -7,7 +7,9 @@ const JobCard = ({ jobId, job }) => {
     (() => { const ec = res.errors_count ?? (typeof res.errors === 'number' ? res.errors : (Array.isArray(res.errors) ? res.errors.length : 0)); return ec > 0 ? `${ec} errors` : null; })(),
   ].filter(Boolean);
   const statLine = statParts.length ? statParts.join(' · ') : null;
-  const logText = res.log || (typeof res === 'string' ? res : null);
+  const logText = res.log
+    || (Array.isArray(res.errors) && res.errors.length > 0 ? res.errors.join('\n') : null)
+    || (typeof res === 'string' ? res : null);
 
   return (
     <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 'var(--radius)', fontSize: 13 }}>
@@ -67,7 +69,13 @@ initComponent('SyncPanel', () => {
 
   useEffect(() => {
     api('/api/sync/jobs').then(r => {
-      if (r && r.ok && r.jobs) setJobs(r.jobs);
+      if (r && r.ok && r.jobs) {
+        const jobsArr = r.jobs;
+        const jobsDict = Array.isArray(jobsArr)
+          ? Object.fromEntries(jobsArr.map(j => [j.jobId, j]))
+          : jobsArr;
+        setJobs(jobsDict);
+      }
     }).catch(() => {});
   }, []);
 

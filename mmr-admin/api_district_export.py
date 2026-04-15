@@ -6,9 +6,8 @@ Supports CSV and ZIP exports with flexible column selection and filtering.
 from flask import Blueprint, jsonify, request, Response
 import csv
 import io
-import os
 import zipfile
-from api_district_members import get_member_status_options, _NOT_ACTIVE_SENTINEL, _NOT_ACTIVE_DB_VALUES
+from api_district_members import get_member_status_options
 from datetime import datetime
 from db import query
 from auth import login_required
@@ -37,16 +36,6 @@ def get_column_labels():
         'LastModified': 'Last Modified',
     }
 
-
-def get_year_end_date():
-    """Get membership year end date from environment."""
-    year_end_str = os.environ.get('MEMBERSHIP_YEAR_END', '')
-    if year_end_str:
-        try:
-            return datetime.strptime(year_end_str, '%Y-%m-%d').date()
-        except ValueError:
-            return None
-    return None
 
 
 def format_cell_value(col_key, row):
@@ -79,35 +68,18 @@ def apply_status_filter(sql, params, status_filter):
     """
     Apply membership status filter.
     Valid values come from INFORMATION_SCHEMA (via get_member_status_options).
-    'not_active' sentinel expands to IN (expired, inactive).
+    Values match the DB ENUM exactly — no translation or grouping.
     """
     status_filter = (status_filter or '').strip()
     if not status_filter:
         return sql, params, None
     _, valid_statuses = get_member_status_options()
-    if status_filter == _NOT_ACTIVE_SENTINEL:
-        placeholders = ', '.join(['%s'] * len(_NOT_ACTIVE_DB_VALUES))
-        sql += f" AND Status IN ({placeholders})"
-        params.extend(_NOT_ACTIVE_DB_VALUES)
-    elif status_filter in valid_statuses:
+    if status_filter in valid_statuses:
         sql += " AND Status = %s"
         params.append(status_filter)
     else:
         return sql, params, f'Invalid status: {status_filter}'
     return sql, params, None
-
-
-def apply_renewal_filter(sql, params, renewed_filter):
-    """Apply renewal status filter to SQL query."""
-    year_end_date = get_year_end_date()
-    if renewed_filter and year_end_date:
-        if renewed_filter == 'yes':
-            sql += " AND Expiration >= %s"
-            params.append(year_end_date)
-        elif renewed_filter == 'no':
-            sql += " AND Expiration < %s"
-            params.append(year_end_date)
-    return sql, params
 
 
 @district_export_bp.route('/export-csv', methods=['POST'])
@@ -120,7 +92,7 @@ def export_csv():
         "includeAll": false,
         "district": "Manhattan",
         "columns": ["District", "MemberID", "Name", "Email", ...],  // column KEYS
-        "filters": {"status": "active", "renewed": "yes"}
+        "filters": {"status": "active"}
     }
     """
     try:
@@ -162,9 +134,6 @@ def export_csv():
         if err:
             return jsonify({'success': False, 'error': err}), 400
 
-        renewed_filter = filters.get('renewed', '').strip().lower()
-        sql, params = apply_renewal_filter(sql, params, renewed_filter)
-
         sql += " ORDER BY District, LastName, FirstName"
         rows = query(sql, params)
 
@@ -197,15 +166,13 @@ def export_all_districts():
     """
     Export members from all districts as separate CSVs in a ZIP file.
     Body: {
-        "status": "active/not active/pending/empty" (optional),
-        "renewed": "yes/no/empty" (optional),
+        "status": "active/expired/inactive/pending/pending_upgrade/lifetime/empty" (optional),
         "columns": ["District", "MemberID", "Name", ...] (optional, column KEYS)
     }
     """
     try:
         data = request.get_json() or {}
         status_filter = data.get('status', '').strip()
-        renewed_filter = data.get('renewed', '').strip().lower()
         selected_columns = data.get('columns', [])
 
         column_labels = get_column_labels()
@@ -237,8 +204,6 @@ def export_all_districts():
                 """
                 params = [district]
                 sql, params, _ = apply_status_filter(sql, params, status_filter)
-
-                sql, params = apply_renewal_filter(sql, params, renewed_filter)
                 sql += " ORDER BY LastName, FirstName"
                 members = query(sql, params)
 
@@ -276,15 +241,13 @@ def export_all_sheet():
     """
     Export all members from all districts as a single CSV sheet.
     Body: {
-        "status": "active/not_active/pending/expired/inactive/pending_upgrade/lifetime/empty" (optional),
-        "renewed": "yes/no/empty" (optional),
+        "status": "active/expired/inactive/pending/pending_upgrade/lifetime/empty" (optional),
         "columns": ["District", "MemberID", "Name", ...] (optional, column KEYS)
     }
     """
     try:
         data = request.get_json() or {}
         status_filter = data.get('status', '').strip()
-        renewed_filter = data.get('renewed', '').strip().lower()
         selected_columns = data.get('columns', [])
 
         column_labels = get_column_labels()
@@ -304,7 +267,6 @@ def export_all_sheet():
         if err:
             return jsonify({'success': False, 'error': err}), 400
 
-        sql, params = apply_renewal_filter(sql, params, renewed_filter)
         sql += " ORDER BY District, LastName, FirstName"
         members = query(sql, params)
 

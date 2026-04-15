@@ -10,3 +10,177 @@ Fen Liu & Ronni Levy
 
 Marked active: 
 Kiki Hong (donor)
+
+Brooklyn
+
+A0622 Dawson Lu
+
+SELECT MemberID, LoggingTime, Status, Expiration
+FROM member_log
+WHERE MemberID IN ('A0578', 'A0536', 'A0482')
+ORDER BY LoggingTime DESC, MemberID
+LIMIT 30;
+
+[
+  {
+    "MemberID": "A0482",
+    "LoggingTime": "2026-04-13 05:54:42",
+    "Status": "inactive",
+    "Expiration": "2027-03-31"
+  },
+  {
+    "MemberID": "A0536",
+    "LoggingTime": "2026-04-13 05:54:42",
+    "Status": "inactive",
+    "Expiration": "2027-03-31"
+  },
+  {
+    "MemberID": "A0578",
+    "LoggingTime": "2026-04-13 05:54:42",
+    "Status": "inactive",
+    "Expiration": "2027-03-31"
+  },
+  {
+    "MemberID": "A0482",
+    "LoggingTime": "2026-04-13 02:10:10",
+    "Status": "active",
+    "Expiration": "2027-03-31"
+  },
+  {
+    "MemberID": "A0536",
+    "LoggingTime": "2026-04-13 02:10:10",
+    "Status": "active",
+    "Expiration": "2027-03-31"
+  },
+  {
+    "MemberID": "A0578",
+    "LoggingTime": "2026-04-13 02:10:10",
+    "Status": "active",
+    "Expiration": "2027-03-31"
+  },
+  {
+    "MemberID": "A0482",
+    "LoggingTime": "2026-04-13 01:50:20",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0536",
+    "LoggingTime": "2026-04-13 01:50:20",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0578",
+    "LoggingTime": "2026-04-13 01:50:20",
+    "Status": "inactive",
+    "Expiration": "2026-03-31"
+  },
+  {
+    "MemberID": "A0482",
+    "LoggingTime": "2026-04-13 01:49:54",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0536",
+    "LoggingTime": "2026-04-13 01:49:54",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0578",
+    "LoggingTime": "2026-04-13 01:49:54",
+    "Status": "inactive",
+    "Expiration": "2026-03-31"
+  },
+  {
+    "MemberID": "A0578",
+    "LoggingTime": "2026-04-12 01:44:27",
+    "Status": "expired",
+    "Expiration": "2026-03-31"
+  },
+  {
+    "MemberID": "A0482",
+    "LoggingTime": "2026-04-12 01:05:36",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0536",
+    "LoggingTime": "2026-04-12 01:05:36",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0578",
+    "LoggingTime": "2026-04-12 01:05:36",
+    "Status": "inactive",
+    "Expiration": "2026-03-31"
+  },
+  {
+    "MemberID": "A0482",
+    "LoggingTime": "2026-04-12 01:05:12",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0536",
+    "LoggingTime": "2026-04-12 01:05:12",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0578",
+    "LoggingTime": "2026-04-12 01:05:12",
+    "Status": "inactive",
+    "Expiration": "2026-03-31"
+  },
+  {
+    "MemberID": "A0482",
+    "LoggingTime": "2026-04-07 01:44:49",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0536",
+    "LoggingTime": "2026-04-07 01:44:49",
+    "Status": "inactive",
+    "Expiration": "2025-03-31"
+  },
+  {
+    "MemberID": "A0578",
+    "LoggingTime": "2026-04-07 01:44:49",
+    "Status": "expired",
+    "Expiration": "2026-03-31"
+  },
+
+  SELECT MemberID, FirstName, LastName, Status, Expiration, UpdatedAt
+FROM members WHERE MemberID IN ('A0578', 'A0536', 'A0482');
+
+[
+  {
+    "MemberID": "A0482",
+    "FirstName": "Ivy",
+    "LastName": "Wang",
+    "Status": "inactive",
+    "Expiration": "2027-03-31",
+    "UpdatedAt": "2026-04-13 05:54:42"
+  },
+  {
+    "MemberID": "A0536",
+    "FirstName": "Xiao Ling (Charlene)",
+    "LastName": "Lu",
+    "Status": "inactive",
+    "Expiration": "2027-03-31",
+    "UpdatedAt": "2026-04-13 05:54:42"
+  },
+  {
+    "MemberID": "A0578",
+    "FirstName": "Shujun",
+    "LastName": "Feng",
+    "Status": "inactive",
+    "Expiration": "2027-03-31",
+    "UpdatedAt": "2026-04-13 05:54:42"
+  }
+]

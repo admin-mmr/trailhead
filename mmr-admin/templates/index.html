@@ -50,7 +50,12 @@ const api = async (path, opts = {}) => {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   });
-  return resp.json();
+  try {
+    return await resp.json();
+  } catch (_) {
+    // Non-JSON body (e.g. unexpected HTML error page from server)
+    return { ok: false, error: `Server error (HTTP ${resp.status})` };
+  }
 };
 window.api = api;  // expose for external scripts (payments.js)
 

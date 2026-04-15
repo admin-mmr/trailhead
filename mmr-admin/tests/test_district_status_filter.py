@@ -1,32 +1,32 @@
 """
-Tests for district member status filter correctness.
+Tests for district member status filter correctness (simplified — no sentinel).
 
 Coverage:
   Unit
   ├── get_enum_values() — COLUMN_TYPE parsing, cache, missing column, non-ENUM type
-  ├── get_member_status_options() — sentinel ordering, grouping, edge ENUM sets
-  ├── apply_status_filter() — all valid values, sentinel expansion, rejections
-  └── apply_renewal_filter() — combined with status, MEMBERSHIP_YEAR_END env var
+  ├── get_member_status_options() — raw DB values passed through, no sentinel
+  └── apply_status_filter() — all valid values, invalid rejections (no sentinel)
 
   HTTP  /api/district/list
   ├── Each valid status passes; invalid statuses → 400
-  ├── not_active generates parameterised IN (never literal string in SQL)
-  ├── Combined status + district, status + renewal, status + sort, status + limit
+  ├── not_active is now invalid (no sentinel expansion)
+  ├── expired and inactive are each individually valid
+  ├── Combined status + district, status + sort, status + limit
   └── Case sensitivity: 'Active' ≠ 'active' → rejected
 
   HTTP  /api/district/member-status-values
   ├── Response shape matches frontend contract
-  ├── expired/inactive hidden; not_active sentinel present with expands_to
+  ├── expired and inactive ARE present (no grouping)
+  ├── not_active sentinel is absent
   └── New ENUM value automatically surfaces
 
   HTTP  /api/district/export-csv
   HTTP  /api/district/export-all-districts
   HTTP  /api/district/export-all-sheet
-  └── valid status → 200, not_active → 200, invalid → 400
+  └── valid status → 200, not_active → 400, invalid → 400
 """
-import os
 import pytest
-from unittest.mock import patch, call
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # Shared fixtures / constants
@@ -69,8 +69,6 @@ class TestGetEnumValues:
         import db
         return patch.object(db, 'query', return_value=[{'COLUMN_TYPE': column_type_str}])
 
-    # --- Parsing ---
-
     def test_standard_enum_parsed_correctly(self):
         import db
         with self._mock_query("enum('active','expired','inactive','pending','pending_upgrade','lifetime')"):
@@ -96,31 +94,26 @@ class TestGetEnumValues:
         assert result == []
 
     def test_non_enum_column_type_returns_empty_list(self):
-        """varchar/int columns have no quoted values to parse."""
         import db
         with self._mock_query("varchar(255)"):
             result = db.get_enum_values('members', 'Email')
         assert result == []
 
-    # --- Caching ---
-
     def test_cache_prevents_second_db_call(self):
         import db
         with patch.object(db, 'query', return_value=[{'COLUMN_TYPE': "enum('active','pending')"}]) as mock_q:
             db.get_enum_values('members', 'Status')
-            db.get_enum_values('members', 'Status')  # second call
-        assert mock_q.call_count == 1  # DB only hit once
+            db.get_enum_values('members', 'Status')
+        assert mock_q.call_count == 1
 
     def test_cache_is_keyed_by_table_and_column(self):
-        """Different table.column combos get separate cache entries."""
         import db
         with patch.object(db, 'query', return_value=[{'COLUMN_TYPE': "enum('a')"}]) as mock_q:
             db.get_enum_values('members', 'Status')
-            db.get_enum_values('submissions', 'Status')  # different table
+            db.get_enum_values('submissions', 'Status')
         assert mock_q.call_count == 2
 
     def test_cache_cleared_between_tests(self):
-        """The autouse fixture must have cleared cache from any prior test."""
         import db
         assert 'members.Status' not in db._enum_cache
 
@@ -130,7 +123,7 @@ class TestGetEnumValues:
 # ===========================================================================
 
 class TestGetMemberStatusOptions:
-    """Shape and ordering of the frontend options list."""
+    """Shape and content of the simplified options list (no sentinel)."""
 
     def _opts(self, enum_values=None):
         import api_district_members
@@ -143,50 +136,55 @@ class TestGetMemberStatusOptions:
         opts, _ = self._opts()
         assert opts[0] == {'value': '', 'label': 'All Statuses'}
 
-    def test_sentinel_inserted_immediately_after_active(self):
+    def test_all_enum_values_present_in_options(self):
+        opts, _ = self._opts()
+        values = [o['value'] for o in opts if o['value']]
+        assert set(values) == set(_DB_ENUM)
+
+    def test_expired_present_in_options(self):
         opts, _ = self._opts()
         values = [o['value'] for o in opts]
-        active_idx = values.index('active')
-        assert values[active_idx + 1] == 'not_active'
+        assert 'expired' in values
 
-    def test_expired_and_inactive_absent_from_options(self):
+    def test_inactive_present_in_options(self):
         opts, _ = self._opts()
         values = [o['value'] for o in opts]
-        assert 'expired' not in values
-        assert 'inactive' not in values
+        assert 'inactive' in values
 
-    def test_sentinel_expands_to_contract(self):
+    def test_no_sentinel_in_options(self):
+        """not_active sentinel must not appear — values match DB ENUM exactly."""
         opts, _ = self._opts()
-        sentinel = next(o for o in opts if o['value'] == 'not_active')
-        assert set(sentinel['expands_to']) == {'expired', 'inactive'}
+        values = [o['value'] for o in opts]
+        assert 'not_active' not in values
+
+    def test_label_matches_value_for_each_option(self):
+        """Labels are the raw DB value — no translation."""
+        opts, _ = self._opts()
+        for opt in opts[1:]:  # skip 'All Statuses' placeholder
+            assert opt['label'] == opt['value']
 
     def test_raw_set_contains_all_db_values(self):
         _, raw = self._opts()
         assert raw == set(_DB_ENUM)
 
-    def test_pending_upgrade_label_humanised(self):
+    def test_option_count_is_enum_plus_placeholder(self):
+        """1 placeholder + N enum values."""
         opts, _ = self._opts()
-        pu = next(o for o in opts if o['value'] == 'pending_upgrade')
-        assert pu['label'] == 'Pending Upgrade'
-
-    def test_enum_without_active_still_includes_sentinel(self):
-        """If 'active' is somehow absent, sentinel still appears (appended at end of loop)."""
-        enum_no_active = ['expired', 'inactive', 'pending']
-        opts, _ = self._opts(enum_no_active)
-        values = [o['value'] for o in opts]
-        # sentinel must still be in the list (appended after 'expired' since 'active' never seen)
-        # — implementation detail: sentinel is added when v == 'active'; if absent it won't appear.
-        # This test documents the current behaviour: sentinel is NOT added without 'active'.
-        assert 'not_active' not in values
+        assert len(opts) == len(_DB_ENUM) + 1
 
     def test_unknown_new_enum_value_appears_in_options(self):
         opts, _ = self._opts(_DB_ENUM + ['honorary'])
         values = [o['value'] for o in opts]
         assert 'honorary' in values
 
+    def test_each_option_has_value_and_label_keys(self):
+        opts, _ = self._opts()
+        for opt in opts:
+            assert 'value' in opt and 'label' in opt
+
 
 # ===========================================================================
-# 3. Unit — apply_status_filter()
+# 3. Unit — apply_status_filter() (api_district_export)
 # ===========================================================================
 
 class TestApplyStatusFilterHelper:
@@ -201,12 +199,10 @@ class TestApplyStatusFilterHelper:
         import api_district_export
         return api_district_export.apply_status_filter
 
-    # --- No-op ---
     def test_empty_string_is_noop(self):
         sql, params, err = self._fn()("SELECT 1 WHERE 1=1", [], "")
         assert err is None and "Status" not in sql and params == []
 
-    # --- Exact matches for every ENUM value ---
     @pytest.mark.parametrize("status", _DB_ENUM)
     def test_valid_enum_value_exact_match(self, status):
         sql, params, err = self._fn()("WHERE 1=1", [], status)
@@ -214,46 +210,39 @@ class TestApplyStatusFilterHelper:
         assert "AND Status = %s" in sql
         assert params == [status]
 
-    # --- Sentinel ---
-    def test_not_active_uses_parameterised_in(self):
-        sql, params, err = self._fn()("WHERE 1=1", [], "not_active")
+    def test_expired_binds_correctly(self):
+        sql, params, err = self._fn()("WHERE 1=1", [], "expired")
         assert err is None
-        assert "IN (%s, %s)" in sql
-        assert set(params) == {'expired', 'inactive'}
-        # Sentinel string must not reach SQL
-        assert "not_active" not in sql
+        assert "AND Status = %s" in sql
+        assert params == ["expired"]
 
-    def test_not_active_params_are_in_order(self):
-        """Both DB values are bound; order matches _NOT_ACTIVE_DB_VALUES tuple."""
-        import api_district_members
-        expected = list(api_district_members._NOT_ACTIVE_DB_VALUES)
-        _, params, _ = self._fn()("WHERE 1=1", [], "not_active")
-        assert params == expected
+    def test_inactive_binds_correctly(self):
+        sql, params, err = self._fn()("WHERE 1=1", [], "inactive")
+        assert err is None
+        assert "AND Status = %s" in sql
+        assert params == ["inactive"]
+
+    def test_not_active_sentinel_rejected(self):
+        """not_active is not a DB value — must be rejected."""
+        _, _, err = self._fn()("WHERE 1=1", [], "not_active")
+        assert err and "Invalid status" in err
 
     def test_existing_params_are_preserved(self):
-        """apply_status_filter must extend, not replace, the existing params list."""
         sql, params, err = self._fn()("WHERE District = %s", ['Manhattan'], "active")
         assert err is None
         assert params == ['Manhattan', 'active']
 
-    # --- Rejections ---
-    def test_legacy_not_active_space_rejected(self):
-        _, _, err = self._fn()("WHERE 1=1", [], "not active")
-        assert err and "Invalid status" in err
-
     def test_uppercase_rejected(self):
-        """MySQL ENUM matching is case-sensitive at the app layer — 'Active' is not 'active'."""
         _, _, err = self._fn()("WHERE 1=1", [], "Active")
         assert err and "Invalid status" in err
 
-    def test_empty_string_after_strip_is_noop(self):
+    def test_whitespace_only_is_noop(self):
         sql, params, err = self._fn()("WHERE 1=1", [], "   ")
-        # strip() in the caller leaves "   ".strip() == "" which is falsy → noop
         assert err is None
 
     @pytest.mark.parametrize("bad", [
         "foobar", "ACTIVE", "Active", "1 OR 1=1", "'; DROP TABLE members;--",
-        "not active", "not-active", "expired inactive",
+        "not active", "not-active", "not_active", "expired inactive",
     ])
     def test_invalid_values_rejected(self, bad):
         _, _, err = self._fn()("WHERE 1=1", [], bad)
@@ -261,53 +250,7 @@ class TestApplyStatusFilterHelper:
 
 
 # ===========================================================================
-# 4. Unit — apply_renewal_filter() combined with status
-# ===========================================================================
-
-class TestRenewalFilterCombined:
-    """Renewal filter appends an Expiration clause independently of status."""
-
-    @pytest.fixture(autouse=True)
-    def _year_end(self, monkeypatch):
-        monkeypatch.setenv('MEMBERSHIP_YEAR_END', '2026-12-31')
-
-    def _filter(self, status='', renewal=''):
-        import api_district_export
-        with patch(_PATCH_TARGET, return_value=_DB_ENUM):
-            sql, params, err = api_district_export.apply_status_filter("WHERE 1=1", [], status)
-        if err:
-            return None, None, err
-        sql, params = api_district_export.apply_renewal_filter(sql, params, renewal)
-        return sql, params, None
-
-    def test_status_and_renewal_both_applied(self):
-        sql, params, err = self._filter('active', 'yes')
-        assert err is None
-        assert "AND Status = %s" in sql
-        assert "AND Expiration >= %s" in sql
-        assert 'active' in params
-
-    def test_not_active_with_renewal_no(self):
-        sql, params, err = self._filter('not_active', 'no')
-        assert err is None
-        assert "IN (%s, %s)" in sql
-        assert "AND Expiration < %s" in sql
-
-    def test_renewal_only_no_status(self):
-        sql, params, err = self._filter('', 'yes')
-        assert err is None
-        assert "Status" not in sql
-        assert "AND Expiration >= %s" in sql
-
-    def test_renewal_filter_ignored_without_year_end(self, monkeypatch):
-        monkeypatch.delenv('MEMBERSHIP_YEAR_END', raising=False)
-        sql, params, err = self._filter('active', 'yes')
-        assert err is None
-        assert "Expiration" not in sql  # no year_end → renewal clause skipped
-
-
-# ===========================================================================
-# 5. HTTP — /api/district/list  (combined query param tests)
+# 4. HTTP — /api/district/list
 # ===========================================================================
 
 class TestDistrictListStatusFilter:
@@ -318,40 +261,38 @@ class TestDistrictListStatusFilter:
         with patch(_PATCH_TARGET, return_value=_DB_ENUM):
             yield
 
-    # --- Each valid value passes ---
     @pytest.mark.parametrize("status", _DB_ENUM)
     def test_valid_status_returns_200(self, status, client, mock_query):
         mock_query.return_value = []
         r = client.get(f'/api/district/list?status={status}')
         assert r.status_code == 200
 
-    def test_not_active_sentinel_returns_200(self, client, mock_query):
+    def test_expired_returns_200(self, client, mock_query):
         mock_query.return_value = []
-        assert client.get('/api/district/list?status=not_active').status_code == 200
+        assert client.get('/api/district/list?status=expired').status_code == 200
+
+    def test_inactive_returns_200(self, client, mock_query):
+        mock_query.return_value = []
+        assert client.get('/api/district/list?status=inactive').status_code == 200
+
+    def test_not_active_sentinel_returns_400(self, client, mock_query):
+        """not_active is no longer a valid filter value."""
+        mock_query.return_value = []
+        r = client.get('/api/district/list?status=not_active')
+        assert r.status_code == 400
 
     def test_empty_status_returns_200(self, client, mock_query):
         mock_query.return_value = []
         assert client.get('/api/district/list').status_code == 200
 
-    # --- Rejections ---
     @pytest.mark.parametrize("bad", [
-        "not+active", "Active", "PENDING", "garbage", "expired inactive",
+        "not_active", "not+active", "Active", "PENDING", "garbage", "expired inactive",
     ])
     def test_invalid_status_returns_400(self, bad, client, mock_query):
         mock_query.return_value = []
         r = client.get(f'/api/district/list?status={bad}')
         assert r.status_code == 400
         assert r.get_json()['success'] is False
-
-    # --- SQL shape for not_active ---
-    def test_not_active_generates_parameterised_in(self, client, mock_query):
-        mock_query.return_value = []
-        client.get('/api/district/list?status=not_active')
-        sql = mock_query.call_args[0][0]
-        assert "IN (%s" in sql
-        assert "not_active" not in sql
-        params = mock_query.call_args[0][1]
-        assert "expired" in params and "inactive" in params
 
     def test_active_binds_single_param(self, client, mock_query):
         mock_query.return_value = []
@@ -360,7 +301,13 @@ class TestDistrictListStatusFilter:
         assert "AND Status = %s" in sql
         assert params.count('active') == 1
 
-    # --- Combined with district ---
+    def test_expired_binds_single_param(self, client, mock_query):
+        mock_query.return_value = []
+        client.get('/api/district/list?status=expired')
+        sql, params = mock_query.call_args[0][0], mock_query.call_args[0][1]
+        assert "AND Status = %s" in sql
+        assert params.count('expired') == 1
+
     def test_status_and_district_both_in_sql(self, client, mock_query):
         mock_query.return_value = []
         client.get('/api/district/list?status=active&district=Manhattan')
@@ -368,7 +315,6 @@ class TestDistrictListStatusFilter:
         assert "AND District = %s" in sql
         assert "AND Status = %s" in sql
 
-    # --- Combined with sortBy / sortOrder ---
     def test_status_with_custom_sort(self, client, mock_query):
         mock_query.return_value = []
         r = client.get('/api/district/list?status=active&sortBy=LastName&sortOrder=desc')
@@ -383,7 +329,6 @@ class TestDistrictListStatusFilter:
         sql = mock_query.call_args[0][0]
         assert "ORDER BY District" in sql
 
-    # --- Limit ---
     def test_status_with_explicit_limit(self, client, mock_query):
         mock_query.return_value = []
         r = client.get('/api/district/list?status=active&limit=10')
@@ -398,7 +343,6 @@ class TestDistrictListStatusFilter:
         assert 5000 in params
         assert 99999 not in params
 
-    # --- Response shape ---
     def test_response_contains_count_and_members_keys(self, client, mock_query):
         mock_query.return_value = [_row()]
         r = client.get('/api/district/list?status=active')
@@ -413,11 +357,11 @@ class TestDistrictListStatusFilter:
 
 
 # ===========================================================================
-# 6. HTTP — /api/district/member-status-values
+# 5. HTTP — /api/district/member-status-values
 # ===========================================================================
 
 class TestMemberStatusValuesEndpoint:
-    """GET /api/district/member-status-values — INFORMATION_SCHEMA-driven dropdown contract."""
+    """GET /api/district/member-status-values — simplified dropdown contract."""
 
     @pytest.fixture(autouse=True)
     def _patch_enum(self):
@@ -440,23 +384,22 @@ class TestMemberStatusValuesEndpoint:
         opts = client.get('/api/district/member-status-values').get_json()['options']
         assert opts[0]['value'] == '' and 'All' in opts[0]['label']
 
-    def test_not_active_sentinel_present(self, client, mock_query):
+    def test_expired_present_in_options(self, client, mock_query):
         values = [o['value'] for o in client.get('/api/district/member-status-values').get_json()['options']]
-        assert 'not_active' in values
+        assert 'expired' in values
 
-    def test_expired_inactive_absent_from_options(self, client, mock_query):
+    def test_inactive_present_in_options(self, client, mock_query):
         values = [o['value'] for o in client.get('/api/district/member-status-values').get_json()['options']]
-        assert 'expired' not in values and 'inactive' not in values
+        assert 'inactive' in values
 
-    def test_sentinel_expands_to_both_grouped_values(self, client, mock_query):
-        opts = client.get('/api/district/member-status-values').get_json()['options']
-        sentinel = next(o for o in opts if o['value'] == 'not_active')
-        assert set(sentinel['expands_to']) == {'expired', 'inactive'}
-
-    def test_sentinel_immediately_follows_active(self, client, mock_query):
+    def test_not_active_sentinel_absent(self, client, mock_query):
         values = [o['value'] for o in client.get('/api/district/member-status-values').get_json()['options']]
-        idx = values.index('active')
-        assert values[idx + 1] == 'not_active'
+        assert 'not_active' not in values
+
+    def test_all_db_enum_values_in_options(self, client, mock_query):
+        values = [o['value'] for o in client.get('/api/district/member-status-values').get_json()['options']]
+        for v in _DB_ENUM:
+            assert v in values
 
     def test_each_option_has_value_and_label(self, client, mock_query):
         opts = client.get('/api/district/member-status-values').get_json()['options']
@@ -464,19 +407,15 @@ class TestMemberStatusValuesEndpoint:
             assert 'value' in opt and 'label' in opt
             assert isinstance(opt['label'], str) and len(opt['label']) > 0
 
+    def test_options_count_is_enum_plus_placeholder(self, client, mock_query):
+        """1 placeholder + N enum values (no sentinel, no grouping)."""
+        opts = client.get('/api/district/member-status-values').get_json()['options']
+        assert len(opts) == len(_DB_ENUM) + 1
+
     def test_new_enum_value_flows_through(self, client, mock_query):
         with patch(_PATCH_TARGET, return_value=_DB_ENUM + ['honorary']):
             values = [o['value'] for o in client.get('/api/district/member-status-values').get_json()['options']]
         assert 'honorary' in values
-
-    def test_options_count_is_enum_minus_grouped_plus_sentinel_plus_all(self, client, mock_query):
-        """
-        Expected count:
-          1 (All Statuses) + (N_enum - 2 grouped) + 1 sentinel = N_enum
-        With _DB_ENUM (6 values): 1 + 4 + 1 = 6
-        """
-        opts = client.get('/api/district/member-status-values').get_json()['options']
-        assert len(opts) == len(_DB_ENUM)
 
     def test_db_error_returns_500(self, client):
         with patch(_PATCH_TARGET, side_effect=Exception("DB down")):
@@ -486,14 +425,11 @@ class TestMemberStatusValuesEndpoint:
 
 
 # ===========================================================================
-# 7. HTTP — export routes (status filter validation)
+# 6. HTTP — export routes (status filter validation)
 # ===========================================================================
 
 class TestExportRoutesStatusValidation:
-    """
-    All three export routes share apply_status_filter.
-    Each should: accept valid statuses, expand not_active, reject invalid.
-    """
+    """All three export routes share apply_status_filter. No renewal filter."""
 
     @pytest.fixture(autouse=True)
     def _patch_enum(self):
@@ -510,13 +446,31 @@ class TestExportRoutesStatusValidation:
         })
         assert r.status_code < 500
 
-    def test_export_csv_not_active_200(self, client, mock_query):
+    def test_export_csv_expired_status_200(self, client, mock_query):
+        mock_query.return_value = []
+        r = client.post('/api/district/export-csv', json={
+            'includeAll': True, 'district': 'Manhattan',
+            'filters': {'status': 'expired'},
+        })
+        assert r.status_code < 500
+
+    def test_export_csv_inactive_status_200(self, client, mock_query):
+        mock_query.return_value = []
+        r = client.post('/api/district/export-csv', json={
+            'includeAll': True, 'district': 'Manhattan',
+            'filters': {'status': 'inactive'},
+        })
+        assert r.status_code < 500
+
+    def test_export_csv_not_active_sentinel_400(self, client, mock_query):
+        """not_active is no longer accepted — must return 400."""
         mock_query.return_value = []
         r = client.post('/api/district/export-csv', json={
             'includeAll': True, 'district': 'Manhattan',
             'filters': {'status': 'not_active'},
         })
-        assert r.status_code < 500
+        assert r.status_code == 400
+        assert r.get_json()['success'] is False
 
     def test_export_csv_invalid_status_400(self, client, mock_query):
         mock_query.return_value = []
@@ -533,11 +487,8 @@ class TestExportRoutesStatusValidation:
         assert r.status_code == 400
 
     # --- /export-all-districts ---
-    # The route makes two query calls: (1) districts list, (2) members per district.
-    # format_cell_value uses direct row['MemberID'] access, so member rows must be complete.
 
     def _district_side_effect(self, member_status='active'):
-        """side_effect: first call returns districts, subsequent calls return member rows."""
         member = _row(Status=member_status)
         calls = {'n': 0}
         def _se(*args, **kwargs):
@@ -557,10 +508,15 @@ class TestExportRoutesStatusValidation:
         r = client.post('/api/district/export-all-districts', json={'status': 'active'})
         assert r.status_code < 500
 
-    def test_export_all_districts_not_active_200(self, client, mock_query):
+    def test_export_all_districts_expired_200(self, client, mock_query):
         mock_query.side_effect = self._district_side_effect('expired')
-        r = client.post('/api/district/export-all-districts', json={'status': 'not_active'})
+        r = client.post('/api/district/export-all-districts', json={'status': 'expired'})
         assert r.status_code < 500
+
+    def test_export_all_districts_not_active_400(self, client, mock_query):
+        mock_query.return_value = [{'District': 'Manhattan'}]
+        r = client.post('/api/district/export-all-districts', json={'status': 'not_active'})
+        assert r.status_code == 400
 
     def test_export_all_districts_invalid_status_400(self, client, mock_query):
         mock_query.return_value = [{'District': 'Manhattan'}]
@@ -569,7 +525,7 @@ class TestExportRoutesStatusValidation:
         assert r.get_json()['success'] is False
 
     def test_export_all_districts_no_districts_400(self, client, mock_query):
-        mock_query.return_value = []  # no districts in DB
+        mock_query.return_value = []
         r = client.post('/api/district/export-all-districts', json={})
         assert r.status_code == 400
 
@@ -585,10 +541,16 @@ class TestExportRoutesStatusValidation:
         r = client.post('/api/district/export-all-sheet', json={'status': 'pending'})
         assert r.status_code < 500
 
-    def test_export_all_sheet_not_active_200(self, client, mock_query):
+    def test_export_all_sheet_inactive_200(self, client, mock_query):
+        mock_query.return_value = []
+        r = client.post('/api/district/export-all-sheet', json={'status': 'inactive'})
+        assert r.status_code < 500
+
+    def test_export_all_sheet_not_active_400(self, client, mock_query):
         mock_query.return_value = []
         r = client.post('/api/district/export-all-sheet', json={'status': 'not_active'})
-        assert r.status_code < 500
+        assert r.status_code == 400
+        assert r.get_json()['success'] is False
 
     def test_export_all_sheet_invalid_status_400(self, client, mock_query):
         mock_query.return_value = []

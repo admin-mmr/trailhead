@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from datetime import date, datetime
 
 from flask import Flask
@@ -50,6 +51,8 @@ def handle_api_errors(fn):
 
     DB errors (MySQLError) get status 503; all others get 500.
     """
+    _log = logging.getLogger(fn.__module__ or __name__)
+
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
@@ -59,9 +62,11 @@ def handle_api_errors(fn):
             try:
                 from db import MySQLError
                 if isinstance(e, MySQLError):
+                    _log.error(f'[handle_api_errors] DB error in {fn.__name__}: {e}', exc_info=True)
                     return json_response({'ok': False, 'error': str(e)[:300], 'db_error': True}, 503)
             except ImportError:
                 pass
+            _log.error(f'[handle_api_errors] Error in {fn.__name__}: {e}', exc_info=True)
             return json_response({'ok': False, 'error': str(e)[:300]}, 500)
     return wrapper
 
