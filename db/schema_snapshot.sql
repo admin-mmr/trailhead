@@ -567,12 +567,20 @@ PROCEDURE	sp_cancel_payment		BEGIN
         ORDER BY LoggingTime DESC
         LIMIT 1;
 
+        -- Guard: member_log.Status is varchar(50); members.Status is ENUM.
+        -- Sanitize to a valid ENUM value before writing (V021 fix).
+        SET v_prev_status = CASE
+            WHEN v_prev_status IN ('active','expired','inactive','pending','pending_upgrade','lifetime')
+            THEN v_prev_status
+            ELSE 'inactive'
+        END;
+
         SELECT FamilyID INTO v_family_id FROM members WHERE MemberID = v_member_id LIMIT 1;
 
         SET @internal_proc = 1;
         UPDATE members
         SET
-            Status             = IFNULL(v_prev_status, 'inactive'),
+            Status             = v_prev_status,
             Expiration         = v_prev_expiration,
             MembershipFeePaid  = v_prev_fee_paid,
             PaymentDate        = v_prev_pay_date,
@@ -761,10 +769,18 @@ PROCEDURE	sp_clear_transaction		BEGIN
             ORDER BY LoggingTime DESC
             LIMIT 1;
 
+            -- Guard: member_log.Status is varchar(50); members.Status is ENUM.
+            -- Sanitize to a valid ENUM value before writing (V021 fix).
+            SET v_prev_status = CASE
+                WHEN v_prev_status IN ('active','expired','inactive','pending','pending_upgrade','lifetime')
+                THEN v_prev_status
+                ELSE 'inactive'
+            END;
+
             SET @internal_proc = 1;
             UPDATE members
             SET
-                Status             = IFNULL(v_prev_status, 'inactive'),
+                Status             = v_prev_status,
                 Expiration         = v_prev_expiration,
                 MembershipFeePaid  = v_prev_fee_paid,
                 PaymentDate        = v_prev_pay_date,

@@ -1,3 +1,7 @@
+### 04-14 13:00 UTC — Fix ENUM truncation in sp_cancel_payment + sp_clear_transaction
+
+Changed: MIGRATION_V021 + schema_integration.sql — added CASE/WHEN guard sanitizing member_log.Status (varchar) before writing to members.Status (ENUM); both sp_cancel_payment and sp_clear_transaction patched. db/test_procedure_enum_safety.py — 3 pytest tests catch unguarded ENUM writes, verify V021, cross-check constant vs schema. db-sql-lint.yml CI + pre-push hook wired up. Status: complete. Next: commit migration + test.
+
 ### 04-14 — Members by District: remove sentinel + renewal filter
 
 Changed: api_district_members.py — removed _NOT_ACTIVE_SENTINEL/_NOT_ACTIVE_DB_VALUES, simplified get_member_status_options() (raw DB values, no grouping), simplified status filter (no sentinel expansion). api_district_export.py — removed apply_renewal_filter() + get_year_end_date(), removed sentinel from apply_status_filter(), removed renewed param from all 3 export endpoints. DistrictMembersPanel.js/DistrictMemberFilters.js/DistrictExport.js — removed renewedFilter state, props, and API params; removed Renewal Status dropdown; updated fallback options to include expired/inactive. Tests rewritten: 97 pass. Status: complete. Next: commit.

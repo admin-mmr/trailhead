@@ -87,37 +87,92 @@ def _split_statements(sql: str) -> list[str]:
     return [s for s in statements if s and not s.startswith("--")]
 
 
-def _load_schema(conn: mysql.connector.MySQLConnection) -> None:
-    """Execute schema_integration.sql against the container connection."""
+def _load_schema(conn: mysql.connector.MySQLConnection, host: str, port: int) -> None:
+    """
+    Load schema_integration.sql via the mysql CLI (one subprocess call).
+
+    This is dramatically faster than individual cursor.execute() round-trips —
+    1880 statements via Python can take 60-120s; the CLI pipes them in ~5s.
+
+    Falls back to the statement-by-statement approach if mysql CLI is absent,
+    reporting each error immediately rather than stopping at the first one.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    # Strip DEFINER clauses and skip DB-level statements before writing temp file
     sql = SCHEMA_SQL.read_text(encoding="utf-8")
+    sql = re.sub(r'\bDEFINER\s*=\s*`[^`]+`@`[^`]+`\s*', '', sql)
+
+    if shutil.which("mysql"):
+        # Fast path: pipe through CLI in one shot
+        print(f"\n⏳ Loading schema via mysql CLI ({SCHEMA_SQL.name}, {len(sql)//1024}KB)...")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sql", delete=False) as f:
+            # Suppress CREATE DATABASE / USE — container already has the DB
+            for line in sql.splitlines():
+                upper = line.strip().upper()
+                if upper.startswith("CREATE DATABASE") or upper.startswith("USE "):
+                    continue
+                f.write(line + "\n")
+            tmp_path = f.name
+
+        # Force TCP so the CLI doesn't fall back to Unix socket when host is 'localhost'.
+        # Pipe the file via stdin — `source` is an interactive-only command and
+        # fails when passed via --execute.
+        cli_host = "127.0.0.1" if host in ("localhost", "127.0.0.1") else host
+        with open(tmp_path) as sql_file:
+            result = subprocess.run(
+                [
+                    "mysql",
+                    "--protocol=TCP",
+                    f"--host={cli_host}", f"--port={port}",
+                    f"--user={MYSQL_USER}", f"--password={MYSQL_PASSWORD}",
+                    MYSQL_DATABASE,
+                ],
+                stdin=sql_file,
+                capture_output=True, text=True,
+            )
+        import os; os.unlink(tmp_path)
+
+        if result.returncode != 0:
+            print(f"❌ Schema load error:\n{result.stderr}")
+            raise RuntimeError(f"Schema load failed:\n{result.stderr}")
+
+        conn.commit()
+        print("✅ Schema loaded")
+        return
+
+    # Slow fallback: statement by statement with incremental error reporting
+    print(f"\n⏳ Loading schema statement-by-statement (mysql CLI not found)...")
     stmts = _split_statements(sql)
     cursor = conn.cursor()
-    for stmt in stmts:
+    errors = []
+    for i, stmt in enumerate(stmts, 1):
         s = stmt.strip()
         if not s or s.startswith("--"):
             continue
-        # Skip DB-level statements — container already has the DB and the
-        # connection is already scoped to it; test_user lacks global privileges.
         upper = s.upper().lstrip()
         if upper.startswith("CREATE DATABASE") or upper.startswith("USE "):
             continue
-        # Strip DEFINER clauses so triggers/procs run as the current user.
-        # Mirrors what mysqldump --no-definer does; avoids error 1449 when
-        # the named definer account doesn't exist in the test container.
-        s = re.sub(r'\bDEFINER\s*=\s*`[^`]+`@`[^`]+`\s*', '', s)
         try:
             cursor.execute(s)
-            # Drain any results (procedures/triggers return nothing but cursor
-            # must be clean before next execute)
             try:
                 cursor.fetchall()
             except Exception:
                 pass
         except mysql.connector.Error as exc:
-            # Re-raise with context for easier debugging
-            raise RuntimeError(f"Schema load failed on statement:\n{s[:200]}\nError: {exc}") from exc
+            msg = f"  [{i}/{len(stmts)}] ❌ {exc}\n    → {s[:120]}"
+            print(msg)
+            errors.append(msg)
     conn.commit()
     cursor.close()
+
+    if errors:
+        raise RuntimeError(
+            f"Schema load finished with {len(errors)} error(s):\n" + "\n".join(errors)
+        )
+    print(f"✅ Schema loaded ({len(stmts)} statements)")
 
 
 def _docker_available() -> bool:
@@ -214,7 +269,7 @@ def db_session(mysql_container):
         password=MYSQL_PASSWORD,
         autocommit=False,
     )
-    _load_schema(conn)
+    _load_schema(conn, host, port)
     yield conn
     conn.close()
 

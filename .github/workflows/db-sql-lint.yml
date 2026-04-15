@@ -1,0 +1,28 @@
+name: DB - 🔍 SQL Procedure Lint
+
+on:
+  workflow_dispatch:  # disabled — re-enable by restoring push/pull_request triggers
+
+jobs:
+  sql-lint:
+    runs-on: ubuntu-latest
+    name: Check SQL procedures for ENUM safety issues
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run ENUM safety test
+        run: python3 db/test_procedure_enum_safety.py
+
+      - name: Run with pytest (verbose on failure)
+        if: failure()
+        run: |
+          pip install pytest --quiet
+          python3 -m pytest db/test_procedure_enum_safety.py -v
