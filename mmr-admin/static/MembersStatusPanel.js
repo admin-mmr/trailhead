@@ -3,11 +3,12 @@
  * Handles lifetime/inactive status changes and reversions
  */
 
-window.MembersStatusPanel = () => {
+window.MembersStatusPanel = (props) => {
   const { useState, useEffect } = React;
+  const hideNav = props && props.hideNav;
 
   // Sub-tab: change-status | revert-status | mark-active
-  const [subTab, setSubTab] = useState('change-status');
+  const [subTab, setSubTab] = useState((props && props.initialSubTab) || 'change-status');
 
   // ──────────────────────────────────────────────────
   // Change Status state
@@ -229,15 +230,17 @@ window.MembersStatusPanel = () => {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 16 }}>Member Status Management</h2>
+      {!hideNav && <h2 style={{ marginBottom: 16 }}>Member Status Management</h2>}
 
-      {/* Sub-tabs */}
-      <div className="tabs" style={{ marginBottom: 24 }}>
-        <button className={`tab ${subTab === 'change-status' ? 'active' : ''}`} onClick={() => setSubTab('change-status')}>👤 Change Status</button>
-        <button className={`tab ${subTab === 'mark-active' ? 'active' : ''}`} onClick={() => setSubTab('mark-active')}>✅ Mark Active</button>
-        <button className={`tab ${subTab === 'revert-status' ? 'active' : ''}`} onClick={() => setSubTab('revert-status')}>↩ Revert Status</button>
-        <button className={`tab ${subTab === 'restore-log' ? 'active' : ''}`} onClick={() => setSubTab('restore-log')}>📋 Restore from Log</button>
-      </div>
+      {/* Sub-tabs (hidden when rendered embedded inside MembersPanel) */}
+      {!hideNav && (
+        <div className="tabs" style={{ marginBottom: 24 }}>
+          <button className={`tab ${subTab === 'change-status' ? 'active' : ''}`} onClick={() => setSubTab('change-status')}>👤 Change Status</button>
+          <button className={`tab ${subTab === 'mark-active' ? 'active' : ''}`} onClick={() => setSubTab('mark-active')}>✅ Mark Active</button>
+          <button className={`tab ${subTab === 'revert-status' ? 'active' : ''}`} onClick={() => setSubTab('revert-status')}>↩ Revert Status</button>
+          <button className={`tab ${subTab === 'restore-log' ? 'active' : ''}`} onClick={() => setSubTab('restore-log')}>📋 Restore from Log</button>
+        </div>
+      )}
 
       {/* Toast */}
       {statusToast && (

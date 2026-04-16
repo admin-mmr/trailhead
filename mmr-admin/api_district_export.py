@@ -66,19 +66,32 @@ def format_cell_value(col_key, row):
 
 def apply_status_filter(sql, params, status_filter):
     """
-    Apply membership status filter.
+    Apply membership status filter. Accepts a string, comma-separated string, or list.
     Valid values come from INFORMATION_SCHEMA (via get_member_status_options).
-    Values match the DB ENUM exactly — no translation or grouping.
     """
-    status_filter = (status_filter or '').strip()
-    if not status_filter:
-        return sql, params, None
-    _, valid_statuses = get_member_status_options()
-    if status_filter in valid_statuses:
-        sql += " AND Status = %s"
-        params.append(status_filter)
+    if isinstance(status_filter, list):
+        statuses = [s.strip() for s in status_filter if s.strip()]
     else:
-        return sql, params, f'Invalid status: {status_filter}'
+        status_filter = (status_filter or '').strip()
+        if not status_filter:
+            return sql, params, None
+        statuses = [s.strip() for s in status_filter.split(',') if s.strip()]
+
+    if not statuses:
+        return sql, params, None
+
+    _, valid_statuses = get_member_status_options()
+    invalid = [s for s in statuses if s not in valid_statuses]
+    if invalid:
+        return sql, params, f'Invalid status: {invalid[0]}'
+
+    if len(statuses) == 1:
+        sql += " AND Status = %s"
+        params.append(statuses[0])
+    else:
+        placeholders = ','.join(['%s'] * len(statuses))
+        sql += f" AND Status IN ({placeholders})"
+        params.extend(statuses)
     return sql, params, None
 
 
@@ -99,7 +112,11 @@ def export_csv():
         data = request.get_json()
         member_ids = data.get('memberIds', [])
         include_all = data.get('includeAll', False)
-        district = data.get('district', '')
+        # Support both legacy 'district' (string) and new 'districts' (list)
+        districts = data.get('districts', [])
+        if not districts and data.get('district'):
+            districts = [data['district']]
+        show_all = data.get('showAll', False)
         selected_columns = data.get('columns', [])
         filters = data.get('filters', {})
 
@@ -118,9 +135,28 @@ def export_csv():
         """
         params = []
 
-        if include_all and district:
-            sql += " AND District = %s"
-            params.append(district)
+        NULL_SENTINEL = '(No District)'
+        if include_all:
+            if show_all:
+                pass  # no district filter — export all members
+            elif districts:
+                has_null = NULL_SENTINEL in districts
+                real = [d for d in districts if d != NULL_SENTINEL]
+                if has_null and real:
+                    placeholders = ','.join(['%s'] * len(real))
+                    sql += f" AND (District IS NULL OR District = '' OR District IN ({placeholders}))"
+                    params.extend(real)
+                elif has_null:
+                    sql += " AND (District IS NULL OR District = '')"
+                elif len(real) == 1:
+                    sql += " AND District = %s"
+                    params.append(real[0])
+                else:
+                    placeholders = ','.join(['%s'] * len(real))
+                    sql += f" AND District IN ({placeholders})"
+                    params.extend(real)
+            else:
+                return jsonify({'success': False, 'error': 'No district selected'}), 400
         elif member_ids:
             placeholders = ','.join(['%s'] * len(member_ids))
             sql += f" AND MemberID IN ({placeholders})"
@@ -128,8 +164,8 @@ def export_csv():
         else:
             return jsonify({'success': False, 'error': 'No members selected'}), 400
 
-        # Apply filters
-        status_filter = filters.get('status', '').strip()
+        # Apply filters (support both 'statuses' list and legacy 'status' string)
+        status_filter = filters.get('statuses') or filters.get('status', '')
         sql, params, err = apply_status_filter(sql, params, status_filter)
         if err:
             return jsonify({'success': False, 'error': err}), 400
@@ -172,7 +208,7 @@ def export_all_districts():
     """
     try:
         data = request.get_json() or {}
-        status_filter = data.get('status', '').strip()
+        status_filter = data.get('statuses') or data.get('status', '')
         selected_columns = data.get('columns', [])
 
         column_labels = get_column_labels()
@@ -247,7 +283,7 @@ def export_all_sheet():
     """
     try:
         data = request.get_json() or {}
-        status_filter = data.get('status', '').strip()
+        status_filter = data.get('statuses') or data.get('status', '')
         selected_columns = data.get('columns', [])
 
         column_labels = get_column_labels()

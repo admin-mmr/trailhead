@@ -7,11 +7,12 @@
 window.DistrictMembersPanel = () => {
   const [districts, setDistricts] = React.useState([]);
   const [statusOptions, setStatusOptions] = React.useState([]);
-  const [selectedDistrict, setSelectedDistrict] = React.useState('');
+  const [selectedDistricts, setSelectedDistricts] = React.useState([]);
+  const [showAllDistricts, setShowAllDistricts] = React.useState(false);
   const [members, setMembers] = React.useState([]);
   const [selectedMembers, setSelectedMembers] = React.useState(new Set());
   const [loading, setLoading] = React.useState(false);
-  const [statusFilter, setStatusFilter] = React.useState('');
+  const [statusFilters, setStatusFilters] = React.useState([]);
   const [error, setError] = React.useState('');
   const [exportLoading, setExportLoading] = React.useState(false);
   const [sortBy, setSortBy] = React.useState('District');
@@ -90,13 +91,13 @@ window.DistrictMembersPanel = () => {
   }, []);
 
   React.useEffect(() => {
-    if (selectedDistrict) {
+    if (selectedDistricts.length > 0 || showAllDistricts) {
       fetchMembers();
     } else {
       setMembers([]);
       setSelectedMembers(new Set());
     }
-  }, [selectedDistrict, statusFilter, sortBy, sortOrder]);
+  }, [selectedDistricts, showAllDistricts, statusFilters, sortBy, sortOrder]);
 
   const fetchDistricts = async () => {
     const { api } = window.mmrUtils;
@@ -129,8 +130,10 @@ window.DistrictMembersPanel = () => {
     setError('');
     try {
       const params = new URLSearchParams();
-      if (selectedDistrict) params.append('district', selectedDistrict);
-      if (statusFilter) params.append('status', statusFilter);
+      if (!showAllDistricts && selectedDistricts.length > 0) {
+        params.append('district', selectedDistricts.join(','));
+      }
+      if (statusFilters.length > 0) params.append('status', statusFilters.join(','));
       params.append('sortBy', sortBy);
       params.append('sortOrder', sortOrder);
 
@@ -243,17 +246,21 @@ window.DistrictMembersPanel = () => {
 
   const handleExportCSV = (includeAll = false) => {
     const { exportToCSV } = window.DistrictExportHelpers;
-    exportToCSV(selectedMembers, includeAll, selectedDistrict, selectedColumns, statusFilter, setError, setExportLoading);
+    exportToCSV(selectedMembers, includeAll, selectedDistricts, showAllDistricts, selectedColumns, statusFilters, setError, setExportLoading);
   };
 
   const handleExportAllDistricts = () => {
     const { exportAllDistricts } = window.DistrictExportHelpers;
-    exportAllDistricts(statusFilter, selectedColumns, setError, setExportLoading);
+    exportAllDistricts(statusFilters, selectedColumns, setError, setExportLoading);
   };
 
   const handleExportAllAsSheet = () => {
     const { exportAllAsSheet } = window.DistrictExportHelpers;
-    exportAllAsSheet(statusFilter, selectedColumns, setError, setExportLoading);
+    // Always include District column in the all-sheet export
+    const colsForExport = selectedColumns.includes('District')
+      ? selectedColumns
+      : ['District', ...selectedColumns];
+    exportAllAsSheet(statusFilters, colsForExport, setError, setExportLoading);
   };
 
   return (
@@ -286,10 +293,14 @@ window.DistrictMembersPanel = () => {
       {window.DistrictMemberFilters && React.createElement(window.DistrictMemberFilters, {
         districts,
         statusOptions,
-        selectedDistrict,
-        statusFilter,
-        onDistrictChange: setSelectedDistrict,
-        onStatusChange: setStatusFilter,
+        selectedDistricts,
+        showAllDistricts,
+        statusFilters,
+        onDistrictChange: (newDistricts, newShowAll) => {
+          setSelectedDistricts(newDistricts);
+          setShowAllDistricts(newShowAll);
+        },
+        onStatusChange: setStatusFilters,
         loading,
         onRefresh: fetchMembers,
         onExportAllDistricts: handleExportAllDistricts,
@@ -304,7 +315,7 @@ window.DistrictMembersPanel = () => {
         defaultColumns,
       })}
 
-      {selectedDistrict && members.length > 0 && window.DistrictMemberTable && React.createElement(window.DistrictMemberTable, {
+      {(selectedDistricts.length > 0 || showAllDistricts) && members.length > 0 && window.DistrictMemberTable && React.createElement(window.DistrictMemberTable, {
         members,
         selectedMembers,
         sortBy,
@@ -320,7 +331,7 @@ window.DistrictMembersPanel = () => {
         exportLoading,
       })}
 
-      {selectedDistrict && !loading && members.length === 0 && (
+      {(selectedDistricts.length > 0 || showAllDistricts) && !loading && members.length === 0 && (
         <div
           style={{
             textAlign: 'center',
@@ -328,8 +339,8 @@ window.DistrictMembersPanel = () => {
             color: 'var(--text2)',
           }}
         >
-          <p style={{ fontSize: '14px', marginBottom: '8px' }}>No members found in this district</p>
-          {statusFilter && (
+          <p style={{ fontSize: '14px', marginBottom: '8px' }}>No members found</p>
+          {statusFilters.length > 0 && (
             <p style={{ fontSize: '12px' }}>
               Try changing the status filter
             </p>
@@ -337,7 +348,7 @@ window.DistrictMembersPanel = () => {
         </div>
       )}
 
-      {!selectedDistrict && (
+      {!showAllDistricts && selectedDistricts.length === 0 && (
         <div
           style={{
             textAlign: 'center',
@@ -346,7 +357,7 @@ window.DistrictMembersPanel = () => {
           }}
         >
           <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>
-            Select a district to view members
+            Select one or more districts to view members
           </p>
           <p style={{ fontSize: '13px' }}>
             {districts.length} districts available

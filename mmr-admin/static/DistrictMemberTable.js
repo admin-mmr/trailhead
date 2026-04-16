@@ -18,6 +18,30 @@ const DistrictMemberTable = ({
   onExportAll,
   exportLoading
 }) => {
+  const tableRef = React.useRef(null);
+  const topScrollRef = React.useRef(null);
+  const [tableScrollWidth, setTableScrollWidth] = React.useState(0);
+
+  // Sync scroll positions between top scrollbar and table
+  const onTopScroll = () => {
+    if (tableRef.current && topScrollRef.current) {
+      tableRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+  };
+  const onTableScroll = () => {
+    if (tableRef.current && topScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableRef.current.scrollLeft;
+    }
+  };
+
+  // Update dummy width when columns change
+  React.useEffect(() => {
+    if (tableRef.current) {
+      setTableScrollWidth(tableRef.current.scrollWidth);
+    }
+  }, [selectedColumns, members]);
+
+  const dummyWidth = tableScrollWidth || 2000;
   const formatDate = (dateStr, dateOnly = false) => {
     if (!dateStr) return '—';
     // Append T00:00:00 to date-only strings so JS parses as local time, not UTC midnight
@@ -165,8 +189,19 @@ const DistrictMemberTable = ({
         </div>
       </div>
 
+      {/* Top scrollbar (synchronized with table) */}
+      <div
+        ref={topScrollRef}
+        onScroll={onTopScroll}
+        style={{ overflowX: 'auto', overflowY: 'hidden', height: '14px' }}
+      >
+        <div style={{ width: `${dummyWidth}px`, height: '1px' }} />
+      </div>
+
       {/* Table with horizontal scroll */}
       <div
+        ref={tableRef}
+        onScroll={onTableScroll}
         style={{
           overflowX: 'auto',
           overflowY: 'visible',

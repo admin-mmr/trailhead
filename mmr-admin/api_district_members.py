@@ -37,8 +37,8 @@ def get_district_members():
     - limit: number of records (default 500, max 5000)
     """
     try:
-        district = request.args.get('district', '').strip()
-        status = request.args.get('status', '').strip()
+        district_raw = request.args.get('district', '').strip()
+        status_raw = request.args.get('status', '').strip()
         sort_by = request.args.get('sortBy', 'District').strip()
         sort_order = request.args.get('sortOrder', 'asc').strip().lower()
         limit = min(int(request.args.get('limit', 500)), 5000)
@@ -77,17 +77,40 @@ def get_district_members():
         """
         params = []
 
-        if district:
-            sql += " AND District = %s"
-            params.append(district)
+        # Support comma-separated districts (multi-select); '(No District)' → NULL/blank
+        NULL_SENTINEL = '(No District)'
+        if district_raw:
+            districts = [d.strip() for d in district_raw.split(',') if d.strip()]
+            has_null = NULL_SENTINEL in districts
+            real = [d for d in districts if d != NULL_SENTINEL]
+            if has_null and real:
+                placeholders = ','.join(['%s'] * len(real))
+                sql += f" AND (District IS NULL OR District = '' OR District IN ({placeholders}))"
+                params.extend(real)
+            elif has_null:
+                sql += " AND (District IS NULL OR District = '')"
+            elif len(real) == 1:
+                sql += " AND District = %s"
+                params.append(real[0])
+            elif len(real) > 1:
+                placeholders = ','.join(['%s'] * len(real))
+                sql += f" AND District IN ({placeholders})"
+                params.extend(real)
 
-        if status:
+        # Support comma-separated statuses (multi-select)
+        if status_raw:
+            statuses = [s.strip() for s in status_raw.split(',') if s.strip()]
             _, valid_statuses = get_member_status_options()
-            if status in valid_statuses:
+            invalid = [s for s in statuses if s not in valid_statuses]
+            if invalid:
+                return jsonify({'success': False, 'error': f'Invalid status: {invalid[0]}'}), 400
+            if len(statuses) == 1:
                 sql += " AND Status = %s"
-                params.append(status)
+                params.append(statuses[0])
             else:
-                return jsonify({'success': False, 'error': f'Invalid status: {status}'}), 400
+                placeholders = ','.join(['%s'] * len(statuses))
+                sql += f" AND Status IN ({placeholders})"
+                params.extend(statuses)
 
         # Build ORDER BY safely
         if sort_by == 'Name':
@@ -133,6 +156,13 @@ def get_districts():
 
         rows = query(sql)
         districts = [row['District'] for row in rows]
+
+        # Check if any members have NULL/blank district and add sentinel
+        null_count_rows = query(
+            "SELECT COUNT(*) as cnt FROM members WHERE District IS NULL OR District = ''"
+        )
+        if null_count_rows and null_count_rows[0]['cnt'] > 0:
+            districts.append('(No District)')
 
         return jsonify({
             'success': True,

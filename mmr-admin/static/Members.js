@@ -357,7 +357,11 @@ const MembersPanel = () => {
         <button className={`tab ${subTab === 'update-family' ? 'active' : ''}`} onClick={() => setSubTab('update-family')}>Update Family</button>
         <button className={`tab ${subTab === 'upgrade-to-family' ? 'active' : ''}`} onClick={() => setSubTab('upgrade-to-family')}>Upgrade to Family</button>
         <button className={`tab ${subTab === 'change-district' ? 'active' : ''}`} onClick={() => setSubTab('change-district')}>Change District</button>
+        <button className={`tab ${subTab === 'change-status' ? 'active' : ''}`} onClick={() => setSubTab('change-status')}>Change Status</button>
+        <button className={`tab ${subTab === 'mark-active' ? 'active' : ''}`} onClick={() => setSubTab('mark-active')}>Mark Active</button>
         <button className={`tab ${subTab === 'mark-unused' ? 'active' : ''}`} onClick={() => setSubTab('mark-unused')}>Mark as Unused</button>
+        <button className={`tab ${subTab === 'revert-status' ? 'active' : ''}`} onClick={() => setSubTab('revert-status')}>Revert Status</button>
+        <button className={`tab ${subTab === 'restore-log' ? 'active' : ''}`} onClick={() => setSubTab('restore-log')}>Restore from Log</button>
       </div>
 
       {/* Toast */}
@@ -883,6 +887,16 @@ const MembersPanel = () => {
           )}
         </div>
       )}
+      {/* ── Status operations (delegated to MembersStatusPanel) ── */}
+      {['change-status', 'mark-active', 'revert-status', 'restore-log'].includes(subTab) && (
+        <div key={subTab}>
+          {window.MembersStatusPanel && React.createElement(window.MembersStatusPanel, {
+            initialSubTab: subTab,
+            hideNav: true,
+          })}
+        </div>
+      )}
+
       {/* ── Mark as Unused ── */}
       {subTab === 'mark-unused' && (
         <div className="panel" style={{ padding: 16 }}>

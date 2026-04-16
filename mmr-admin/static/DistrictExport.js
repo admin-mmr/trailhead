@@ -4,7 +4,7 @@
  */
 
 window.DistrictExportHelpers = (() => {
-  const exportToCSV = async (selectedMembers, includeAll, selectedDistrict, selectedColumns, statusFilter, setError, setExportLoading) => {
+  const exportToCSV = async (selectedMembers, includeAll, selectedDistricts, showAllDistricts, selectedColumns, statusFilters, setError, setExportLoading) => {
     setExportLoading(true);
     try {
       const response = await fetch('/api/district/export-csv', {
@@ -13,9 +13,10 @@ window.DistrictExportHelpers = (() => {
         body: JSON.stringify({
           memberIds: Array.from(selectedMembers),
           includeAll,
-          district: selectedDistrict,
+          districts: selectedDistricts,
+          showAll: showAllDistricts,
           columns: selectedColumns,
-          filters: { status: statusFilter },
+          filters: { statuses: statusFilters },
         }),
       });
 
@@ -40,14 +41,14 @@ window.DistrictExportHelpers = (() => {
     }
   };
 
-  const exportAllDistricts = async (statusFilter, selectedColumns, setError, setExportLoading) => {
+  const exportAllDistricts = async (statusFilters, selectedColumns, setError, setExportLoading) => {
     setExportLoading(true);
     try {
       const response = await fetch('/api/district/export-all-districts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: statusFilter,
+          statuses: statusFilters,
           columns: selectedColumns,
         }),
       });
@@ -73,14 +74,14 @@ window.DistrictExportHelpers = (() => {
     }
   };
 
-  const exportAllAsSheet = async (statusFilter, selectedColumns, setError, setExportLoading) => {
+  const exportAllAsSheet = async (statusFilters, selectedColumns, setError, setExportLoading) => {
     setExportLoading(true);
     try {
       const response = await fetch('/api/district/export-all-sheet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: statusFilter,
+          statuses: statusFilters,
           columns: selectedColumns,
         }),
       });
