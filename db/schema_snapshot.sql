@@ -643,7 +643,9 @@ PROCEDURE	sp_clear_transaction		BEGIN
     DECLARE cur_members CURSOR FOR
         SELECT member_id, min_created_at FROM tmp_tx_members;
 
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+    -- Fix V023: handler sets BOTH done and done2 so member_loop exits correctly
+    -- when tmp_tx_members is empty (no membership payments for the transaction).
+    DECLARE CONTINUE HANDLER FOR NOT FOUND BEGIN SET done = 1; SET done2 = 1; END;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
@@ -769,8 +771,6 @@ PROCEDURE	sp_clear_transaction		BEGIN
             ORDER BY LoggingTime DESC
             LIMIT 1;
 
-            -- Guard: member_log.Status is varchar(50); members.Status is ENUM.
-            -- Sanitize to a valid ENUM value before writing (V021 fix).
             SET v_prev_status = CASE
                 WHEN v_prev_status IN ('active','expired','inactive','pending','pending_upgrade','lifetime')
                 THEN v_prev_status
