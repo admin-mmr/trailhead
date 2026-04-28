@@ -30,6 +30,7 @@
     const [allMembers, setAllMembers] = useState([]);
     const [membersLoaded, setMembersLoaded] = useState(false);
     const [searchResults, setSearchResults] = useState([]);
+    const [extraIds, setExtraIds] = useState([]); // IDs added via search, not in memo
     const popoverRef = useRef(null);
     const e = React.createElement;
 
@@ -72,9 +73,14 @@
     }, [memberId]);
 
     const handleSelectMember = (member) => {
-      setMemberId(member.MemberID);
+      const newId = member.MemberID;
+      setMemberId(newId);
       setSearchQuery('');
       setSearchResults([]);
+      // Add to dropdown if not already present from memo or previous searches
+      if (!memoIds.includes(newId) && !extraIds.includes(newId)) {
+        setExtraIds(prev => [...prev, newId]);
+      }
     };
 
     const handleApprove = async () => {
@@ -158,21 +164,24 @@
       ),
       e('div', { style: { marginBottom: 8 } },
         e('label', { style: { fontSize: 12, color: 'var(--text2)', display: 'block', marginBottom: 4 } }, 'Member ID'),
-        memoIds.length > 0
-          ? e('select', {
-              value: memberId,
-              onChange: ev => setMemberId(ev.target.value),
-              style: { width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13 },
-            },
-            memoIds.map(id => e('option', { key: id, value: id }, id)),
-            e('option', { value: '' }, '— Enter manually —'),
-          )
-          : null,
-        (memoIds.length === 0 || memberId === '') && e('input', {
+        (() => {
+          const allIds = [...memoIds, ...extraIds];
+          return allIds.length > 0
+            ? e('select', {
+                value: memberId,
+                onChange: ev => setMemberId(ev.target.value),
+                style: { width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13 },
+              },
+              allIds.map(id => e('option', { key: id, value: id }, id)),
+              e('option', { value: '' }, '— Enter manually —'),
+            )
+            : null;
+        })(),
+        (memoIds.length === 0 && extraIds.length === 0 || memberId === '') && e('input', {
           placeholder: 'e.g. A0123',
-          value: memoIds.length === 0 ? memberId : '',
+          value: (memoIds.length === 0 && extraIds.length === 0) ? memberId : '',
           onChange: ev => setMemberId(ev.target.value),
-          style: { width: '100%', marginTop: memoIds.length > 0 ? 6 : 0, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13, boxSizing: 'border-box' },
+          style: { width: '100%', marginTop: (memoIds.length > 0 || extraIds.length > 0) ? 6 : 0, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '6px 8px', borderRadius: 'var(--radius)', fontSize: 13, boxSizing: 'border-box' },
         }),
         memberLoading && e('div', { style: { fontSize: 12, color: 'var(--text2)', marginTop: 8 } }, '⏳ Loading member…'),
         memberData && !memberLoading && e('div', {

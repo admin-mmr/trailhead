@@ -18,14 +18,9 @@ window.DistrictMembersPanel = () => {
     fetchDistricts();
   }, []);
 
-  // Fetch members when district changes
+  // Fetch members on mount and whenever filters change
   React.useEffect(() => {
-    if (selectedDistrict) {
-      fetchMembers();
-    } else {
-      setMembers([]);
-      setSelectedMembers(new Set());
-    }
+    fetchMembers();
   }, [selectedDistrict, statusFilter]);
 
   const fetchDistricts = async () => {
@@ -49,7 +44,7 @@ window.DistrictMembersPanel = () => {
     try {
       const params = new URLSearchParams();
       if (selectedDistrict) params.append('district', selectedDistrict);
-      if (statusFilter) params.append('status', statusFilter);
+      if (statusFilter)     params.append('status', statusFilter);
 
       const response = await fetch(`/api/district/list?${params.toString()}`);
       const data = await response.json();
@@ -139,7 +134,7 @@ window.DistrictMembersPanel = () => {
           Members by District
         </h2>
         <p style={{ color: 'var(--text2)', margin: '0', fontSize: '14px' }}>
-          Select a district to view members. Check boxes to select for export.
+          Filter by district or status. Check boxes to select for export.
         </p>
       </div>
 
@@ -180,7 +175,7 @@ window.DistrictMembersPanel = () => {
               textTransform: 'uppercase',
             }}
           >
-            District *
+            District
           </label>
           <select
             value={selectedDistrict}
@@ -239,31 +234,29 @@ window.DistrictMembersPanel = () => {
           </select>
         </div>
 
-        {selectedDistrict && (
-          <div style={{ flex: 1, minWidth: '200px' }}>
-            <button
-              onClick={fetchMembers}
-              disabled={loading}
-              style={{
-                padding: '8px 16px',
-                background: 'var(--accent)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 'var(--radius)',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-                opacity: loading ? 0.6 : 1,
-              }}
-            >
-              {loading ? 'Loading...' : 'Refresh'}
-            </button>
-          </div>
-        )}
+        <div style={{ flex: 1, minWidth: '200px' }}>
+          <button
+            onClick={fetchMembers}
+            disabled={loading}
+            style={{
+              padding: '8px 16px',
+              background: 'var(--accent)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 'var(--radius)',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Members Table */}
-      {selectedDistrict && members.length > 0 && (
+      {members.length > 0 && (
         <div
           style={{
             border: '1px solid var(--border)',
@@ -524,7 +517,7 @@ window.DistrictMembersPanel = () => {
         </div>
       )}
 
-      {selectedDistrict && !loading && members.length === 0 && (
+      {!loading && members.length === 0 && (
         <div
           style={{
             textAlign: 'center',
@@ -532,29 +525,10 @@ window.DistrictMembersPanel = () => {
             color: 'var(--text2)',
           }}
         >
-          <p style={{ fontSize: '14px', marginBottom: '8px' }}>No members found in this district</p>
-          {statusFilter && (
-            <p style={{ fontSize: '12px' }}>
-              Try changing the status filter
-            </p>
+          <p style={{ fontSize: '14px', marginBottom: '8px' }}>No members found</p>
+          {(selectedDistrict || statusFilter) && (
+            <p style={{ fontSize: '12px' }}>Try changing the filters</p>
           )}
-        </div>
-      )}
-
-      {!selectedDistrict && (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '60px 20px',
-            color: 'var(--text2)',
-          }}
-        >
-          <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>
-            Select a district to view members
-          </p>
-          <p style={{ fontSize: '13px' }}>
-            {districts.length} districts available
-          </p>
         </div>
       )}
     </div>

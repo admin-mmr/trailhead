@@ -27,7 +27,7 @@ from flask import Blueprint, request, session
 from auth import login_required, require_role
 from db import query, execute
 from helpers import json_response, handle_api_errors
-from payment_helpers import get_member_by_id, get_renewal_period, parse_member_id_from_memo
+from payment_helpers import get_member_by_id, get_renewal_period, parse_member_id_from_memo, is_within_renewal_period
 from payment_matching import (
     fuzzy_select_transaction_to_submission,
     fuzzy_match_transaction_to_member,

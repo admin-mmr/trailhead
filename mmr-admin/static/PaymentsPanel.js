@@ -21,11 +21,10 @@
 /* global React, useState, useEffect, useCallback, useRef, api */
 
 const PaymentsPanel = () => {
-  const { MemberTooltip, StatsCards, PendingSubmissionsTable, GmailTable, PaymentHistoryTable, GmailQuickApprovePopover } = window;
+  const { MemberTooltip, PendingSubmissionsTable, GmailTable, PaymentHistoryTable, GmailQuickApprovePopover } = window;
   const { _memberCache } = window;
   const e = React.createElement;
 
-  const [stats,          setStats]          = useState({});
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
   const [unmatchedGmail, setUnmatchedGmail] = useState([]);
   const [paymentHistory, setPaymentHistory] = useState([]);
@@ -43,8 +42,13 @@ const PaymentsPanel = () => {
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSubmissions, setShowSubmissions] = useState(true);
-  const [showDashboard, setShowDashboard] = useState(true);
   const [showHistory, setShowHistory] = useState(true);
+
+  // Gmail sync bar state
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [syncJobId, setSyncJobId]       = useState(null);
+  const [syncStatus, setSyncStatus]     = useState(null); // null | 'running' | 'completed' | 'error'
+  const syncPollRef = useRef(null);
   const [activeGmailPopover, setActiveGmailPopover] = useState(null);
   const [popoverAnchorRect, setPopoverAnchorRect] = useState(null);
   const [gmailSearch, setGmailSearch] = useState('');
@@ -73,6 +77,51 @@ const PaymentsPanel = () => {
   }, []);
 
   const tooltipHandlers = { onHover: handleMemberHover, onLeave: handleMemberLeave };
+
+  // ── Gmail sync bar helpers ────────────────────────────────────────────────
+  const fetchLastSync = useCallback(() => {
+    api('/api/sync/jobs').then(r => {
+      if (!r || !Array.isArray(r.jobs)) return;
+      const last = r.jobs
+        .filter(j => j.operation === 'import_transactions' && j.status === 'completed' && j.completed_at)
+        .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))[0];
+      if (last) setLastSyncTime(last.completed_at);
+    });
+  }, []);
+
+  const pollSyncJob = useCallback((jobId) => {
+    if (syncPollRef.current) clearInterval(syncPollRef.current);
+    syncPollRef.current = setInterval(() => {
+      api(`/api/sync/status/${jobId}`).then(r => {
+        const status = r && r.job && r.job.status;
+        if (status === 'completed' || status === 'error') {
+          clearInterval(syncPollRef.current);
+          syncPollRef.current = null;
+          setSyncStatus(status);
+          if (status === 'completed') {
+            fetchLastSync();
+            loadAll();
+          }
+          setTimeout(() => setSyncStatus(null), 4000);
+        }
+      });
+    }, 2000);
+  }, [fetchLastSync]);
+
+  const handleSyncNow = useCallback(() => {
+    setSyncStatus('running');
+    api('/api/sync/import/transactions', { method: 'POST' }).then(r => {
+      if (r && r.job_id) {
+        setSyncJobId(r.job_id);
+        pollSyncJob(r.job_id);
+      } else {
+        setSyncStatus('error');
+        setTimeout(() => setSyncStatus(null), 4000);
+      }
+    });
+  }, [pollSyncJob]);
+
+  useEffect(() => { fetchLastSync(); return () => { if (syncPollRef.current) clearInterval(syncPollRef.current); }; }, [fetchLastSync]);
 
   const handleSubmissionFocus = useCallback((submissionId) => {
     if (focusedSubmissionId === submissionId) {
@@ -140,12 +189,6 @@ const PaymentsPanel = () => {
   }, [loadGmail]);
 
   const loadAll = useCallback(() => {
-    api('/api/payments/dashboard').then(r => {
-      if (r.ok) {
-        const { ok, ...stats } = r;
-        setStats(stats);
-      }
-    });
     api('/api/payments/pending-submissions').then(r => {
       const submissions = Array.isArray(r.submissions) ? r.submissions : [];
       setPendingSubmissions(submissions);
@@ -185,6 +228,19 @@ const PaymentsPanel = () => {
     });
   }, []);
 
+  // Gmail sync status bar
+  const syncBarColor = syncStatus === 'completed' ? 'var(--green, #22c55e)' : syncStatus === 'error' ? '#dc2626' : 'var(--accent)';
+  const syncBarLabel = syncStatus === 'running'   ? '⏳ Syncing…'
+                     : syncStatus === 'completed' ? '✓ Sync complete'
+                     : syncStatus === 'error'     ? '✗ Sync failed'
+                     : 'Sync Now';
+
+  const fmtSyncTime = (iso) => {
+    if (!iso) return 'Never';
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
+
   return e('div', null,
     toast && e('div', {
       style: { position: 'fixed', top: 16, right: 16, zIndex: 200, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: '10px 16px', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }
@@ -192,18 +248,33 @@ const PaymentsPanel = () => {
 
     e(MemberTooltip, { memberId: tooltip.memberId, anchorRect: tooltip.rect, data: tooltip.data }),
 
-    e('div', { style: { marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-      e('h3', { style: { fontSize: 14, fontWeight: 600, margin: 0 } }, 'Dashboard'),
+    // Gmail sync bar
+    e('div', {
+      style: {
+        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+        padding: '8px 14px', borderRadius: 'var(--radius)',
+        background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 13,
+      }
+    },
+      e('span', { style: { color: 'var(--text2)' } }, '📥 Gmail Transactions'),
+      e('span', { style: { color: 'var(--text2)', fontSize: 12 } },
+        'Last imported: ', e('strong', { style: { color: 'var(--text)' } }, fmtSyncTime(lastSyncTime)),
+      ),
       e('button', {
-        className: 'btn btn-sm btn-outline',
-        onClick: () => setShowDashboard(v => !v),
-        style: { fontSize: 11, padding: '2px 7px' },
-      }, showDashboard ? '▼ Collapse' : '▶ Expand'),
+        className: 'btn btn-sm',
+        onClick: handleSyncNow,
+        disabled: syncStatus === 'running',
+        style: {
+          marginLeft: 'auto', fontSize: 12, fontWeight: 600,
+          background: syncStatus ? syncBarColor : 'var(--accent)',
+          color: '#fff', border: 'none', borderRadius: 'var(--radius)',
+          padding: '5px 14px', cursor: syncStatus === 'running' ? 'not-allowed' : 'pointer',
+          opacity: syncStatus === 'running' ? 0.7 : 1,
+        },
+      }, syncBarLabel),
     ),
 
-    showDashboard && e(StatsCards, { stats, onAutoguess: handleAutoguess, autoguessLoading: loading }),
-
-    e('div', { className: 'payments-layout', style: { display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 16 } },
+    e('div', { className: 'payments-layout', style: { display: 'flex', gap: 16, alignItems: 'flex-start' } },
 
       // LEFT: Submissions panel
       showSubmissions && e('div', {
