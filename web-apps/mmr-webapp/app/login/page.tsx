@@ -83,6 +83,16 @@ function LoginContent() {
   const [showPass,    setShowPass]    = useState(false)
   const [loading,     setLoading]     = useState(false)
   const [oauthLoading,setOauthLoading]= useState<string | null>(null)
+  const [isWebView,   setIsWebView]   = useState(false)
+
+  useEffect(() => {
+    const ua = navigator.userAgent
+    const webview =
+      /FBAN|FBAV|Instagram|Twitter|Line|KAKAOTALK/.test(ua) ||
+      (ua.includes('Android') && /; wv\)/.test(ua)) ||
+      (/iPhone|iPad/.test(ua) && !/Safari/.test(ua))
+    setIsWebView(webview)
+  }, [])
   const [error,       setError]       = useState(() => {
     if (!urlError) return ''
     if (urlError === 'CredentialsSignin')
@@ -157,6 +167,20 @@ function LoginContent() {
 
         {/* Card */}
         <div className="bg-white rounded-3xl shadow-2xl p-8 animate-fade-in space-y-6">
+
+          {/* ── WebView warning ───────────────────────────────────────────── */}
+          {isWebView && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+              <p className="font-semibold">
+                ⚠️ {lang === 'zh' ? '请在浏览器中打开' : 'Open in a browser'}
+              </p>
+              <p className="mt-1 text-xs text-amber-700">
+                {lang === 'zh'
+                  ? 'Google / Microsoft 登录在应用内浏览器中不可用。请复制链接，在 Chrome 或 Safari 中打开后再登录。'
+                  : 'Google / Microsoft sign-in is blocked in in-app browsers (Gmail, Instagram, etc.). Copy this link and open it in Chrome or Safari.'}
+              </p>
+            </div>
+          )}
 
           {/* ── Social login ──────────────────────────────────────────────── */}
           <div className="space-y-2.5">
