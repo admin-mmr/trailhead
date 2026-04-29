@@ -1,6 +1,7 @@
 /**
  * District Member Filters Component
- * Multi-select district + status dropdowns, column visibility, export buttons
+ * Multi-select district + status dropdowns, global search, type/gender pills,
+ * expiration date range, column visibility, and export buttons.
  */
 
 /** Reusable multi-select dropdown with checkboxes */
@@ -65,7 +66,7 @@ const MultiSelectDropdown = ({ label, options, selected, showAll, onToggleAll, o
           {options.map((opt) => {
             const val = opt.value !== undefined ? opt.value : opt;
             const lbl = opt.label || opt;
-            if (!val) return null; // skip empty-value "All Statuses" option
+            if (!val) return null;
             return (
               <label key={val} style={{
                 display: 'flex', alignItems: 'center', padding: '6px 12px',
@@ -87,6 +88,27 @@ const MultiSelectDropdown = ({ label, options, selected, showAll, onToggleAll, o
   );
 };
 
+/** Compact pill toggle button */
+const PillToggle = ({ label, active, onClick }) => (
+  <button
+    onClick={onClick}
+    style={{
+      padding: '5px 12px',
+      borderRadius: '999px',
+      border: active ? '1px solid var(--accent)' : '1px solid var(--border)',
+      background: active ? 'var(--accent)' : 'transparent',
+      color: active ? '#fff' : 'var(--text2)',
+      fontSize: '12px',
+      fontWeight: active ? '600' : '400',
+      cursor: 'pointer',
+      transition: 'all 0.15s',
+      whiteSpace: 'nowrap',
+    }}
+  >
+    {label}
+  </button>
+);
+
 const DistrictMemberFilters = ({
   districts,
   statusOptions,
@@ -107,7 +129,32 @@ const DistrictMemberFilters = ({
   showColumnSelector,
   onShowColumnSelector,
   defaultColumns,
+  // Search & filter props
+  globalSearch,
+  onGlobalSearch,
+  typeFilters,
+  onTypeFiltersChange,
+  genderFilters,
+  onGenderFiltersChange,
+  expirationFrom,
+  onExpirationFromChange,
+  expirationTo,
+  onExpirationToChange,
+  onClearAllSearchFilters,
+  activeSearchFilterCount,
+  members,
 }) => {
+  // Derive type and gender options from loaded members
+  const typeOptions = React.useMemo(() => {
+    const types = new Set((members || []).map(m => m.Type).filter(Boolean));
+    return [...types].sort();
+  }, [members]);
+
+  const genderOptions = React.useMemo(() => {
+    const genders = new Set((members || []).map(m => m.Gender).filter(Boolean));
+    return [...genders].sort();
+  }, [members]);
+
   const handleToggleAllDistricts = () => {
     onDistrictChange([], true);
   };
@@ -129,6 +176,18 @@ const DistrictMemberFilters = ({
     onStatusChange(isSelected ? statusFilters.filter(s => s !== val) : [...statusFilters, val]);
   };
 
+  const toggleType = (val) => {
+    onTypeFiltersChange(typeFilters.includes(val)
+      ? typeFilters.filter(t => t !== val)
+      : [...typeFilters, val]);
+  };
+
+  const toggleGender = (val) => {
+    onGenderFiltersChange(genderFilters.includes(val)
+      ? genderFilters.filter(g => g !== val)
+      : [...genderFilters, val]);
+  };
+
   const statusOpts = statusOptions && statusOptions.length > 0
     ? statusOptions.filter(o => o.value !== '')
     : [
@@ -142,11 +201,23 @@ const DistrictMemberFilters = ({
 
   const hasSelection = selectedDistricts.length > 0 || showAllDistricts;
 
+  const labelStyle = {
+    display: 'block', fontSize: '12px', fontWeight: '600',
+    marginBottom: '6px', color: 'var(--text2)', textTransform: 'uppercase',
+  };
+
+  const dateInputStyle = {
+    padding: '7px 10px',
+    border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+    background: 'var(--input-bg)', color: 'var(--text)', fontSize: '13px',
+    cursor: 'pointer', width: '140px',
+  };
+
   return (
     <>
-      {/* Filters Row */}
+      {/* ── Row 1: District + Status dropdowns + action buttons ── */}
       <div style={{
-        display: 'flex', gap: '16px', marginBottom: '20px',
+        display: 'flex', gap: '16px', marginBottom: '16px',
         alignItems: 'flex-end', flexWrap: 'wrap',
       }}>
         {React.createElement(MultiSelectDropdown, {
@@ -211,7 +282,137 @@ const DistrictMemberFilters = ({
         </div>
       </div>
 
-      {/* Column Selector */}
+      {/* ── Row 2: Global search bar ── */}
+      <div style={{ marginBottom: '14px', position: 'relative' }}>
+        <div style={{ position: 'relative' }}>
+          <span style={{
+            position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+            color: 'var(--text2)', fontSize: '15px', pointerEvents: 'none',
+          }}>
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Search by name, email, member ID, WeChat, district…"
+            value={globalSearch}
+            onChange={e => onGlobalSearch(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '9px 12px 9px 36px',
+              border: globalSearch ? '1px solid var(--accent)' : '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              background: 'var(--input-bg)',
+              color: 'var(--text)',
+              fontSize: '14px',
+              boxSizing: 'border-box',
+              outline: 'none',
+              transition: 'border-color 0.15s',
+            }}
+          />
+          {globalSearch && (
+            <button
+              onClick={() => onGlobalSearch('')}
+              style={{
+                position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--text2)', fontSize: '16px', padding: '2px 4px',
+              }}
+              title="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Row 3: Type pills + Gender pills + Expiration range + Clear all ── */}
+      <div style={{
+        display: 'flex', gap: '20px', marginBottom: '16px',
+        alignItems: 'flex-end', flexWrap: 'wrap',
+      }}>
+
+        {/* Type pills */}
+        {typeOptions.length > 0 && (
+          <div>
+            <label style={labelStyle}>Type</label>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {typeOptions.map(t => React.createElement(PillToggle, {
+                key: t, label: t,
+                active: typeFilters.includes(t),
+                onClick: () => toggleType(t),
+              }))}
+            </div>
+          </div>
+        )}
+
+        {/* Gender pills */}
+        {genderOptions.length > 0 && (
+          <div>
+            <label style={labelStyle}>Gender</label>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {genderOptions.map(g => React.createElement(PillToggle, {
+                key: g, label: g,
+                active: genderFilters.includes(g),
+                onClick: () => toggleGender(g),
+              }))}
+            </div>
+          </div>
+        )}
+
+        {/* Expiration date range */}
+        <div>
+          <label style={labelStyle}>Expiration From</label>
+          <input
+            type="date"
+            value={expirationFrom}
+            onChange={e => onExpirationFromChange(e.target.value)}
+            style={dateInputStyle}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>To</label>
+          <input
+            type="date"
+            value={expirationTo}
+            onChange={e => onExpirationToChange(e.target.value)}
+            style={dateInputStyle}
+          />
+        </div>
+
+        {/* Clear all filters */}
+        {activeSearchFilterCount > 0 && (
+          <div>
+            <button
+              onClick={onClearAllSearchFilters}
+              style={{
+                padding: '7px 14px',
+                background: 'rgba(220, 38, 38, 0.08)',
+                color: '#dc2626',
+                border: '1px solid rgba(220, 38, 38, 0.3)',
+                borderRadius: 'var(--radius)',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span>✕ Clear filters</span>
+              <span style={{
+                background: '#dc2626', color: '#fff',
+                borderRadius: '999px', fontSize: '11px', fontWeight: '700',
+                padding: '1px 6px',
+              }}>
+                {activeSearchFilterCount}
+              </span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Column Selector ── */}
       {hasSelection && (
         <div style={{ marginBottom: '20px', position: 'relative' }}>
           <button

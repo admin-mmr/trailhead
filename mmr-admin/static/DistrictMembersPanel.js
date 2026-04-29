@@ -20,6 +20,13 @@ window.DistrictMembersPanel = () => {
   const [showColumnSelector, setShowColumnSelector] = React.useState(false);
   const [columnFilters, setColumnFilters] = React.useState({});
 
+  // --- Search & filter state (client-side, applied on top of API results) ---
+  const [globalSearch, setGlobalSearch] = React.useState('');
+  const [typeFilters, setTypeFilters] = React.useState([]);
+  const [genderFilters, setGenderFilters] = React.useState([]);
+  const [expirationFrom, setExpirationFrom] = React.useState('');
+  const [expirationTo, setExpirationTo] = React.useState('');
+
   const availableColumns = [
     { key: 'District', label: 'District' },
     { key: 'MemberID', label: 'Member ID' },
@@ -65,7 +72,6 @@ window.DistrictMembersPanel = () => {
       const saved = localStorage.getItem('mmr_sort_preferences');
       if (saved) {
         const prefs = JSON.parse(saved);
-        // Migrate stale column keys that no longer exist in the DB
         const legacyKeys = new Set(['LastLoginDate', 'LastLogin']);
         const resolvedSortBy = legacyKeys.has(prefs.sortBy) ? 'District' : (prefs.sortBy || 'District');
         setSortBy(resolvedSortBy);
@@ -119,9 +125,7 @@ window.DistrictMembersPanel = () => {
     try {
       const data = await api('/api/district/member-status-values');
       if (data.success) setStatusOptions(data.options);
-    } catch (_) {
-      // Non-fatal: filter will be empty but page still works
-    }
+    } catch (_) {}
   };
 
   const fetchMembers = async () => {
@@ -151,6 +155,62 @@ window.DistrictMembersPanel = () => {
     }
   };
 
+  // ---- Client-side filtering (applied on top of API result) ----
+
+  const clientFilteredMembers = React.useMemo(() => {
+    return members.filter(member => {
+      // Global search: name, email, memberID, wechat, district
+      if (globalSearch) {
+        const q = globalSearch.toLowerCase();
+        const fullName = `${member.FirstName || ''} ${member.LastName || ''}`.toLowerCase();
+        const searchable = [
+          fullName,
+          (member.FirstName || '').toLowerCase(),
+          (member.LastName || '').toLowerCase(),
+          (member.Email || '').toLowerCase(),
+          (member.MemberID || '').toLowerCase(),
+          (member.WeChatID || '').toLowerCase(),
+          (member.District || '').toLowerCase(),
+        ];
+        if (!searchable.some(v => v.includes(q))) return false;
+      }
+      // Type filter
+      if (typeFilters.length > 0 && !typeFilters.includes(member.Type)) return false;
+      // Gender filter
+      if (genderFilters.length > 0 && !genderFilters.includes(member.Gender)) return false;
+      // Expiration date range (compare raw YYYY-MM-DD strings)
+      if (expirationFrom || expirationTo) {
+        const raw = member.Expiration ? String(member.Expiration).substring(0, 10) : null;
+        if (!raw) return false; // no expiration date — exclude when range is active
+        if (expirationFrom && raw < expirationFrom) return false;
+        if (expirationTo && raw > expirationTo) return false;
+      }
+      return true;
+    });
+  }, [members, globalSearch, typeFilters, genderFilters, expirationFrom, expirationTo]);
+
+  // Active search filter count (for badge in Filters component)
+  const activeSearchFilterCount = React.useMemo(() => {
+    let count = 0;
+    if (globalSearch) count++;
+    if (typeFilters.length > 0) count++;
+    if (genderFilters.length > 0) count++;
+    if (expirationFrom || expirationTo) count++;
+    if (Object.values(columnFilters).some(v => v)) count++;
+    return count;
+  }, [globalSearch, typeFilters, genderFilters, expirationFrom, expirationTo, columnFilters]);
+
+  const handleClearAllSearchFilters = () => {
+    setGlobalSearch('');
+    setTypeFilters([]);
+    setGenderFilters([]);
+    setExpirationFrom('');
+    setExpirationTo('');
+    setColumnFilters({});
+  };
+
+  // ---- Table helpers ----
+
   const toggleMember = (memberId) => {
     const newSelected = new Set(selectedMembers);
     if (newSelected.has(memberId)) {
@@ -159,6 +219,45 @@ window.DistrictMembersPanel = () => {
       newSelected.add(memberId);
     }
     setSelectedMembers(newSelected);
+  };
+
+  const formatDate = (dateStr, dateOnly = false) => {
+    if (!dateStr) return '—';
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr + 'T00:00:00' : dateStr;
+    const date = new Date(normalized);
+    const options = { year: 'numeric', month: 'short', day: 'numeric' };
+    if (!dateOnly) {
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+    }
+    return date.toLocaleDateString('en-US', options);
+  };
+
+  const getCellValue = (member, key) => {
+    if (key === 'Name') {
+      return `${member.FirstName || ''} ${member.LastName || ''}`.trim();
+    }
+    const value = member[key];
+    if (key === 'Expiration' || key === 'PaymentDate') {
+      return formatDate(value, true);
+    }
+    if (key === 'LastModified') {
+      return formatDate(value, false);
+    }
+    return value || '—';
+  };
+
+  // getFilteredMembers: applies column filters on top of client-filtered members
+  // used for select-all logic to match exactly what the table shows
+  const getFilteredMembers = () => {
+    const nonEmpty = Object.entries(columnFilters).filter(([, v]) => v);
+    if (nonEmpty.length === 0) return clientFilteredMembers;
+    return clientFilteredMembers.filter(member => {
+      for (const [colKey, filterValue] of nonEmpty) {
+        if (!getCellValue(member, colKey).toLowerCase().includes(filterValue.toLowerCase())) return false;
+      }
+      return true;
+    });
   };
 
   const toggleAll = () => {
@@ -200,50 +299,6 @@ window.DistrictMembersPanel = () => {
     }));
   };
 
-  const getFilteredMembers = () => {
-    if (Object.keys(columnFilters).length === 0) {
-      return members;
-    }
-    return members.filter(member => {
-      for (const [colKey, filterValue] of Object.entries(columnFilters)) {
-        if (!filterValue) continue;
-        const cellValue = getCellValue(member, colKey).toLowerCase();
-        const searchValue = filterValue.toLowerCase();
-        if (!cellValue.includes(searchValue)) return false;
-      }
-      return true;
-    });
-  };
-
-  const formatDate = (dateStr, dateOnly = false) => {
-    if (!dateStr) return '—';
-    // Append T00:00:00 so date-only strings (YYYY-MM-DD) are parsed as local
-    // time instead of UTC midnight, which shifts the day back in negative-offset
-    // timezones (e.g. "2027-03-31" → Mar 30 in ET).
-    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr + 'T00:00:00' : dateStr;
-    const date = new Date(normalized);
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    if (!dateOnly) {
-      options.hour = '2-digit';
-      options.minute = '2-digit';
-    }
-    return date.toLocaleDateString('en-US', options);
-  };
-
-  const getCellValue = (member, key) => {
-    if (key === 'Name') {
-      return `${member.FirstName || ''} ${member.LastName || ''}`.trim();
-    }
-    const value = member[key];
-    if (key === 'Expiration' || key === 'PaymentDate') {
-      return formatDate(value, true);
-    }
-    if (key === 'LastModified') {
-      return formatDate(value, false);
-    }
-    return value || '—';
-  };
-
   const handleExportCSV = (includeAll = false) => {
     const { exportToCSV } = window.DistrictExportHelpers;
     exportToCSV(selectedMembers, includeAll, selectedDistricts, showAllDistricts, selectedColumns, statusFilters, setError, setExportLoading);
@@ -256,7 +311,6 @@ window.DistrictMembersPanel = () => {
 
   const handleExportAllAsSheet = () => {
     const { exportAllAsSheet } = window.DistrictExportHelpers;
-    // Always include District column in the all-sheet export
     const colsForExport = selectedColumns.includes('District')
       ? selectedColumns
       : ['District', ...selectedColumns];
@@ -313,10 +367,24 @@ window.DistrictMembersPanel = () => {
         showColumnSelector,
         onShowColumnSelector: setShowColumnSelector,
         defaultColumns,
+        // Search & filter props
+        globalSearch,
+        onGlobalSearch: setGlobalSearch,
+        typeFilters,
+        onTypeFiltersChange: setTypeFilters,
+        genderFilters,
+        onGenderFiltersChange: setGenderFilters,
+        expirationFrom,
+        onExpirationFromChange: setExpirationFrom,
+        expirationTo,
+        onExpirationToChange: setExpirationTo,
+        onClearAllSearchFilters: handleClearAllSearchFilters,
+        activeSearchFilterCount,
+        members, // raw array for deriving type/gender options
       })}
 
-      {(selectedDistricts.length > 0 || showAllDistricts) && members.length > 0 && window.DistrictMemberTable && React.createElement(window.DistrictMemberTable, {
-        members,
+      {(selectedDistricts.length > 0 || showAllDistricts) && clientFilteredMembers.length > 0 && window.DistrictMemberTable && React.createElement(window.DistrictMemberTable, {
+        members: clientFilteredMembers,
         selectedMembers,
         sortBy,
         sortOrder,
@@ -329,33 +397,37 @@ window.DistrictMembersPanel = () => {
         onExportSelected: () => handleExportCSV(false),
         onExportAll: () => handleExportCSV(true),
         exportLoading,
+        globalSearch,
       })}
 
+      {/* Client filters active but no matches */}
+      {(selectedDistricts.length > 0 || showAllDistricts) && !loading && members.length > 0 && clientFilteredMembers.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text2)' }}>
+          <p style={{ fontSize: '14px', marginBottom: '8px' }}>No members match your search</p>
+          <p style={{ fontSize: '12px' }}>
+            Try adjusting or{' '}
+            <span
+              onClick={handleClearAllSearchFilters}
+              style={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              clearing all filters
+            </span>
+          </p>
+        </div>
+      )}
+
+      {/* API returned nothing */}
       {(selectedDistricts.length > 0 || showAllDistricts) && !loading && members.length === 0 && (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '40px 20px',
-            color: 'var(--text2)',
-          }}
-        >
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text2)' }}>
           <p style={{ fontSize: '14px', marginBottom: '8px' }}>No members found</p>
           {statusFilters.length > 0 && (
-            <p style={{ fontSize: '12px' }}>
-              Try changing the status filter
-            </p>
+            <p style={{ fontSize: '12px' }}>Try changing the status filter</p>
           )}
         </div>
       )}
 
       {!showAllDistricts && selectedDistricts.length === 0 && (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '60px 20px',
-            color: 'var(--text2)',
-          }}
-        >
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text2)' }}>
           <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>
             Select one or more districts to view members
           </p>

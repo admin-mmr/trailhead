@@ -3,6 +3,26 @@
  * Renders table with member rows, checkboxes, sorting, and filtering
  */
 
+// Highlight matching text within a string. Returns a React element or plain string.
+const highlightMatch = (text, query) => {
+  if (!query || !text || text === '—') return text;
+  const str = String(text);
+  const idx = str.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return str;
+  return React.createElement(React.Fragment, null,
+    str.substring(0, idx),
+    React.createElement('mark', {
+      style: {
+        background: 'rgba(255, 193, 7, 0.45)',
+        borderRadius: '2px',
+        padding: '0 1px',
+        color: 'inherit',
+      }
+    }, str.substring(idx, idx + query.length)),
+    str.substring(idx + query.length)
+  );
+};
+
 const DistrictMemberTable = ({
   members,
   selectedMembers,
@@ -16,7 +36,8 @@ const DistrictMemberTable = ({
   onUpdateColumnFilter,
   onExportSelected,
   onExportAll,
-  exportLoading
+  exportLoading,
+  globalSearch,
 }) => {
   const tableRef = React.useRef(null);
   const topScrollRef = React.useRef(null);
@@ -336,48 +357,56 @@ const DistrictMemberTable = ({
                     style={{ cursor: 'pointer' }}
                   />
                 </td>
-                {selectedColumns.map((colKey) => (
-                  <td
-                    key={`${member.MemberID}-${colKey}`}
-                    style={{
-                      padding: '12px 16px',
-                      color: colKey === 'MemberID' ? 'var(--accent)' : 'var(--text)',
-                      fontSize: colKey === 'MemberID' ? '12px' : '13px',
-                      fontFamily: colKey === 'MemberID' ? 'monospace' : 'inherit',
-                      wordBreak: colKey === 'Email' ? 'break-all' : 'normal',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {colKey === 'Status' ? (
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          padding: '3px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: '600',
-                          textTransform: 'uppercase',
-                          background:
-                            member.Status === 'active'
-                              ? 'rgba(34, 197, 94, 0.1)'
-                              : member.Status === 'pending'
-                                ? 'rgba(234, 179, 8, 0.1)'
-                                : 'rgba(107, 114, 128, 0.1)',
-                          color:
-                            member.Status === 'active'
-                              ? '#22c55e'
-                              : member.Status === 'pending'
-                                ? '#eab308'
-                                : '#6b7280',
-                        }}
-                      >
-                        {member.Status}
-                      </span>
-                    ) : (
-                      getCellValue(member, colKey)
-                    )}
-                  </td>
-                ))}
+                {selectedColumns.map((colKey) => {
+                  const rawValue = getCellValue(member, colKey);
+                  // Columns where we apply global-search highlighting
+                  const highlightCols = new Set(['MemberID', 'Name', 'FirstName', 'LastName', 'Email', 'WeChatID', 'District']);
+                  const shouldHighlight = globalSearch && highlightCols.has(colKey);
+                  return (
+                    <td
+                      key={`${member.MemberID}-${colKey}`}
+                      style={{
+                        padding: '12px 16px',
+                        color: colKey === 'MemberID' ? 'var(--accent)' : 'var(--text)',
+                        fontSize: colKey === 'MemberID' ? '12px' : '13px',
+                        fontFamily: colKey === 'MemberID' ? 'monospace' : 'inherit',
+                        wordBreak: colKey === 'Email' ? 'break-all' : 'normal',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {colKey === 'Status' ? (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                            background:
+                              member.Status === 'active'
+                                ? 'rgba(34, 197, 94, 0.1)'
+                                : member.Status === 'pending'
+                                  ? 'rgba(234, 179, 8, 0.1)'
+                                  : 'rgba(107, 114, 128, 0.1)',
+                            color:
+                              member.Status === 'active'
+                                ? '#22c55e'
+                                : member.Status === 'pending'
+                                  ? '#eab308'
+                                  : '#6b7280',
+                          }}
+                        >
+                          {member.Status}
+                        </span>
+                      ) : shouldHighlight ? (
+                        highlightMatch(rawValue, globalSearch)
+                      ) : (
+                        rawValue
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

@@ -81,4 +81,4 @@ mmr-admin/VERSION
 
 # Legacy schema/migration folders (db/ is the source of truth)
 /basecamp/schemas/
-/basecamp/migrations/
+/basecamp/migrations/.claude/worktrees/
