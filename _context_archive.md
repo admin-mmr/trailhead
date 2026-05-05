@@ -1,3 +1,23 @@
+### 05-05 20:45 UTC — P2 split: Members.js (1022 → 6 files, all <245 LOC)
+
+Changed: Members.js rewritten as 78-LOC tab dispatcher (sub-tab state + toast, delegates to child components). 5 new sub-tab components: MembersUpdateFamily.js 240 LOC (search primary + family roster + remove + assign FamilyID), MembersAddToFamily.js 130 LOC (extracted "add to family" panel — own search state, called from MembersUpdateFamily), MembersUpgradeFamily.js 195 LOC (Individual→Family upgrade with second member), MembersChangeDistrict.js 191 LOC (loads /api/districts, search+select+change), MembersMarkUnused.js 132 LOC (search+confirm POST /mark-unused). Status sub-tabs (change-status/mark-active/revert-status/restore-log) continue to delegate to MembersStatusPanel. index.html: added 5 new <script type=text/babel> tags loaded BEFORE Members.js. Verification: @babel/parser parsed all 6 files cleanly with JSX plugin; all bracket pairs balanced; API endpoints (/api/members/search, /family/*, /districts, /<id>/mark-unused, /<id>/district) match api_members*.py routes. Status: uncommitted. Next: continue P2 (api_payments.py and Members.js done; remaining: nyrr_api.py 823, sync_nyrr_events.py 1022, MembersStatusPanel.js 701).
+
+### 05-05 19:30 UTC — P2 split: api_payments.py (1086 → 5 files, all <340 LOC)
+
+Changed: api_payments.py rewritten as 46-LOC orchestrator (defines payments_bp, imports route modules). Routes split into 4 sibling files: api_payments_listings.py 308 LOC (dashboard, pending-submissions, unmatched-gmail, search-members, history, cancel, autoguess-log), api_payments_actions.py 338 LOC (autoguess-all, manual-approve, admin-create), api_payments_lookups.py 327 LOC (submissions-for-member, gmail-matching-candidates, member-quick/all+id, debug-candidates, gmail-candidates, debug/match), api_payments_debug.py 199 LOC (debug-autoguess, test-fuzzy-match). All 19 original endpoints register on shared payments_bp. test_imports.py: all 60 modules import cleanly (incl. 5 payment files). Route parity verified via Flask url_map. Status: uncommitted. Next: continue P2 (Members.js 1022 LOC next, then api_events.py / nyrr_api.py / sync_nyrr_events.py).
+
+### 05-05 17:45 UTC — P1c complete (NYRR match queue + Tier-4 fuzzy)
+
+Changed: api_nyrr_match.py (new, 314 LOC) — GET /api/nyrr/match-queue (paginated unmatched finishers + top-3 candidates, includes auto_fuzzy pre-matches), POST /api/nyrr/match-queue/bulk-confirm (auto-confirm single-candidate rows, up to 500). NyrrMatchQueue.js (313 LOC) — paginated queue, candidate chips, bulk-confirm, MatchModal integration, fuzzy rows flagged yellow. NYRR Todos now has 📋 Todos + 🏃 Match Queue sub-tabs. MIGRATION_V025 — confidence_score TINYINT + auto_fuzzy ENUM value. api_events.py Tier-4 — rapidfuzz token_set_ratio≥90 + age±2, sets match_method=auto_fuzzy + confidence_score for review. requirements.txt += rapidfuzz>=3.0. Status: uncommitted. Next: commit all (P0+P1a+P1b+P1c together).
+
+### 05-05 15:30 UTC — P0 + P1a + P1b complete
+
+Changed: P0 — re-enabled NYRR cron (sync-nyrr-weekly.yml), deleted 13 stale .md docs (root + mmr-admin/), confirmed V023 deployed. P1a — PaymentsPanel.js: STALE_HOURS=24, isStale banner (yellow, pulsing Sync Now), autoguess button disabled+tooltip when stale (+stale-pulse keyframe in styles.css). P1b — MIGRATION_V024 (member_duplicate_dismissals table), api_members_duplicates.py (GET /api/members/duplicates, POST /api/members/duplicates/dismiss, 254 LOC), MembersDuplicates.js UI (3 collapsible sections, dismiss flow, 240 LOC), 🔁 Duplicates sub-tab in index.html, 277-line test file. Status: all changes uncommitted. Next: commit, then P1c (NYRR match queue).
+
+### 05-05 12:14 UTC — Action plan added to CLAUDE.md (P0/P1a/P1b/P1c/P2)
+
+Changed: CLAUDE.md — new "ACTION PLAN (active — May 2026)" section before QUICK REFS, covering P0 (cron + doc cleanup + V023 verify), P1a (Payments staleness gate, ~3h), P1b (Members dupes: V024 + api_members_duplicates.py + MembersDuplicates.js + tests, ~6h), P1c NYRR (extend pipeline w/ review queue + Tier-4 fuzzy via rapidfuzz/V025), P2 splits, milestones. Status: plan only — no code changes yet. Next: execute P0 → P1a → P1b in next thread.
+
 ### 04-14 13:00 UTC — Fix ENUM truncation in sp_cancel_payment + sp_clear_transaction
 
 Changed: MIGRATION_V021 + schema_integration.sql — added CASE/WHEN guard sanitizing member_log.Status (varchar) before writing to members.Status (ENUM); both sp_cancel_payment and sp_clear_transaction patched. db/test_procedure_enum_safety.py — 3 pytest tests catch unguarded ENUM writes, verify V021, cross-check constant vs schema. db-sql-lint.yml CI + pre-push hook wired up. Status: complete. Next: commit migration + test.

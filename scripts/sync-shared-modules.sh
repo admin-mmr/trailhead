@@ -10,6 +10,8 @@ cd "$REPO_ROOT"
 
 SHARED=(
   nyrr_api
+  nyrr_api_models
+  nyrr_api_endpoints
   sync_audit
   sync_batch
   sync_compare
