@@ -145,6 +145,9 @@ app.register_blueprint(events_bp)
 from api_runners import runners_bp
 app.register_blueprint(runners_bp)
 
+from api_nyrr_match import nyrr_match_bp
+app.register_blueprint(nyrr_match_bp)
+
 from api_data import data_bp
 app.register_blueprint(data_bp)
 
@@ -158,10 +161,12 @@ from api_members import members_bp
 from api_members_status import members_status_bp
 from api_members_family import members_family_bp
 from api_members_district import members_district_bp
+from api_members_duplicates import members_duplicates_bp
 app.register_blueprint(members_bp)
 app.register_blueprint(members_status_bp)
 app.register_blueprint(members_family_bp)
 app.register_blueprint(members_district_bp)
+app.register_blueprint(members_duplicates_bp)
 
 from api_district_members import district_members_bp
 from api_district_export import district_export_bp

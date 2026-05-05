@@ -1,9 +1,8 @@
 name: NYRR Weekly Sync & Finisher Audit (Tuesday)
 
 on:
-  # Schedule disabled — use manual trigger only
-  # schedule:
-  #   - cron: '0 2 * * 2'
+  schedule:
+    - cron: '0 2 * * 2'  # Every Tuesday at 2:00 AM UTC
   workflow_dispatch:  # Allow manual trigger
 
 jobs:

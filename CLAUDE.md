@@ -143,6 +143,52 @@ SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL
 - **Component loader also exports React hooks globally** — no need to redeclare `useState`, `useEffect`, etc. in each file
 - Cleaner, DRY approach — single source of truth for component registration and React API
 
+## ACTION PLAN (active — May 2026)
+Sequenced backlog. P0=quick wins (this week), P1=features asked for, P2=code health.
+
+**P0 — Operational quick wins (~1 day total)**
+1. Re-enable `.github/workflows/sync-nyrr-weekly.yml` cron schedule (currently manual-only); smoke-test one event end-to-end.
+2. Doc cleanup — delete root .md files violating HARD RULE: `PAYMENTS_API_REFERENCE.md`, `PAYMENTS_FUZZY_MATCH.md`, `PAYMENTS_UI_LAYOUT.md`, `PAYMENTS_UI_RESTORATION.md`, `FUZZY_MATCH_QUICK_START.md`, `FUZZY_SELECT_CANDIDATES.md`, `REFACTOR_BLUEPRINT.md`, `SCHEMA_ANALYSIS.md`, `PROJECT_PLAN.md`; plus `mmr-admin/REFACTOR_SESSION_2026-04-01.md`, `ROUTES_REFERENCE.md`, `PAYMENTS_DESIGN.md`, `AUDIT_RENEWAL_FEATURE.md`. Fold any unique info into this CLAUDE.md.
+3. Verify V023 deployed: `SELECT version FROM schema_migrations ORDER BY id DESC LIMIT 5;`
+
+**P1a — Payments staleness gate (~3h, frontend only)**
+File: `mmr-admin/static/PaymentsPanel.js` (~30 LOC). Existing `lastSyncTime` from `/api/sync/jobs` already wired (line 48-124). Add: `STALE_HOURS=24`; `isStale = age>24h || lastSyncTime===null`. When stale: yellow banner above sync bar with hours-old + pulsing "Sync Now" button; pass `disabled={isStale}` to autoguess button (line 213) with tooltip. After sync completes, `fetchLastSync()` re-runs (line 102) → banner clears. No backend change.
+
+**P1b — Members duplicate detection (~6h)**
+- Migration `db/MIGRATION_V024_member_duplicate_dismissals.sql` (~15 LOC): table `member_duplicate_dismissals (id, dup_type ENUM('name','phone','wechat'), dup_key VARCHAR(255), dismissed_by, dismissed_at)` UNIQUE(dup_type, dup_key); end with self-registration INSERT.
+- Backend `mmr-admin/api_members_duplicates.py` (new, ~150 LOC): `GET /api/members/duplicates?type=name|phone|wechat|all`, `POST /api/members/duplicates/dismiss`. Three queries grouping on LOWER(TRIM(FirstName))+LOWER(TRIM(LastName)) (excluding same FamilyID), PhoneNumber, WeChatID. HAVING COUNT(*)>1. LEFT JOIN dismissals to filter out resolved.
+- Register blueprint in `mmr-admin/app.py`.
+- UI `mmr-admin/static/MembersDuplicates.js` (~200 LOC): 3 collapsible sections, side-by-side member cards, "Mark not a duplicate" + "Open member" actions. **No auto-merge** (FK risk).
+- Sub-tab "🔁 Duplicates" in `mmr-admin/templates/index.html` under Members.
+- Tests `mmr-admin/tests/test_members_duplicates.py` (~80 LOC): seed 3 same-name rows distinct FamilyID → assert group; dismiss → assert filtered.
+
+**P1c — NYRR matching (extends existing pipeline; weeks 3-4)**
+Existing: `basecamp/ops/sync_nyrr_events.py` + 3-tier auto-matcher in `api_events.py:155 api_run_automatch` (NYRRRunnerName / first+last+age±1 / partial+age±1).
+- **Week 3 — review queue:** New panel "🏃 Match Queue" under NYRR Todos. `GET /api/nyrr/match-queue` returns unmatched finishers (mmr_member_id IS NULL AND is_registered_only=0) + top-3 candidates per row (same first OR last name, age±2 if YearBorn known). UI uses existing `match-modal.html` and `POST /api/runners/<id>/match`. Bulk "Confirm all single-candidate hits."
+- **Week 4 — Tier-4 fuzzy:** Migration V025 adds `confidence_score TINYINT NULL` + extends `match_method` ENUM with `auto_fuzzy`. Add `rapidfuzz` to `mmr-admin/requirements.txt`. Extend `api_run_automatch` with Tier-4 (token_set_ratio≥90 + age±2). Tier-4 hits flagged yellow in queue for re-confirmation.
+
+**P1d — NYRR phases 3-5 (optional, weeks 5-7)**
+Member backfill report (members never matched), race-history in member tooltip, annual MMR finishes summary. Defer until P1c shows signal.
+
+**P2 — Code health (background)**
+Splits flagged by CLAUDE.md hard rule (use `test_imports.py` for parity):
+| File | LOC | Limit | Effort |
+|---|---|---|---|
+| `static/Members.js` | 1022 | 300 | 4h |
+| `api_payments.py` | 1086 | 400 | 4h |
+| `nyrr_api.py` (basecamp/python — source of truth) | 823 | 400 | 3h |
+| `basecamp/ops/sync_nyrr_events.py` | 1022 | 400 | 3h |
+| `static/MembersStatusPanel.js` | 701 | 300 | 3h |
+
+**P3 — Open questions**
+NYRR backfill depth (recommend 2024+). Add `validate_schema.py` to CI? Include NYRR registrants in match queue? Member-merge tool (deferred — FK risk; revisit if dupes accumulate).
+
+**Milestones**
+- Week 1: P0 done + P1a shipped
+- Week 2: P1b in production (V024 + UI)
+- Week 4: P1c phases 1-2 (queue + fuzzy)
+- Week 7: P1d (stretch)
+
 ## QUICK REFS
 **Key files:** `db/schema_snapshot.sql`, `load-env.sh`, `mmr-admin/api_*.py`, `mmr-admin/test_imports.py`.
 **Azure:** `mmr-mysql-v4` (Sweden Central), use `mysql-mmr` alias.
@@ -160,4 +206,4 @@ SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL
 **Context updates:** 3 lines max (`### MM-DD HH:MM UTC — title` + `Changed: X. Status: Y. Next: Z.`). Insert at top. No re-reads; use str_replace. Trim to 3 sessions; move excess to `_context_archive.md`.
 **Efficiency:** Don't read files you don't need. Batch edits. Use grep/glob, not bash find. Cache knowledge. Never cat large files; use `head`/`sed`/`grep`. Error message first before source code. Diff-first edits. Chain shell commands. Always `python3`/`pip3`.
 
-**Last updated:** April 4, 2026
+**Last updated:** May 5, 2026

@@ -241,12 +241,44 @@ const PaymentsPanel = () => {
     return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
 
+  const STALE_HOURS = 24;
+  const isStale = !lastSyncTime || (Date.now() - new Date(lastSyncTime).getTime()) > STALE_HOURS * 3600 * 1000;
+  const staleHoursAgo = lastSyncTime ? Math.floor((Date.now() - new Date(lastSyncTime).getTime()) / 3600000) : null;
+
   return e('div', null,
     toast && e('div', {
       style: { position: 'fixed', top: 16, right: 16, zIndex: 200, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: '10px 16px', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }
     }, toast),
 
     e(MemberTooltip, { memberId: tooltip.memberId, anchorRect: tooltip.rect, data: tooltip.data }),
+
+    // Stale data banner
+    isStale && e('div', {
+      style: {
+        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8,
+        padding: '8px 14px', borderRadius: 'var(--radius)',
+        background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.5)', fontSize: 13,
+      }
+    },
+      e('span', { style: { color: '#ca8a04', fontWeight: 600 } }, '⚠ Gmail data is stale'),
+      e('span', { style: { color: 'var(--text2)', fontSize: 12 } },
+        staleHoursAgo !== null
+          ? `Last sync was ${staleHoursAgo}h ago — autoguess may miss recent transactions.`
+          : 'Gmail transactions have never been imported.',
+      ),
+      e('button', {
+        className: 'btn btn-sm',
+        onClick: handleSyncNow,
+        disabled: syncStatus === 'running',
+        style: {
+          marginLeft: 'auto', fontSize: 12, fontWeight: 600,
+          background: '#ca8a04', color: '#fff', border: 'none',
+          borderRadius: 'var(--radius)', padding: '5px 14px',
+          cursor: syncStatus === 'running' ? 'not-allowed' : 'pointer',
+          animation: syncStatus === 'running' ? 'none' : 'stale-pulse 1.5s ease-in-out infinite',
+        },
+      }, syncStatus === 'running' ? '⏳ Syncing…' : '⚡ Sync Now'),
+    ),
 
     // Gmail sync bar
     e('div', {
@@ -272,6 +304,23 @@ const PaymentsPanel = () => {
           opacity: syncStatus === 'running' ? 0.7 : 1,
         },
       }, syncBarLabel),
+      e('button', {
+        className: 'btn btn-sm',
+        onClick: handleAutoguess,
+        disabled: loading || isStale,
+        title: isStale
+          ? `Gmail data is ${staleHoursAgo !== null ? staleHoursAgo + 'h' : ''} stale — sync first before running autoguess`
+          : 'Automatically match transactions with explicit memberID in memo',
+        style: {
+          fontSize: 12, fontWeight: 600,
+          background: isStale ? 'var(--surface2)' : 'var(--accent)',
+          color: isStale ? 'var(--text2)' : '#fff',
+          border: isStale ? '1px solid var(--border)' : 'none',
+          borderRadius: 'var(--radius)', padding: '5px 14px',
+          cursor: loading || isStale ? 'not-allowed' : 'pointer',
+          opacity: isStale ? 0.5 : 1,
+        },
+      }, loading ? '⏳ Autoguessing…' : '🤖 Autoguess'),
     ),
 
     e('div', { className: 'payments-layout', style: { display: 'flex', gap: 16, alignItems: 'flex-start' } },

@@ -298,7 +298,88 @@ def api_run_automatch(event_id):
                   AND er.nyrr_event_id = %s
                   AND (m.NYRRRunnerName IS NULL OR m.NYRRRunnerName = '')
             """, (event_id,))
-        matched = t1_matched + t2_matched + t3_matched
+        # Tier 4: Fuzzy match using rapidfuzz (token_set_ratio ≥ 90, age ±2)
+        # Matches are committed with match_method='auto_fuzzy' + confidence_score
+        # so admins can review them in the Match Queue before treating as final.
+        t4_matched = 0
+        try:
+            from rapidfuzz import fuzz as rfuzz
+
+            # Fetch still-unmatched runners for this event
+            unmatched = query("""
+                SELECT id, runner_name, age
+                FROM nyrr_event_runners
+                WHERE nyrr_event_id = %s AND mmr_member_id IS NULL
+            """, (event_id,)) or []
+
+            if unmatched:
+                # Fetch active members for comparison (limit to what's needed)
+                members_for_fuzzy = query("""
+                    SELECT MemberID,
+                           CONCAT(COALESCE(FirstName,''), ' ', COALESCE(LastName,'')) AS full_name,
+                           NYRRRunnerName,
+                           COALESCE(YearBorn, YearBornGuess) AS birth_year
+                    FROM members
+                    WHERE Status IN ('active', 'expired', 'pending')
+                      AND FirstName IS NOT NULL AND FirstName != ''
+                      AND LastName  IS NOT NULL AND LastName  != ''
+                """) or []
+
+                mf_list = [dict(m) for m in members_for_fuzzy]
+                cur_year = __import__('datetime').date.today().year
+
+                for runner_row in unmatched:
+                    rname = (runner_row.get('runner_name') or '').strip()
+                    rage  = runner_row.get('age')
+                    if not rname:
+                        continue
+
+                    best_score   = 0
+                    best_matches: list = []
+
+                    for m in mf_list:
+                        fname = (m['full_name'] or '').strip()
+                        if not fname:
+                            continue
+
+                        # Age gate: if runner and member both have age data, must be ±2
+                        mbirth = m.get('birth_year')
+                        if rage is not None and mbirth is not None:
+                            if abs(cur_year - mbirth - rage) > 2:
+                                continue
+
+                        score = rfuzz.token_set_ratio(rname.lower(), fname.lower())
+                        # Also check NYRRRunnerName if set
+                        nyrr_name = (m.get('NYRRRunnerName') or '').strip()
+                        if nyrr_name:
+                            score = max(score, rfuzz.token_set_ratio(rname.lower(), nyrr_name.lower()))
+
+                        if score > best_score:
+                            best_score   = score
+                            best_matches = [m]
+                        elif score == best_score and score >= 90:
+                            best_matches.append(m)
+
+                    # Only match if score ≥ 90 AND exactly one best match (unambiguous)
+                    if best_score >= 90 and len(best_matches) == 1:
+                        cursor.execute("""
+                            UPDATE nyrr_event_runners
+                            SET mmr_member_id   = %s,
+                                match_method    = 'auto_fuzzy',
+                                confidence_score = %s,
+                                matched_by      = 'Viewer',
+                                matched_at      = NOW()
+                            WHERE id = %s AND mmr_member_id IS NULL
+                        """, (best_matches[0]['MemberID'], int(best_score), runner_row['id']))
+                        if cursor.rowcount > 0:
+                            t4_matched += 1
+
+        except ImportError:
+            logger.warning("rapidfuzz not installed — skipping Tier-4 fuzzy match")
+        except Exception as t4_err:
+            logger.error("Tier-4 fuzzy error: %s", t4_err)
+
+        matched = t1_matched + t2_matched + t3_matched + t4_matched
 
         # Refresh matched count on the event
         cursor.execute("""
@@ -317,6 +398,7 @@ def api_run_automatch(event_id):
         if t1_matched: parts.append(f'{t1_matched} by NYRR name')
         if t2_matched: parts.append(f'{t2_matched} by first/last name')
         if t3_matched: parts.append(f'{t3_matched} by partial name')
+        if t4_matched: parts.append(f'{t4_matched} by fuzzy (needs review)')
         detail = f' ({", ".join(parts)})' if parts else ''
         return json_response({'ok': True, 'matched': matched,
                                'message': f'Auto-matched {matched} runner(s){detail}.'})

@@ -67,6 +67,17 @@ The agent must apply these rules in order, stopping at the first match per
 WeChat entry. Each **CSV member ID may only appear once** in the output
 (highest-confidence match wins).
 
+### Step 0 — Manual Override / Known Special Cases (Confirmed, score = 100)
+
+Before running any automated matching, check the WeChat display name and alias
+against the **Known Special Cases** table at the bottom of this document.
+If a match is found, treat it as a confirmed match with the specified Member ID
+and skip Steps 1–2 for that entry entirely.
+
+This step exists for members whose WeChat name contains no extractable ID and
+whose name/email does not fuzzy-match reliably. Special cases are added
+manually after human review.
+
 ### Step 1 — Member ID Extraction (Confirmed, score = 100)
 Search both the display name and alias for a member ID pattern.
 Handles all these formats:
@@ -129,8 +140,10 @@ Type | Family ID | Payment Date | Membership Fee Paid | Payment Transaction`
 Full Name | Status | District | Email`
 
 Note values:
-- `"ID found — matched member record"` — ID was in name and found in CSV
-- `"ID {Axxxx} found in name but NOT in member CSV"` — ID extracted but absent from database (investigate!)
+- `"ID found — matched member record"` — ID was in name and found in CSV but
+  that ID was already claimed by another WeChat entry (duplicate ID situation)
+- `"ID {Axxxx} found in name but NOT in member CSV"` — ID extracted but absent
+  from database (investigate!)
 - `"No member ID; no name/email match"` — completely unidentified
 
 **Tabs 6–7 (CSV No WeChat):**
@@ -183,6 +196,24 @@ Before writing the final Excel, the agent must verify:
    `in` for substring matching. Single-character aliases like `'C'`, `'M'`
    must only match via **exact equality** (Rule A/B), never substring.
 
+6. **Complete coverage guarantee**: After matching is complete, verify that
+   the total count of rows across Tabs 1–5 equals the total number of WeChat
+   entries in the input CSV. Every single WeChat entry must appear in exactly
+   one tab. No entry may be silently dropped due to ID collisions, dedup
+   races, or scoring edge cases. The implementation must:
+   - Track the disposition of every WeChat entry (confirmed / guessed-winner /
+     no-match) throughout the pipeline.
+   - After deduplication, any guessed entry whose member ID was claimed by a
+     higher-confidence guess or by a confirmed match must be redirected to
+     Tab 5, not discarded.
+   - Any WeChat entry with an ID already claimed by another entry must appear
+     in Tab 5 with note `"ID found — matched member record"` rather than
+     being dropped silently.
+   - After building all output buckets, assert:
+     `len(tab1) + len(tab2) + len(tab3) + len(tab4) + len(tab5) == len(wechat_input)`
+     and print a WARNING with the missing entries if this assertion fails,
+     then add those entries to Tab 5 as a safety net.
+
 ---
 
 ## Running the Automated Script
@@ -234,12 +265,29 @@ Leave the alias field blank (but keep the comma) if the member has no alias.
 | Member ID with space: `A 0137` | Regex handles optional space between A and digits |
 | ID with no boundary: `timA0293` | Regex does not require word boundary before `A` |
 | Short WeChat ID (1–3 chars): `贾森`, `静`, `晞` | Exact match only (Rules A/B), not substring |
-| Same ID appears in two WeChat entries | First occurrence wins; second is silently skipped |
+| Same ID appears in two WeChat entries | First occurrence wins; second goes to Tab 5 with note "ID found — matched member record" |
 | WeChat member with ID not in CSV | Tab 5, note says "ID found but NOT in member CSV" — worth investigating |
 | Member uses English alias in WeChat, Chinese ID in CSV | Rules A/B catch exact match regardless of length |
 | Name in email: `liuzhaoxun@gmail.com` for `Zhaoxun Liu` | Rule H: `zhaoxun` (7 chars, unique) matches |
 | Common name token only: `zhang` alone | Rule H: requires ≥6 chars OR 2+ tokens — `zhang` alone not enough |
 | WeChat display has emoji or special chars | `normalize()` strips them before comparison |
+| Guessed entry loses dedup race to higher-confidence guess | Redirected to Tab 5, never silently dropped |
+| WeChat entry scores ≥60 but member ID already confirmed | Redirected to Tab 5, never silently dropped |
+
+---
+
+## Known Special Cases
+
+These are WeChat members whose names cannot be matched automatically. They have
+been verified manually and must be applied as confirmed matches in **Step 0**
+before any automated matching runs.
+
+To add a new special case: record the exact `wechat_name` as it appears in the
+WeChat group member list, the verified `Member ID`, and the date confirmed.
+
+| WeChat Display Name | Member ID | Full Name | Notes | Date Confirmed |
+|---|---|---|---|---|
+| 贾森（Zhaoxun Liu） | A0121 | Jason Liu | No ID in WeChat name; manually verified | 2026-04-28 |
 
 ---
 
@@ -256,12 +304,18 @@ Leave the alias field blank (but keep the comma) if the member has no alias.
    - Alternatively, give the screenshots to an AI and ask it to transcribe
      them into the two-column CSV format.
 
-4. **Run the script** (see above).
+4. **Check the Known Special Cases table** and apply any manual overrides
+   before running the script (Step 0).
 
-5. **Review the output**:
+5. **Run the script** (see above).
+
+6. **Review the output**:
    - Tab 2 (Confirmed Review): contact these members to renew or remove from group
-   - Tab 3 & 4 (Guessed): verify each match is correct; move confirmed ones to confirmed list manually if needed
-   - Tab 5 (WeChat No Match): investigate IDs not in database
+   - Tab 3 & 4 (Guessed): verify each match is correct; move confirmed ones to
+     confirmed list manually if needed; add newly confirmed entries to the
+     Known Special Cases table for future runs
+   - Tab 5 (WeChat No Match): investigate IDs not in database; add any
+     newly identified members to the Known Special Cases table
    - Tab 6 (CSV No WeChat Active): invite active members who aren't in the group
 
-6. **Update member database** with any corrections found.
+7. **Update member database** with any corrections found.

@@ -225,3 +225,8 @@ tr:hover td { background: var(--surface); }
   /* Toast: full-width bottom */
   .toast { left: 8px; right: 8px; bottom: 8px; text-align: center; }
 }
+
+@keyframes stale-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}

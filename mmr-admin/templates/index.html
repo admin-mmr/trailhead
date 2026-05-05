@@ -27,6 +27,8 @@
   <script type="text/babel" src="/static/ReconcilePanel.js"></script>
   <script type="text/babel" src="/static/Members.js"></script>
   <script type="text/babel" src="/static/MembersStatusPanel.js"></script>
+  <script type="text/babel" src="/static/MembersDuplicates.js"></script>
+  <script type="text/babel" src="/static/NyrrMatchQueue.js"></script>
   <!-- External components (extracted for modularity) -->
   <script type="text/babel" src="/templates/dashboard-panel.html"></script>
   <script type="text/babel" src="/templates/python-code-editor.html"></script>
@@ -320,7 +322,7 @@ const App = () => {
               <button className={`tab ${view === 'payments' || view === 'autoguess_log' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
-              <button className={`tab ${['members', 'district', 'audit', 'reconcile'].includes(view) ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
+              <button className={`tab ${['members', 'district', 'audit', 'reconcile', 'duplicates'].includes(view) ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
               <button className={`tab ${view === 'sync' ? 'active' : ''}`} onClick={() => setView('sync')}>Sync with Google</button>
@@ -329,8 +331,18 @@ const App = () => {
               <button className={`tab ${view === 'admins' || view === 'log' || view === 'pyexec' ? 'active' : ''}`} onClick={() => setView('admins')}>Admins</button>
             )}
             <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => setView('tables')}>Data Browser</button>
-            <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => setView('dashboard')}>NYRR Todos</button>
+            <button className={`tab ${['dashboard', 'detail', 'nyrr_queue'].includes(view) ? 'active' : ''}`} onClick={() => setView('dashboard')}>NYRR Todos</button>
           </div>
+
+          {/* NYRR sub-tabs: Todos (dashboard), Match Queue */}
+          {['dashboard', 'detail', 'nyrr_queue'].includes(view) ? (
+            <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+              <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => setView('dashboard')}>📋 Todos</button>
+              {(userRole === 'super_admin' || userRole === 'admin') && (
+                <button className={`tab ${view === 'nyrr_queue' ? 'active' : ''}`} onClick={() => setView('nyrr_queue')}>🏃 Match Queue</button>
+              )}
+            </div>
+          ) : null}
 
           {/* Payments sub-tabs: Payments, Autoguess Log */}
           {view === 'payments' || view === 'autoguess_log' ? (
@@ -345,7 +357,7 @@ const App = () => {
           ) : null}
 
           {/* Members sub-tabs */}
-          {['members', 'district', 'audit', 'reconcile'].includes(view) ? (
+          {['members', 'district', 'audit', 'reconcile', 'duplicates'].includes(view) ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
               <button className={`tab ${view === 'district' ? 'active' : ''}`} onClick={() => setView('district')}>Members by District</button>
               {(userRole === 'super_admin' || userRole === 'admin') && (
@@ -356,6 +368,9 @@ const App = () => {
               )}
               {(userRole === 'super_admin' || userRole === 'admin') && (
                 <button className={`tab ${view === 'reconcile' ? 'active' : ''}`} onClick={() => setView('reconcile')}>💳 Reconcile Payments</button>
+              )}
+              {(userRole === 'super_admin' || userRole === 'admin') && (
+                <button className={`tab ${view === 'duplicates' ? 'active' : ''}`} onClick={() => setView('duplicates')}>🔁 Duplicates</button>
               )}
             </div>
           ) : null}
@@ -388,6 +403,8 @@ const App = () => {
       {view === 'district' && window.DistrictMembersPanel && React.createElement(window.DistrictMembersPanel)}
       {view === 'audit' && window.AuditPanel && React.createElement(window.AuditPanel)}
       {view === 'reconcile' && window.ReconcilePanel && React.createElement(window.ReconcilePanel)}
+      {view === 'duplicates' && window.MembersDuplicates && React.createElement(window.MembersDuplicates, { onOpenMember: (id) => { setView('members'); } })}
+      {view === 'nyrr_queue' && window.NyrrMatchQueue && React.createElement(window.NyrrMatchQueue)}
       {view === 'sync' && window.SyncPanel && React.createElement(window.SyncPanel)}
       {view === 'tables' && window.TableBrowser && React.createElement(window.TableBrowser)}
       {view === 'log' && window.ProcessingLog && React.createElement(window.ProcessingLog)}
