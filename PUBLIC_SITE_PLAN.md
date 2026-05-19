@@ -4,6 +4,29 @@
 
 **Stack (already in place):** Next.js 14 on Azure Static Web Apps · MySQL on Azure · JWT auth · Azure Storage · Azure Communication Services (email) · GitHub Actions deploy.
 
+**Execution mode:** Claude CoWork "Vibe Coding" — short focused sessions (2–3 hrs), one deliverable per session, CoWork drafts the code/migrations/scaffolding while the maintainer reviews and steers. See §9 for cadence.
+
+**Reference site for style/structure:** [dashingwhippets.org](https://www.dashingwhippets.org)
+
+---
+
+## 0. Locked decisions — 2026-05-19
+
+These supersede the open questions previously in §7:
+
+| Decision | Choice | Implication |
+|---|---|---|
+| Payment rail | **Stripe Checkout (credit card)** | Retire the current Gmail → manual-match → `sp_link_transaction` workflow |
+| Auth required to pay | **Yes** — member logs in, then pays | New `/join` creates the account first (email + password set), then sends them straight into Stripe Checkout. Renewals happen from `/portal/profile`. |
+| Renewal cadence | **Anniversary-based, per member** | No more club-wide renewal window. Each member's `paid_until` = previous expiration (or join date) + 1 yr. |
+| Trial | **None** — pay-to-activate | Removes the existing 30-day trial logic. |
+| Subscription vs. one-time | **One-time annual charge** (default; assumption) | Stripe subscription auto-renew is rejected for v1 (members dislike auto-charges); reminder emails 30 + 7 days before expiry handle renewals. |
+| Tiers | **Individual $30, Family $50** (carried over) | Two prices in Stripe; family = links one or more dependent records to a `FamilyID`. |
+| Existing members | **Honor current ExpirationDate** | They keep what they already paid for; on next renewal they go through Stripe. No re-collection at cutover. |
+| Bilingual (EN / 中文) | **Deferred to v2** | Build EN first; add `/zh/*` routing later. |
+
+Items still open: refund/cancellation policy wording, code of conduct text source, sponsor tier definitions, race-record self-submission. Listed in §7.
+
 ---
 
 ## 1. What's already done
@@ -58,25 +81,72 @@
 
 ---
 
-## 3. Member registration + payment flow (no trial)
+## 3. Member registration + payment flow (Stripe direct, no trial)
 
+### 3.1 New member join
 ```
-/join → form (name, email, phone, T-shirt size, emergency contact, CoC checkbox)
+/join → step 1: account form (name, email, phone, password, T-shirt size,
+                              emergency contact, tier=Individual|Family,
+                              CoC checkbox)
       ↓
-   Stripe Checkout session (server creates, redirects)
+   POST /api/auth/register → create member row (Status='pending_payment',
+                                                 ExpirationDate=NULL)
+      ↓ auto-login, then redirect to:
+   /membership/checkout → server creates Stripe Checkout session
+                          (price_individual_30 OR price_family_50)
       ↓
-   ┌─ success → Stripe webhook → upsert member (status=active, paid_until=+1yr)
-   │           → send password-setup email via Azure Comm Services
-   │           → redirect to /auth/setup-password?token=...
-   └─ cancel  → /join?cancelled=1
+   ┌─ success → Stripe webhook /api/stripe/webhook
+   │           → idempotent on event.id (stripe_events table)
+   │           → set Status='active', ExpirationDate=NOW()+1yr,
+   │             insert into payments (PaymentMethod='Stripe',
+   │             StripeChargeID, Amount, PaymentDate)
+   │           → email "Welcome, you're in" via Azure Comm Services
+   │           → redirect to /portal/profile?welcome=1
+   └─ cancel  → /membership/checkout?cancelled=1 (account stays pending_payment)
 ```
 
-**Key decisions to lock down:**
-- One-time annual charge vs. Stripe subscription with auto-renew?
-- Membership tiers (single price, or e.g. Student / Regular / Family)?
-- Refund/cancellation policy?
+### 3.2 Renewal (anniversary-based)
+```
+Logged-in member visits /portal/profile
+   → banner appears when ExpirationDate is within 60 days (or already passed)
+   → "Renew now" button → /portal/renew
+   → Stripe Checkout (same price IDs, customer_email prefilled)
+   → webhook: ExpirationDate = MAX(ExpirationDate, NOW()) + 1yr
+                                                       ^ extends from existing
+                                                         expiry, not from today,
+                                                         so early renewers don't
+                                                         lose days
+   → email receipt + "see you next year"
+```
 
-**Webhook reliability:** add idempotency on Stripe `event.id`, plus a nightly reconciliation cron (your `PAYMENTS_FUZZY_MATCH` infra already handles this pattern).
+### 3.3 Renewal reminders (cron)
+Nightly job in `mmr-admin/cron_renewal_reminders.py`:
+- 30 days before `ExpirationDate`: friendly heads-up email
+- 7 days before: second nudge
+- 1 day after: "your membership expired — click to renew" (sets Status='lapsed' after 30 days grace)
+
+### 3.4 Webhook reliability
+- New table `stripe_events (event_id PK, type, processed_at)` — webhook checks before processing
+- Nightly reconciliation cron compares Stripe charges (last 7 days) against `payments` table; logs any drift to `activity_log` with severity='warning'
+- All Stripe failures route to the existing V007 error_context table
+
+---
+
+## 3.5 Deprecation — what gets retired
+
+Once the Stripe flow is live, these existing components are removed:
+
+| Component | Why | Migration |
+|---|---|---|
+| `api_payments.py` autoguess endpoints (`/api/payments/autoguess-all`, `/manual-approve`) | No more manual matching needed | Archive routes; keep read-only "view history" endpoints |
+| `sp_link_transaction()` MySQL procedure | Replaced by webhook insert | Drop in MIGRATION_V0xx after 30-day quiet period |
+| `gmail_transactions` table | No more Gmail-based matching | Keep historical data; stop new inserts (disable the GAS poller) |
+| `/payment-proof` + `/portal/payment-proof` routes | No screenshots needed | Redirect to `/portal/renew` |
+| `config.renewal_start_date` / `renewal_end_date` | Anniversary-based — no club-wide window | Drop config keys |
+| `submissions.PaymentStatus='pending'` workflow | Account is created at the same moment as Stripe Checkout | Existing pending submissions get a one-shot cleanup script |
+| Existing 30-day trial logic | Pay-to-activate | Remove trial-extension code paths in `api_members.py` |
+
+**Cutover plan:** Run both systems in parallel for 30 days, then deprecate. Existing members are *not* re-charged — they keep their current `ExpirationDate` and only meet Stripe at their next anniversary.
 
 ---
 
@@ -249,13 +319,16 @@ Non-dev users (board members, coaches, treasurer) need forms to manage content. 
 - **Done when:** a board member who has never seen the code can log in and update content end-to-end
 
 ### Phase 4 — Membership join + Stripe *(Week 7, ~25–40 hrs)*
-- Extend `/join` form with all required fields + CoC checkbox
-- Server route: create Stripe Checkout session
-- Webhook handler `/api/stripe/webhook`: idempotent member upsert
-- Email "Welcome — set your password" via Azure Comm Services
-- Hook into existing `/auth/setup-password` flow
-- Renewal: depends on subscription vs one-time decision (see §3)
-- **Done when:** brand-new user can join, pay, set password, log in, and see their membership active in `/portal/profile`
+- Migration V0xx: `stripe_events`, `payments.StripeChargeID`, `members.Status` enum adds `'pending_payment'`, `'lapsed'`
+- `/join` form: account + tier + CoC → POST `/api/auth/register` (Status='pending_payment')
+- `/membership/checkout`: server creates Stripe Checkout session (Individual $30 / Family $50 price IDs from env)
+- Webhook handler `/api/stripe/webhook`: idempotent on `event.id`, sets Status='active' + ExpirationDate
+- `/portal/renew` for anniversary renewals (extends from existing expiry, not from today)
+- "Welcome" + receipt emails via Azure Comm Services
+- Renewal reminder cron (30 / 7 days before, 1 day after) — see §3.3
+- Reconciliation cron — see §3.4
+- Deprecate `/payment-proof` (redirect → `/portal/renew`)
+- **Done when:** brand-new user can register → pay → log in → see active membership in `/portal/profile`; existing member can renew from portal; expired member receives reminder emails on cron schedule
 
 ### Phase 5 — Polish + launch *(Week 8, ~15–25 hrs)*
 - SEO: sitemap.xml, robots.txt, OG tags, meta descriptions
@@ -270,19 +343,17 @@ Non-dev users (board members, coaches, treasurer) need forms to manage content. 
 
 ---
 
-## 7. Decisions needed from you before Phase 4
+## 7. Decisions still open
 
-These don't block Phase 1–2 but should be locked by end of Phase 2:
+Locked decisions moved to §0. These remain:
 
-1. **Payment model:** annual one-time charge, or Stripe subscription with auto-renew?
-2. **Membership tiers:** single price, or Student/Regular/Family/etc.?
-3. **Refund/cancellation policy:** drives Stripe configuration and FAQ copy
-4. **Bilingual EN / 中文?** The team name 岚山跑团 suggests yes — affects routing (`/zh/about`) and content strategy
-5. **Coach contact:** publish emails or route through `/contact`?
-6. **Team records:** board-only entry, or member self-submit with review queue?
-7. **Sponsor tiers:** what levels exist and what does each get?
-8. **Code of Conduct:** existing draft or write from scratch?
-9. **Domain:** which one launches public?
+1. **Refund/cancellation policy:** drives Stripe configuration + FAQ copy. Typical clubs: no refunds after 7 days, prorated only for medical reasons.
+2. **Coach contact:** publish emails publicly, or route through `/contact`?
+3. **Team records:** board-only entry, or member self-submit with review queue?
+4. **Sponsor tiers:** what levels exist and what does each get?
+5. **Code of Conduct:** existing draft, adapt from Dashing Whippets, or write from scratch?
+6. **Domain:** which one launches public?
+7. **Family tier semantics:** one login per family with multiple members linked, or each family member gets their own login but shares billing?
 
 ---
 
@@ -299,13 +370,35 @@ These don't block Phase 1–2 but should be locked by end of Phase 2:
 
 ---
 
-## 9. How to execute with Claude Code
+## 9. How to execute with Claude CoWork (Vibe Coding)
 
-1. Drop this plan in repo root as `PUBLIC_SITE_PLAN.md`
-2. Update `CLAUDE.md` to reference it and note the existing conventions (pre-commit hooks, `npm run verify`, `lib/access.ts` for new routes)
-3. Open Phase 1 as a GitHub issue, point Claude Code at the repo + plan, work through it route by route
-4. Each PR: one route or one module, run `npm run verify` before push (your existing flow)
-5. Phase 3 and 4 changes touch the DB — always paired with a migration in `basecamp/migrations/`
+**The cadence:** short, focused CoWork sessions (2–3 hrs each) with a single concrete deliverable per session. CoWork drafts code/migrations/scaffolding inside the workspace folder; the maintainer reviews diffs, runs `npm run verify` + `python3 mmr-admin/test_imports.py` locally, and commits.
+
+**Session-level breakdown** (rough — adjust as scope shifts):
+
+| Phase | Sessions | What each session ships |
+|---|---|---|
+| **Phase 1 — Skeleton + nav** | 4–6 | (1) nav + footer + design tokens · (2) `/about` + `/membership` + `/code-of-conduct` MDX · (3) `/sponsors` placeholder · (4) `/contact` form + email · (5) `/faq` refresh · (6) mobile responsive pass |
+| **Phase 2 — Dynamic reads** | 5–7 | (1) all 8 migrations + seeds from existing Sheets · (2) `/about/board` · (3) `/training` + plan detail · (4) `/training/runs` + `/training/coaches` · (5) `/racing` + recap · (6) `/racing/records` with client filter · (7) ISR tuning |
+| **Phase 3 — mmr-admin CMS** | 6–8 | (1) admin auth gate + role · (2) Board CRUD · (3) Coaches + Runs CRUD · (4) Training Plans + PDF upload · (5) Races + MDX recap · (6) Team Records + verify toggle · (7) Sponsors · (8) Contact inbox |
+| **Phase 4 — Stripe** | 3–4 | (1) migration + Stripe price IDs + `/join` flow · (2) `/membership/checkout` + webhook · (3) `/portal/renew` + reminder cron · (4) reconciliation cron + deprecate `/payment-proof` |
+| **Phase 5 — Launch** | 2–3 | (1) SEO + analytics · (2) a11y + Lighthouse · (3) soft launch + feedback fixes |
+
+**Per session — the loop:**
+1. **Open CoWork**, paste the session's deliverable from the table above as the prompt
+2. CoWork reads the relevant existing files (route, component, migration sibling), drafts the change set
+3. Maintainer reviews diffs in the workspace folder, runs `npm run verify` locally
+4. CoWork addresses any failures, then maintainer commits using a semantic message (`feat:`, `fix:`, `chore:`) and pushes
+5. Update `_context.md` with the 3-line session note before closing CoWork
+
+**Guardrails that apply every session:**
+- DB changes always paired with a `MIGRATION_V###` file ending in the self-registration INSERT (per CLAUDE.md)
+- Frontend: TS strict mode, `lib/access.ts` gates any new authenticated route
+- Backend: shared modules edited in `basecamp/python/` first, synced via `./scripts/sync-shared-modules.sh`
+- Build verification: `npm run build 2>&1 | tail -n 50` after any Next.js change
+- Token discipline: one file read per cycle, diff-first edits — per CLAUDE.md
+
+**Total CoWork sessions across all 5 phases:** ~20–28. At 2–3 hrs each that's the same 145–215 hr estimate from §6, just sliced into chewable pieces.
 
 ---
 
