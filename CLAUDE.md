@@ -148,8 +148,10 @@ Sequenced backlog. P0=quick wins (this week), P1=features asked for, P2=code hea
 
 **P0 — Operational quick wins (~1 day total)**
 1. Re-enable `.github/workflows/sync-nyrr-weekly.yml` cron schedule (currently manual-only); smoke-test one event end-to-end.
-2. Doc cleanup — delete root .md files violating HARD RULE: `PAYMENTS_API_REFERENCE.md`, `PAYMENTS_FUZZY_MATCH.md`, `PAYMENTS_UI_LAYOUT.md`, `PAYMENTS_UI_RESTORATION.md`, `FUZZY_MATCH_QUICK_START.md`, `FUZZY_SELECT_CANDIDATES.md`, `REFACTOR_BLUEPRINT.md`, `SCHEMA_ANALYSIS.md`, `PROJECT_PLAN.md`; plus `mmr-admin/REFACTOR_SESSION_2026-04-01.md`, `ROUTES_REFERENCE.md`, `PAYMENTS_DESIGN.md`, `AUDIT_RENEWAL_FEATURE.md`. Fold any unique info into this CLAUDE.md.
+2. ✅ DONE (2026-05-05, commit 7a557cf) — Doc cleanup: 13 stray .md files removed (PAYMENTS_*, FUZZY_*, REFACTOR_BLUEPRINT, SCHEMA_ANALYSIS, PROJECT_PLAN, ROUTES_REFERENCE, PAYMENTS_DESIGN, AUDIT_RENEWAL_FEATURE, mmr-admin/REFACTOR_SESSION_2026-04-01.md). Re-audit 2026-05-18 confirmed none present.
 3. Verify V023 deployed: `SELECT version FROM schema_migrations ORDER BY id DESC LIMIT 5;`
+4. **NEW** — Flagged for review (untracked, violates HARD RULE): `PUBLIC_SITE_PLAN.md` (318 lines, dated 2026-05-19). Either fold into CLAUDE.md or move to a tracked planning location.
+5. **NEW** — Flagged for review (root-level, possibly stale): `WeChat_Member_Matching_Agent_Prompt.md` (321 lines) and `MONOREPO.md` (364 lines). Evaluate whether content belongs in CLAUDE.md or should stay as separate docs.
 
 **P1a — Payments staleness gate (~3h, frontend only)**
 File: `mmr-admin/static/PaymentsPanel.js` (~30 LOC). Existing `lastSyncTime` from `/api/sync/jobs` already wired (line 48-124). Add: `STALE_HOURS=24`; `isStale = age>24h || lastSyncTime===null`. When stale: yellow banner above sync bar with hours-old + pulsing "Sync Now" button; pass `disabled={isStale}` to autoguess button (line 213) with tooltip. After sync completes, `fetchLastSync()` re-runs (line 102) → banner clears. No backend change.

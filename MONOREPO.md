@@ -1,35 +1,47 @@
-# trailhead Monorepo Guide 🏔️
+# trailhead Monorepo Guide
 
-How the three services (`web-apps`, `photo-manager`, `basecamp`) work together.
+How the five services in this repo fit together. For Claude-specific working notes see [`CLAUDE.md`](CLAUDE.md); for session diary see [`_context.md`](_context.md).
 
 ---
 
 ## The Big Picture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      trailhead Monorepo                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌────────────┐ │
-│  │   web-apps       │  │  photo-manager   │  │  basecamp  │ │
-│  │                  │  │                  │  │  (shared)  │ │
-│  │  - Next.js app   │  │  - Python CV     │  │            │ │
-│  │  - GAS scripts   │  │  - Photo OCR     │  │  - DB sync │ │
-│  │  - API server    │  │  - Face detect   │  │  - Schemas │ │
-│  │  - Azure static  │  │  - Quality pick  │  │  - Ops     │ │
-│  │                  │  │  - Google Drive  │  │  - Docs    │ │
-│  └────────┬─────────┘  └────────┬─────────┘  └────┬───────┘ │
-│           │                     │                 │          │
-│           └─────────────────────┴─────────────────┘          │
-│                         ▼                                     │
-│                  basecamp (shared)                           │
-│              • Google Workspace API                          │
-│              • MySQL sync & schema                           │
-│              • Shared utilities                              │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        trailhead Monorepo                              │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ┌──────────────────────┐  ┌──────────────────┐  ┌──────────────────┐ │
+│  │  web-apps/           │  │  photo-manager/  │  │  mmr-admin/      │ │
+│  │    mmr-webapp        │  │                  │  │                  │ │
+│  │  Next.js 14 + NextAuth│  │  Python 3.9     │  │  Flask + React   │ │
+│  │  Member-facing portal│  │  cv2 / dlib OCR  │  │  Ops dashboard   │ │
+│  │  Azure Static Web App│  │  Race photo tool │  │  api_*.py blueprints│
+│  │  GAS scripts (gas/)  │  │  Drive ↔ Blob    │  │  Azure App Service│ │
+│  └─────────┬────────────┘  └────────┬─────────┘  └────────┬─────────┘ │
+│            │                        │                     │           │
+│            └────────────┬───────────┴─────────────────────┘           │
+│                         │                                              │
+│            ┌────────────▼────────────┐    ┌──────────────────────┐    │
+│            │     basecamp/python/    │    │        db/           │    │
+│            │  Shared Python modules  │    │  Schema + migrations │    │
+│            │  sync_engine.py         │    │  schema_snapshot.sql │    │
+│            │  nyrr_api.py            │    │  MIGRATION_V*.sql    │    │
+│            │  sync_config / batch /  │    │  validate_schema.py  │    │
+│            │  jobs / models / types  │    │  test_procedure_*.py │    │
+│            └─────────────┬───────────┘    └──────────┬───────────┘    │
+│                          │                           │                 │
+│                          └──────────┬────────────────┘                 │
+│                                     ▼                                  │
+│                       Azure MySQL 5.7 (mmr-mysql-v4)                   │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Source of truth:**
+- Database schema → `db/schema_snapshot.sql` (migrations in `db/MIGRATION_V*.sql`)
+- Shared Python (sync engine, NYRR client) → `basecamp/python/` — CI auto-copies into `mmr-admin/` on push to main
+- Web app routes/auth → `web-apps/mmr-webapp/`
 
 ---
 
@@ -37,244 +49,277 @@ How the three services (`web-apps`, `photo-manager`, `basecamp`) work together.
 
 ```
 trailhead/
-├── README.md                          ← Start here
-├── MONOREPO.md                        ← You are here
-├── DEPLOYMENT.md                      ← Deployment secrets & workflows
-├── LICENSE
+├── README.md                                ← Start here
+├── CLAUDE.md                                ← Working agreement + active backlog
+├── MONOREPO.md                              ← You are here
+├── _context.md / _context_archive.md        ← Rolling session diary
+├── load-env.sh                              ← Pulls secrets from macOS Keychain
 │
-├── .github/
-│   └── workflows/
-│       └── azure-static-web-apps-*.yml  ← GitHub Actions (builds web-apps)
+├── .github/workflows/                       ← CI/CD
+│   ├── azure-static-web-apps-*.yml          ← web-apps deploy
+│   ├── deploy-mmr-admin.yml                 ← mmr-admin deploy (copies basecamp/python → mmr-admin/)
+│   ├── run-db-migrations.yml                ← Runs db/MIGRATION_V*.sql on push to main
+│   ├── db-schema-drift.yml / db-sql-lint.yml← Schema guardrails
+│   ├── sync-all-sheets-ordered.yml          ← MySQL ↔ Google Sheets nightly batch
+│   ├── sync-nyrr-weekly.yml                 ← NYRR ingest (cron currently disabled — P0 item)
+│   └── manual-mysql-operations.yml          ← One-off SQL via GH Actions
 │
-├── web-apps/                          ← 👥 Member portal + backend
+├── .githooks/                               ← Shared git hooks
+│   └── pre-commit                           ← Runs mmr-admin/test_imports.py
+│
+├── scripts/                                 ← Repo utilities (e.g. sync-shared-modules.sh)
+│
+├── web-apps/                                ← Member-facing surface
 │   ├── README.md
-│   ├── mmr-webapp/
-│   │   ├── DEVELOPMENT.md             ← Local dev setup
-│   │   ├── app/                       ← Next.js App Router
+│   ├── mmr-webapp/                          ← Next.js 14 + NextAuth + Tailwind
+│   │   ├── DEVELOPMENT.md
+│   │   ├── app/                             ← App Router (/, /login, /join, /faq,
+│   │   │                                       /portal/*, /payment-proof, /admin/*)
 │   │   ├── lib/
-│   │   │   ├── db/                    ← MySQL connection
-│   │   │   ├── auth/                  ← JWT, session
-│   │   │   └── access.ts              ← Access control tiers
-│   │   └── middleware.ts              ← Request routing + auth
-│   ├── gas/
-│   │   ├── membership/                ← Membership Google Sheets sync
-│   │   └── nyrr/                      ← NYRR race results sync
-│   └── events/                        ← Blog posts (extracted from Meipian)
+│   │   │   ├── auth/                        ← NextAuth: session.ts, password.ts
+│   │   │   └── db/                          ← MySQL connection + queries
+│   │   └── middleware.ts
+│   └── gas/                                 ← Google Apps Script projects (clasp)
+│       ├── membership/                      ← Membership Master Sheet ↔ webhook
+│       └── nyrr/                            ← NYRR results sheets
+│           └── SHEETS_SETUP_CHECKLIST.md
 │
-├── photo-manager/                     ← 📸 Race photo pipeline
+├── photo-manager/                           ← Race photo pipeline (Python)
 │   ├── README.md
-│   ├── src/
-│   │   ├── process_photos.py          ← Main orchestration
-│   │   ├── bib_analyzer.py            ← Bib extraction
-│   │   ├── photo_quality_picker.py    ← Quality scoring
-│   │   └── modules/                   ← Azure, OCR, quality metrics
-│   ├── requirements.txt
-│   └── partner/                       ← Partner nonprofit collab
+│   ├── process_photos.py                    ← Orchestrator (Drive → process → output.json)
+│   ├── bib_analyzer.py                      ← Bib OCR (Azure Vision)
+│   ├── phase1-plan.md / round2-plan.md      ← Long-lived design notes
+│   ├── member-photo-instructions.md         ← Bilingual user-facing guide
+│   ├── member-data-collection-spec.md
+│   └── partner/                             ← Partner nonprofit collab
 │
-├── mmr-admin/                        ← 🛠️ Admin ops dashboard (Flask)
-│   ├── app.py                        ← Entry point (Flask app + blueprints)
-│   ├── db.py                         ← DB connection & query helpers
-│   ├── auth.py                       ← OAuth, login, role decorators
-│   ├── api_*.py                      ← Route modules (events, runners, sync…)
-│   ├── helpers.py                    ← JSON encoder, error handlers
-│   └── test_imports.py               ← Circular import detection
+├── mmr-admin/                               ← Ops dashboard (Flask + embedded React)
+│   ├── README.md / DEPLOY_AZURE.md / TESTING.md
+│   ├── app.py                               ← Thin orchestrator: registers ~25 blueprints
+│   ├── db.py / helpers.py / auth.py         ← Connection, JSON encoder, OAuth
+│   ├── api_<domain>.py                      ← Route modules (members, payments, events,
+│   │                                           runners, sync, audit, admin, query, …)
+│   ├── sync_runners.py                      ← 6 export/import ops + full_sync orchestration
+│   ├── sync_jobs.py                         ← In-memory job state + MySQL fallback
+│   ├── activity_logger.py                   ← Writes to activity_log table
+│   ├── test_imports.py                      ← Circular import detector (pre-commit)
+│   ├── templates/                           ← React components (.html) loaded by Babel
+│   │   ├── index.html                       ← App shell (370 LOC)
+│   │   ├── dashboard-panel.html, sync-panel.html, … (9 component files)
+│   │   └── styles.css, component-loader.js
+│   └── tests/                               ← pytest contract tests
 │
-├── .githooks/                        ← 🪝 Shared git hooks
-│   └── pre-commit                    ← Import check for mmr-admin
+├── basecamp/                                ← Shared Python + ops scripts
+│   ├── README.md
+│   ├── python/                              ← Source of truth for shared modules
+│   │   ├── sync_engine.py                   ← Batched UPSERT engine
+│   │   ├── sync_config.py / sync_batch.py / sync_compare.py / sync_diff.py
+│   │   ├── sync_audit.py / sync_datetime.py / sync_jobs.py
+│   │   ├── sync_models.py / sync_types.py
+│   │   ├── nyrr_api.py (+ _endpoints.py + _models.py — split per HARD RULE)
+│   │   └── __init__.py
+│   └── ops/                                 ← Cron-driven scripts
+│       ├── sync_nyrr_events.py              ← Entry point (288 LOC orchestrator)
+│       ├── sync_nyrr_discovery.py / _ingest.py / _matching.py / _helpers.py
+│       ├── schema_inspector.py
+│       └── verify_sheets_structure.py
 │
-└── basecamp/                          ← 🏕️ Shared library
+└── db/                                      ← Database source of truth
     ├── README.md
-    ├── python/
-    │   ├── google_workspace.py        ← Drive + Sheets API wrapper
-    │   └── mysql_sync.py              ← Member sync to MySQL
-    ├── schemas/
-    │   └── members.sql                ← Source-of-truth schema
-    ├── migrations/                    ← Versioned DB changes
-    ├── ops/                           ← Cron jobs, monitoring
-    └── docs/                          ← Shared documentation
+    ├── schema_snapshot.sql                  ← Canonical schema (regenerated via /api/export-schema)
+    ├── schema_integration.sql
+    ├── MIGRATION_V015…V025.sql              ← Versioned, idempotent, self-registering
+    ├── validate_schema.py                   ← NULL/FK/ENUM/PK linter
+    ├── test_procedure_enum_safety.py
+    ├── REVERT_*.sql                         ← Roll-back scripts (manual use only)
+    ├── schemas/ / queries/                  ← Per-table fragments + adhoc reports
+    └── test_procedure_enum_safety.py
 ```
 
 ---
 
 ## Data Flow
 
-### 1. Member Signup → Web App → MySQL
+### 1. Member signup → MySQL
 
 ```
-Visitor fills /join form
-    ↓
-POST /api/auth/register
-    ↓
-lib/db/members.ts → MySQL (members table)
-    ↓
-JWT token issued → Set cookie
-    ↓
-Redirect to /portal
+Visitor → /join (Next.js) → POST /api/auth/register
+       → NextAuth sets session cookie
+       → INSERT into members (status='pending', generate_member_id() trigger)
+       → Redirect /portal
 ```
 
-### 2. Google Sheets Sync (nightly cron)
+### 2. Payment proof → autoguess → status flip
 
 ```
-Google Sheets (Membership Master)
-    ↓
-GAS script (gas/membership) → reads Google Sheets
-    ↓
-POST /api/members/sync
-    ↓
-basecamp/python/mysql_sync.py → MySQL
-    ↓
-Email alerts sent (payment received, renewal needed)
+Member uploads receipt at /payment-proof
+       → row in submissions (Status='pending')
+Gmail listener (GAS) → rows in gmail_transactions (unmatched)
+Admin clicks "Autoguess" in mmr-admin Payments panel
+       → POST /api/payments/autoguess-all
+       → For each gmail row: regex Axxxx → match member + renewal window + $ amount
+       → sp_link_transaction(tx, memberID, 'Membership', amount, submissionID)
+       → Triggers cascade: members.Status='active', expiration+=1yr,
+                          submissions.Status='approved', gmail.notes synced
 ```
 
-### 3. Photo Upload → Processing → Storage
+### 3. Google Sheets ↔ MySQL (batched UPSERT)
 
 ```
-Member uploads photos at /portal/photos
-    ↓
-Azure Storage → Google Drive
-    ↓
-photo-manager/src/process_photos.py
-    • Extract bibs (bib_analyzer.py)
-    • Detect faces (modules/azure_face.py)
-    • Score quality (modules/quality.py)
-    ↓
-Results → back to Google Drive
-    ↓
-Member views at /portal/photos/bibs or /portal/photos/references
+sync-all-sheets-ordered.yml (GH Action, nightly)
+       → mmr-admin/sync_runners.py → 6 export/import ops
+       → basecamp/python/sync_engine.py (batch size 300)
+       → Google Sheets API (GAS webhook) ↕ MySQL UPSERT
+       → sync_jobs table records start/end/rows/status
+       → mmr-admin "Sync with Google" panel polls job status
 ```
 
-### 4. Race Results Integration
+### 4. NYRR results pipeline
 
 ```
-NYRR API
-    ↓
-GAS script (gas/nyrr) → fetches results
-    ↓
-Google Sheets (NYRR Results)
-    ↓
-Web app reads results → displays on /portal/nyrr
+sync-nyrr-weekly.yml (cron — currently manual-only; P0)
+       → basecamp/ops/sync_nyrr_events.py (orchestrator)
+       → Stage 1-3: discover_events → promote_completed → refresh_upcoming  (discovery.py)
+       → Stage 4: ingest_event_runners + upsert  (ingest.py)
+       → Stage 5: run_auto_matcher Tier 1/2/3 + Tier 4 fuzzy (matching.py)
+       → Unmatched rows surface in mmr-admin "🏃 Match Queue" sub-tab
+```
+
+### 5. Photo pipeline
+
+```
+Member photos in Google Drive folder
+       → photo-manager/process_photos.py
+       → bib_analyzer.py (Azure Vision OCR) + face detect + quality score
+       → output.json + cropped images → Azure Blob Storage
+       → Member views at /portal/photos/{bibs,references}
 ```
 
 ---
 
-## Shared Library: `basecamp/`
+## Shared Python: `basecamp/python/`
 
-All services use utilities from `basecamp/`:
+**This is the source of truth.** Edit here FIRST. CI (`deploy-mmr-admin.yml`) auto-copies these files into `mmr-admin/` before each Azure deploy so admin imports work in production. For local parity:
 
-### Google Workspace Module
-```python
-from basecamp.python.google_workspace import (
-    GoogleDriveClient,
-    GoogleSheetsClient,
-    get_service_account_credentials
-)
-
-# Access shared service account (no per-user auth needed)
-drive = GoogleDriveClient()
-files = drive.list_files(folder_id='xyz123')
+```bash
+./scripts/sync-shared-modules.sh        # mirrors basecamp/python → mmr-admin
+python3 mmr-admin/test_imports.py       # circular-import + parity check
 ```
 
-### MySQL Sync Module
-```python
-from basecamp.python.mysql_sync import (
-    sync_google_sheets_to_mysql,
-    get_member_by_email,
-    update_member_profile
-)
+Modules:
 
-# One-way sync: Google Sheets → MySQL
-sync_google_sheets_to_mysql('Membership Master')
-```
-
-### Schema
-The **source of truth** for all database structure lives in `basecamp/schemas/`:
-```
-basecamp/schemas/
-├── members.sql              ← Member profiles, status, payment
-├── photos.sql               ← Photo metadata
-├── races.sql                ← NYRR race results
-└── ...
-```
-
-When you change the schema:
-1. Create a new SQL file in `basecamp/migrations/` (e.g., `0003_add_year_born.sql`)
-2. Update `basecamp/schemas/members.sql` (source of truth)
-3. Run migration on production MySQL
-4. Update code that reads/writes the new columns
-5. Test in `web-apps/` and `photo-manager/`
+| File | Role |
+|---|---|
+| `sync_engine.py` | Batched UPSERT MySQL ↔ Sheets (BATCH_SIZE=300) |
+| `sync_config.py` | Field maps, table → sheet routing |
+| `sync_batch.py` / `sync_diff.py` / `sync_compare.py` | Diff + batch helpers |
+| `sync_jobs.py` | Job lifecycle (in-memory + MySQL fallback) |
+| `sync_audit.py` | Writes audit rows |
+| `sync_datetime.py` | Timezone-safe datetime parsing |
+| `sync_models.py` / `sync_types.py` | Pydantic-ish row models |
+| `nyrr_api.py` (+ `_endpoints.py`, `_models.py`) | NYRR HTTP client, split per HARD RULE |
 
 ---
 
-## Environment Setup
+## Database: `db/`
 
-Each service has its own `.env.local` (git-ignored):
+`db/schema_snapshot.sql` is the canonical schema. Regenerate it from production via:
 
-### `web-apps/mmr-webapp/.env.local`
 ```bash
-DATABASE_URL=mysql://mmradmin:***@mmr-mysql.mysql.database.azure.com/mmrdb?ssl=true
-JWT_SECRET=your-long-random-string
-AZURE_STORAGE_CONNECTION_STRING=***
-AZURE_COMM_CONNECTION_STRING=***
-NEXT_PUBLIC_APP_URL=https://www.mmrunners.org
+curl https://<mmr-admin-host>/api/export-schema -H "Authorization: …" > db/schema_snapshot.sql
 ```
 
-### `photo-manager/.env.local`
+**Migrations — strict rules:**
+
+1. Filename pattern: `MIGRATION_V<NNN>_<description>.sql` (e.g. `MIGRATION_V026_add_runner_notes.sql`). GitHub Actions (`run-db-migrations.yml`) runs anything matching this on push to `main`.
+2. **MySQL 5.7+ constraint:** no `IF NOT EXISTS` on ALTER TABLE / CREATE INDEX, no multi-clause ALTERs. Check `INFORMATION_SCHEMA` for idempotency.
+3. **Every migration MUST self-register** at the bottom:
+   ```sql
+   INSERT INTO schema_migrations (version, description, executed_at)
+   VALUES ('V026', 'Add runner notes column', NOW())
+   ON DUPLICATE KEY UPDATE executed_at = NOW();
+   ```
+4. Validate before committing: `python3 db/validate_schema.py` (detects NULL violations, FK orphans, ENUM mismatches, duplicate uniques).
+
+**Active stored procedures:** `generate_member_id()`, `sp_admin_update_member_status()`, `sp_link_transaction()`, `sp_error_summary_report(days_back)`. See CLAUDE.md for signatures.
+
+---
+
+## Environment & Secrets
+
+**macOS local dev — Keychain only (no `.env` files):**
+
 ```bash
-AZURE_VISION_KEY=***
-AZURE_VISION_ENDPOINT=https://***
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
-GOOGLE_DRIVE_PHOTO_FOLDER_ID=folder_id
-BASECAMP_PATH=../basecamp
+# Retrieve one secret
+security find-generic-password -s mmr-mysql-host -w
+
+# Load all into the shell, then run something
+source load-env.sh && python3 mmr-admin/app.py
 ```
 
-### `gas/membership/.env.local` (in `package.json` scripts)
-```bash
-GOOGLE_APPS_SCRIPT_PROJECT_ID=***
-```
+**Azure production:** App Service "Application settings" / Static Web App configuration. `mmr-admin/app.py` auto-loads `web-apps/mmr-webapp/.env.local` on dev only (skipped when `WEBSITE_SITE_NAME` is set).
 
-**Critical:** Never commit `.env.local`. Use `.env.example` as a template.
+**Required keys** (names are illustrative — see Keychain for the canonical service-name list):
+
+| Key | Used by |
+|---|---|
+| `DATABASE_URL`, MySQL host/user/pass | All services |
+| `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | web-apps |
+| Google OAuth client ID/secret | web-apps + mmr-admin (shared) |
+| Microsoft OAuth client ID/secret | mmr-admin |
+| `AZURE_STORAGE_CONNECTION_STRING` | web-apps + photo-manager |
+| `AZURE_VISION_KEY` / `AZURE_VISION_ENDPOINT` | photo-manager |
+| `AZURE_COMM_CONNECTION_STRING` | web-apps (transactional email) |
+| Google service-account JSON path | basecamp/photo-manager |
+
+**Never commit secrets.** Pre-commit hook does not currently scan for leaks — rely on Keychain discipline.
 
 ---
 
 ## Git Hooks
 
-The repo includes shared pre-commit hooks in `.githooks/`. After cloning, enable them once:
+Enable once after cloning:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-Currently active hooks:
-
-- **pre-commit** — When `mmr-admin/*.py` files are staged, runs `test_imports.py` to catch circular or broken imports before they land. Only triggers when mmr-admin Python files are in the commit; other changes are unaffected.
-
-To bypass in an emergency: `git commit --no-verify`
+Currently active:
+- **pre-commit** → when any `mmr-admin/*.py` file is staged, runs `python3 mmr-admin/test_imports.py` to catch circular/broken imports before they land. Bypass in emergencies with `git commit --no-verify`.
 
 ---
 
 ## Local Development
 
-### Start web-apps locally
-
+### Web app
 ```bash
 cd web-apps/mmr-webapp
-cp .env.local.example .env.local   # Fill in secrets
 npm install
-npm run dev                         # http://localhost:3000
+source ../../load-env.sh
+npm run dev                            # http://localhost:3000
+npm run build 2>&1 | tail -n 50        # before pushing
 ```
 
-### Test photo pipeline locally
+### mmr-admin (Flask)
+```bash
+source load-env.sh
+cd mmr-admin
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python3 app.py                         # http://localhost:5050
+# shortcuts: adm-restart / adm-status / adm-logs / adm-test
+```
 
+### Photo pipeline
 ```bash
 cd photo-manager
 pip install -r requirements.txt
-python src/process_photos.py --dry-run  # Test without uploading
+python3 process_photos.py --event "20260315-nyc-half" --dry-run
 ```
 
-### Push GAS changes
-
+### Google Apps Script
 ```bash
-cd web-apps/gas/membership
+cd web-apps/gas/membership   # or gas/nyrr
 npm run build:copy && npm run push
 ```
 
@@ -282,83 +327,73 @@ npm run build:copy && npm run push
 
 ## Deployment
 
-See [`DEPLOYMENT.md`](DEPLOYMENT.md) for:
-- Azure secrets configuration
-- GitHub Actions workflow
-- GAS deployment via clasp
-- Database migrations on production
+All deploys flow through `.github/workflows/`:
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `azure-static-web-apps-*.yml` | push to `main` touching `web-apps/` | Builds Next.js → Azure SWA |
+| `deploy-mmr-admin.yml` | push to `main` touching `mmr-admin/` or `basecamp/python/` | Syncs `basecamp/python/` → `mmr-admin/`, deploys to Azure App Service |
+| `run-db-migrations.yml` | push to `main` touching `db/MIGRATION_V*.sql` | Runs new migrations against prod MySQL |
+| `sync-all-sheets-ordered.yml` | scheduled | Batched MySQL ↔ Sheets sync |
+| `sync-nyrr-weekly.yml` | scheduled (currently manual-only) | NYRR ingest + matching |
+| `manual-mysql-operations.yml` | workflow_dispatch | One-off SQL with input form |
+
+**Never `git push --force` to main.** Commit code + `_context.md` together to avoid race conditions.
 
 ---
 
 ## Common Tasks
 
-### Add a new member field
+### Add a member field
+1. `db/MIGRATION_V<next>_add_<field>.sql` — single ALTER + self-register insert.
+2. Update `db/schema_snapshot.sql` to match (or regenerate via `/api/export-schema` post-deploy).
+3. Add column to read paths: `web-apps/mmr-webapp/lib/db/`, `mmr-admin/api_members.py`.
+4. If exposed in sheets, extend the field map in `basecamp/python/sync_config.py`.
+5. `python3 db/validate_schema.py` → expect clean. Commit, push, watch `run-db-migrations.yml`.
 
-1. Add SQL column to `basecamp/schemas/members.sql`
-2. Create migration: `basecamp/migrations/0004_add_field.sql`
-3. Update `web-apps/mmr-webapp/lib/db/members.ts` to read/write the field
-4. If syncing from Google Sheets, update `basecamp/python/mysql_sync.py`
-5. Deploy to production (see `DEPLOYMENT.md`)
+### Add an mmr-admin API endpoint
+1. Add route to existing `api_<domain>.py` (or create a new `api_<newdomain>.py` blueprint).
+2. Register blueprint in `mmr-admin/app.py`.
+3. Add contract test in `mmr-admin/tests/`.
+4. Wire up UI in the relevant `mmr-admin/templates/*.html` component.
+5. `python3 mmr-admin/test_imports.py` must pass.
 
-### Sync Google Sheets → MySQL
+### Force a re-sync
+- UI: mmr-admin → "Sync with Google" → pick operation → "Run".
+- CLI: see `mmr-admin/sync_runners.py` for the 6 ops + `run_full_sync`.
 
-```python
-# One-time sync
-from basecamp.python.mysql_sync import sync_google_sheets_to_mysql
-sync_google_sheets_to_mysql('Membership Master')
+### Inspect recent errors
+```sql
+SELECT * FROM v_unresolved_errors;       -- priority-sorted
+CALL sp_error_summary_report(7);          -- trend last 7 days
 ```
-
-Or trigger nightly via GitHub Actions (see `DEPLOYMENT.md`).
-
-### Test new photo processing logic
-
-```bash
-cd photo-manager
-python src/process_photos.py --event "20260315-nyc-half" --dry-run
-```
-
-### Monitor operations
-
-Check `basecamp/ops/` for health checks, error logs, and cron job status.
 
 ---
 
 ## Troubleshooting
 
-### "MySQL connection error"
-- Check `DATABASE_URL` in `.env.local`
-- Verify IP is allowlisted in Azure MySQL
-- Test: `mysql -h mmr-mysql.mysql.database.azure.com -u mmradmin -p`
-
-### "Google Drive authorization failed"
-- Verify `GOOGLE_APPLICATION_CREDENTIALS` path is correct
-- Service account email must have folder access
-- Check `basecamp/python/google_workspace.py` for details
-
-### "Photo processing is slow"
-- Azure Face API has rate limits (calls per second)
-- Add delay: `time.sleep(0.5)` in `photo-manager/src/modules/azure_face.py`
-
-### "GAS push fails"
-- Check clasp version: `npx clasp --version` (should match `package.json`)
-- Run `npm install` in `gas/membership/` first
-- See `DEPLOYMENT.md` for GAS troubleshooting
+| Symptom | Where to look |
+|---|---|
+| MySQL connection refused | Azure firewall allowlist + `mysql-mmr` CLI alias |
+| NextAuth session not persisting | `NEXTAUTH_SECRET` + `NEXTAUTH_URL` in env |
+| `mmr-admin` import error on Azure but works locally | `./scripts/sync-shared-modules.sh` not run before commit; CI re-syncs but local parity drift causes confusion |
+| Migration ran but `schema_migrations` not updated | Migration missing the self-register INSERT — fix in next migration |
+| Sync job stuck "running" | `sync_jobs` table; mmr-admin Admin → Sync Log shows last 50 |
+| GAS push fails | `clasp` version mismatch — `npm install` in the gas project first |
+| NYRR matcher missing recent finishers | Cron is manual-only (P0 #1); trigger via Actions tab |
 
 ---
 
-## Support
+## Service-level READMEs
 
-For issues spanning multiple services:
-1. Check the **Data Flow** section above
-2. Verify environment variables in all affected `.env.local` files
-3. Check logs in Azure / GitHub Actions
-4. See service-specific READMEs:
-   - [`web-apps/README.md`](web-apps/README.md)
-   - [`photo-manager/README.md`](photo-manager/README.md)
-   - [`basecamp/README.md`](basecamp/README.md)
+- [`web-apps/README.md`](web-apps/README.md) + [`web-apps/mmr-webapp/DEVELOPMENT.md`](web-apps/mmr-webapp/DEVELOPMENT.md)
+- [`photo-manager/README.md`](photo-manager/README.md)
+- [`mmr-admin/README.md`](mmr-admin/README.md) + [`mmr-admin/DEPLOY_AZURE.md`](mmr-admin/DEPLOY_AZURE.md) + [`mmr-admin/TESTING.md`](mmr-admin/TESTING.md)
+- [`basecamp/README.md`](basecamp/README.md)
+- [`db/README.md`](db/README.md)
 
 ---
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE)
+MIT — see [`LICENSE`](LICENSE).
