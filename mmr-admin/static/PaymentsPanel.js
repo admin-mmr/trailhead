@@ -83,7 +83,7 @@ const PaymentsPanel = () => {
     api('/api/sync/jobs').then(r => {
       if (!r || !Array.isArray(r.jobs)) return;
       const last = r.jobs
-        .filter(j => j.operation === 'import_transactions' && j.status === 'completed' && j.completed_at)
+        .filter(j => j.operation === 'import_transactions' && j.status === 'done' && j.completed_at)
         .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))[0];
       if (last) setLastSyncTime(last.completed_at);
     });
