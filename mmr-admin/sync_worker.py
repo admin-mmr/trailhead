@@ -24,6 +24,57 @@ _jobs: Dict[str, Dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
 
 
+def _resolve_slug_to_canonical(client: NyrrApiClient, slug: str, event_name: str, event_year: int) -> str | None:
+    """
+    If `slug` looks like a Haku URL slug (e.g. 'rbc-brooklyn-half'), try to find
+    the canonical NYRR eventCode by calling events/search and fuzzy-matching on name.
+
+    Returns the canonical eventCode string, or None if no confident match found.
+    A "slug" is detected by the presence of hyphens (canonical codes never have them;
+    they look like '26WASH', 'H2026', 'BK26', etc.).
+    """
+    if '-' not in slug:
+        return None  # Already looks canonical
+
+    logger.info(f"🔍 Slug detected ({slug!r}) — attempting resolution via events/search for year={event_year}")
+    try:
+        events = client.search_events(year=event_year)
+    except Exception as e:
+        logger.warning(f"  └─ events/search failed during slug resolution: {e}")
+        return None
+
+    if not events:
+        logger.warning(f"  └─ events/search returned 0 events for year={event_year}")
+        return None
+
+    # Normalize names for comparison: lowercase, strip punctuation
+    import re as _re
+
+    def _norm(s: str) -> str:
+        return _re.sub(r'[^a-z0-9 ]', '', s.lower()).strip()
+
+    slug_words = set(_norm(slug.replace('-', ' ')).split())
+    name_words = set(_norm(event_name).split()) if event_name else set()
+    query_words = slug_words | name_words
+
+    best_code, best_score = None, 0
+    for ev in events:
+        ev_words = set(_norm(ev.event_name).split())
+        if not ev_words:
+            continue
+        overlap = len(query_words & ev_words) / max(len(query_words), len(ev_words))
+        if overlap > best_score:
+            best_score, best_code = overlap, ev.event_code
+
+    THRESHOLD = 0.4  # Require at least 40% word overlap to accept
+    if best_code and best_score >= THRESHOLD:
+        logger.info(f"  └─ Resolved {slug!r} → {best_code!r} (score={best_score:.2f})")
+        return best_code
+
+    logger.warning(f"  └─ Could not resolve {slug!r}: best score {best_score:.2f} < {THRESHOLD}")
+    return None
+
+
 def _process_finishers_batch():
     """Process finishers in batches with divide-and-conquer logic."""
     pass
@@ -54,6 +105,27 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         }
 
     try:
+        # --- Slug resolution: Haku widget stores URL slugs; finishers-filter needs canonical codes ---
+        # If event_code contains hyphens it was inserted by api_discover_upcoming, not the NYRR API.
+        # Attempt to resolve it before any API call so all subsequent steps use the right code.
+        if '-' in event_code:
+            ev_meta = query(
+                "SELECT event_name, event_year FROM nyrr_events WHERE id = %s", [event_id]
+            )
+            ev_name = ev_meta[0]['event_name'] if ev_meta else ''
+            ev_year = ev_meta[0]['event_year'] if ev_meta else 0
+            canonical = _resolve_slug_to_canonical(client, event_code, ev_name, ev_year)
+            if canonical:
+                logger.info(f"✅ Slug resolved: updating DB {event_code!r} → {canonical!r}")
+                execute(
+                    "UPDATE nyrr_events SET event_code = %s WHERE id = %s",
+                    [canonical, event_id]
+                )
+                with _jobs_lock:
+                    _jobs[canonical] = _jobs.pop(event_code)
+                    _jobs[canonical]['message'] = f'Slug resolved to {canonical!r}, starting sync...'
+                event_code = canonical
+
         # --- Step 1: Fetch and upsert finishers (streaming, per-page) ---
         logger.info("⏱️  STEP 1: Starting finishers fetch & upsert (streaming)...")
         step1_start = time.time()
