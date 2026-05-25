@@ -13,7 +13,6 @@ import logging
 import os
 from datetime import date
 from typing import Optional
-from urllib.parse import urlparse
 
 import mysql.connector
 
@@ -32,32 +31,13 @@ API_SLEEP_SECONDS = 2.0  # polite delay between NYRR API calls
 # Database helpers
 # ---------------------------------------------------------------------------
 
-def _db_params() -> dict:
-    """Resolve DB connection params from MYSQL_* vars or DATABASE_URL fallback."""
-    host = os.environ.get('MYSQL_HOST')
-    if host:
-        return {
-            'host':     host,
-            'user':     os.environ.get('MYSQL_USER'),
-            'password': os.environ.get('MYSQL_PASSWORD'),
-            'database': os.environ.get('MYSQL_DATABASE'),
-        }
-    # Fall back to DATABASE_URL (set by load-env.sh from macOS Keychain)
-    db_url = os.environ.get('DATABASE_URL', '')
-    parsed = urlparse(db_url)
-    return {
-        'host':     parsed.hostname or 'localhost',
-        'user':     parsed.username or 'root',
-        'password': parsed.password or '',
-        'database': (parsed.path or '/mmrdb').lstrip('/').split('?')[0],
-    }
-
-
 def get_db_connection() -> mysql.connector.MySQLConnection:
     """Create a MySQL connection from environment variables."""
-    params = _db_params()
     return mysql.connector.connect(
-        **params,
+        host=os.environ.get('MYSQL_HOST'),
+        user=os.environ.get('MYSQL_USER'),
+        password=os.environ.get('MYSQL_PASSWORD'),
+        database=os.environ.get('MYSQL_DATABASE'),
         ssl_disabled=False,
         autocommit=False,
         charset='utf8mb4',

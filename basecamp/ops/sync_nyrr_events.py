@@ -214,10 +214,31 @@ def run_single_event(
     matched = run_auto_matcher(conn, event_id=event['id'])
     update_matched_counts(conn, event_id=event['id'])
 
+    # Post-run counts
+    cur2 = conn.cursor(dictionary=True)
+    cur2.execute("""
+        SELECT
+            COUNT(*) AS total,
+            SUM(team_code = 'MMR') AS mmr
+        FROM nyrr_event_runners
+        WHERE nyrr_event_id = %s
+    """, (event['id'],))
+    counts = cur2.fetchone() or {}
+    cur2.close()
+    total_runners = counts.get('total') or 0
+    mmr_runners   = counts.get('mmr') or 0
+
+    logger.info(
+        f'  Runners in DB: {total_runners} total, {mmr_runners} MMR, '
+        f'{matched} auto-matched'
+    )
+
     return {
         'mode': 'single',
         'event_code': event_code,
         'rows_written': rows,
+        'total_runners': total_runners,
+        'mmr_runners': mmr_runners,
         'auto_matched': matched,
         'status': 'success',
     }
