@@ -18,6 +18,7 @@ Routes:
 from __future__ import annotations
 
 import logging
+import time
 from flask import Blueprint, request, jsonify
 from helpers import json_response
 from auth import login_required
@@ -186,18 +187,26 @@ def api_list_sync_jobs():
     })
 
 
+# Terminal jobs older than this are expired — frontend must stop polling.
+_JOB_TTL_SECONDS = 300  # 5 minutes
+
+
 @sheets_sync_bp.route('/api/sync/status/<job_id>', methods=['GET'])
 @login_required
 def api_sync_status(job_id: str):
     """
     Get the status of a specific sync job.
 
+    Returns 404 when a terminal job (done/error) is older than _JOB_TTL_SECONDS.
+    This forces any frontend poller to stop regardless of which code version is
+    running — the frontend's !r.ok / 404 branch must call clearInterval.
+
     Returns:
         {
             ok: true,
             job: {
                 id: str,
-                status: 'queued' | 'running' | 'completed' | 'error',
+                status: 'queued' | 'running' | 'done' | 'error',
                 message: str,
                 progress: int (0-100),
                 started_at: ISO timestamp,
@@ -205,25 +214,26 @@ def api_sync_status(job_id: str):
             }
         }
     """
-    # DIAGNOSTIC: Log all status fetch requests to detect polling loops
     user_agent = request.headers.get('User-Agent', 'unknown')
-    referer = request.headers.get('Referer', 'unknown')
 
     job = get_job(job_id)
     if not job:
-        logger.warning(f"[FETCH] Job {job_id} not found — user_agent={user_agent}, referer={referer}")
+        logger.warning(f"[FETCH] Job {job_id} not found")
         return json_response({'ok': False, 'error': 'Job not found'}, 404)
 
-    # Log all fetch requests with current job status
     status = job.get('status', 'unknown')
     progress = job.get('progress', 0)
-    message = job.get('message', '')[:50]  # Truncate for log brevity
+    message = job.get('message', '')[:50]
 
-    if status not in ('done', 'error'):
-        # Still running — this is expected polling
-        logger.debug(f"[FETCH] Job {job_id} status={status}, progress={progress}%, message='{message}'")
+    if status in ('done', 'error'):
+        # Expire terminal jobs after TTL — return 404 so any frontend poller stops
+        updated_at = job.get('updatedAt') or job.get('completedAt') or 0
+        age = time.time() - updated_at if updated_at else _JOB_TTL_SECONDS + 1
+        if age > _JOB_TTL_SECONDS:
+            logger.info(f"[FETCH] Job {job_id} expired (age={age:.0f}s) — returning 404 to stop pollers")
+            return json_response({'ok': False, 'error': 'Job expired', 'job_id': job_id}, 404)
+        logger.info(f"[FETCH] Job {job_id} COMPLETE status={status}, age={age:.0f}s — user_agent={user_agent[:80]}")
     else:
-        # Job is complete — log if still being polled after completion
-        logger.info(f"[FETCH] Job {job_id} COMPLETE status={status}, still being polled — user_agent={user_agent[:80]}")
+        logger.debug(f"[FETCH] Job {job_id} status={status}, progress={progress}%, message='{message}'")
 
     return json_response({'ok': True, 'job': job})

@@ -47,8 +47,8 @@ const PaymentsPanel = () => {
   // Gmail sync bar state
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [syncJobId, setSyncJobId]       = useState(null);
-  const [syncStatus, setSyncStatus]     = useState(null); // null | 'running' | 'completed' | 'error'
-  const syncPollRef = useRef(null);
+  const [syncStatus, setSyncStatus]     = useState(null); // null | 'running' | 'done' | 'error'
+  const stopPollRef = useRef(null);  // holds cleanup fn returned by pollUntilDone
   const [activeGmailPopover, setActiveGmailPopover] = useState(null);
   const [popoverAnchorRect, setPopoverAnchorRect] = useState(null);
   const [gmailSearch, setGmailSearch] = useState('');
@@ -83,29 +83,26 @@ const PaymentsPanel = () => {
     api('/api/sync/jobs').then(r => {
       if (!r || !Array.isArray(r.jobs)) return;
       const last = r.jobs
-        .filter(j => j.operation === 'import_transactions' && j.status === 'done' && j.completed_at)
-        .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))[0];
-      if (last) setLastSyncTime(last.completed_at);
+        .filter(j => j.operation === 'import_transactions' && j.status === 'done' && j.completedAt)
+        .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
+      if (last) setLastSyncTime(last.completedAt);
     });
   }, []);
 
   const pollSyncJob = useCallback((jobId) => {
-    if (syncPollRef.current) clearInterval(syncPollRef.current);
-    syncPollRef.current = setInterval(() => {
-      api(`/api/sync/status/${jobId}`).then(r => {
-        const status = r && r.job && r.job.status;
-        if (status === 'completed' || status === 'error') {
-          clearInterval(syncPollRef.current);
-          syncPollRef.current = null;
-          setSyncStatus(status);
-          if (status === 'completed') {
-            fetchLastSync();
-            loadAll();
-          }
-          setTimeout(() => setSyncStatus(null), 4000);
-        }
-      });
-    }, 2000);
+    if (stopPollRef.current) stopPollRef.current();
+    stopPollRef.current = window.pollUntilDone(jobId, {
+      onDone: () => {
+        setSyncStatus('done');
+        fetchLastSync();
+        loadAll();
+        setTimeout(() => setSyncStatus(null), 4000);
+      },
+      onError: () => {
+        setSyncStatus('error');
+        setTimeout(() => setSyncStatus(null), 4000);
+      },
+    });
   }, [fetchLastSync]);
 
   const handleSyncNow = useCallback(() => {
@@ -121,7 +118,7 @@ const PaymentsPanel = () => {
     });
   }, [pollSyncJob]);
 
-  useEffect(() => { fetchLastSync(); return () => { if (syncPollRef.current) clearInterval(syncPollRef.current); }; }, [fetchLastSync]);
+  useEffect(() => { fetchLastSync(); return () => { if (stopPollRef.current) stopPollRef.current(); }; }, [fetchLastSync]);
 
   const handleSubmissionFocus = useCallback((submissionId) => {
     if (focusedSubmissionId === submissionId) {
@@ -235,15 +232,19 @@ const PaymentsPanel = () => {
                      : syncStatus === 'error'     ? '✗ Sync failed'
                      : 'Sync Now';
 
-  const fmtSyncTime = (iso) => {
-    if (!iso) return 'Never';
-    const d = new Date(iso);
-    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // completedAt from backend is Unix seconds (time.time()); multiply by 1000 for JS Date.
+  const toMs = (ts) => !ts ? null : (ts > 1e12 ? ts : ts * 1000);
+
+  const fmtSyncTime = (ts) => {
+    const ms = toMs(ts);
+    if (!ms) return 'Never';
+    return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
 
   const STALE_HOURS = 24;
-  const isStale = !lastSyncTime || (Date.now() - new Date(lastSyncTime).getTime()) > STALE_HOURS * 3600 * 1000;
-  const staleHoursAgo = lastSyncTime ? Math.floor((Date.now() - new Date(lastSyncTime).getTime()) / 3600000) : null;
+  const lastSyncMs = toMs(lastSyncTime);
+  const isStale = !lastSyncMs || (Date.now() - lastSyncMs) > STALE_HOURS * 3600 * 1000;
+  const staleHoursAgo = lastSyncMs ? Math.floor((Date.now() - lastSyncMs) / 3600000) : null;
 
   return e('div', null,
     toast && e('div', {
@@ -263,7 +264,7 @@ const PaymentsPanel = () => {
       e('span', { style: { color: '#ca8a04', fontWeight: 600 } }, '⚠ Gmail data is stale'),
       e('span', { style: { color: 'var(--text2)', fontSize: 12 } },
         staleHoursAgo !== null
-          ? `Last sync was ${staleHoursAgo}h ago — autoguess may miss recent transactions.`
+          ? `Last synced ${fmtSyncTime(lastSyncTime)} (${staleHoursAgo}h ago) — autoguess may miss recent transactions.`
           : 'Gmail transactions have never been imported.',
       ),
       e('button', {

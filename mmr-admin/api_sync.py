@@ -12,6 +12,7 @@ Routes: /api/load/<event_id> (POST), /api/load/<event_code>/status
 from __future__ import annotations
 
 import logging
+import threading
 import traceback
 
 import mysql.connector.errors

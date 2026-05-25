@@ -97,29 +97,20 @@ initComponent('SyncPanel', () => {
   };
 
   const pollJobStatus = (jobId) => {
-    const poll = setInterval(async () => {
-      try {
-        const r = await api(`/api/sync/status/${jobId}`);
-        const job = r.data || r.job;
-
-        if (r.ok && job) {
-          setJobs(j => ({ ...j, [jobId]: { ...j[jobId], ...job } }));
-
-          if (job.status === 'done' || job.status === 'error') {
-            clearInterval(poll);
-            setToast(job.status === 'done' ? `✅ ${job.message}` : `❌ ${job.message}`);
-            console.log(`[POLL-STOP] Job ${jobId} finished with status: ${job.status}`);
-          }
-        } else if (!r.ok) {
-          console.warn(`[POLL-STOP] Job ${jobId} not found or error: ${r.error || 'unknown'}`);
-          clearInterval(poll);
-        }
-      } catch (e) {
-        console.error(`[POLL-ERROR] Job ${jobId}: ${e.message}`);
-      }
-    }, 10000);
-
-    return poll;
+    return window.pollUntilDone(jobId, {
+      onProgress: (job) => {
+        setJobs(j => ({ ...j, [jobId]: { ...j[jobId], ...job } }));
+      },
+      onDone: (job) => {
+        setJobs(j => ({ ...j, [jobId]: { ...j[jobId], ...job } }));
+        setToast(`✅ ${job.message || 'Sync complete'}`);
+      },
+      onError: (job) => {
+        setJobs(j => ({ ...j, [jobId]: { ...j[jobId], status: 'error', message: job.message || 'Failed or expired' } }));
+        setToast(`❌ ${job.message || 'Sync failed'}`);
+      },
+      intervalMs: 2000,
+    });
   };
 
   const jobsList = Object.entries(jobs).sort((a, b) => b[0].localeCompare(a[0]));

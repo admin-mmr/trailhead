@@ -194,7 +194,75 @@ NYRR backfill depth (recommend 2024+). Add `validate_schema.py` to CI? Include N
 ## QUICK REFS
 **Key files:** `db/schema_snapshot.sql`, `load-env.sh`, `mmr-admin/api_*.py`, `mmr-admin/test_imports.py`.
 **Azure:** `mmr-mysql-v4` (Sweden Central), use `mysql-mmr` alias.
-**Shortcuts:** `mmr` (cd), `mmr-env` (venv+env), `mysql-mmr`, `mmr-web`, `mmr-check` (tsc), `mmr-log`, `nyrr`, `adm-test`, `adm-logs/adm-restart/adm-status`.
+
+**Shell shortcuts (defined in `~/.zshrc`):**
+| Command | What it does |
+|---|---|
+| `mmr` | `cd ~/github/mmr/trailhead` + activate `.venv` + `source load-env.sh` — **always run first** |
+| `mysql-mmr` | `mysql --login-path=mmr -D mmrdb` — direct DB shell |
+| `mmr-web` | Start Next.js webapp dev server (`web-apps/mmr-webapp/start-dev.sh`) |
+| `mmr-check` | TypeScript typecheck (`npx tsc --noEmit`), no full build |
+| `mmr-log` | `git log --oneline -15` |
+| `nyrr` | Start Flask admin **locally** (`mmr-admin/app.py`) at http://localhost:5001 |
+| `adm-test` | Run `mmr-admin/test_imports.py` (import parity check) |
+| `adm-logs` | Stream **Azure** webapp logs live |
+| `adm-restart` | Restart **Azure** webapp (not local) |
+| `adm-status` | Check Azure webapp state |
+| `adm-debug <code>` | Debug single NYRR event locally (e.g. `adm-debug 26WASH`) |
+| `runner-summary <code>` | MySQL summary for one event's runners (e.g. `runner-summary 26WASH`) |
+
+## LOCAL DEV — NYRR RUNNER DATA
+**Quick DB state check** (run after `mmr`):
+```bash
+python3 - <<'EOF'
+import sys; sys.path.insert(0, 'mmr-admin')
+from db import query
+for r in query("SELECT processing_status, COUNT(*) as n FROM nyrr_events GROUP BY processing_status"): print(f"  {r['processing_status']}: {r['n']}")
+print(f"Total runners: {query('SELECT COUNT(*) as n FROM nyrr_event_runners')[0]['n']}")
+print(f"Matched:       {query('SELECT COUNT(*) as n FROM nyrr_event_runners WHERE mmr_member_id IS NOT NULL')[0]['n']}")
+EOF
+```
+
+**Populate runner data locally (CLI — no deploy needed):**
+```bash
+mmr   # loads venv + env
+
+# Test run: process 10 pending events
+python3 basecamp/ops/sync_nyrr_events.py --mode daily --batch-size 10
+
+# Full backlog: process all pending (same as weekly GitHub Action)
+python3 basecamp/ops/sync_nyrr_events.py --mode weekly
+
+# Reprocess one event by code
+python3 basecamp/ops/sync_nyrr_events.py --mode single --event-code 26WASH
+```
+
+**Via admin UI locally:**
+```bash
+mmr && nyrr   # start Flask admin at http://localhost:5001
+# → NYRR Todos tab → filter by "Pending" → click ▶ Load per event
+# → "Discover New Events" to pull current year from NYRR API first
+```
+
+**GitHub Actions (remote, no local setup):**
+Go to repo → Actions → "NYRR Weekly Sync & Finisher Audit (Tuesday)" → Run workflow (supports `workflow_dispatch`).
+
+## SELF-CHECKING (before marking any task done)
+Run this mental checklist — catches the class of bugs that appeared in the polling saga:
+
+**Cross-boundary vocabulary:** When a string crosses any boundary (backend→frontend, Python→JS, DB→API), write a contract test that reads both sides. Key pairs to check: `status='done'` vs `=== 'done'`, camelCase vs snake_case field names, `operation` field present in every dict that reaches the frontend.
+
+**Every async loop must have:**
+- `!r.ok` / non-200 handler → `clearInterval` / stop
+- `try/catch` around the fetch → stop on network error
+- Max-retry cap (e.g. `maxPolls`) → stop if job hangs
+- Cleanup return value or ref → cancel on unmount
+
+**Every dict that crosses Python→JS:** Verify every field the frontend reads is explicitly mapped in the Python dict. Missing fields (`operation`, `completedAt`) silently become `undefined` and break filter/sort logic with no error.
+
+**Polling pattern — use `window.pollUntilDone`** (defined in `index.html`). Never write a raw `setInterval` for job status polling. `pollUntilDone` handles all stop conditions and returns a cleanup function.
+
+**Test file for this pattern:** `mmr-admin/tests/test_sync_jobs_contract.py` — add a test whenever a new status string, field name, or polling consumer is added.
 
 ## GIT DISCIPLINE
 **Main only** (no long-lived branches). Semantic commits (feat:, fix:, chore:, docs:). **Before commit:** `git status`, `git diff`, `git log -1`. **Avoid:** force push, rewrite history, secrets, large binaries. **Ask first:** destructive ops. **Important:** Commit code + `_context.md` together in one commit (avoids race conditions).

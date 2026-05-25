@@ -14,7 +14,7 @@ from typing import Any, Dict
 
 import mysql.connector.errors
 
-from db import query, get_conn
+from db import query, get_conn, execute
 from nyrr_api import NyrrApiClient, NyrrFinisher
 
 logger = logging.getLogger(__name__)
@@ -477,7 +477,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
             execute(
                 """
                 UPDATE nyrr_events
-                SET processing_status = 'Complete',
+                SET processing_status = 'Completed',
                     finisher_count = %s,
                     notes = 'Sync completed successfully'
                 WHERE id = %s

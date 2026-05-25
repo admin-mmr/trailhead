@@ -72,6 +72,63 @@ const api = async (path, opts = {}) => {
 };
 window.api = api;  // expose for external scripts (payments.js)
 
+// ── pollUntilDone — shared polling utility ──────────────────────────────────
+// Single source of truth for all sync job polling. Handles every stop
+// condition so individual components don't need to re-implement them:
+//   • status 'done' / 'error'  — normal completion
+//   • !r.ok (e.g. 404 TTL expiry) — backend expired the job
+//   • network / parse errors   — fetch threw or returned non-JSON
+//   • maxPolls safety cap       — prevents runaway intervals forever
+//
+// Returns a cleanup function — call it from a useEffect return or a ref.
+//
+// Usage:
+//   const cleanup = window.pollUntilDone(jobId, {
+//     onDone:     (job) => { /* success */ },
+//     onError:    (job) => { /* failure or expiry */ },
+//     onProgress: (job) => { /* update UI each tick */ },
+//     intervalMs: 2000,   // default
+//     maxPolls:   150,    // default: 150 × 2s = 5 min safety cap
+//   });
+//   // later: cleanup();
+window.pollUntilDone = function(jobId, {
+  onDone     = () => {},
+  onError    = () => {},
+  onProgress = () => {},
+  intervalMs = 2000,
+  maxPolls   = 150,
+} = {}) {
+  let count = 0;
+  const id = setInterval(async () => {
+    count++;
+    try {
+      const r = await window.api(`/api/sync/status/${jobId}`);
+      if (!r || !r.ok) {
+        // 404 = expired TTL, 401 = session expired, etc. — stop immediately.
+        clearInterval(id);
+        onError({ message: r?.error || 'Job not found or expired' });
+        return;
+      }
+      const job = r.job || {};
+      onProgress(job);
+      if (job.status === 'done') {
+        clearInterval(id);
+        onDone(job);
+      } else if (job.status === 'error') {
+        clearInterval(id);
+        onError(job);
+      } else if (count >= maxPolls) {
+        clearInterval(id);
+        onError({ message: `Polling timeout after ${count} attempts (${Math.round(count * intervalMs / 1000)}s)` });
+      }
+    } catch (e) {
+      clearInterval(id);
+      onError({ message: e.message });
+    }
+  }, intervalMs);
+  return () => clearInterval(id);
+};
+
 // ── Status badge ──
 const StatusBadge = ({ status }) => {
   const cls = { Completed: 'green', Pending: 'yellow', InProgress: 'blue', Error: 'red' }[status] || 'blue';
