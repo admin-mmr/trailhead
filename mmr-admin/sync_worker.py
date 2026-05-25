@@ -68,13 +68,35 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         cursor = conn.cursor()
         logger.debug(f"  └─ DB connection acquired")
 
-        # Delete if force_reload requested
+        # Delete if force_reload requested — but ONLY after we've confirmed NYRR has
+        # data for this event. Otherwise an empty API response would wipe the table.
+        # (Probe is cheap: pageSize=1 totalItems lookup.)
         if force_reload:
-            logger.info(f"🗑️  force_reload=True: Deleting existing runners for event_id={event_id}...")
+            try:
+                preflight_total = client._post("runners/finishers-filter", {
+                    "eventCode": event_code,
+                    "pageIndex": 1,
+                    "pageSize": 1,
+                }).get("totalItems", 0)
+            except Exception as preflight_err:
+                logger.error(f"❌ Preflight probe failed for {event_code}: {preflight_err}")
+                raise
+            if preflight_total <= 0:
+                logger.warning(
+                    f"⚠️  Skipping DELETE: NYRR returned 0 finishers for eventCode={event_code!r}. "
+                    f"Existing rows preserved."
+                )
+                raise RuntimeError(
+                    f"NYRR API returned 0 finishers for eventCode={event_code!r}. "
+                    f"Refusing destructive reload. Verify event_code format (URL slug vs canonical)."
+                )
+            logger.info(f"🗑️  force_reload=True: Deleting existing runners for event_id={event_id} (preflight ok: {preflight_total} finishers)...")
             cursor.execute("DELETE FROM nyrr_event_runners WHERE nyrr_event_id = %s", (event_id,))
             conn.commit()
             logger.debug(f"  └─ Deleted {cursor.rowcount} rows")
 
+        # MySQL 5.7-compatible UPSERT. (The `NEW.col` alias syntax was added in MySQL 8.0.19
+        # with `AS new_row`. We're on 5.7, so use the older — still-supported — VALUES(col).)
         upsert_sql = """
             INSERT INTO nyrr_event_runners
               (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
@@ -84,21 +106,21 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
                scan_timestamp)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON DUPLICATE KEY UPDATE
-              runner_name = NEW.runner_name),
-              first_name = NEW.first_name),
-              last_name = NEW.last_name),
-              age = NEW.age),
-              gender = NEW.gender),
-              city = NEW.city),
-              state_province = NEW.state_province),
-              finish_time = NEW.finish_time),
-              pace = NEW.pace),
-              overall_place = NEW.overall_place),
-              gender_place = NEW.gender_place),
-              age_grade_time = NEW.age_grade_time),
-              age_grade_place = NEW.age_grade_place),
-              age_grade_percent = NEW.age_grade_percent),
-              scan_timestamp = NOW()
+              runner_name      = VALUES(runner_name),
+              first_name       = VALUES(first_name),
+              last_name        = VALUES(last_name),
+              age              = VALUES(age),
+              gender           = VALUES(gender),
+              city             = VALUES(city),
+              state_province   = VALUES(state_province),
+              finish_time      = VALUES(finish_time),
+              pace             = VALUES(pace),
+              overall_place    = VALUES(overall_place),
+              gender_place     = VALUES(gender_place),
+              age_grade_time   = VALUES(age_grade_time),
+              age_grade_place  = VALUES(age_grade_place),
+              age_grade_percent = VALUES(age_grade_percent),
+              scan_timestamp   = NOW()
         """
 
         MAX_RETRIES = 3
@@ -424,12 +446,97 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
 
         # Helper: upsert a list of team runners to DB
         def _upsert_team_runners(team_code_param, runners_list):
-            """Batch upsert team runners. Returns (updates_count, inserts_count)."""
+            """
+            Batch-backfill team_code on existing runner rows; insert any runner Step 1
+            missed. Returns (updates_count, inserts_count).
+
+            Strategy:
+              1. UPDATE existing rows by (event_id, nyrr_runner_id) — fast path.
+              2. For runners not found by UPDATE, INSERT them with team_code populated.
+                 (Rare — only happens when Step 1's divide-and-conquer missed a shard.)
+            """
             if not runners_list:
                 return 0, 0
 
-            # [Large nested SQL and logic continues — truncated for brevity]
-            return 0, 0
+            update_sql = """
+                UPDATE nyrr_event_runners
+                SET team_code = %s,
+                    scan_timestamp = NOW()
+                WHERE nyrr_event_id = %s
+                  AND nyrr_runner_id = %s
+            """
+            insert_sql = """
+                INSERT INTO nyrr_event_runners
+                  (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
+                   age, gender, city, state_province, bib_number,
+                   finish_time, pace, overall_place, gender_place,
+                   team_code, scan_timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON DUPLICATE KEY UPDATE
+                  team_code = VALUES(team_code),
+                  scan_timestamp = NOW()
+            """
+
+            updates = 0
+            missing = []
+
+            for runner in runners_list:
+                try:
+                    cursor.execute(update_sql, (
+                        team_code_param,
+                        event_id,
+                        str(runner.runner_id),
+                    ))
+                    if cursor.rowcount > 0:
+                        updates += cursor.rowcount
+                    else:
+                        missing.append(runner)
+                except mysql.connector.errors.DatabaseError as e:
+                    logger.warning(
+                        f"  └─ Team-backfill UPDATE failed for runner {runner.runner_id} "
+                        f"({team_code_param}): {e}"
+                    )
+
+            inserts = 0
+            if missing:
+                logger.debug(
+                    f"  └─ {len(missing)} runners not in Step-1 set for team {team_code_param}; "
+                    f"inserting fresh rows."
+                )
+                for runner in missing:
+                    full_name = f"{runner.first_name} {runner.last_name}".strip()
+                    try:
+                        cursor.execute(insert_sql, (
+                            event_id,
+                            str(runner.runner_id),
+                            full_name,
+                            runner.first_name,
+                            runner.last_name,
+                            runner.age,
+                            runner.gender,
+                            getattr(runner, 'city', '') or '',
+                            runner.state_province,
+                            runner.bib,
+                            runner.overall_time,
+                            runner.pace,
+                            runner.overall_place,
+                            runner.gender_place,
+                            team_code_param,
+                        ))
+                        inserts += cursor.rowcount or 0
+                    except mysql.connector.errors.DatabaseError as e:
+                        logger.warning(
+                            f"  └─ Team-backfill INSERT failed for runner {runner.runner_id} "
+                            f"({team_code_param}): {e}"
+                        )
+
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+            return updates, inserts
 
         # Process each team
         for team_idx, team in enumerate(teams, 1):
@@ -464,35 +571,62 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool):
         logger.info(f"✅ ALL STEPS COMPLETE in {elapsed:.2f}s total")
 
         with _jobs_lock:
-            _jobs[event_code]['status'] = 'done'
-            _jobs[event_code]['message'] = f'Sync complete: {rows_written} runners, {len(teams)} teams, {total_backfilled} assignments'
+            # 'done' iff we actually wrote runners; otherwise surface as error to the UI
+            if rows_written > 0:
+                _jobs[event_code]['status'] = 'done'
+                _jobs[event_code]['message'] = f'Sync complete: {rows_written} runners, {len(teams)} teams, {total_backfilled} assignments'
+            else:
+                _jobs[event_code]['status'] = 'error'
+                _jobs[event_code]['message'] = (
+                    f'NYRR returned 0 finishers for eventCode={event_code!r}. '
+                    f'Check event_code format (slug vs canonical).'
+                )
+                _jobs[event_code]['error_type'] = 'EmptyApiResponse'
             _jobs[event_code]['step'] = 'complete'
             _jobs[event_code]['finished_at'] = datetime.utcnow().isoformat()
             _jobs[event_code]['total_elapsed_sec'] = elapsed
             _jobs[event_code]['final_count'] = final_count_val
 
-        # Update nyrr_events with final status
+        # Update nyrr_events with final status.
+        # CRITICAL: "Completed" must mean "we actually wrote runner rows", not just "the worker
+        # threw no exception". A successful API call that returns 0 finishers is NOT a completion —
+        # mark it 'Error' so admins notice (Bug A guard).
+        if rows_written > 0:
+            final_status = 'Completed'
+            final_notes = 'Sync completed successfully'
+            log_status = 'Success'
+        else:
+            final_status = 'Error'
+            final_notes = (
+                f"NYRR API returned 0 finishers for eventCode={event_code!r}. "
+                f"Likely cause: event_code stored as URL slug, but runners/finishers-filter "
+                f"expects canonical code. Verify with probe_finishers.py."
+            )
+            log_status = 'Failed'
+            logger.warning(f"⚠️  Marking event as 'Error': rows_written=0 for {event_code}")
+
         try:
-            logger.debug(f"  └─ Updating nyrr_events with final status...")
+            logger.debug(f"  └─ Updating nyrr_events with final status={final_status}...")
             execute(
                 """
                 UPDATE nyrr_events
-                SET processing_status = 'Completed',
+                SET processing_status = %s,
                     finisher_count = %s,
-                    notes = 'Sync completed successfully'
+                    notes = %s
                 WHERE id = %s
                 """,
-                (final_count_val, event_id)
+                (final_status, final_count_val, final_notes, event_id)
             )
             execute(
                 """
                 INSERT INTO nyrr_processing_log
-                  (nyrr_event_id, triggered_by, run_status, rows_written, teams_processed, elapsed_sec)
-                VALUES (%s, 'Viewer', 'Success', %s, %s, %s)
+                  (nyrr_event_id, triggered_by, run_status, rows_written, teams_processed, elapsed_sec, error_details)
+                VALUES (%s, 'Viewer', %s, %s, %s, %s, %s)
                 """,
-                (event_id, rows_written, len(teams), int(elapsed))
+                (event_id, log_status, rows_written, len(teams), int(elapsed),
+                 None if rows_written > 0 else final_notes)
             )
-            logger.debug(f"  └─ Final status recorded in DB")
+            logger.debug(f"  └─ Final status recorded in DB ({final_status})")
         except Exception as update_err:
             logger.error(f"  └─ Warning: failed to update final status in DB: {update_err}")
 

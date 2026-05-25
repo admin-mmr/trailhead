@@ -143,6 +143,23 @@ SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL
 - **Component loader also exports React hooks globally** — no need to redeclare `useState`, `useEffect`, etc. in each file
 - Cleaner, DRY approach — single source of truth for component registration and React API
 
+## NYRR BUG TRACKER (active — May 2026)
+Local sync currently marks events "Completed" with 0 runners. Bugs identified 2026-05-25; fix in P0 order. Resume protocol: scan the table, pick the first row not marked ✅; if file/line numbers shifted, re-grep before patching.
+
+| ID | Severity | File | Issue | Status |
+|---|---|---|---|---|
+| A | P0 (data loss) | `sync_worker.py:474-486` + `:73-76` | Sets `processing_status='Completed'` even when `rows_written=0`; combined with destructive `force_reload` delete this wipes good data on empty NYRR responses | ✅ fixed 2026-05-25 — preflight probe before DELETE; status gated on rows_written>0; job state surfaces error to UI |
+| B | P0 (latent crash) | `sync_worker.py:86-101` | `ON DUPLICATE KEY UPDATE` clause uses stray `)` + `NEW.col` (MySQL 8.0.19+ syntax). Will explode the first time NYRR actually returns finishers (MySQL 5.7 needs `VALUES(col)`) | ✅ fixed 2026-05-25 — rewrote with `VALUES(col)` syntax |
+| C | P0 (silent no-op) | `sync_worker.py:426-432` | `_upsert_team_runners` is a stub returning `(0,0)` — Step 3 never actually writes `team_code` | ✅ fixed 2026-05-25 — implemented UPDATE-by-runner_id with INSERT fallback for Step-1 misses |
+| D | P1 (root cause) | `nyrr_events.event_code` | Stored as URL slug (`rbc-brooklyn-half`); `runners/finishers-filter` may want canonical code. **Verification step**, not a code patch — run `python3 mmr-admin/probe_finishers.py rbc-brooklyn-half` and compare to short-code form | ⬜ pending (needs API probe) |
+| E | P1 (broken UI) | `api_events_discovery.py:33-40` | Calls `search_events(limit=100, status='live')` with invalid kwargs and reads `event.get('code')` on dataclass — "Discover New Events" button can't work | ✅ fixed 2026-05-25 — scan current + prior year via `year=` kwarg; dataclass attr access |
+| F | P2 (false positives) | `api_events.py:228, 276` | Tier 3 (first OR last name) skips age guard when member has neither `YearBorn` nor `YearBornGuess`. Tighten: when no birth year, demote to Tier 2 only | ⬜ pending |
+| G | P2 (silent miss) | `api_events.py:234, 282` | Gender check compares NYRR `M/W/X` to `m/f/o` from members — `W` never matches `Female`. Add normalization map | ⬜ pending |
+| H | P2 (DRY) | `api_events.py:185-300` | Three near-identical "after Tier N update members.NYRRRunnerName" blocks — extract one helper | ⬜ pending |
+| I | P2 (worker timeout) | `api_events.py:301+` | Tier 4 rapidfuzz runs in-request; on Azure with 25k runners × 1.5k members ≈ 37M comparisons → OOM. Move to background worker | ⬜ pending |
+| J | P3 (CLAUDE.md hard rule) | `sync_worker.py` 580 LOC | Exceeds 400 LOC. Split fetch logic into `sync_worker_fetch.py` | ⬜ pending |
+| K | P3 (CLAUDE.md hard rule) | `api_events.py` 468 LOC | Exceeds 400 LOC. Split after H | ⬜ pending |
+
 ## ACTION PLAN (active — May 2026)
 Sequenced backlog. P0=quick wins (this week), P1=features asked for, P2=code health.
 

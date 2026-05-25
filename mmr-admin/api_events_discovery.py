@@ -29,51 +29,64 @@ def api_discover_events():
         from nyrr_api import NyrrApiClient
         client = NyrrApiClient()
 
-        # Get events from NYRR public API
-        events = client.search_events(limit=100, status='live')
+        # search_events() returns List[NyrrEvent] (dataclasses) — use attribute access,
+        # not .get(). Also supports `year`, not `limit`/`status` (Bug E fix).
+        current_year = date.today().year
+        years_to_scan = [current_year, current_year - 1]
 
         inserted = 0
-        for event in events:
-            event_code = event.get('code')
-            event_name = event.get('name')
-            event_date = event.get('date')
-            is_virtual = event.get('is_virtual', False)
-
-            # Check if already in DB
-            existing = query(
-                "SELECT id FROM nyrr_events WHERE event_code = %s",
-                [event_code]
-            )
-
-            if existing:
-                continue  # Skip existing
-
-            # Parse event_date to check if upcoming
-            upcoming = False
-            event_date_obj = None
+        for year in years_to_scan:
             try:
-                if event_date:
-                    event_date_obj = datetime.strptime(event_date, "%Y-%m-%d").date()
-                    upcoming = (event_date_obj > date.today()) if event_date_obj else False
-            except ValueError:
-                pass
+                events = client.search_events(year=year)
+            except Exception as fetch_err:
+                print(f"[discover] Failed to fetch events for {year}: {fetch_err}", flush=True)
+                continue
 
-            # Extract year
-            event_year = event_date_obj.year if event_date_obj else datetime.now().year
+            for ev in events:
+                event_code = ev.event_code
+                event_name = ev.event_name
+                # NyrrEvent stores ISO datetime in start_date_time (e.g. "2026-05-17T07:00:00")
+                event_date = ev.start_date_time.split('T')[0] if ev.start_date_time else None
+                is_virtual = ev.is_virtual
 
-            # Insert
-            try:
-                execute("""
-                    INSERT INTO nyrr_events
-                    (event_code, event_name, event_date, event_year, is_upcoming, is_virtual, processing_status)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'Pending')
-                """,
-                    (event_code, event_name, event_date, event_year, int(upcoming), int(is_virtual))
+                if not event_code:
+                    continue
+
+                # Check if already in DB
+                existing = query(
+                    "SELECT id FROM nyrr_events WHERE event_code = %s",
+                    [event_code]
                 )
-                inserted += 1
-            except Exception as insert_err:
-                print(f"[discover] DB insert error: {insert_err}")
-                pass
+
+                if existing:
+                    continue  # Skip existing
+
+                # Parse event_date to check if upcoming
+                upcoming = False
+                event_date_obj = None
+                try:
+                    if event_date:
+                        event_date_obj = datetime.strptime(event_date, "%Y-%m-%d").date()
+                        upcoming = (event_date_obj > date.today()) if event_date_obj else False
+                except ValueError:
+                    pass
+
+                # Extract year
+                event_year = event_date_obj.year if event_date_obj else year
+
+                # Insert
+                try:
+                    execute("""
+                        INSERT INTO nyrr_events
+                        (event_code, event_name, event_date, event_year, is_upcoming, is_virtual, processing_status)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'Pending')
+                    """,
+                        (event_code, event_name, event_date, event_year, int(upcoming), int(is_virtual))
+                    )
+                    inserted += 1
+                except Exception as insert_err:
+                    print(f"[discover] DB insert error for {event_code}: {insert_err}", flush=True)
+                    pass
 
         return jsonify({'ok': True, 'discovered': inserted, 'events': inserted})
 
