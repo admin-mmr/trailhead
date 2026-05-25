@@ -12,7 +12,6 @@ Routes: /api/load/<event_id> (POST), /api/load/<event_code>/status
 from __future__ import annotations
 
 import logging
-import threading
 import traceback
 
 import mysql.connector.errors
@@ -22,7 +21,7 @@ from flask import Blueprint, request
 from auth import login_required
 from db import query, get_conn, execute
 from helpers import json_response
-from sync_worker import _sync_worker, _jobs, _jobs_lock
+from sync_worker import start_sync, get_job_status, cancel_job
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -53,14 +52,7 @@ def api_load_event(event_id):
     force_reload = request.json.get('force_reload', False)
     logger.info(f"📋 Event found: event_code={event_code}, force_reload={force_reload}")
 
-    # Start background worker
-    thread = threading.Thread(
-        target=_sync_worker,
-        args=(event_id, event_code, force_reload),
-        daemon=True
-    )
-    thread.start()
-
+    start_sync(event_id, event_code, force_reload)
     return json_response({'ok': True, 'event_code': event_code, 'status': 'started'})
 
 
@@ -68,14 +60,13 @@ def api_load_event(event_id):
 @login_required
 def api_sync_cancel(event_code):
     """Request cancellation of a running sync job."""
-    with _jobs_lock:
-        job = _jobs.get(event_code)
-        if not job:
-            return json_response({'ok': False, 'error': 'No job found'}), 404
-        if job.get('status') != 'running':
-            return json_response({'ok': False, 'error': f"Job is not running (status={job.get('status')})"}), 400
-        _jobs[event_code]['cancel_requested'] = True
-        logger.info(f"🛑 Cancel requested for {event_code}")
+    job = get_job_status(event_code)
+    if not job:
+        return json_response({'ok': False, 'error': 'No job found'}), 404
+    if job.get('status') != 'running':
+        return json_response({'ok': False, 'error': f"Job is not running (status={job.get('status')})"}), 400
+    cancel_job(event_code)
+    logger.info(f"🛑 Cancel requested for {event_code}")
     return json_response({'ok': True, 'message': 'Cancel requested'})
 
 
@@ -83,11 +74,7 @@ def api_sync_cancel(event_code):
 @login_required
 def api_sync_status(event_code):
     """Get current sync job status."""
-    with _jobs_lock:
-        job = _jobs.get(event_code, {
-            'status': 'not_found',
-            'message': 'No sync job for this event'
-        })
+    job = get_job_status(event_code) or {'status': 'not_found', 'message': 'No sync job for this event'}
     return json_response(job)
 
 

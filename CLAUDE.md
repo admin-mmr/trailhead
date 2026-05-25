@@ -156,9 +156,9 @@ Local sync currently marks events "Completed" with 0 runners. Bugs identified 20
 | F | P2 (false positives) | `api_events.py:228, 276` | Tier 3 (first OR last name) skips age guard when member has neither `YearBorn` nor `YearBornGuess`. Tighten: when no birth year, demote to Tier 2 only | ✅ fixed 2026-05-25 — removed `OR (YearBorn IS NULL AND YearBornGuess IS NULL)` escape hatch from Tier 3 |
 | G | P2 (silent miss) | `api_events.py:234, 282` | Gender check compares NYRR `M/W/X` to `m/f/o` from members — `W` never matches `Female`. Add normalization map | ✅ fixed 2026-05-25 — CASE WHEN M→Male / W→Female / X→Other in both Tier 2 and Tier 3 SQL |
 | H | P2 (DRY) | `api_events.py:185-300` | Three near-identical "after Tier N update members.NYRRRunnerName" blocks — extract one helper | ✅ fixed 2026-05-25 — `_backfill_member_name_and_year(cursor, event_id, match_method)` helper; 3 call sites |
-| I | P2 (worker timeout) | `api_events.py:301+` | Tier 4 rapidfuzz runs in-request; on Azure with 25k runners × 1.5k members ≈ 37M comparisons → OOM. Move to background worker | ⬜ pending |
-| J | P3 (CLAUDE.md hard rule) | `sync_worker.py` 580 LOC | Exceeds 400 LOC. Split fetch logic into `sync_worker_fetch.py` | ⬜ pending |
-| K | P3 (CLAUDE.md hard rule) | `api_events.py` 468 LOC | Exceeds 400 LOC. Split after H | ⬜ pending |
+| I | P2 (worker timeout) | `api_events.py:301+` | Tier 4 rapidfuzz runs in-request; on Azure with 25k runners × 1.5k members ≈ 37M comparisons → OOM. Move to background worker | ✅ fixed 2026-05-25 — extracted to `fuzzy_worker.py` + `api_events_fuzzy.py`; POST /api/events/<id>/fuzzy-match starts background thread, GET /status polls it |
+| J | P3 (CLAUDE.md hard rule) | `sync_worker.py` 785 LOC | Exceeds 400 LOC. Split fetch logic into `sync_worker_fetch.py` | ✅ fixed 2026-05-25 — split into `sync_worker.py` (344 LOC), `sync_worker_fetch.py` (301 LOC, FinisherFetcher class), `sync_worker_backfill.py` (136 LOC, TeamBackfiller class); public API `start_sync/get_job_status/cancel_job` replaces private names |
+| K | P3 (CLAUDE.md hard rule) | `api_events.py` 474 LOC | Exceeds 400 LOC. Split after H | ✅ fixed 2026-05-25 — Tier 4 removal + fuzzy move brought to 398 LOC |
 
 ## ACTION PLAN (active — May 2026)
 Sequenced backlog. P0=quick wins (this week), P1=features asked for, P2=code health.
