@@ -159,6 +159,34 @@ def api_full_sync():
 # Job Management Routes
 # ═══════════════════════════════════════════════════════════════════════════
 
+@sheets_sync_bp.route('/api/sync/last-import', methods=['GET'])
+@login_required
+def api_last_import():
+    """
+    Return the timestamp of the most recent successful import_transactions job.
+
+    Queries sync_jobs directly (no 24h cap) so it survives process restarts.
+    Falls back to MAX(Timestamp) in gmail_transactions if sync_jobs has no record.
+    """
+    try:
+        from db import query
+        rows = query(
+            "SELECT CompletedAt FROM sync_jobs WHERE Operation = %s AND Status = 'done' "
+            "AND CompletedAt IS NOT NULL ORDER BY CompletedAt DESC LIMIT 1",
+            ['import_transactions']
+        )
+        if rows and rows[0]['CompletedAt']:
+            ts = rows[0]['CompletedAt'].timestamp()
+            return json_response({'ok': True, 'completedAt': ts})
+        # Fallback: latest transaction timestamp as a proxy
+        rows2 = query("SELECT MAX(Timestamp) AS ts FROM gmail_transactions")
+        ts2 = rows2[0]['ts'].timestamp() if rows2 and rows2[0]['ts'] else None
+        return json_response({'ok': True, 'completedAt': ts2})
+    except Exception as e:
+        logger.warning(f"api_last_import failed: {e}")
+        return json_response({'ok': True, 'completedAt': None})
+
+
 @sheets_sync_bp.route('/api/sync/jobs', methods=['GET'])
 @login_required
 def api_list_sync_jobs():
