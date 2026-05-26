@@ -224,6 +224,37 @@ class FinisherFetcher:
                     raise InterruptedError("Sync cancelled by user")
 
     # ------------------------------------------------------------------
+    # Reconciliation helper
+    # ------------------------------------------------------------------
+
+    def _already_synced(self, expected: int, *, age_from=None, age_to=None,
+                        gender=None, pace_min=None, pace_max=None) -> bool:
+        """Return True if MySQL already holds `expected` rows for this shard.
+
+        Builds the WHERE clause dynamically so None criteria are omitted.
+        Pace strings are zero-padded ("00:MM:SS") so VARCHAR comparison is safe.
+        """
+        if expected == 0:
+            return False
+        sql = ("SELECT COUNT(*) FROM nyrr_event_runners "
+               "WHERE nyrr_event_id = %s")
+        params = [self.event_id]
+        if age_from is not None:
+            sql += " AND age >= %s";  params.append(age_from)
+        if age_to is not None:
+            sql += " AND age <= %s";  params.append(age_to)
+        if gender is not None:
+            sql += " AND gender = %s"; params.append(gender)
+        if pace_min is not None and pace_min != "00:00:00":
+            sql += " AND pace >= %s";  params.append(pace_min)
+        if pace_max is not None:
+            sql += " AND pace <= %s";  params.append(pace_max)
+        self.cursor.execute(sql, params)
+        row = self.cursor.fetchone()
+        mysql_count = row[0] if row else 0
+        return mysql_count == expected
+
+    # ------------------------------------------------------------------
     # Divide-and-conquer
     # ------------------------------------------------------------------
 
@@ -255,12 +286,20 @@ class FinisherFetcher:
         if total == 0:
             return
         if total <= 500:
+            if self._already_synced(total, age_from=age_from, age_to=age_to,
+                                    gender=gender, pace_min=pace_min, pace_max=pace_max):
+                logger.info(f"{indent}└─ ⏭️  {label}: {total} already in DB, skipping")
+                return
             self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender,
                                pace_min=pace_min, pace_max=pace_max, sort_desc=False)
         else:
             min_sec = self._pace_to_seconds(pace_min)
             max_sec = self._pace_to_seconds(pace_max)
             if max_sec - min_sec <= 1:
+                if self._already_synced(total, age_from=age_from, age_to=age_to,
+                                        gender=gender, pace_min=pace_min, pace_max=pace_max):
+                    logger.info(f"{indent}└─ ⏭️  {label}: collapsed range, {total} already in DB, skipping")
+                    return
                 logger.warning(f"{indent}└─ {label}: range collapsed; fetching anyway")
                 self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender,
                                    pace_min=pace_min, pace_max=pace_max, sort_desc=False)
@@ -280,6 +319,9 @@ class FinisherFetcher:
         if total == 0:
             return
         if total <= 500:
+            if self._already_synced(total, age_from=age_from, age_to=age_to, gender=gender):
+                logger.info(f"{indent}└─ ⏭️  {label}: {total} already in DB, skipping")
+                return
             self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender, sort_desc=False)
         elif age_from == age_to:
             if gender is not None:
