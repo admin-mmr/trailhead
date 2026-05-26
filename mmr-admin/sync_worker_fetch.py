@@ -240,21 +240,35 @@ class FinisherFetcher:
     def _seconds_to_pace(seconds: int) -> str:
         return f"00:{seconds // 60:02d}:{seconds % 60:02d}"
 
-    def _split_by_pace(self, age_from, age_to, gender, max_pace, depth=0):
+    def _split_by_pace(self, age_from, age_to, gender, pace_min, pace_max, depth=0):
+        """Bisect pace range until each shard <= 500.
+
+        Tracks BOTH pace_min and pace_max (previously only pace_max was
+        tracked — right-recursion never narrowed, upper-pace half was
+        never fetched, infinite loop on the right side).
+        """
         indent = "  " * (depth + 3)
-        total = self._probe(age_from=age_from, age_to=age_to, gender=gender, pace_max=max_pace)
-        label = f"age {age_from}-{age_to} gender={gender} pace 00:00-{max_pace}"
+        total = self._probe(age_from=age_from, age_to=age_to, gender=gender,
+                            pace_min=pace_min, pace_max=pace_max)
+        label = f"age {age_from}-{age_to} gender={gender} pace {pace_min}-{pace_max}"
         logger.info(f"{indent}└─ {label}: {total} items")
         if total == 0:
             return
         if total <= 500:
             self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender,
-                               pace_min="00:00", pace_max=max_pace, sort_desc=False)
+                               pace_min=pace_min, pace_max=pace_max, sort_desc=False)
         else:
-            mid_sec = self._pace_to_seconds(max_pace) // 2
+            min_sec = self._pace_to_seconds(pace_min)
+            max_sec = self._pace_to_seconds(pace_max)
+            if max_sec - min_sec <= 1:
+                logger.warning(f"{indent}└─ {label}: range collapsed; fetching anyway")
+                self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender,
+                                   pace_min=pace_min, pace_max=pace_max, sort_desc=False)
+                return
+            mid_sec = (min_sec + max_sec) // 2
             mid_pace = self._seconds_to_pace(mid_sec)
-            self._split_by_pace(age_from, age_to, gender, mid_pace, depth + 1)
-            self._split_by_pace(age_from, age_to, gender, max_pace, depth + 1)
+            self._split_by_pace(age_from, age_to, gender, pace_min, mid_pace,  depth + 1)
+            self._split_by_pace(age_from, age_to, gender, mid_pace, pace_max,  depth + 1)
 
     def _divide_and_conquer(self, age_from, age_to, gender=None, depth=0):
         indent = "  " * (depth + 2)
@@ -273,7 +287,8 @@ class FinisherFetcher:
                 _, max_pace = self._probe(age_from=age_from, age_to=age_to, gender=gender,
                                           sort_column="pace", sort_desc=True, return_pace=True)
                 max_pace = max_pace or "00:20:00"
-                self._split_by_pace(age_from, age_to, gender, max_pace, depth + 1)
+                self._split_by_pace(age_from, age_to, gender,
+                                    "00:00:00", max_pace, depth + 1)
             else:
                 for g in ("M", "W", "X"):
                     self._divide_and_conquer(age_from, age_to, gender=g, depth=depth + 1)
