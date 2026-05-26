@@ -34,7 +34,7 @@ jobs:
       status:  ${{ steps.run.outputs.status }}
       summary: ${{ steps.run.outputs.summary }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run & poll
         id: run
         run: bash .github/scripts/run_sync_phase.sh /api/sync/full-sync ${{ env.VERBOSE == 'true' && '--verbose' || '' }}
@@ -73,7 +73,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Send email
-        uses: dawidd6/action-send-mail@v3
+        uses: dawidd6/action-send-mail@v6
         with:
           server_address: ${{ secrets.MAIL_SERVER }}
           server_port:    ${{ secrets.MAIL_PORT }}
