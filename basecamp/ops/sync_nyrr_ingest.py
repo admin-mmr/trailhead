@@ -200,20 +200,20 @@ def upsert_runner(
              overall_place, gender_place, team_code, is_registered_only, scan_timestamp)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
         ON DUPLICATE KEY UPDATE
-            runner_name = NEW.runner_name),
-            first_name = NEW.first_name),
-            last_name = NEW.last_name),
-            age = NEW.age),
-            gender = NEW.gender),
-            state_province = NEW.state_province),
-            bib_number = NEW.bib_number),
-            finish_time = NEW.finish_time),
-            pace = NEW.pace),
-            overall_place = NEW.overall_place),
-            gender_place = NEW.gender_place),
-            team_code = NEW.team_code),
-            is_registered_only = NEW.is_registered_only),
-            scan_timestamp = NOW()
+            runner_name       = VALUES(runner_name),
+            first_name        = VALUES(first_name),
+            last_name         = VALUES(last_name),
+            age               = VALUES(age),
+            gender            = VALUES(gender),
+            state_province    = VALUES(state_province),
+            bib_number        = VALUES(bib_number),
+            finish_time       = VALUES(finish_time),
+            pace              = VALUES(pace),
+            overall_place     = VALUES(overall_place),
+            gender_place      = VALUES(gender_place),
+            team_code         = VALUES(team_code),
+            is_registered_only = VALUES(is_registered_only),
+            scan_timestamp    = NOW()
     """, (
         event_id,
         str(runner.runner_id),

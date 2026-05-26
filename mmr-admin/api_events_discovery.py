@@ -18,6 +18,31 @@ NYRR_UPCOMING_API = "https://widget.hakuapp.com/v2/event_lists"
 NYRR_UPCOMING_API_KEY = os.environ.get("NYRR_HAKU_API_KEY", "")
 
 
+@events_discovery_bp.route('/api/discover/reconcile-slugs', methods=['POST'])
+@login_required
+def api_reconcile_slugs():
+    """Bug L: scan past-date rows whose event_code is still slug-form and
+    resolve them to canonical NYRR eventCodes via events/search.
+
+    Query params:
+      include_upcoming=1  also try slug-coded upcoming rows (default off)
+      dry_run=1           report planned changes without writing (default off)
+    """
+    try:
+        from sync_worker_reconcile import reconcile_slug_event_codes
+        include_upcoming = request.args.get('include_upcoming', '0') in ('1', 'true', 'yes')
+        dry_run          = request.args.get('dry_run', '0') in ('1', 'true', 'yes')
+        summary = reconcile_slug_event_codes(
+            include_upcoming=include_upcoming,
+            dry_run=dry_run,
+        )
+        return jsonify({'ok': True, **summary})
+    except Exception as e:
+        import traceback
+        print(f'[reconcile-slugs] Error: {e}\n{traceback.format_exc()}', flush=True)
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @events_discovery_bp.route('/api/discover', methods=['POST'])
 @login_required
 def api_discover_events():

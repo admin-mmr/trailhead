@@ -18,6 +18,7 @@ from typing import Any, Dict
 
 from db import query, get_conn, execute
 from nyrr_api import NyrrApiClient
+from nyrr_api_models import NyrrEvent
 from sync_worker_fetch import FinisherFetcher
 from sync_worker_backfill import TeamBackfiller
 
@@ -32,12 +33,14 @@ _jobs_lock = threading.Lock()
 # Slug → canonical code resolution (Bug D)
 # ---------------------------------------------------------------------------
 
-def _resolve_slug_to_canonical(client: NyrrApiClient, slug: str,
-                                event_name: str, event_year: int) -> str | None:
-    """Resolve a Haku URL slug (e.g. 'rbc-brooklyn-half') to a canonical NYRR eventCode.
+def _resolve_slug_to_event(client: NyrrApiClient, slug: str,
+                            event_name: str, event_year: int) -> NyrrEvent | None:
+    """Resolve a Haku URL slug (e.g. 'rbc-brooklyn-half') to the canonical
+    NyrrEvent record from NYRR's events/search.
 
-    Returns the canonical code, or None if no confident match found.
-    A slug is detected by the presence of hyphens — canonical codes never have them.
+    Returns the full NyrrEvent (so callers can sync ALL derived fields, not
+    just event_code), or None if no confident match found. A slug is detected
+    by the presence of hyphens — canonical codes never have them.
     """
     if '-' not in slug:
         return None
@@ -59,22 +62,29 @@ def _resolve_slug_to_canonical(client: NyrrApiClient, slug: str,
     name_words = set(_norm(event_name).split()) if event_name else set()
     query_words = slug_words | name_words
 
-    best_code, best_score = None, 0.0
+    best_ev, best_score = None, 0.0
     for ev in events:
         ev_words = set(_norm(ev.event_name).split())
         if not ev_words:
             continue
         overlap = len(query_words & ev_words) / max(len(query_words), len(ev_words))
         if overlap > best_score:
-            best_score, best_code = overlap, ev.event_code
+            best_score, best_ev = overlap, ev
 
     THRESHOLD = 0.4
-    if best_code and best_score >= THRESHOLD:
-        logger.info(f"  └─ Resolved {slug!r} → {best_code!r} (score={best_score:.2f})")
-        return best_code
+    if best_ev and best_score >= THRESHOLD:
+        logger.info(f"  └─ Resolved {slug!r} → {best_ev.event_code!r} (score={best_score:.2f})")
+        return best_ev
 
     logger.warning(f"  └─ Could not resolve {slug!r}: best score {best_score:.2f} < {THRESHOLD}")
     return None
+
+
+# Backwards-compat shim — older callers (and tests) may import the original name.
+def _resolve_slug_to_canonical(client: NyrrApiClient, slug: str,
+                                event_name: str, event_year: int) -> str | None:
+    ev = _resolve_slug_to_event(client, slug, event_name, event_year)
+    return ev.event_code if ev else None
 
 
 # ---------------------------------------------------------------------------
@@ -106,12 +116,60 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool) -> None:
             ev_year  = ev_meta[0]['event_year'] if ev_meta else 0
             canonical = _resolve_slug_to_canonical(client, event_code, ev_name, ev_year)
             if canonical:
-                logger.info(f"✅ Slug resolved: DB {event_code!r} → {canonical!r}")
-                execute("UPDATE nyrr_events SET event_code = %s WHERE id = %s", [canonical, event_id])
+                # Bug L: also rewrite event_url to the canonical results page so
+                # a human (and downstream reconciliation tooling) lands on the
+                # right NYRR URL. Use the same format as sync_nyrr_discovery.
+                new_url = f"https://results.nyrr.org/event/{canonical}/finishers"
+                logger.info(f"✅ Slug resolved: DB {event_code!r} → {canonical!r}; event_url → {new_url}")
+                execute(
+                    "UPDATE nyrr_events "
+                    "   SET event_code = %s, event_url = %s, "
+                    "       notes = CONCAT(IFNULL(notes,''), ' [reconciled: slug→canonical ', %s, ']') "
+                    " WHERE id = %s",
+                    [canonical, new_url, event_code, event_id],
+                )
                 with _jobs_lock:
                     _jobs[canonical] = _jobs.pop(event_code)
                     _jobs[canonical]['message'] = f'Slug resolved to {canonical!r}, starting sync...'
                 event_code = canonical
+            elif '-' in event_code:
+                # Resolution failed and we still hold a slug. If event_date has
+                # already passed, the fetch is guaranteed to return 0 finishers
+                # — bail out early (Bug L verification) rather than burn API
+                # calls + risk a destructive force_reload delete.
+                ev_date_row = query(
+                    "SELECT event_date FROM nyrr_events WHERE id = %s",
+                    [event_id],
+                )
+                ev_date = ev_date_row[0]['event_date'] if ev_date_row else None
+                if ev_date and ev_date < datetime.utcnow().date():
+                    msg = (
+                        f"Slug {event_code!r} could not be resolved to a canonical "
+                        f"NYRR eventCode and event_date={ev_date} is in the past. "
+                        f"Aborting sync to avoid wiping data with an empty fetch. "
+                        f"Try `POST /api/discover/reconcile-slugs` or `python "
+                        f"sync_nyrr_events.py --mode reconcile --include-upcoming`."
+                    )
+                    logger.error(f"❌ {msg}")
+                    with _jobs_lock:
+                        _jobs[event_code].update({
+                            'status':     'error',
+                            'message':    msg[:500],
+                            'error_type': 'UnresolvedSlug',
+                            'step':       'slug_resolution',
+                            'finished_at': datetime.utcnow().isoformat(),
+                        })
+                    _db_log_error(event_id, msg)
+                    return
+                logger.warning(
+                    f"⚠️  Slug {event_code!r} did NOT resolve to canonical — "
+                    f"event is upcoming, will retry on next run"
+                )
+                with _jobs_lock:
+                    _jobs[event_code]['message'] = (
+                        f"Slug {event_code!r} unresolved — proceeding anyway; "
+                        f"expect 0 finishers until canonical code is published."
+                    )
 
         # --- Step 1: Fetch and upsert finishers ---
         logger.info("⏱️  STEP 1: Starting finishers fetch & upsert...")

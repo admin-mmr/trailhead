@@ -64,6 +64,7 @@ from sync_nyrr_ingest import (
     process_pending_events,
 )
 from sync_nyrr_matching import run_auto_matcher
+from sync_nyrr_reconcile import reconcile_slug_event_codes
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -110,6 +111,11 @@ def run_daily_pipeline(
 
         # Step 2: Promote completed
         summary['events_promoted'] = promote_completed_events(conn)
+
+        # Step 2.5 (Bug L): reconcile slug-coded past-date rows to canonical
+        # NYRR eventCodes. Must run AFTER promote and BEFORE process_pending
+        # so newly-completed events get the right code before we fetch finishers.
+        summary['slug_reconciliation'] = reconcile_slug_event_codes(client, conn)
 
         # Step 3: Refresh upcoming registrants
         summary['registrant_rows'] = refresh_upcoming_registrants(client, conn)
@@ -162,6 +168,12 @@ def run_weekly_pipeline(
     try:
         summary['new_events'] = discover_events(client, conn)
         summary['events_promoted'] = promote_completed_events(conn)
+        # Bug L: reconcile slug-coded past-date rows before result ingestion.
+        # Weekly mode also tries upcoming rows (NYRR sometimes publishes the
+        # canonical code days before the event).
+        summary['slug_reconciliation'] = reconcile_slug_event_codes(
+            client, conn, include_upcoming=True,
+        )
         summary['registrant_rows'] = refresh_upcoming_registrants(client, conn)
 
         events_processed, rows_written = process_pending_events(
@@ -185,6 +197,40 @@ def run_weekly_pipeline(
     finally:
         summary['finished_at'] = datetime.utcnow().isoformat()
 
+    return summary
+
+
+def run_reconcile_only(
+    client: NyrrApiClient,
+    conn: mysql.connector.MySQLConnection,
+    include_upcoming: bool = False,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Bug L: standalone slug→canonical reconciliation pass.
+
+    Useful for backfilling existing slug rows without running the full pipeline.
+    Returns the reconciliation summary directly.
+    """
+    logger.info('========== RECONCILE-ONLY START ==========')
+    summary: Dict[str, Any] = {
+        'mode': 'reconcile',
+        'started_at': datetime.utcnow().isoformat(),
+    }
+    try:
+        summary['slug_reconciliation'] = reconcile_slug_event_codes(
+            client, conn,
+            include_upcoming=include_upcoming,
+            dry_run=dry_run,
+        )
+        summary['status'] = 'success'
+        logger.info(f'========== RECONCILE-ONLY SUCCESS: {summary} ==========')
+    except Exception as e:
+        summary['status'] = 'failed'
+        summary['error'] = str(e)
+        logger.error(f'========== RECONCILE-ONLY FAILED: {e} ==========')
+        raise
+    finally:
+        summary['finished_at'] = datetime.utcnow().isoformat()
     return summary
 
 
@@ -214,10 +260,31 @@ def run_single_event(
     matched = run_auto_matcher(conn, event_id=event['id'])
     update_matched_counts(conn, event_id=event['id'])
 
+    # Post-run counts
+    cur2 = conn.cursor(dictionary=True)
+    cur2.execute("""
+        SELECT
+            COUNT(*) AS total,
+            SUM(team_code = 'MMR') AS mmr
+        FROM nyrr_event_runners
+        WHERE nyrr_event_id = %s
+    """, (event['id'],))
+    counts = cur2.fetchone() or {}
+    cur2.close()
+    total_runners = counts.get('total') or 0
+    mmr_runners   = counts.get('mmr') or 0
+
+    logger.info(
+        f'  Runners in DB: {total_runners} total, {mmr_runners} MMR, '
+        f'{matched} auto-matched'
+    )
+
     return {
         'mode': 'single',
         'event_code': event_code,
         'rows_written': rows,
+        'total_runners': total_runners,
+        'mmr_runners': mmr_runners,
         'auto_matched': matched,
         'status': 'success',
     }
@@ -232,9 +299,10 @@ def main() -> None:
         description='NYRR Event Sync Pipeline — Phase 2'
     )
     parser.add_argument(
-        '--mode', choices=['daily', 'weekly', 'single'],
+        '--mode', choices=['daily', 'weekly', 'single', 'reconcile'],
         default='daily',
-        help='Pipeline mode (default: daily)',
+        help='Pipeline mode (default: daily). "reconcile" runs only the '
+             'Bug L slug→canonical pass.',
     )
     parser.add_argument(
         '--batch-size', type=int, default=10,
@@ -247,6 +315,14 @@ def main() -> None:
     parser.add_argument(
         '--triggered-by', type=str, default='System',
         help='Who triggered this run (default: System)',
+    )
+    parser.add_argument(
+        '--include-upcoming', action='store_true',
+        help='reconcile mode: also try to resolve slug-coded upcoming rows',
+    )
+    parser.add_argument(
+        '--dry-run', action='store_true',
+        help='reconcile mode: report planned changes without writing',
     )
     args = parser.parse_args()
 
@@ -267,6 +343,12 @@ def main() -> None:
             summary = run_single_event(
                 client, conn, args.event_code,
                 triggered_by=args.triggered_by,
+            )
+        elif args.mode == 'reconcile':
+            summary = run_reconcile_only(
+                client, conn,
+                include_upcoming=args.include_upcoming,
+                dry_run=args.dry_run,
             )
         else:
             parser.error(f'Unknown mode: {args.mode}')
