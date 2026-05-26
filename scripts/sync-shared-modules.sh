@@ -12,6 +12,7 @@ SHARED=(
   nyrr_api
   nyrr_api_models
   nyrr_api_endpoints
+  nyrr_finisher_splitter
   sync_audit
   sync_batch
   sync_compare
