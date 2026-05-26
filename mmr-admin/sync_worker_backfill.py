@@ -5,8 +5,11 @@ Split out of sync_worker.py (Bug J — CLAUDE.md 400-LOC hard rule).
 
 Public API
 ----------
-TeamBackfiller(client, event_id, event_code, conn, cursor)
+TeamBackfiller(client, event_id, event_code)
   .run(teams)  →  (total_backfilled: int, total_inserted: int)
+
+Connection discipline: connections are acquired *inside* _upsert_runners and
+released immediately after commit so the pool slot is free during API calls.
 """
 
 from __future__ import annotations
@@ -16,26 +19,25 @@ from typing import Any, List
 
 import mysql.connector.errors
 
+from db import get_conn
+
 logger = logging.getLogger(__name__)
 
 
 class TeamBackfiller:
     """Backfill team_code on nyrr_event_runners rows for each team in an event."""
 
-    def __init__(self, client: Any, event_id: int, event_code: str,
-                 conn: Any, cursor: Any) -> None:
+    def __init__(self, client: Any, event_id: int, event_code: str) -> None:
         self.client     = client
         self.event_id   = event_id
         self.event_code = event_code
-        self.conn       = conn
-        self.cursor     = cursor
 
     def run(self, teams: List[Any]) -> tuple[int, int]:
         """Process all teams. Returns (total_backfilled, total_inserted)."""
         total_backfilled = 0
         total_inserted   = 0
         for team in teams:
-            team_code = team.get('code')
+            team_code = team.code
             all_runners = self.client.get_team_runners(self.event_code, team_code)
             u, i = self._process_team(team_code, all_runners)
             total_backfilled += u
@@ -78,7 +80,11 @@ class TeamBackfiller:
         return updates, inserts
 
     def _upsert_runners(self, team_code: str, runners: list) -> tuple[int, int]:
-        """UPDATE existing rows by runner_id; INSERT any that Step-1 missed."""
+        """UPDATE existing rows by runner_id; INSERT any that Step-1 missed.
+
+        Acquires and releases a pool connection per call so the slot is free
+        while the caller is doing NYRR API work between teams.
+        """
         if not runners:
             return 0, 0
 
@@ -97,40 +103,44 @@ class TeamBackfiller:
             ON DUPLICATE KEY UPDATE team_code = VALUES(team_code), scan_timestamp = NOW()
         """
 
-        updates = 0
-        missing = []
-        for r in runners:
-            try:
-                self.cursor.execute(update_sql, (team_code, self.event_id, str(r.runner_id)))
-                if self.cursor.rowcount > 0:
-                    updates += self.cursor.rowcount
-                else:
-                    missing.append(r)
-            except mysql.connector.errors.DatabaseError as e:
-                logger.warning(f"Team-backfill UPDATE failed for runner {r.runner_id} ({team_code}): {e}")
-
-        inserts = 0
-        for r in missing:
-            try:
-                self.cursor.execute(insert_sql, (
-                    self.event_id, str(r.runner_id),
-                    f"{r.first_name} {r.last_name}".strip(),
-                    r.first_name, r.last_name,
-                    r.age, r.gender,
-                    getattr(r, 'city', '') or '',
-                    r.state_province, r.bib,
-                    r.overall_time, r.pace,
-                    r.overall_place, r.gender_place,
-                    team_code,
-                ))
-                inserts += self.cursor.rowcount or 0
-            except mysql.connector.errors.DatabaseError as e:
-                logger.warning(f"Team-backfill INSERT failed for runner {r.runner_id} ({team_code}): {e}")
-
+        conn = get_conn()
+        cursor = conn.cursor()
         try:
-            self.conn.commit()
-        except Exception:
-            self.conn.rollback()
-            raise
+            updates = 0
+            missing = []
+            for r in runners:
+                try:
+                    cursor.execute(update_sql, (team_code, self.event_id, str(r.runner_id)))
+                    if cursor.rowcount > 0:
+                        updates += cursor.rowcount
+                    else:
+                        missing.append(r)
+                except mysql.connector.errors.DatabaseError as e:
+                    logger.warning(f"Team-backfill UPDATE failed for runner {r.runner_id} ({team_code}): {e}")
 
-        return updates, inserts
+            inserts = 0
+            for r in missing:
+                try:
+                    cursor.execute(insert_sql, (
+                        self.event_id, str(r.runner_id),
+                        f"{r.first_name} {r.last_name}".strip(),
+                        r.first_name, r.last_name,
+                        r.age, r.gender,
+                        getattr(r, 'city', '') or '',
+                        r.state_province, r.bib,
+                        r.overall_time, r.pace,
+                        r.overall_place, r.gender_place,
+                        team_code,
+                    ))
+                    inserts += cursor.rowcount or 0
+                except mysql.connector.errors.DatabaseError as e:
+                    logger.warning(f"Team-backfill INSERT failed for runner {r.runner_id} ({team_code}): {e}")
+
+            conn.commit()
+            return updates, inserts
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()  # returns slot to pool

@@ -212,9 +212,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool) -> None:
         with _jobs_lock:
             _jobs[event_code]['step'] = 'step3_backfill'
 
-        conn = get_conn()
-        cursor = conn.cursor()
-        backfiller = TeamBackfiller(client, event_id, event_code, conn, cursor)
+        backfiller = TeamBackfiller(client, event_id, event_code)
 
         total_backfilled = total_inserted = 0
         for idx, team in enumerate(teams, 1):
