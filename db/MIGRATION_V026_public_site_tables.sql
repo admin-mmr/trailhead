@@ -81,13 +81,13 @@ CREATE TABLE IF NOT EXISTS team_records (
   age_group     VARCHAR(20),                       -- "Overall", "M40-49"
   time_seconds  INT                NOT NULL,
   athlete_name  VARCHAR(100)       NOT NULL,
-  member_id     INT NULL,
+  member_id     VARCHAR(10) NULL,
   race_name     VARCHAR(200),
   race_date     DATE,
   race_location VARCHAR(200),
   is_verified   BOOLEAN DEFAULT FALSE,
   INDEX idx_distance_gender (distance, gender),
-  FOREIGN KEY (member_id) REFERENCES members(id)
+  FOREIGN KEY (member_id) REFERENCES members(MemberID)
 );
 
 -- ── 6. races ────────────────────────────────────────────────────────────────
