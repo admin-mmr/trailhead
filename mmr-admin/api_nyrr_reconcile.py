@@ -33,8 +33,10 @@ logger = logging.getLogger(__name__)
 
 nyrr_reconcile_bp = Blueprint('nyrr_reconcile', __name__)
 
-# Gap threshold: if DB has >= this fraction of NYRR total, auto-mark complete
-COMPLETE_THRESHOLD = 0.98
+# Gap threshold: if DB has >= this fraction of NYRR total, auto-mark Completed.
+# Conversely, if a probe of an already-Completed row reveals coverage below this,
+# demote it back to Pending so the next sync cron picks it up.
+COMPLETE_THRESHOLD = 0.99
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +141,12 @@ def api_nyrr_reconcile_probe(event_id):
          WHERE id = %s
     """, [nyrr_total, nyrr_mmr, event_id])
 
-    # Auto-mark complete if DB coverage meets threshold (independent of the persist above)
+    # Auto-mark complete if DB coverage meets threshold; otherwise demote a stale
+    # Completed row back to Pending so the next sync cron will re-fetch it.
+    # (These two branches are mutually exclusive: completion gate is >= threshold;
+    # demote gate is < threshold AND currently Completed.)
     marked_complete = False
+    demoted         = False
     if nyrr_total > 0 and db_total >= nyrr_total * COMPLETE_THRESHOLD:
         execute("""
             UPDATE nyrr_events
@@ -150,6 +156,19 @@ def api_nyrr_reconcile_probe(event_id):
         """, [db_total, nyrr_total, event_id])
         marked_complete = True
         logger.info(f"✅ Reconcile: {event_code} marked Completed ({db_total}/{nyrr_total})")
+    elif nyrr_total > 0 and db_total < nyrr_total * COMPLETE_THRESHOLD:
+        affected = execute("""
+            UPDATE nyrr_events
+               SET processing_status = 'Pending',
+                   notes = CONCAT(IFNULL(notes, ''), ' [demoted: ', %s, '/', %s, ' runners, ',
+                                  ROUND(%s / %s * 100, 1), '%% < ',
+                                  ROUND(%s * 100, 0), '%% threshold]')
+             WHERE id = %s AND processing_status = 'Completed'
+        """, [db_total, nyrr_total, db_total, nyrr_total, COMPLETE_THRESHOLD, event_id])
+        if affected:
+            demoted = True
+            logger.info(f"⬇️  Reconcile: {event_code} demoted Completed→Pending "
+                        f"({db_total}/{nyrr_total}, {pct}% < {int(COMPLETE_THRESHOLD*100)}%)")
 
     return json_response({
         'ok':             True,
@@ -161,6 +180,7 @@ def api_nyrr_reconcile_probe(event_id):
         'gap':            gap,
         'pct':            pct,
         'marked_complete': marked_complete,
+        'demoted':         demoted,
     })
 
 

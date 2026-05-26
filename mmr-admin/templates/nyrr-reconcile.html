@@ -6,6 +6,7 @@ initComponent('NyrrReconcile', () => {
   const [probing, setProbing]   = useState({});   // { [id]: true }
   const [liveData, setLiveData] = useState({});   // { [id]: probeResult }
   const [toast, setToast]       = useState('');
+  const [bulkProgress, setBulkProgress] = useState(null); // { current, total, code } | null
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,11 +36,14 @@ initComponent('NyrrReconcile', () => {
             ? { ...e,
                 nyrr_total: r.nyrr_total,
                 nyrr_mmr:   r.nyrr_mmr,
-                ...(r.marked_complete ? { processing_status: 'Completed' } : {}) }
+                ...(r.marked_complete ? { processing_status: 'Completed' } : {}),
+                ...(r.demoted         ? { processing_status: 'Pending' }   : {}) }
             : e
         ));
         if (r.marked_complete) {
           setToast(`✅ ${ev.event_code} marked Completed (${r.db_total}/${r.nyrr_total} runners)`);
+        } else if (r.demoted) {
+          setToast(`⬇️ ${ev.event_code} demoted to Pending (${r.db_total}/${r.nyrr_total} runners, ${r.pct}%)`);
         }
       } else {
         setToast(r.error || 'Probe failed');
@@ -52,9 +56,15 @@ initComponent('NyrrReconcile', () => {
   };
 
   const probeAll = async () => {
-    for (const ev of events) {
-      if (ev.processing_status === 'Completed') continue;
-      await probe(ev);
+    const total = events.length;
+    try {
+      for (let i = 0; i < total; i++) {
+        const ev = events[i];
+        setBulkProgress({ current: i + 1, total, code: ev.event_code });
+        await probe(ev);
+      }
+    } finally {
+      setBulkProgress(null);
     }
   };
 
@@ -67,7 +77,7 @@ initComponent('NyrrReconcile', () => {
 
   const gapColor = (pct) => {
     if (pct === null) return 'var(--text2)';
-    if (pct >= 98)    return 'var(--green, #22c55e)';
+    if (pct >= 99)    return 'var(--green, #22c55e)';
     if (pct >= 90)    return '#f59e0b';
     return 'var(--red, #ef4444)';
   };
@@ -76,14 +86,44 @@ initComponent('NyrrReconcile', () => {
     <div style={{ padding: '0 4px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>🔄 NYRR Count Reconciliation</h2>
-        <button className="btn btn-outline btn-sm" onClick={load} disabled={loading}>↺ Refresh</button>
-        <button className="btn btn-outline btn-sm" onClick={probeAll} disabled={loading}>
-          🔍 Probe All Incomplete
+        <button className="btn btn-outline btn-sm" onClick={load} disabled={loading || !!bulkProgress}>↺ Refresh</button>
+        <button className="btn btn-outline btn-sm" onClick={probeAll} disabled={loading || !!bulkProgress}>
+          {bulkProgress ? '⏳ Probing…' : '🔍 Probe All'}
         </button>
         <span style={{ fontSize: 12, color: 'var(--text2)', marginLeft: 'auto' }}>
           {events.length} past events · Probe hits NYRR API live
         </span>
       </div>
+
+      {bulkProgress && (() => {
+        const pct = Math.round(bulkProgress.current / bulkProgress.total * 100);
+        return (
+          <div style={{
+            marginBottom: 12,
+            padding: '10px 14px',
+            background: 'rgba(56,189,248,0.08)',
+            border: '1px solid rgba(56,189,248,0.25)',
+            borderRadius: 6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text)' }}>
+              <span className="spinner" />
+              <span>
+                Probing <strong>{bulkProgress.current}</strong> of <strong>{bulkProgress.total}</strong>
+                {bulkProgress.code && <> — <span style={{ fontFamily: 'monospace' }}>{bulkProgress.code}</span></>}
+              </span>
+              <span style={{ marginLeft: 'auto', color: 'var(--text2)' }}>{pct}%</span>
+            </div>
+            <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                width: `${pct}%`,
+                height: '100%',
+                background: 'var(--accent, #38bdf8)',
+                transition: 'width 0.2s ease',
+              }} />
+            </div>
+          </div>
+        );
+      })()}
 
       {loading ? (
         <div style={{ color: 'var(--text2)', padding: 32, textAlign: 'center' }}>Loading…</div>
@@ -150,19 +190,18 @@ initComponent('NyrrReconcile', () => {
                     {dbMmr.toLocaleString()}
                   </td>
                   <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                    {ev.processing_status !== 'Completed' && (
-                      <button
-                        className="btn btn-sm btn-outline"
-                        disabled={isProbing}
-                        onClick={() => probe(ev)}
-                        title="Probe NYRR API for live counts"
-                      >
-                        {isProbing ? <><span className="spinner" /> Probing…</> : '🔍 Probe'}
-                      </button>
-                    )}
-                    {ev.processing_status === 'Completed' && (
-                      <span style={{ fontSize: 11, color: 'var(--green, #22c55e)' }}>✓ Done</span>
-                    )}
+                    <button
+                      className="btn btn-sm btn-outline"
+                      disabled={isProbing || !!bulkProgress}
+                      onClick={() => probe(ev)}
+                      title={ev.processing_status === 'Completed'
+                        ? 'Re-probe NYRR API for live counts (will demote to Pending if coverage <99%)'
+                        : 'Probe NYRR API for live counts'}
+                    >
+                      {isProbing
+                        ? <><span className="spinner" /> Probing…</>
+                        : (ev.processing_status === 'Completed' ? '🔄 Re-Probe' : '🔍 Probe')}
+                    </button>
                   </td>
                 </tr>
               );
@@ -174,7 +213,7 @@ initComponent('NyrrReconcile', () => {
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
 
       <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text2)' }}>
-        Coverage ≥ 98% → auto-marked Completed on probe. NYRR Total column uses stored value until probed.
+        Coverage ≥ 99% → auto-marked Completed. Coverage &lt; 99% on a Completed row → demoted back to Pending so the next sync re-fetches it. NYRR Total column uses stored value until probed.
       </div>
     </div>
   );
