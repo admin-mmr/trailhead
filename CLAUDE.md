@@ -230,6 +230,19 @@ NYRR backfill depth (recommend 2024+). Add `validate_schema.py` to CI? Include N
 | `adm-debug <code>` | Debug single NYRR event locally (e.g. `adm-debug 26WASH`) |
 | `runner-summary <code>` | MySQL summary for one event's runners (e.g. `runner-summary 26WASH`) |
 
+**Data Query Quick Reference:**
+
+Count MMR vs. other teams for an event:
+```sql
+SELECT 
+  COUNT(*) AS total_loaded, 
+  SUM(team_code = 'MMR') AS mmr_runners, 
+  SUM(team_code IS NULL OR team_code != 'MMR') AS other_teams 
+FROM nyrr_event_runners ner 
+JOIN nyrr_events ne ON ne.id = ner.nyrr_event_id 
+WHERE ne.event_code = 'B2026';
+```
+
 ## LOCAL DEV — NYRR RUNNER DATA
 **Quick DB state check** (run after `mmr`):
 ```bash
