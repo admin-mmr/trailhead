@@ -483,8 +483,6 @@ const App = () => {
         </>
       )}
 
-      {view === 'dashboard' && <Dashboard onSelectEvent={selectEvent} onGoSettings={() => navigate('settings')} />}
-      {view === 'detail' && selectedEventId && <EventDetail eventId={selectedEventId} onBack={goBack} />}
       {view === 'dashboard' && window.Dashboard && React.createElement(window.Dashboard, { onSelectEvent: selectEvent, onGoSettings: () => navigate('settings') })}
       {view === 'detail' && selectedEventId && window.EventDetail && React.createElement(window.EventDetail, { eventId: selectedEventId, onBack: goBack })}
       {view === 'payments' && window.PaymentsPanel && React.createElement(window.PaymentsPanel)}

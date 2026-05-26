@@ -66,11 +66,6 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
       setProgressModal({ isOpen: false, eventCode: null });
     } finally {
       setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
-      // Refresh events/stats after modal closes
-      setTimeout(() => {
-        loadEvents();
-        loadStats();
-      }, 1500);
     }
   };
 
@@ -250,7 +245,7 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
       <SimpleProgressModal
         isOpen={progressModal.isOpen}
         eventCode={progressModal.eventCode}
-        onClose={() => setProgressModal({ isOpen: false, eventCode: null })}
+        onClose={() => { setProgressModal({ isOpen: false, eventCode: null }); loadEvents(); loadStats(); }}
       />
     </div>
   );
