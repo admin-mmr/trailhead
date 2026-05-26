@@ -31,8 +31,8 @@ _UPSERT_SQL = """
        age, gender, city, state_province, bib_number,
        finish_time, pace, overall_place, gender_place,
        age_grade_time, age_grade_place, age_grade_percent,
-       scan_timestamp)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+       team_code, scan_timestamp)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
     ON DUPLICATE KEY UPDATE
       runner_name       = VALUES(runner_name),
       first_name        = VALUES(first_name),
@@ -48,6 +48,7 @@ _UPSERT_SQL = """
       age_grade_time    = VALUES(age_grade_time),
       age_grade_place   = VALUES(age_grade_place),
       age_grade_percent = VALUES(age_grade_percent),
+      team_code         = COALESCE(VALUES(team_code), team_code),
       scan_timestamp    = NOW()
 """
 
@@ -194,6 +195,7 @@ class FinisherFetcher:
                     getattr(r, 'age_grade_time', '') or '',
                     getattr(r, 'age_grade_place', None),
                     getattr(r, 'age_grade_percent', None),
+                    team_code,  # None for general passes; 'MMR' for Pass 0
                 )
                 for r in page_runners
             ]

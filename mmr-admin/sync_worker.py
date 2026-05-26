@@ -337,7 +337,7 @@ def _db_final_status(event_id, event_code, status, notes, log_status,
     try:
         execute("""
             UPDATE nyrr_events
-               SET processing_status = %s, finisher_count = %s, notes = %s
+               SET processing_status = %s, nyrr_finisher_count = %s, notes = %s
              WHERE id = %s
         """, (status, final_count, notes, event_id))
         execute("""
