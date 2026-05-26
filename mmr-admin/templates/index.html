@@ -42,6 +42,7 @@
   <script type="text/babel" src="/static/NyrrMatchQueue.js"></script>
   <!-- External components (extracted for modularity) -->
   <script type="text/babel" src="/templates/dashboard-panel.html"></script>
+  <script type="text/babel" src="/templates/nyrr-reconcile.html"></script>
   <script type="text/babel" src="/templates/python-code-editor.html"></script>
   <script type="text/babel" src="/templates/python-exec-panel.html"></script>
   <script type="text/babel" src="/templates/table-browser.html"></script>
@@ -298,7 +299,7 @@ const App = () => {
   const [userEmail, setUserEmail] = useState('');
   const [versionInfo, setVersionInfo] = useState(null);
 
-  const VALID_VIEWS = new Set(['payments','autoguess_log','members','district','audit','reconcile','duplicates','sync','admins','log','pyexec','tables','dashboard','detail','nyrr_queue','settings']);
+  const VALID_VIEWS = new Set(['payments','autoguess_log','members','district','audit','reconcile','duplicates','sync','admins','log','pyexec','tables','dashboard','detail','nyrr_queue','nyrr_reconcile','settings']);
 
   // Hash-based navigation: keeps back/forward and refresh in sync
   const navigate = useCallback((v, replace = false) => {
@@ -424,12 +425,15 @@ const App = () => {
             <button className={`tab ${['dashboard', 'detail', 'nyrr_queue'].includes(view) ? 'active' : ''}`} onClick={() => navigate('dashboard')}>NYRR Todos</button>
           </div>
 
-          {/* NYRR sub-tabs: Todos (dashboard), Match Queue */}
-          {['dashboard', 'detail', 'nyrr_queue'].includes(view) ? (
+          {/* NYRR sub-tabs: Todos (dashboard), Match Queue, Reconcile */}
+          {['dashboard', 'detail', 'nyrr_queue', 'nyrr_reconcile'].includes(view) ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
               <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => navigate('dashboard')}>📋 Todos</button>
               {(userRole === 'super_admin' || userRole === 'admin') && (
                 <button className={`tab ${view === 'nyrr_queue' ? 'active' : ''}`} onClick={() => navigate('nyrr_queue')}>🏃 Match Queue</button>
+              )}
+              {(userRole === 'super_admin' || userRole === 'admin') && (
+                <button className={`tab ${view === 'nyrr_reconcile' ? 'active' : ''}`} onClick={() => navigate('nyrr_reconcile')}>🔄 Reconcile</button>
               )}
             </div>
           ) : null}
@@ -493,6 +497,7 @@ const App = () => {
       {view === 'reconcile' && window.ReconcilePanel && React.createElement(window.ReconcilePanel)}
       {view === 'duplicates' && window.MembersDuplicates && React.createElement(window.MembersDuplicates, { onOpenMember: (id) => { navigate('members'); } })}
       {view === 'nyrr_queue' && window.NyrrMatchQueue && React.createElement(window.NyrrMatchQueue)}
+      {view === 'nyrr_reconcile' && window.NyrrReconcile && React.createElement(window.NyrrReconcile)}
       {view === 'sync' && window.SyncPanel && React.createElement(window.SyncPanel)}
       {view === 'tables' && window.TableBrowser && React.createElement(window.TableBrowser)}
       {view === 'log' && window.ProcessingLog && React.createElement(window.ProcessingLog)}

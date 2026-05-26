@@ -151,6 +151,9 @@ app.register_blueprint(runners_bp)
 from api_nyrr_match import nyrr_match_bp
 app.register_blueprint(nyrr_match_bp)
 
+from api_nyrr_reconcile import nyrr_reconcile_bp
+app.register_blueprint(nyrr_reconcile_bp)
+
 from api_data import data_bp
 app.register_blueprint(data_bp)
 
