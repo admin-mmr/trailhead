@@ -195,6 +195,56 @@ def reconcile_one(
 
 
 # ---------------------------------------------------------------------------
+# Stale-flag correction (runs on ALL rows, not just slug-coded ones)
+# ---------------------------------------------------------------------------
+
+def fix_stale_flags(*, dry_run: bool = False) -> Dict[str, Any]:
+    """Fix is_upcoming and is_virtual flags that are stale across all rows.
+
+    Two rules applied unconditionally:
+      1. is_upcoming = 0  for every row whose event_date < TODAY
+         (the sync pipeline never clears this after discovery)
+      2. is_virtual  = 1  for every row whose event_name contains 'Virtual'
+         (NYRR API sets isVirtual but discovery doesn't always persist it)
+
+    Returns: {upcoming_fixed, virtual_fixed, dry_run}
+    """
+    upcoming_rows = query(
+        "SELECT id FROM nyrr_events WHERE event_date < CURDATE() AND is_upcoming = 1"
+    )
+    virtual_rows = query(
+        "SELECT id FROM nyrr_events WHERE event_name LIKE '%Virtual%' AND is_virtual = 0"
+    )
+
+    result = {
+        'upcoming_fixed': len(upcoming_rows),
+        'virtual_fixed':  len(virtual_rows),
+        'dry_run':        dry_run,
+    }
+
+    if dry_run:
+        logger.info(
+            f"[fix_stale_flags] DRY-RUN: would set is_upcoming=0 on "
+            f"{len(upcoming_rows)} rows, is_virtual=1 on {len(virtual_rows)} rows"
+        )
+        return result
+
+    if upcoming_rows:
+        execute(
+            "UPDATE nyrr_events SET is_upcoming = 0 WHERE event_date < CURDATE() AND is_upcoming = 1"
+        )
+        logger.info(f"[fix_stale_flags] ✅ is_upcoming=0 applied to {len(upcoming_rows)} past events")
+
+    if virtual_rows:
+        execute(
+            "UPDATE nyrr_events SET is_virtual = 1 WHERE event_name LIKE '%Virtual%' AND is_virtual = 0"
+        )
+        logger.info(f"[fix_stale_flags] ✅ is_virtual=1 applied to {len(virtual_rows)} virtual events")
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Batch reconciliation (the public entry point)
 # ---------------------------------------------------------------------------
 
@@ -217,7 +267,7 @@ def reconcile_slug_event_codes(
       dry_run:          report planned changes without writing
 
     Returns:
-      {scanned, resolved, failed, unchanged, details: [...]}
+      {scanned, resolved, failed, unchanged, stale_flags, details: [...]}
     """
     if client is None:
         client = NyrrApiClient()
@@ -234,12 +284,13 @@ def reconcile_slug_event_codes(
     )
 
     summary: Dict[str, Any] = {
-        'scanned':   len(rows),
-        'resolved':  0,
-        'failed':    0,
-        'unchanged': 0,
-        'dry_run':   dry_run,
-        'details':   [],
+        'scanned':     len(rows),
+        'resolved':    0,
+        'failed':      0,
+        'unchanged':   0,
+        'dry_run':     dry_run,
+        'stale_flags': fix_stale_flags(dry_run=dry_run),
+        'details':     [],
     }
 
     logger.info(

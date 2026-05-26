@@ -234,6 +234,50 @@ def run_reconcile_only(
     return summary
 
 
+def reset_event_statuses(
+    conn: mysql.connector.MySQLConnection,
+    *,
+    include_upcoming: bool = False,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Reset Completed/Error events to Pending so they'll be re-ingested.
+
+    Safe: the upsert in ingest_event_runners uses ON DUPLICATE KEY UPDATE,
+    so re-processing never duplicates rows — it just refreshes them in place.
+
+    By default only past-date events are reset (upcoming ones have live
+    registrant data that shouldn't be clobbered by a full finisher fetch).
+    Pass include_upcoming=True to reset those too.
+
+    Returns: {reset_count, dry_run}
+    """
+    date_clause = "" if include_upcoming else "AND event_date < CURDATE()"
+    cur = conn.cursor(dictionary=True)
+    cur.execute(f"""
+        SELECT COUNT(*) AS n FROM nyrr_events
+        WHERE processing_status IN ('Completed', 'Error')
+          {date_clause}
+    """)
+    count = cur.fetchone()['n']
+    cur.close()
+
+    if dry_run:
+        logger.info(f"[reset] DRY-RUN: would reset {count} events to Pending")
+        return {'reset_count': count, 'dry_run': True}
+
+    upd = conn.cursor()
+    upd.execute(f"""
+        UPDATE nyrr_events
+           SET processing_status = 'Pending', notes = NULL
+         WHERE processing_status IN ('Completed', 'Error')
+           {date_clause}
+    """)
+    conn.commit()
+    upd.close()
+    logger.info(f"[reset] ✅ Reset {count} events to Pending")
+    return {'reset_count': count, 'dry_run': False}
+
+
 def run_single_event(
     client: NyrrApiClient,
     conn: mysql.connector.MySQLConnection,
@@ -324,6 +368,12 @@ def main() -> None:
         '--dry-run', action='store_true',
         help='reconcile mode: report planned changes without writing',
     )
+    parser.add_argument(
+        '--reprocess-all', action='store_true',
+        help='weekly mode: reset all past Completed/Error events to Pending '
+             'before running, so every event is re-fetched. Safe to re-run '
+             '(upsert never duplicates rows).',
+    )
     args = parser.parse_args()
 
     # Validate
@@ -338,6 +388,9 @@ def main() -> None:
         if args.mode == 'daily':
             summary = run_daily_pipeline(client, conn, batch_size=args.batch_size)
         elif args.mode == 'weekly':
+            if args.reprocess_all:
+                reset_summary = reset_event_statuses(conn, dry_run=args.dry_run)
+                logger.info(f'[reprocess-all] Reset summary: {reset_summary}')
             summary = run_weekly_pipeline(client, conn)
         elif args.mode == 'single':
             summary = run_single_event(

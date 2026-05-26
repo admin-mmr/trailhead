@@ -132,6 +132,55 @@ def _derive_updates(ev: NyrrEvent, slug: str, row: Dict[str, Any]) -> Dict[str, 
 # Reconciliation pass
 # ---------------------------------------------------------------------------
 
+def fix_stale_flags(
+    conn: mysql.connector.MySQLConnection,
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """Fix is_upcoming and is_virtual flags that are stale across all rows.
+
+    Two rules:
+      1. is_upcoming = 0  for every row whose event_date < TODAY
+      2. is_virtual  = 1  for every row whose event_name contains 'Virtual'
+
+    Returns: {upcoming_fixed, virtual_fixed, dry_run}
+    """
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT COUNT(*) AS n FROM nyrr_events WHERE event_date < CURDATE() AND is_upcoming = 1")
+    upcoming_count = cur.fetchone()['n']
+    cur.execute("SELECT COUNT(*) AS n FROM nyrr_events WHERE event_name LIKE '%Virtual%' AND is_virtual = 0")
+    virtual_count = cur.fetchone()['n']
+    cur.close()
+
+    result = {
+        'upcoming_fixed': upcoming_count,
+        'virtual_fixed':  virtual_count,
+        'dry_run':        dry_run,
+    }
+
+    if dry_run:
+        logger.info(
+            f"[fix_stale_flags] DRY-RUN: would set is_upcoming=0 on "
+            f"{upcoming_count} rows, is_virtual=1 on {virtual_count} rows"
+        )
+        return result
+
+    upd = conn.cursor()
+    if upcoming_count:
+        upd.execute(
+            "UPDATE nyrr_events SET is_upcoming = 0 WHERE event_date < CURDATE() AND is_upcoming = 1"
+        )
+        logger.info(f"[fix_stale_flags] ✅ is_upcoming=0 applied to {upcoming_count} past events")
+    if virtual_count:
+        upd.execute(
+            "UPDATE nyrr_events SET is_virtual = 1 WHERE event_name LIKE '%Virtual%' AND is_virtual = 0"
+        )
+        logger.info(f"[fix_stale_flags] ✅ is_virtual=1 applied to {virtual_count} virtual events")
+    upd.close()
+    conn.commit()
+    return result
+
+
 def reconcile_slug_event_codes(
     client: NyrrApiClient,
     conn: mysql.connector.MySQLConnection,
@@ -141,10 +190,9 @@ def reconcile_slug_event_codes(
 ) -> dict:
     """Scan nyrr_events for past-date slug-coded rows and resolve them.
 
-    Updates BOTH event_code AND event_url (rewriting events.nyrr.org/<slug>
-    registration URLs into results.nyrr.org/event/<canonical>/finishers).
+    Also runs fix_stale_flags() to correct is_upcoming / is_virtual on all rows.
 
-    Returns summary dict: {scanned, resolved, failed, skipped_duplicate}.
+    Returns summary dict: {scanned, resolved, failed, skipped_duplicate, stale_flags}.
     """
     cursor = conn.cursor(dictionary=True)
     date_clause = "" if include_upcoming else "AND event_date < CURDATE()"
@@ -164,6 +212,7 @@ def reconcile_slug_event_codes(
         'failed':             0,
         'skipped_duplicate':  0,
         'dry_run':            dry_run,
+        'stale_flags':        fix_stale_flags(conn, dry_run=dry_run),
     }
     logger.info(
         f"[reconcile] scanning {len(rows)} slug-coded "
