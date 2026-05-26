@@ -53,6 +53,7 @@ def api_nyrr_reconcile_list():
             e.event_date,
             e.processing_status,
             e.nyrr_finisher_count,
+            e.mmr_finisher_count,
             COUNT(r.id)                                          AS db_total,
             SUM(CASE WHEN r.team_code = 'MMR' THEN 1 ELSE 0 END) AS db_mmr
         FROM nyrr_events e
@@ -65,6 +66,7 @@ def api_nyrr_reconcile_list():
     results = []
     for r in rows:
         nyrr_total = r['nyrr_finisher_count'] or 0
+        nyrr_mmr   = r['mmr_finisher_count']      # may be NULL = never probed
         db_total   = r['db_total'] or 0
         db_mmr     = r['db_mmr'] or 0
         gap        = nyrr_total - db_total if nyrr_total else None
@@ -75,7 +77,8 @@ def api_nyrr_reconcile_list():
             'event_name':       r['event_name'],
             'event_date':       r['event_date'].isoformat() if r['event_date'] else None,
             'processing_status': r['processing_status'],
-            'nyrr_total':       nyrr_total,   # stored from last sync
+            'nyrr_total':       nyrr_total,   # stored from last sync/probe
+            'nyrr_mmr':         nyrr_mmr,     # stored from last probe (NULL until probed)
             'db_total':         db_total,
             'db_mmr':           db_mmr,
             'gap':              gap,
@@ -127,16 +130,24 @@ def api_nyrr_reconcile_probe(event_id):
     gap = nyrr_total - db_total if nyrr_total else None
     pct = round(db_total / nyrr_total * 100, 1) if nyrr_total else None
 
-    # Auto-mark complete if DB coverage meets threshold
+    # Always persist what we just learned from NYRR, regardless of threshold.
+    # (Previously only nyrr_finisher_count was written, and only on auto-complete.)
+    execute("""
+        UPDATE nyrr_events
+           SET nyrr_finisher_count = %s,
+               mmr_finisher_count  = %s
+         WHERE id = %s
+    """, [nyrr_total, nyrr_mmr, event_id])
+
+    # Auto-mark complete if DB coverage meets threshold (independent of the persist above)
     marked_complete = False
     if nyrr_total > 0 and db_total >= nyrr_total * COMPLETE_THRESHOLD:
         execute("""
             UPDATE nyrr_events
-               SET processing_status   = 'Completed',
-                   nyrr_finisher_count = %s,
+               SET processing_status = 'Completed',
                    notes = CONCAT(IFNULL(notes, ''), ' [reconciled: ', %s, '/', %s, ' runners]')
              WHERE id = %s AND processing_status != 'Completed'
-        """, [nyrr_total, db_total, nyrr_total, event_id])
+        """, [db_total, nyrr_total, event_id])
         marked_complete = True
         logger.info(f"✅ Reconcile: {event_code} marked Completed ({db_total}/{nyrr_total})")
 

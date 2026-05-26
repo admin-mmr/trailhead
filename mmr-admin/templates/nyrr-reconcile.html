@@ -26,10 +26,19 @@ initComponent('NyrrReconcile', () => {
       const r = await api(`/api/nyrr/reconcile/${ev.id}/probe`, { method: 'POST' });
       if (r.ok) {
         setLiveData(d => ({ ...d, [ev.id]: r }));
+        // Persist the live counts back into the row cache so they survive a
+        // Refresh that clears liveData. nyrr_total + nyrr_mmr are written to
+        // nyrr_events on every probe (api_nyrr_reconcile.py), regardless of
+        // whether the row was auto-marked Completed.
+        setEvents(evs => evs.map(e =>
+          e.id === ev.id
+            ? { ...e,
+                nyrr_total: r.nyrr_total,
+                nyrr_mmr:   r.nyrr_mmr,
+                ...(r.marked_complete ? { processing_status: 'Completed' } : {}) }
+            : e
+        ));
         if (r.marked_complete) {
-          setEvents(evs => evs.map(e =>
-            e.id === ev.id ? { ...e, processing_status: 'Completed', nyrr_total: r.nyrr_total } : e
-          ));
           setToast(`✅ ${ev.event_code} marked Completed (${r.db_total}/${r.nyrr_total} runners)`);
         }
       } else {
@@ -100,7 +109,7 @@ initComponent('NyrrReconcile', () => {
               const nyrr     = live ? live.nyrr_total  : ev.nyrr_total;
               const dbTotal  = live ? live.db_total    : ev.db_total;
               const dbMmr    = live ? live.db_mmr      : ev.db_mmr;
-              const nyrrMmr  = live ? live.nyrr_mmr    : null;
+              const nyrrMmr  = live ? live.nyrr_mmr    : ev.nyrr_mmr;
               const pct      = (nyrr && nyrr > 0) ? Math.round(dbTotal / nyrr * 100) : null;
               const isProbing = !!probing[ev.id];
               const rowBg = ev.processing_status === 'Completed'
