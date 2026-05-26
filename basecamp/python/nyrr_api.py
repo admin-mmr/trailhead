@@ -122,14 +122,25 @@ class NyrrApiClient(_NyrrEndpointsMixin):
         *,
         items_key: str = "items",
         total_key: str = "totalItems",
+        dedup_key: Optional[str] = None,
+        max_pages: int = 2000,
     ) -> List[Dict[str, Any]]:
         """
         Fetch all pages from a paginated POST endpoint.
 
         The NYRR API uses ``pageIndex`` (1-based) and ``pageSize`` for
         pagination.  Each response contains ``totalItems`` and ``items``.
+
+        Args:
+          dedup_key:  item field to use for deduplication (e.g. "runnerId").
+                      When set, stops pagination if a page contains only items
+                      already seen — detects the silent-loop bug where NYRR
+                      returns exactly page_size items on every page (including
+                      the last), so len(items) < page_size never fires.
+          max_pages:  hard safety cap (default 2000) to prevent runaway loops.
         """
         all_items: List[Dict[str, Any]] = []
+        seen_keys: set = set()
         page_index = 1
 
         while True:
@@ -138,25 +149,52 @@ class NyrrApiClient(_NyrrEndpointsMixin):
 
             items = data.get(items_key, [])
             total = data.get(total_key, 0)
+
+            # Deduplication stop: if every item on this page was already seen,
+            # the API is looping — stop now.
+            if dedup_key and items:
+                new_keys = {item.get(dedup_key) for item in items} - seen_keys
+                if not new_keys:
+                    logger.info(
+                        "  [api] %s  page %d: all %d items already seen — "
+                        "API loop detected, stopping. %d distinct items total.",
+                        path, page_index, len(items), len(seen_keys),
+                    )
+                    break
+                seen_keys.update(new_keys)
+                new_count = len(new_keys)
+            else:
+                new_count = len(items)
+
             all_items.extend(items)
 
-            est_pages = f"~{-(-total // self.page_size)}" if total else "?"
+            # Display: show server total only when it's plausibly accurate
+            # (NYRR caps totalItems at page_size for some endpoints)
+            total_reliable = total > self.page_size
+            est_pages = f"~{-(-total // self.page_size)}" if total_reliable else "?"
             logger.info(
-                "  [api] %s  page %d/%s  +%d items  total so far: %d%s",
-                path, page_index, est_pages, len(items), len(all_items),
-                f" (server reports {total})" if total else "",
+                "  [api] %s  page %d/%s  +%d new (%d on page)  "
+                "distinct so far: %d%s",
+                path, page_index, est_pages, new_count, len(items), len(seen_keys) if dedup_key else len(all_items),
+                f"  server_total={total}" if total_reliable else "",
             )
 
-            # Stop when we received fewer items than requested (last page).
-            # Do NOT trust totalItems alone — NYRR sometimes caps it
-            # (e.g. reports 500 even when there are more).
+            # Primary stop: fewer items than requested → last page.
             if len(items) < self.page_size:
+                break
+
+            # Safety cap.
+            if page_index >= max_pages:
+                logger.warning(
+                    "  [api] %s  hit max_pages=%d cap at %d items — stopping.",
+                    path, max_pages, len(all_items),
+                )
                 break
 
             page_index += 1
             time.sleep(self.sleep_seconds)
 
-        if total and len(all_items) != total:
+        if total and total > self.page_size and len(all_items) != total:
             logger.info(
                 "paginate %s: fetched %d items but server reported totalItems=%d",
                 path, len(all_items), total,

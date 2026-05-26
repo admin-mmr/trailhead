@@ -123,6 +123,7 @@ def ingest_event_runners(
         captured_ids: Set[str] = set()
         rows_written = 0
         total_runners = len(team_runners)
+        COMMIT_EVERY = 50  # flush to DB so the admin UI can show live progress
 
         for i, runner in enumerate(team_runners, 1):
             runner_id_str = str(runner.runner_id)
@@ -134,8 +135,22 @@ def ingest_event_runners(
                 is_registered_only=is_upcoming,
             )
 
-            if i % 50 == 0 or i == total_runners:
-                logger.info(f'  [pass1] upserted {i}/{total_runners} runners ({rows_written} rows written)')
+            if i % COMMIT_EVERY == 0 or i == total_runners:
+                # Commit runners + update live counters so the UI refreshes
+                cursor.execute("""
+                    UPDATE nyrr_events
+                       SET mmr_runner_count = %s,
+                           result_count = (
+                               SELECT COUNT(*) FROM nyrr_event_runners
+                                WHERE nyrr_event_id = %s
+                           )
+                     WHERE id = %s
+                """, (rows_written, event_id, event_id))
+                conn.commit()
+                logger.info(
+                    f'  [pass1] {i}/{total_runners} runners flushed '
+                    f'({rows_written} rows written)'
+                )
 
         # ---- Pass 2: Member-ID search ----
         if not is_registrant_refresh:
@@ -307,7 +322,10 @@ def collect_member_id_runners(
 
             additional += 1
             captured_ids.add(nyrr_runner_id)
+            conn.commit()  # flush immediately so UI can see pass-2 additions
 
         time.sleep(API_SLEEP_SECONDS)
 
+    if additional:
+        logger.info(f'  [pass2] {additional} additional runners flushed')
     return additional

@@ -229,7 +229,7 @@ class _NyrrEndpointsMixin:
             "sortColumn": sort_column,
             "sortDescending": sort_descending,
         }
-        raw = self._paginate("teams/teamRunners", body)
+        raw = self._paginate("teams/teamRunners", body, dedup_key="runnerId")
         return [NyrrFinisher.from_api(item) for item in raw]
 
     # ==================================================================
