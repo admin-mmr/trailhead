@@ -46,14 +46,14 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
     );
   }
 
-  const triggerLoad = async (eventId, eventCode) => {
+  const triggerLoad = async (eventId, eventCode, forceReload = false) => {
     setLoadingIds(prev => ({ ...prev, [eventId]: true }));
     setProgressModal({ isOpen: true, eventCode });
 
     try {
       const r = await api(`/api/load/${eventId}`, {
         method: 'POST',
-        body: JSON.stringify({ force_reload: true }),
+        body: JSON.stringify({ force_reload: forceReload }),
       });
 
       if (!r.ok) {
@@ -186,15 +186,27 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
                       {(() => {
                         const busy = !!loadingIds[ev.id];
                         return (
-                          <button
-                            className={`btn btn-sm btn-green`}
-                            disabled={busy}
-                            onClick={() => triggerLoad(ev.id, ev.event_code)}
-                          >
-                            {busy
-                              ? <><span className="spinner" /> Loading…</>
-                              : <>▶ Load</>}
-                          </button>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              className="btn btn-sm btn-green"
+                              disabled={busy}
+                              onClick={() => triggerLoad(ev.id, ev.event_code, false)}
+                            >
+                              {busy ? <><span className="spinner" /> Loading…</> : <>▶ Load</>}
+                            </button>
+                            <button
+                              className="btn btn-sm btn-red"
+                              disabled={busy}
+                              title="Delete all runners then reload from NYRR"
+                              onClick={() => {
+                                if (window.confirm(`Clear all runner data for "${ev.event_name}" and reload from scratch?`)) {
+                                  triggerLoad(ev.id, ev.event_code, true);
+                                }
+                              }}
+                            >
+                              🗑 Clear
+                            </button>
+                          </div>
                         );
                       })()}
                     </td>
