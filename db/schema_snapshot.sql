@@ -584,3 +584,121 @@ trg_payments_sync_membership_only	INSERT	payments	AFTER	BEGIN\n    -- Declare lo
 trg_payments_sync_to_gmail_on_change	UPDATE	payments	AFTER	BEGIN\n    DECLARE v_new_notes TEXT;\n    DECLARE v_old_notes TEXT;\n    DECLARE v_latest_update DATETIME;\n    SELECT \n        GROUP_CONCAT(CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')') SEPARATOR '; '),\n        MAX(UpdatedAt)\n    INTO v_new_notes, v_latest_update\n    FROM payments\n    WHERE TransactionNumber = NEW.TransactionNumber;\n    SELECT Notes INTO v_old_notes \n    FROM gmail_transactions \n    WHERE TransactionNumber = NEW.TransactionNumber;\n    IF v_old_notes IS NULL OR v_new_notes <> v_old_notes THEN\n        UPDATE gmail_transactions\n        SET \n            Notes = v_new_notes,\n            UpdatedAt = v_latest_update\n        WHERE TransactionNumber = NEW.TransactionNumber;\n    END IF;\nEND
 trg_payments_update_approve_submission	UPDATE	payments	AFTER	BEGIN\n    \n    IF (NEW.SubmissionID IS NOT NULL AND NEW.SubmissionID != '')\n       AND (OLD.SubmissionID IS NULL OR OLD.SubmissionID = '')\n    THEN\n        UPDATE submissions\n        SET\n            Status      = 'approved',\n            PaymentID   = NEW.PaymentID,\n            UpdatedByID = NEW.ProcessedBy\n        WHERE SubmissionID = NEW.SubmissionID\n          AND Status = 'pending';\n    END IF;\nEND
 trg_submissions_insert_validate	INSERT	submissions	BEFORE	BEGIN\n  DECLARE error_context_id VARCHAR(50);\n  DECLARE error_msg TEXT;\n  DECLARE error_code VARCHAR(50);\n\n  SET error_context_id = UUID();\n\n  IF NEW.`SubmissionID` IS NULL THEN\n    SET error_code = 'SUBM_NULL_ID';\n    SET error_msg = CONCAT(\n      'Submission ID cannot be NULL. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `ValidValueExamples`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      'Cannot create submission without unique ID',\n      'SubmissionID column received NULL value on INSERT',\n      'submissions', 'SubmissionID', 'NULL',\n      '["sub_abc123xyz", "sub_2026_001"]',\n      'Ensure UUID is generated before INSERT. Check application code.',\n      'CRITICAL'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NOT EXISTS (SELECT 1 FROM `members` WHERE `MemberID` = NEW.`MemberID`) THEN\n    SET error_code = 'SUBM_FK_INVALID_MEMBER';\n    SET error_msg = CONCAT(\n      'MemberID "', NEW.`MemberID`, '" does not exist in members table. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,\n      `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      CONCAT('Invalid MemberID: ', NEW.`MemberID`),\n      'Foreign key validation failed: referenced member does not exist',\n      'submissions', 'MemberID', 'fk_submissions_members',\n      NEW.`MemberID`,\n      'Verify MemberID exists in members table before creating submission',\n      'ERROR'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NEW.`Status` NOT IN ('pending','approved','cancelled','expired') THEN\n    SET error_code = 'SUBM_INVALID_STATUS';\n    SET error_msg = CONCAT(\n      'Invalid Status value: "', NEW.`Status`, '". ',\n      'Allowed: pending, approved, cancelled, expired. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `AllowedRange`, `ValidValueExamples`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      CONCAT('Invalid submission status: ', NEW.`Status`),\n      'Status enum constraint violated',\n      'submissions', 'Status', NEW.`Status`,\n      'pending | approved | cancelled | expired',\n      '["pending", "approved"]',\n      'Use one of the allowed status values. Default is "pending".',\n      'ERROR'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN\n    SET error_code = 'SUBM_NEGATIVE_AMOUNT';\n    SET error_msg = CONCAT(\n      'Amount cannot be negative: ', NEW.`Amount`, '. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `AllowedRange`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      'Submission amount is negative',\n      'Amount validation failed: received negative value',\n      'submissions', 'Amount', CAST(NEW.`Amount` AS CHAR),\n      '>= 0',\n      'Ensure amount is positive. Use absolute value or check calculation logic.',\n      'WARNING'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\nEND
+
+
+-- ── MIGRATION_V026: Public site tables ──────────────────────────────────
+CREATE TABLE IF NOT EXISTS board_members (
+  id            INT PRIMARY KEY AUTO_INCREMENT,
+  name          VARCHAR(100) NOT NULL,
+  role          VARCHAR(100) NOT NULL,
+  bio           TEXT,
+  photo_url     VARCHAR(500),
+  email         VARCHAR(255),
+  term_year     INT,
+  display_order INT          DEFAULT 0,
+  is_active     BOOLEAN      DEFAULT TRUE,
+  created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS coaches (
+  id              INT PRIMARY KEY AUTO_INCREMENT,
+  name            VARCHAR(100) NOT NULL,
+  specialty       VARCHAR(200),
+  bio             TEXT,
+  photo_url       VARCHAR(500),
+  certifications  TEXT,
+  contact_email   VARCHAR(255),
+  display_order   INT       DEFAULT 0,
+  is_active       BOOLEAN   DEFAULT TRUE,
+  created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS weekly_runs (
+  id               INT PRIMARY KEY AUTO_INCREMENT,
+  day_of_week      TINYINT      NOT NULL,          -- 0=Sunday .. 6=Saturday
+  start_time       TIME         NOT NULL,
+  location_name    VARCHAR(200) NOT NULL,
+  location_address VARCHAR(500),
+  location_lat     DECIMAL(10,8),
+  location_lng     DECIMAL(11,8),
+  pace_group       VARCHAR(50),                    -- e.g. "Easy 9–10 min/mi"
+  distance_miles   DECIMAL(4,1),
+  description      TEXT,
+  coach_id         INT NULL,
+  is_active        BOOLEAN DEFAULT TRUE,
+  FOREIGN KEY (coach_id) REFERENCES coaches(id)
+);
+CREATE TABLE IF NOT EXISTS training_plans (
+  id             INT PRIMARY KEY AUTO_INCREMENT,
+  slug           VARCHAR(100) UNIQUE NOT NULL,
+  title          VARCHAR(200) NOT NULL,
+  goal_distance  VARCHAR(50),                      -- "Marathon", "Half", "5K"
+  duration_weeks INT,
+  level          VARCHAR(50),                      -- "Beginner", "Intermediate", "Advanced"
+  description    TEXT,
+  full_plan_url  VARCHAR(500),                     -- PDF in Azure Storage
+  is_published   BOOLEAN   DEFAULT FALSE,
+  updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS team_records (
+  id            INT PRIMARY KEY AUTO_INCREMENT,
+  distance      VARCHAR(50)        NOT NULL,       -- "5K", "Marathon"
+  gender        ENUM('M','F','X')  NOT NULL,
+  age_group     VARCHAR(20),                       -- "Overall", "M40-49"
+  time_seconds  INT                NOT NULL,
+  athlete_name  VARCHAR(100)       NOT NULL,
+  member_id     VARCHAR(10) NULL,
+  race_name     VARCHAR(200),
+  race_date     DATE,
+  race_location VARCHAR(200),
+  is_verified   BOOLEAN DEFAULT FALSE,
+  INDEX idx_distance_gender (distance, gender),
+  FOREIGN KEY (member_id) REFERENCES members(MemberID)
+);
+CREATE TABLE IF NOT EXISTS races (
+  id               INT PRIMARY KEY AUTO_INCREMENT,
+  name             VARCHAR(200) NOT NULL,
+  race_date        DATE         NOT NULL,
+  distance         VARCHAR(50),
+  location         VARCHAR(200),
+  registration_url VARCHAR(500),
+  description      TEXT,
+  recap_mdx        TEXT,                           -- post-race recap in MDX
+  is_team_event    BOOLEAN DEFAULT FALSE,
+  INDEX idx_date (race_date)
+);
+CREATE TABLE IF NOT EXISTS sponsors (
+  id            INT PRIMARY KEY AUTO_INCREMENT,
+  name          VARCHAR(200) NOT NULL,
+  tier          VARCHAR(50),                       -- "Gold", "Silver", "Bronze", "Partner"
+  logo_url      VARCHAR(500),
+  website_url   VARCHAR(500),
+  description   TEXT,
+  start_date    DATE,
+  end_date      DATE,
+  is_active     BOOLEAN DEFAULT TRUE,
+  display_order INT     DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS contact_submissions (
+  id         INT PRIMARY KEY AUTO_INCREMENT,
+  name       VARCHAR(100) NOT NULL,
+  email      VARCHAR(255) NOT NULL,
+  subject    VARCHAR(200),
+  message    TEXT         NOT NULL,
+  status     ENUM('new','read','replied','archived') DEFAULT 'new',
+  ip_address VARCHAR(45),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── MIGRATION_V027: nyrr_processing_log metrics ───────────────────────────
+ALTER TABLE nyrr_processing_log
+  ADD COLUMN teams_processed INT NOT NULL DEFAULT 0
+  AFTER rows_written;
+ALTER TABLE nyrr_processing_log
+  ADD COLUMN elapsed_sec INT NOT NULL DEFAULT 0
+  AFTER teams_processed;
+
+-- ── MIGRATION_V028: mmr_finisher_count ──────────────────────────────────
+ALTER TABLE nyrr_events
+  ADD COLUMN mmr_finisher_count INT NULL
+  AFTER mmr_matched_count;
