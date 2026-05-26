@@ -122,8 +122,9 @@ def ingest_event_runners(
 
         captured_ids: Set[str] = set()
         rows_written = 0
+        total_runners = len(team_runners)
 
-        for runner in team_runners:
+        for i, runner in enumerate(team_runners, 1):
             runner_id_str = str(runner.runner_id)
             captured_ids.add(runner_id_str)
 
@@ -132,6 +133,9 @@ def ingest_event_runners(
                 is_upcoming=is_upcoming,
                 is_registered_only=is_upcoming,
             )
+
+            if i % 50 == 0 or i == total_runners:
+                logger.info(f'  [pass1] upserted {i}/{total_runners} runners ({rows_written} rows written)')
 
         # ---- Pass 2: Member-ID search ----
         if not is_registrant_refresh:

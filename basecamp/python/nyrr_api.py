@@ -140,9 +140,11 @@ class NyrrApiClient(_NyrrEndpointsMixin):
             total = data.get(total_key, 0)
             all_items.extend(items)
 
-            logger.debug(
-                "paginate %s  page=%d  got=%d  cumulative=%d  server_total=%d",
-                path, page_index, len(items), len(all_items), total,
+            est_pages = f"~{-(-total // self.page_size)}" if total else "?"
+            logger.info(
+                "  [api] %s  page %d/%s  +%d items  total so far: %d%s",
+                path, page_index, est_pages, len(items), len(all_items),
+                f" (server reports {total})" if total else "",
             )
 
             # Stop when we received fewer items than requested (last page).
