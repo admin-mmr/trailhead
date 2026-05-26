@@ -85,8 +85,11 @@ class FinisherFetcher:
     # Entry point
     # ------------------------------------------------------------------
 
-    def run(self, force_reload: bool) -> tuple[int, int]:
-        """Execute Step 1. Returns (rows_written, total_finishers)."""
+    def run(self, force_reload: bool, mmr_only: bool = False) -> tuple[int, int]:
+        """Execute Step 1. Returns (rows_written, total_finishers).
+
+        mmr_only=True: fetch only team MMR runners, skip full divide-and-conquer.
+        """
         if force_reload:
             self._preflight_and_delete()
 
@@ -101,7 +104,11 @@ class FinisherFetcher:
                 self._upsert_pages("MMR asc",  team_code="MMR", sort_desc=False)
                 self._upsert_pages("MMR desc", team_code="MMR", sort_desc=True)
         self._update_job(rows_written=self.rows_written,
-                         message=f'Step 1: MMR pass done ({self.rows_written} rows). Starting divide & conquer...')
+                         message=f'Step 1: MMR pass done ({self.rows_written} MMR runners).'
+                                 + ('' if mmr_only else ' Starting divide & conquer...'))
+
+        if mmr_only:
+            return self.rows_written, mmr_total
 
         # Pass 1+: divide & conquer the full field by age
         self.total_finishers = self._probe()

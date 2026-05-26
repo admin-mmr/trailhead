@@ -46,14 +46,14 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
     );
   }
 
-  const triggerLoad = async (eventId, eventCode, forceReload = false) => {
+  const triggerLoad = async (eventId, eventCode, forceReload = false, mmrOnly = false) => {
     setLoadingIds(prev => ({ ...prev, [eventId]: true }));
     setProgressModal({ isOpen: true, eventCode });
 
     try {
       const r = await api(`/api/load/${eventId}`, {
         method: 'POST',
-        body: JSON.stringify({ force_reload: forceReload }),
+        body: JSON.stringify({ force_reload: forceReload, mmr_only: mmrOnly }),
       });
 
       if (!r.ok) {
@@ -186,13 +186,22 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
                       {(() => {
                         const busy = !!loadingIds[ev.id];
                         return (
-                          <div style={{ display: 'flex', gap: 4 }}>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             <button
                               className="btn btn-sm btn-green"
                               disabled={busy}
+                              title="Resume / full load with reconciliation"
                               onClick={() => triggerLoad(ev.id, ev.event_code, false)}
                             >
                               {busy ? <><span className="spinner" /> Loading…</> : <>▶ Load</>}
+                            </button>
+                            <button
+                              className="btn btn-sm btn-blue"
+                              disabled={busy}
+                              title="Load MMR team runners only (fast)"
+                              onClick={() => triggerLoad(ev.id, ev.event_code, false, true)}
+                            >
+                              👟 MMR
                             </button>
                             <button
                               className="btn btn-sm btn-red"

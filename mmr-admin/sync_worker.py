@@ -91,9 +91,9 @@ def _resolve_slug_to_canonical(client: NyrrApiClient, slug: str,
 # Background worker
 # ---------------------------------------------------------------------------
 
-def _sync_worker(event_id: int, event_code: str, force_reload: bool) -> None:
+def _sync_worker(event_id: int, event_code: str, force_reload: bool, mmr_only: bool = False) -> None:
     """Background thread: three-step sync for one NYRR event."""
-    logger.info(f"🚀 Sync worker started: event_id={event_id}, event_code={event_code}, force_reload={force_reload}")
+    logger.info(f"🚀 Sync worker started: event_id={event_id}, event_code={event_code}, force_reload={force_reload}, mmr_only={mmr_only}")
     start_time = time.time()
     client = NyrrApiClient()
     conn = None
@@ -183,7 +183,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool) -> None:
         cursor = conn.cursor()
 
         fetcher = FinisherFetcher(client, event_id, event_code, conn, cursor, _jobs, _jobs_lock)
-        rows_written, total_finishers = fetcher.run(force_reload)
+        rows_written, total_finishers = fetcher.run(force_reload, mmr_only=mmr_only)
 
         step1_elapsed = time.time() - step1_start
         logger.info(f"✅ STEP 1 complete: {rows_written} rows in {step1_elapsed:.2f}s "
@@ -191,6 +191,20 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool) -> None:
         cursor.close()
         conn.close()
         conn = None
+
+        if mmr_only:
+            elapsed = time.time() - start_time
+            logger.info(f"✅ MMR-ONLY COMPLETE: {rows_written} MMR runners in {elapsed:.2f}s")
+            with _jobs_lock:
+                _jobs[event_code]['status'] = 'done'
+                _jobs[event_code]['step'] = 'complete'
+                _jobs[event_code]['message'] = f'MMR-only sync complete: {rows_written} MMR runners loaded'
+                _jobs[event_code]['finished_at'] = datetime.utcnow().isoformat()
+                _jobs[event_code]['total_elapsed_sec'] = elapsed
+            _db_final_status(event_id, event_code, 'Completed',
+                             f'MMR-only sync: {rows_written} runners', 'Success',
+                             rows_written, rows_written, 0, int(elapsed))
+            return
 
         # --- Step 2: Enumerate all teams ---
         logger.info("⏱️  STEP 2: Fetching team list...")
@@ -390,11 +404,11 @@ def _db_log_error(event_id, error_str):
 # Public API (called from api_sync.py / Flask routes)
 # ---------------------------------------------------------------------------
 
-def start_sync(event_id: int, event_code: str, force_reload: bool = False) -> None:
+def start_sync(event_id: int, event_code: str, force_reload: bool = False, mmr_only: bool = False) -> None:
     """Spawn the background sync thread for one event."""
     t = threading.Thread(
         target=_sync_worker,
-        args=(event_id, event_code, force_reload),
+        args=(event_id, event_code, force_reload, mmr_only),
         daemon=True,
     )
     t.start()

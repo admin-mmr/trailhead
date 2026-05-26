@@ -50,9 +50,10 @@ def api_load_event(event_id):
     event = rows[0]
     event_code = event['event_code']
     force_reload = request.json.get('force_reload', False)
-    logger.info(f"📋 Event found: event_code={event_code}, force_reload={force_reload}")
+    mmr_only     = request.json.get('mmr_only', False)
+    logger.info(f"📋 Event found: event_code={event_code}, force_reload={force_reload}, mmr_only={mmr_only}")
 
-    start_sync(event_id, event_code, force_reload)
+    start_sync(event_id, event_code, force_reload, mmr_only=mmr_only)
     return json_response({'ok': True, 'event_code': event_code, 'status': 'started'})
 
 
