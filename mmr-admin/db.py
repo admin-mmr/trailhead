@@ -104,7 +104,7 @@ def _get_pool() -> MySQLConnectionPool:
                     logger.info(f'[DB] Creating connection pool: {cfg["user"]}@{cfg["host"]}/{cfg["database"]}')
                     _pool = MySQLConnectionPool(
                         pool_name='mmr_admin',
-                        pool_size=10,
+                        pool_size=3,          # keep headroom for CLI processes
                         pool_reset_session=True,
                         host=cfg['host'],
                         user=cfg['user'],
@@ -113,6 +113,7 @@ def _get_pool() -> MySQLConnectionPool:
                         ssl_disabled=cfg['ssl_disabled'],
                         charset='utf8mb4',
                         collation='utf8mb4_unicode_ci',
+                        connect_timeout=10,   # fail fast instead of hanging
                     )
                     logger.info('[DB] Connection pool created successfully')
                 except Exception as e:
