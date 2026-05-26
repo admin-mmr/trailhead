@@ -149,6 +149,7 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
                     <thead>
                       <tr>
                         <th>Event</th>
+                        {isPast && <th>Event Code</th>}
                         <th>Date</th>
                         <th>Distance</th>
                         <th>Status</th>
@@ -164,15 +165,15 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
                 <tr key={ev.id}>
                   <td>
                     <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id); }} style={{ fontWeight: 600 }}>{ev.event_name}</a>
-                    <div style={{ color: 'var(--text2)', fontSize: 11 }}>
-                      {ev.event_code}
-                      {ev.event_url && (
+                    {ev.event_url && (
+                      <div style={{ fontSize: 11 }}>
                         <a href={ev.event_url} target="_blank" rel="noopener noreferrer"
-                          style={{ marginLeft: 6, color: 'var(--accent)', textDecoration: 'none' }}
+                          style={{ color: 'var(--accent)', textDecoration: 'none' }}
                           title="View on NYRR">↗ NYRR</a>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </td>
+                  {isPast && <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{ev.event_code || '—'}</td>}
                   <td>{ev.event_date ? new Date(ev.event_date).toLocaleDateString() : '—'}</td>
                   <td>{ev.distance || '—'}</td>
                   <td><StatusBadge status={ev.processing_status} /></td>
