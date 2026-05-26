@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional, Set, Tuple
 import mysql.connector
 
 from nyrr_api import NyrrApiClient, NyrrFinisher
+from nyrr_finisher_splitter import FinisherSplitter
 from sync_nyrr_helpers import (
     API_SLEEP_SECONDS,
     TEAM_CODE,
@@ -115,37 +116,96 @@ def ingest_event_runners(
     conn.commit()
 
     try:
-        # ---- Pass 1: Club search (streaming — write each page immediately) ----
-        logger.info(f'  [pass1] streaming get_team_runners({event_code}, {TEAM_CODE})')
-
+        # ---- Pass 1: Fetch runners and stream-upsert ----
+        # For completed events: use FinisherSplitter to get ALL finishers
+        # (divide-and-conquer over age × gender × pace to stay under NYRR's
+        # ~500-row per-query cap). For upcoming events: NYRR's finishers-filter
+        # has no data yet, so keep the team-runners path for registrants.
         captured_ids: Set[str] = set()
         rows_written = 0
+        total_inserts = 0
+        total_updates = 0
         page_num = 0
 
-        for page in client.get_team_runners_streaming(event_code, TEAM_CODE):
+        if is_upcoming:
+            logger.info(
+                f'  [pass1] event is upcoming — fetching MMR registrants '
+                f'via teams/teamRunners (event_code={event_code} team={TEAM_CODE})'
+            )
+            page_iter = (
+                (f'team={TEAM_CODE}', page)
+                for page in client.get_team_runners_streaming(event_code, TEAM_CODE)
+            )
+        else:
+            logger.info(
+                f'  [pass1] event has finishers — fetching ALL runners via '
+                f'finishers-filter divide-and-conquer (event_code={event_code})'
+            )
+            splitter = FinisherSplitter(client, event_code)
+            page_iter = splitter.iter_pages()
+
+        for label, page in page_iter:
             page_num += 1
+            page_inserts = 0
+            page_updates = 0
             for runner in page:
                 captured_ids.add(str(runner.runner_id))
-                rows_written += upsert_runner(
+                rc = upsert_runner(
                     cursor, event_id, runner, event_date,
                     is_upcoming=is_upcoming,
                     is_registered_only=is_upcoming,
                 )
+                # ON DUPLICATE KEY UPDATE: 1=INSERT, 2=UPDATE-changed, 0=UPDATE-no-op
+                if rc == 1:
+                    page_inserts += 1
+                else:
+                    page_updates += 1
+                rows_written += 1
+            total_inserts += page_inserts
+            total_updates += page_updates
 
-            # Commit this page + update live counters so UI shows progress
+            # Commit this page + update live counters so UI shows progress.
+            # mmr_runner_count = MMR-team only; result_count = total rows.
             cursor.execute("""
                 UPDATE nyrr_events
-                   SET mmr_runner_count = %s,
-                       result_count = (
+                   SET result_count = (
                            SELECT COUNT(*) FROM nyrr_event_runners
                             WHERE nyrr_event_id = %s
+                       ),
+                       mmr_runner_count = (
+                           SELECT COUNT(*) FROM nyrr_event_runners
+                            WHERE nyrr_event_id = %s AND team_code = %s
                        )
                  WHERE id = %s
-            """, (rows_written, event_id, event_id))
+            """, (event_id, event_id, TEAM_CODE, event_id))
             conn.commit()
+
+            # Read back the live DB counts (what the user actually cares about).
+            cursor.execute(
+                "SELECT result_count, mmr_runner_count "
+                "FROM nyrr_events WHERE id = %s",
+                (event_id,),
+            )
+            db_total, db_mmr = cursor.fetchone() or (0, 0)
             logger.info(
-                f'  [pass1] page {page_num}: +{len(page)} runners flushed, '
-                f'{rows_written} total written, {len(captured_ids)} distinct'
+                f'  [pass1] {label} page {page_num}: '
+                f'DB now {db_total} rows ({db_mmr} MMR) | '
+                f'this page: +{page_inserts} new, ~{page_updates} re-fetched | '
+                f'this run: {total_inserts} new inserts so far'
+            )
+
+        if page_num == 0:
+            logger.warning(
+                f'  [pass1] API yielded 0 pages for event_code={event_code} '
+                f'(is_upcoming={is_upcoming}) — NYRR has no runners published '
+                f'for this event yet (check event_code on NYRR site, or event '
+                f'may be too recent / wrong slug)'
+            )
+        else:
+            logger.info(
+                f'  [pass1] stream complete: {page_num} pages, {rows_written} upserts '
+                f'({total_inserts} NEW, {total_updates} updated, '
+                f'{len(captured_ids)} distinct)'
             )
 
         # ---- Pass 2: Member-ID search ----
@@ -206,29 +266,41 @@ def upsert_runner(
     is_upcoming: bool = False,
     is_registered_only: bool = False,
 ) -> int:
-    """Upsert a single runner row. Returns 1 on success."""
+    """Upsert a single runner row.
+
+    Returns cursor.rowcount from MySQL's ON DUPLICATE KEY UPDATE:
+      1 = new row inserted
+      2 = existing row updated with changed values
+      0 = existing row matched but no values changed
+    """
     full_name = f"{runner.first_name} {runner.last_name}".strip()
     cursor.execute("""
         INSERT INTO nyrr_event_runners
             (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
-             age, gender, state_province, bib_number, finish_time, pace,
-             overall_place, gender_place, team_code, is_registered_only, scan_timestamp)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+             age, gender, city, state_province, bib_number,
+             finish_time, pace, overall_place, gender_place,
+             age_grade_time, age_grade_place, age_grade_percent,
+             team_code, is_registered_only, scan_timestamp)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
         ON DUPLICATE KEY UPDATE
-            runner_name       = VALUES(runner_name),
-            first_name        = VALUES(first_name),
-            last_name         = VALUES(last_name),
-            age               = VALUES(age),
-            gender            = VALUES(gender),
-            state_province    = VALUES(state_province),
-            bib_number        = VALUES(bib_number),
-            finish_time       = VALUES(finish_time),
-            pace              = VALUES(pace),
-            overall_place     = VALUES(overall_place),
-            gender_place      = VALUES(gender_place),
-            team_code         = VALUES(team_code),
+            runner_name        = VALUES(runner_name),
+            first_name         = VALUES(first_name),
+            last_name          = VALUES(last_name),
+            age                = VALUES(age),
+            gender             = VALUES(gender),
+            city               = VALUES(city),
+            state_province     = VALUES(state_province),
+            bib_number         = VALUES(bib_number),
+            finish_time        = VALUES(finish_time),
+            pace               = VALUES(pace),
+            overall_place      = VALUES(overall_place),
+            gender_place       = VALUES(gender_place),
+            age_grade_time     = VALUES(age_grade_time),
+            age_grade_place    = VALUES(age_grade_place),
+            age_grade_percent  = VALUES(age_grade_percent),
+            team_code          = VALUES(team_code),
             is_registered_only = VALUES(is_registered_only),
-            scan_timestamp    = NOW()
+            scan_timestamp     = NOW()
     """, (
         event_id,
         str(runner.runner_id),
@@ -237,16 +309,20 @@ def upsert_runner(
         runner.last_name,
         runner.age,
         runner.gender,
+        getattr(runner, 'city', '') or '',
         runner.state_province,
         runner.bib,
         runner.overall_time,
         runner.pace,
         runner.overall_place,
         runner.gender_place,
-        runner.team_code or TEAM_CODE,
+        getattr(runner, 'age_grade_time', '') or '',
+        getattr(runner, 'age_grade_place', None),
+        getattr(runner, 'age_grade_percent', None),
+        runner.team_code or None,
         int(is_registered_only),
     ))
-    return 1
+    return cursor.rowcount
 
 
 def collect_member_id_runners(
@@ -267,18 +343,32 @@ def collect_member_id_runners(
     Returns: number of additional rows upserted.
     """
     # Get members who have a matched NYRR runner — we stored nyrr_runner_id
-    # from prior ingestions. Pull distinct nyrr_runner_ids already linked to
-    # mmr_member_id across any event.
+    # from prior ingestions. GROUP BY nyrr_runner_id (not DISTINCT on the tuple)
+    # so the same runner with name-spelling variants is fetched only once.
     cursor.execute("""
-        SELECT DISTINCT nyrr_runner_id, mmr_member_id, runner_name
+        SELECT nyrr_runner_id,
+               MAX(mmr_member_id) AS mmr_member_id,
+               MAX(runner_name)   AS runner_name
         FROM nyrr_event_runners
         WHERE mmr_member_id IS NOT NULL
           AND nyrr_runner_id NOT IN (
               SELECT nyrr_runner_id FROM nyrr_event_runners WHERE nyrr_event_id = %s
           )
+        GROUP BY nyrr_runner_id
     """, (event_id,))
     known_runners = cursor.fetchall()
-    logger.info(f'  [pass2] {len(known_runners)} known member runners to cross-check')
+    logger.info(f'  [pass2] {len(known_runners)} known member runners to cross-check '
+                f'(deduped by nyrr_runner_id)')
+
+    # Derive event year so we can constrain get_runner_races server-side.
+    # Saves 30-50% wall time: most runners have ~5-10 races/year vs ~30-80 total.
+    event_year = None
+    if event_date is not None:
+        try:
+            event_year = event_date.year if hasattr(event_date, 'year') \
+                else int(str(event_date)[:4])
+        except (ValueError, AttributeError):
+            event_year = None
 
     additional = 0
     for nyrr_runner_id, mmr_member_id, runner_name in known_runners:
@@ -286,7 +376,7 @@ def collect_member_id_runners(
             continue
 
         try:
-            history = client.get_runner_races(nyrr_runner_id)
+            history = client.get_runner_races(nyrr_runner_id, year=event_year)
         except Exception as e:
             logger.warning(f'  [pass2] Failed to get races for {nyrr_runner_id}: {e}')
             continue
