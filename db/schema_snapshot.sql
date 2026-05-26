@@ -4,7 +4,10 @@ table	engine	collation	comment
 activity_log	InnoDB	utf8mb4_unicode_ci	
 admin_member_overrides	InnoDB	utf8mb4_unicode_ci	
 admin_users	InnoDB	utf8mb4_unicode_ci	
+board_members	InnoDB	utf8mb4_unicode_ci	
+coaches	InnoDB	utf8mb4_unicode_ci	
 config	InnoDB	utf8mb4_unicode_ci	
+contact_submissions	InnoDB	utf8mb4_unicode_ci	
 error_context	InnoDB	utf8mb4_unicode_ci	
 gmail_transactions	InnoDB	utf8mb4_unicode_ci	
 member_duplicate_dismissals	InnoDB	utf8mb4_unicode_ci	
@@ -15,11 +18,16 @@ nyrr_events	InnoDB	utf8mb4_unicode_ci
 nyrr_processing_log	InnoDB	utf8mb4_unicode_ci	
 password_reset_tokens	InnoDB	utf8mb4_unicode_ci	
 payments	InnoDB	utf8mb4_unicode_ci	
+races	InnoDB	utf8mb4_unicode_ci	
 schema_migrations	InnoDB	utf8mb4_unicode_ci	
 sheets_sync_log	InnoDB	utf8mb4_unicode_ci	Tracks sheets sync batches for resume capability and monitoring
+sponsors	InnoDB	utf8mb4_unicode_ci	
 submissions	InnoDB	utf8mb4_unicode_ci	
 sync_jobs	InnoDB	utf8mb4_unicode_ci	
+team_records	InnoDB	utf8mb4_unicode_ci	
+training_plans	InnoDB	utf8mb4_unicode_ci	
 viewer_user_settings	InnoDB	utf8mb4_unicode_ci	
+weekly_runs	InnoDB	utf8mb4_unicode_ci	
 section
 === 2. COLUMNS ===
 table	#	column_name	col_type	nullable	default	extra	key	comment
@@ -51,10 +59,40 @@ admin_users	3	role	enum('admin','super_admin')	NO	admin		MUL
 admin_users	4	added_by	varchar(255)	NO	system			
 admin_users	5	added_at	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 admin_users	6	updated_at	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+board_members	1	id	int	NO	NULL	auto_increment	PRI	
+board_members	2	name	varchar(100)	NO	NULL			
+board_members	3	role	varchar(100)	NO	NULL			
+board_members	4	bio	text	YES	NULL			
+board_members	5	photo_url	varchar(500)	YES	NULL			
+board_members	6	email	varchar(255)	YES	NULL			
+board_members	7	term_year	int	YES	NULL			
+board_members	8	display_order	int	YES	0			
+board_members	9	is_active	tinyint(1)	YES	1			
+board_members	10	created_at	timestamp	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+board_members	11	updated_at	timestamp	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+coaches	1	id	int	NO	NULL	auto_increment	PRI	
+coaches	2	name	varchar(100)	NO	NULL			
+coaches	3	specialty	varchar(200)	YES	NULL			
+coaches	4	bio	text	YES	NULL			
+coaches	5	photo_url	varchar(500)	YES	NULL			
+coaches	6	certifications	text	YES	NULL			
+coaches	7	contact_email	varchar(255)	YES	NULL			
+coaches	8	display_order	int	YES	0			
+coaches	9	is_active	tinyint(1)	YES	1			
+coaches	10	created_at	timestamp	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+coaches	11	updated_at	timestamp	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
 config	1	ConfigKey	varchar(100)	NO	NULL		PRI	
 config	2	ConfigValue	varchar(500)	NO	NULL			
 config	3	Description	varchar(500)	YES	NULL			
 config	4	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+contact_submissions	1	id	int	NO	NULL	auto_increment	PRI	
+contact_submissions	2	name	varchar(100)	NO	NULL			
+contact_submissions	3	email	varchar(255)	NO	NULL			
+contact_submissions	4	subject	varchar(200)	YES	NULL			
+contact_submissions	5	message	text	NO	NULL			
+contact_submissions	6	status	enum('new','read','replied','archived')	YES	new			
+contact_submissions	7	ip_address	varchar(45)	YES	NULL			
+contact_submissions	8	created_at	timestamp	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 error_context	1	ErrorContextID	varchar(50)	NO	NULL		PRI	UUID for error tracking
 error_context	2	ErrorCode	varchar(50)	NO	NULL		MUL	Matches activity_log.ErrorCode
 error_context	3	ErrorMessage	text	NO	NULL			User-friendly error message
@@ -221,6 +259,15 @@ payments	13	TransactionNumber	varchar(100)	YES	NULL		MUL	Linked to gmail_transac
 payments	14	SubmissionID	varchar(50)	YES	NULL			Optional: Link to the user submission that started this
 payments	15	PaymentType	varchar(50)	YES	NULL			Set at creation (e.g., Membership, Donation)
 payments	16	UpdatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP	MUL	Last modified timestamp for incremental sync
+races	1	id	int	NO	NULL	auto_increment	PRI	
+races	2	name	varchar(200)	NO	NULL			
+races	3	race_date	date	NO	NULL		MUL	
+races	4	distance	varchar(50)	YES	NULL			
+races	5	location	varchar(200)	YES	NULL			
+races	6	registration_url	varchar(500)	YES	NULL			
+races	7	description	text	YES	NULL			
+races	8	recap_mdx	text	YES	NULL			
+races	9	is_team_event	tinyint(1)	YES	0			
 schema_migrations	1	version	varchar(50)	NO	NULL		PRI	
 schema_migrations	2	description	varchar(255)	YES	NULL			
 schema_migrations	3	executed_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
@@ -239,6 +286,16 @@ sheets_sync_log	12	RowsProcessed	int	NO	0			Rows attempted in this batch
 sheets_sync_log	13	RowsInserted	int	NO	0			Rows successfully inserted
 sheets_sync_log	14	RowsUpdated	int	NO	0			Rows successfully updated
 sheets_sync_log	15	RowsSkipped	int	NO	0			Rows skipped (duplicates, validation failures)
+sponsors	1	id	int	NO	NULL	auto_increment	PRI	
+sponsors	2	name	varchar(200)	NO	NULL			
+sponsors	3	tier	varchar(50)	YES	NULL			
+sponsors	4	logo_url	varchar(500)	YES	NULL			
+sponsors	5	website_url	varchar(500)	YES	NULL			
+sponsors	6	description	text	YES	NULL			
+sponsors	7	start_date	date	YES	NULL			
+sponsors	8	end_date	date	YES	NULL			
+sponsors	9	is_active	tinyint(1)	YES	1			
+sponsors	10	display_order	int	YES	0			
 submissions	1	CreatedAt	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		Timestamp when the user hits submit button
 submissions	2	SubmissionID	varchar(50)	NO	NULL		PRI	auto gen unique identifier (migrated from EventID)
 submissions	3	Status	enum('pending','approved','cancelled','expired')	NO	pending		MUL	Logic: once submitted=pending; matched payment=approved; past ExpiresAt=expired; user action=cancelled
@@ -264,6 +321,27 @@ sync_jobs	6	Result	longtext	YES	NULL
 sync_jobs	7	StartedAt	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
 sync_jobs	8	UpdatedAt	timestamp	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP	MUL	
 sync_jobs	9	CompletedAt	timestamp	YES	NULL			
+team_records	1	id	int	NO	NULL	auto_increment	PRI	
+team_records	2	distance	varchar(50)	NO	NULL		MUL	
+team_records	3	gender	enum('M','F','X')	NO	NULL			
+team_records	4	age_group	varchar(20)	YES	NULL			
+team_records	5	time_seconds	int	NO	NULL			
+team_records	6	athlete_name	varchar(100)	NO	NULL			
+team_records	7	member_id	varchar(10)	YES	NULL		MUL	
+team_records	8	race_name	varchar(200)	YES	NULL			
+team_records	9	race_date	date	YES	NULL			
+team_records	10	race_location	varchar(200)	YES	NULL			
+team_records	11	is_verified	tinyint(1)	YES	0			
+training_plans	1	id	int	NO	NULL	auto_increment	PRI	
+training_plans	2	slug	varchar(100)	NO	NULL		UNI	
+training_plans	3	title	varchar(200)	NO	NULL			
+training_plans	4	goal_distance	varchar(50)	YES	NULL			
+training_plans	5	duration_weeks	int	YES	NULL			
+training_plans	6	level	varchar(50)	YES	NULL			
+training_plans	7	description	text	YES	NULL			
+training_plans	8	full_plan_url	varchar(500)	YES	NULL			
+training_plans	9	is_published	tinyint(1)	YES	0			
+training_plans	10	updated_at	timestamp	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
 v_family_members	1	FamilyID	varchar(10)	YES	NULL			
 v_family_members	2	primary_member_id	varchar(10)	YES	NULL			
 v_family_members	3	member_id	varchar(10)	NO	NULL			
@@ -330,6 +408,18 @@ viewer_user_settings	3	table_name	varchar(255)	NO	NULL
 viewer_user_settings	4	visible_columns	json	YES	NULL			
 viewer_user_settings	5	created_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 viewer_user_settings	6	updated_at	datetime	YES	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+weekly_runs	1	id	int	NO	NULL	auto_increment	PRI	
+weekly_runs	2	day_of_week	tinyint	NO	NULL			
+weekly_runs	3	start_time	time	NO	NULL			
+weekly_runs	4	location_name	varchar(200)	NO	NULL			
+weekly_runs	5	location_address	varchar(500)	YES	NULL			
+weekly_runs	6	location_lat	decimal(10,8)	YES	NULL			
+weekly_runs	7	location_lng	decimal(11,8)	YES	NULL			
+weekly_runs	8	pace_group	varchar(50)	YES	NULL			
+weekly_runs	9	distance_miles	decimal(4,1)	YES	NULL			
+weekly_runs	10	description	text	YES	NULL			
+weekly_runs	11	coach_id	int	YES	NULL		MUL	
+weekly_runs	12	is_active	tinyint(1)	YES	1			
 section
 === 3. INDEXES ===
 table	index_name	non_unique	seq	column_name	index_type	nullable
@@ -346,7 +436,10 @@ admin_users	email	0	1	email	BTREE
 admin_users	idx_admin_email	1	1	email	BTREE	
 admin_users	idx_admin_role	1	1	role	BTREE	
 admin_users	PRIMARY	0	1	id	BTREE	
+board_members	PRIMARY	0	1	id	BTREE	
+coaches	PRIMARY	0	1	id	BTREE	
 config	PRIMARY	0	1	ConfigKey	BTREE	
+contact_submissions	PRIMARY	0	1	id	BTREE	
 error_context	idx_constraint	1	1	ConstraintName	BTREE	YES
 error_context	idx_detected_at	1	1	DetectedAt	BTREE	
 error_context	idx_error_code	1	1	ErrorCode	BTREE	
@@ -404,6 +497,8 @@ payments	idx_payments_memberid	1	1	MemberID	BTREE	YES
 payments	idx_payments_paymentdate	1	1	PaymentDate	BTREE	YES
 payments	idx_payments_updated_at	1	1	UpdatedAt	BTREE	
 payments	PRIMARY	0	1	PaymentID	BTREE	
+races	idx_date	1	1	race_date	BTREE	
+races	PRIMARY	0	1	id	BTREE	
 schema_migrations	PRIMARY	0	1	version	BTREE	
 sheets_sync_log	idx_config_key	1	1	ConfigKey	BTREE	
 sheets_sync_log	idx_jobid	1	1	JobID	BTREE	
@@ -412,6 +507,7 @@ sheets_sync_log	idx_status	1	1	Status	BTREE
 sheets_sync_log	PRIMARY	0	1	SyncLogID	BTREE	
 sheets_sync_log	uk_job_batch	0	1	JobID	BTREE	
 sheets_sync_log	uk_job_batch	0	2	BatchNumber	BTREE	
+sponsors	PRIMARY	0	1	id	BTREE	
 submissions	fk_submission_member	1	1	MemberID	BTREE	
 submissions	idx_submissions_expires	1	1	ExpiresAt	BTREE	YES
 submissions	idx_submissions_status	1	1	Status	BTREE	
@@ -422,9 +518,17 @@ sync_jobs	PRIMARY	0	1	JobID	BTREE
 sync_jobs	StartedAt	1	1	StartedAt	BTREE	
 sync_jobs	Status	1	1	Status	BTREE	
 sync_jobs	UpdatedAt	1	1	UpdatedAt	BTREE	
+team_records	idx_distance_gender	1	1	distance	BTREE	
+team_records	idx_distance_gender	1	2	gender	BTREE	
+team_records	member_id	1	1	member_id	BTREE	YES
+team_records	PRIMARY	0	1	id	BTREE	
+training_plans	PRIMARY	0	1	id	BTREE	
+training_plans	slug	0	1	slug	BTREE	
 viewer_user_settings	PRIMARY	0	1	id	BTREE	
 viewer_user_settings	uq_user_table	0	1	email	BTREE	
 viewer_user_settings	uq_user_table	0	2	table_name	BTREE	
+weekly_runs	coach_id	1	1	coach_id	BTREE	YES
+weekly_runs	PRIMARY	0	1	id	BTREE	
 section
 === 4. FOREIGN KEYS ===
 table	column_name	constraint_name	ref_table	ref_column	UPDATE_RULE	DELETE_RULE
@@ -434,6 +538,8 @@ nyrr_processing_log	nyrr_event_id	fk_processing_log_event	nyrr_events	id	NO ACTI
 payments	MemberID	fk_payments_member	members	MemberID	NO ACTION	SET NULL
 sheets_sync_log	JobID	fk_sheets_sync_log_jobid	sync_jobs	JobID	NO ACTION	CASCADE
 submissions	MemberID	fk_submission_member	members	MemberID	NO ACTION	CASCADE
+team_records	member_id	team_records_ibfk_1	members	MemberID	NO ACTION	NO ACTION
+weekly_runs	coach_id	weekly_runs_ibfk_1	coaches	id	NO ACTION	NO ACTION
 section
 === 5. VIEWS ===
 view_name	VIEW_DEFINITION
