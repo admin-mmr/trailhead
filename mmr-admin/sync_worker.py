@@ -215,13 +215,30 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool) -> None:
         backfiller = TeamBackfiller(client, event_id, event_code)
 
         total_backfilled = total_inserted = 0
+        teams_skipped = 0
         for idx, team in enumerate(teams, 1):
             team_code = team.code
-            logger.info(f"  [{idx}/{len(teams)}] Processing team: {team_code}")
+            nyrr_count = team.runners_count
             with _jobs_lock:
                 _jobs[event_code]['message'] = f'Step 3: Processing team {idx}/{len(teams)}: {team_code}...'
                 _jobs[event_code]['teams_processed'] = idx
             try:
+                # Reconciliation: skip if MySQL already has the expected runner count
+                if nyrr_count > 0:
+                    row = query(
+                        "SELECT COUNT(*) as cnt FROM nyrr_event_runners "
+                        "WHERE nyrr_event_id = %s AND team_code = %s",
+                        (event_id, team_code)
+                    )
+                    mysql_count = row[0]['cnt'] if row else 0
+                    if mysql_count == nyrr_count:
+                        logger.info(f"  [{idx}/{len(teams)}] ⏭️  {team_code}: {nyrr_count} runners already in DB, skipping")
+                        teams_skipped += 1
+                        continue
+                    logger.info(f"  [{idx}/{len(teams)}] {team_code}: MySQL={mysql_count} vs NYRR={nyrr_count}, fetching...")
+                else:
+                    logger.info(f"  [{idx}/{len(teams)}] {team_code}: runners_count=0 from teams/search, fetching anyway")
+
                 all_runners = client.get_team_runners(event_code, team_code)
                 u, i = backfiller._process_team(team_code, all_runners)
                 total_backfilled += u
@@ -233,7 +250,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool) -> None:
                     raise InterruptedError("Sync cancelled by user")
 
         step3_elapsed = time.time() - step3_start
-        logger.info(f"✅ STEP 3 complete: {total_backfilled} backfilled, {total_inserted} inserted in {step3_elapsed:.2f}s")
+        logger.info(f"✅ STEP 3 complete: {total_backfilled} backfilled, {total_inserted} inserted, {teams_skipped} skipped in {step3_elapsed:.2f}s")
 
         # --- Final status ---
         final_count = query(f"SELECT COUNT(*) as cnt FROM nyrr_event_runners WHERE nyrr_event_id = {event_id}")
