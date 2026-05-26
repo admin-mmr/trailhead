@@ -218,7 +218,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool) -> None:
 
         total_backfilled = total_inserted = 0
         for idx, team in enumerate(teams, 1):
-            team_code = team.get('code')
+            team_code = team.code
             logger.info(f"  [{idx}/{len(teams)}] Processing team: {team_code}")
             with _jobs_lock:
                 _jobs[event_code]['message'] = f'Step 3: Processing team {idx}/{len(teams)}: {team_code}...'

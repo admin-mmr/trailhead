@@ -115,42 +115,38 @@ def ingest_event_runners(
     conn.commit()
 
     try:
-        # ---- Pass 1: Club search ----
-        logger.info(f'  [pass1] get_team_runners({event_code}, {TEAM_CODE})')
-        team_runners = client.get_team_runners(event_code, TEAM_CODE)
-        logger.info(f'  [pass1] Got {len(team_runners)} MMR runners')
+        # ---- Pass 1: Club search (streaming — write each page immediately) ----
+        logger.info(f'  [pass1] streaming get_team_runners({event_code}, {TEAM_CODE})')
 
         captured_ids: Set[str] = set()
         rows_written = 0
-        total_runners = len(team_runners)
-        COMMIT_EVERY = 50  # flush to DB so the admin UI can show live progress
+        page_num = 0
 
-        for i, runner in enumerate(team_runners, 1):
-            runner_id_str = str(runner.runner_id)
-            captured_ids.add(runner_id_str)
-
-            rows_written += upsert_runner(
-                cursor, event_id, runner, event_date,
-                is_upcoming=is_upcoming,
-                is_registered_only=is_upcoming,
-            )
-
-            if i % COMMIT_EVERY == 0 or i == total_runners:
-                # Commit runners + update live counters so the UI refreshes
-                cursor.execute("""
-                    UPDATE nyrr_events
-                       SET mmr_runner_count = %s,
-                           result_count = (
-                               SELECT COUNT(*) FROM nyrr_event_runners
-                                WHERE nyrr_event_id = %s
-                           )
-                     WHERE id = %s
-                """, (rows_written, event_id, event_id))
-                conn.commit()
-                logger.info(
-                    f'  [pass1] {i}/{total_runners} runners flushed '
-                    f'({rows_written} rows written)'
+        for page in client.get_team_runners_streaming(event_code, TEAM_CODE):
+            page_num += 1
+            for runner in page:
+                captured_ids.add(str(runner.runner_id))
+                rows_written += upsert_runner(
+                    cursor, event_id, runner, event_date,
+                    is_upcoming=is_upcoming,
+                    is_registered_only=is_upcoming,
                 )
+
+            # Commit this page + update live counters so UI shows progress
+            cursor.execute("""
+                UPDATE nyrr_events
+                   SET mmr_runner_count = %s,
+                       result_count = (
+                           SELECT COUNT(*) FROM nyrr_event_runners
+                            WHERE nyrr_event_id = %s
+                       )
+                 WHERE id = %s
+            """, (rows_written, event_id, event_id))
+            conn.commit()
+            logger.info(
+                f'  [pass1] page {page_num}: +{len(page)} runners flushed, '
+                f'{rows_written} total written, {len(captured_ids)} distinct'
+            )
 
         # ---- Pass 2: Member-ID search ----
         if not is_registrant_refresh:

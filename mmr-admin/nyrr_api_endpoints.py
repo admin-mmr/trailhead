@@ -232,6 +232,35 @@ class _NyrrEndpointsMixin:
         raw = self._paginate("teams/teamRunners", body, dedup_key="runnerId")
         return [NyrrFinisher.from_api(item) for item in raw]
 
+    def get_team_runners_streaming(
+        self,
+        event_code: str,
+        team_code: str,
+    ):
+        """Streaming variant — yields one page of NyrrFinisher at a time.
+
+        Lets callers write each page to DB immediately rather than buffering
+        all pages in memory first. Includes dedup on runnerId so a silent
+        API loop (returning the same page repeatedly) terminates cleanly.
+
+        Usage:
+            for page in client.get_team_runners_streaming(code, team):
+                for runner in page:
+                    upsert_runner(cursor, ...)
+                conn.commit()
+        """
+        body: Dict[str, Any] = {
+            "eventCode": event_code,
+            "teamCode": team_code,
+        }
+        seen_ids: set = set()
+        for raw_page in self._paginate_streaming("teams/teamRunners", body):
+            new_items = [r for r in raw_page if r.get("runnerId") not in seen_ids]
+            if not new_items:
+                break  # full-page overlap → API loop, stop
+            seen_ids.update(r.get("runnerId") for r in new_items)
+            yield [NyrrFinisher.from_api(r) for r in new_items]
+
     # ==================================================================
     # 3.4  Awards (new — not in GAS scripts)
     # ==================================================================

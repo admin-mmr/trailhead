@@ -298,6 +298,25 @@ const App = () => {
   const [userEmail, setUserEmail] = useState('');
   const [versionInfo, setVersionInfo] = useState(null);
 
+  const VALID_VIEWS = new Set(['payments','autoguess_log','members','district','audit','reconcile','duplicates','sync','admins','log','pyexec','tables','dashboard','detail','nyrr_queue','settings']);
+
+  // Hash-based navigation: keeps back/forward and refresh in sync
+  const navigate = useCallback((v, replace = false) => {
+    setView(v);
+    const method = replace ? 'replaceState' : 'pushState';
+    history[method](null, '', '#' + v);
+  }, []);
+
+  // Back/forward button support
+  useEffect(() => {
+    const onPop = () => {
+      const hash = window.location.hash.slice(1);
+      if (VALID_VIEWS.has(hash)) setView(hash);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   useEffect(() => {
     api('/api/version').then(r => {
       if (r.ok) setVersionInfo(r);
@@ -307,20 +326,23 @@ const App = () => {
         setUserRole(r.data.role);
         setUserEmail(r.data.email);
         if (r.data.role === 'none') {
-          setView('restricted');
+          navigate('restricted', true);
         } else {
-          setView('payments');
+          // Honour hash on refresh; fall back to payments
+          const hash = window.location.hash.slice(1);
+          const initial = VALID_VIEWS.has(hash) ? hash : 'payments';
+          navigate(initial, true);
         }
       } else if (r.status === 401 || r.status === 403 || r.redirect) {
         window.location = '/login';
       } else {
-        setView('payments');
+        navigate('payments', true);
       }
     });
   }, []);
 
-  const selectEvent = (id) => { setSelectedEventId(id); setView('detail'); };
-  const goBack = () => { setSelectedEventId(null); setView('dashboard'); };
+  const selectEvent = (id) => { setSelectedEventId(id); navigate('detail'); };
+  const goBack = () => { setSelectedEventId(null); navigate('dashboard'); };
 
   const handleSignOut = () => {
     window.location = '/logout';
@@ -375,7 +397,7 @@ const App = () => {
           <button
             className="btn btn-outline"
             style={{ height: 'fit-content' }}
-            onClick={() => setView('settings')}
+            onClick={() => navigate('settings')}
           >
             ⚙️ Settings
           </button>
@@ -387,27 +409,27 @@ const App = () => {
           {/* Top-level tabs: Payments, Members, Sync, Admins, Data Browser, NYRR Todos */}
           <div className="tabs">
             {(userRole === 'super_admin' || userRole === 'admin') && (
-              <button className={`tab ${view === 'payments' || view === 'autoguess_log' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
+              <button className={`tab ${view === 'payments' || view === 'autoguess_log' ? 'active' : ''}`} onClick={() => navigate('payments')}>Payments</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
-              <button className={`tab ${['members', 'district', 'audit', 'reconcile', 'duplicates'].includes(view) ? 'active' : ''}`} onClick={() => setView('members')}>Members</button>
+              <button className={`tab ${['members', 'district', 'audit', 'reconcile', 'duplicates'].includes(view) ? 'active' : ''}`} onClick={() => navigate('members')}>Members</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
-              <button className={`tab ${view === 'sync' ? 'active' : ''}`} onClick={() => setView('sync')}>Sync with Google</button>
+              <button className={`tab ${view === 'sync' ? 'active' : ''}`} onClick={() => navigate('sync')}>Sync with Google</button>
             )}
             {(userRole === 'super_admin' || userRole === 'admin') && (
-              <button className={`tab ${view === 'admins' || view === 'log' || view === 'pyexec' ? 'active' : ''}`} onClick={() => setView('admins')}>Admins</button>
+              <button className={`tab ${view === 'admins' || view === 'log' || view === 'pyexec' ? 'active' : ''}`} onClick={() => navigate('admins')}>Admins</button>
             )}
-            <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => setView('tables')}>Data Browser</button>
-            <button className={`tab ${['dashboard', 'detail', 'nyrr_queue'].includes(view) ? 'active' : ''}`} onClick={() => setView('dashboard')}>NYRR Todos</button>
+            <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => navigate('tables')}>Data Browser</button>
+            <button className={`tab ${['dashboard', 'detail', 'nyrr_queue'].includes(view) ? 'active' : ''}`} onClick={() => navigate('dashboard')}>NYRR Todos</button>
           </div>
 
           {/* NYRR sub-tabs: Todos (dashboard), Match Queue */}
           {['dashboard', 'detail', 'nyrr_queue'].includes(view) ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-              <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => setView('dashboard')}>📋 Todos</button>
+              <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => navigate('dashboard')}>📋 Todos</button>
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'nyrr_queue' ? 'active' : ''}`} onClick={() => setView('nyrr_queue')}>🏃 Match Queue</button>
+                <button className={`tab ${view === 'nyrr_queue' ? 'active' : ''}`} onClick={() => navigate('nyrr_queue')}>🏃 Match Queue</button>
               )}
             </div>
           ) : null}
@@ -416,10 +438,10 @@ const App = () => {
           {view === 'payments' || view === 'autoguess_log' ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'payments' ? 'active' : ''}`} onClick={() => setView('payments')}>Payments</button>
+                <button className={`tab ${view === 'payments' ? 'active' : ''}`} onClick={() => navigate('payments')}>Payments</button>
               )}
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'autoguess_log' ? 'active' : ''}`} onClick={() => setView('autoguess_log')}>🤖 Autoguess Log</button>
+                <button className={`tab ${view === 'autoguess_log' ? 'active' : ''}`} onClick={() => navigate('autoguess_log')}>🤖 Autoguess Log</button>
               )}
             </div>
           ) : null}
@@ -427,18 +449,18 @@ const App = () => {
           {/* Members sub-tabs */}
           {['members', 'district', 'audit', 'reconcile', 'duplicates'].includes(view) ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-              <button className={`tab ${view === 'district' ? 'active' : ''}`} onClick={() => setView('district')}>Members by District</button>
+              <button className={`tab ${view === 'district' ? 'active' : ''}`} onClick={() => navigate('district')}>Members by District</button>
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'members' ? 'active' : ''}`} onClick={() => setView('members')}>Edit Member</button>
+                <button className={`tab ${view === 'members' ? 'active' : ''}`} onClick={() => navigate('members')}>Edit Member</button>
               )}
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'audit' ? 'active' : ''}`} onClick={() => setView('audit')}>🔍 Renewal Audit</button>
+                <button className={`tab ${view === 'audit' ? 'active' : ''}`} onClick={() => navigate('audit')}>🔍 Renewal Audit</button>
               )}
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'reconcile' ? 'active' : ''}`} onClick={() => setView('reconcile')}>💳 Reconcile Payments</button>
+                <button className={`tab ${view === 'reconcile' ? 'active' : ''}`} onClick={() => navigate('reconcile')}>💳 Reconcile Payments</button>
               )}
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'duplicates' ? 'active' : ''}`} onClick={() => setView('duplicates')}>🔁 Duplicates</button>
+                <button className={`tab ${view === 'duplicates' ? 'active' : ''}`} onClick={() => navigate('duplicates')}>🔁 Duplicates</button>
               )}
             </div>
           ) : null}
@@ -447,11 +469,11 @@ const App = () => {
           {view === 'admins' || view === 'log' || view === 'pyexec' ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'admins' ? 'active' : ''}`} onClick={() => setView('admins')}>Admins</button>
+                <button className={`tab ${view === 'admins' ? 'active' : ''}`} onClick={() => navigate('admins')}>Admins</button>
               )}
-              <button className={`tab ${view === 'log' ? 'active' : ''}`} onClick={() => setView('log')}>Sync Log</button>
+              <button className={`tab ${view === 'log' ? 'active' : ''}`} onClick={() => navigate('log')}>Sync Log</button>
               {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'pyexec' ? 'active' : ''}`} onClick={() => setView('pyexec')}>Python Exec</button>
+                <button className={`tab ${view === 'pyexec' ? 'active' : ''}`} onClick={() => navigate('pyexec')}>Python Exec</button>
               )}
               {(userRole === 'super_admin' || userRole === 'admin') && (
                 <button className={`tab ${view === 'query' ? 'active' : ''}`} onClick={() => window.location.href = '/query'}>Data Query</button>
@@ -461,9 +483,9 @@ const App = () => {
         </>
       )}
 
-      {view === 'dashboard' && <Dashboard onSelectEvent={selectEvent} onGoSettings={() => setView('settings')} />}
+      {view === 'dashboard' && <Dashboard onSelectEvent={selectEvent} onGoSettings={() => navigate('settings')} />}
       {view === 'detail' && selectedEventId && <EventDetail eventId={selectedEventId} onBack={goBack} />}
-      {view === 'dashboard' && window.Dashboard && React.createElement(window.Dashboard, { onSelectEvent: selectEvent, onGoSettings: () => setView('settings') })}
+      {view === 'dashboard' && window.Dashboard && React.createElement(window.Dashboard, { onSelectEvent: selectEvent, onGoSettings: () => navigate('settings') })}
       {view === 'detail' && selectedEventId && window.EventDetail && React.createElement(window.EventDetail, { eventId: selectedEventId, onBack: goBack })}
       {view === 'payments' && window.PaymentsPanel && React.createElement(window.PaymentsPanel)}
       {view === 'autoguess_log' && window.AutoguessLogPanel && React.createElement(window.AutoguessLogPanel)}
@@ -471,7 +493,7 @@ const App = () => {
       {view === 'district' && window.DistrictMembersPanel && React.createElement(window.DistrictMembersPanel)}
       {view === 'audit' && window.AuditPanel && React.createElement(window.AuditPanel)}
       {view === 'reconcile' && window.ReconcilePanel && React.createElement(window.ReconcilePanel)}
-      {view === 'duplicates' && window.MembersDuplicates && React.createElement(window.MembersDuplicates, { onOpenMember: (id) => { setView('members'); } })}
+      {view === 'duplicates' && window.MembersDuplicates && React.createElement(window.MembersDuplicates, { onOpenMember: (id) => { navigate('members'); } })}
       {view === 'nyrr_queue' && window.NyrrMatchQueue && React.createElement(window.NyrrMatchQueue)}
       {view === 'sync' && window.SyncPanel && React.createElement(window.SyncPanel)}
       {view === 'tables' && window.TableBrowser && React.createElement(window.TableBrowser)}
@@ -479,7 +501,7 @@ const App = () => {
       {view === 'admins' && window.AdminPanel && React.createElement(window.AdminPanel, { userRole, userEmail })}
       {view === 'pyexec' && window.PythonExecPanel && React.createElement(window.PythonExecPanel)}
       {view === 'pycode' && window.PythonCodeEditor && React.createElement(window.PythonCodeEditor)}
-      {view === 'settings' && window.Settings && React.createElement(window.Settings, { onClose: () => setView('dashboard') })}
+      {view === 'settings' && window.Settings && React.createElement(window.Settings, { onClose: () => navigate('dashboard') })}
     </div>
   );
 };
