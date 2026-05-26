@@ -11,11 +11,19 @@ from db import query
 
 
 def get_member_by_id(member_id: str) -> Optional[dict]:
-    """Fetch member record by MemberID."""
-    rows = query(
-        "SELECT * FROM members WHERE MemberID = %s",
-        (member_id,)
-    )
+    """Fetch member record by MemberID.
+
+    Single source of truth — also imported by api_members.py so all callers
+    get the same explicit column list (no SELECT *).
+    """
+    rows = query("""
+        SELECT MemberID, FirstName, LastName, Email, PhoneNumber, WeChatID,
+               Type, FamilyID, District, Status, Expiration, MembershipFeePaid,
+               PaymentDate, PaymentTransaction, UpdatedAt,
+               NYRRRunnerName, YearBorn, YearBornGuess
+        FROM members
+        WHERE MemberID = %s
+    """, (member_id,))
     return rows[0] if rows else None
 
 

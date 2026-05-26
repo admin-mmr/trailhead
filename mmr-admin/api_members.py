@@ -26,6 +26,7 @@ from flask import Blueprint, request, session
 from auth import login_required, require_role
 from db import query
 from helpers import json_response, handle_api_errors
+from payment_helpers import get_member_by_id  # noqa: F401 — canonical impl, re-exported here
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +42,6 @@ def get_admin_id():
     user = session.get('user') or {}
     return user.get('email') or ''
 
-
-def get_member_by_id(member_id: str) -> Optional[dict]:
-    """Get a single member by ID."""
-    rows = query("""
-        SELECT MemberID, FirstName, LastName, Email, PhoneNumber, WeChatID,
-               Type, FamilyID, District, Status, Expiration, MembershipFeePaid,
-               PaymentDate, PaymentTransaction, UpdatedAt
-        FROM members
-        WHERE MemberID = %s
-    """, (member_id,))
-    return rows[0] if rows else None
 
 
 def get_member_card(member_id: str) -> Optional[dict]:

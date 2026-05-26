@@ -71,6 +71,18 @@ def handle_api_errors(fn):
     return wrapper
 
 
+def get_pagination(default_limit: int = 50, max_limit: int = 500) -> tuple[int, int]:
+    """Parse ?skip= and ?limit= from the current request.
+
+    Returns (skip, limit) with limit clamped to max_limit.
+    Call inside a Flask request context.
+    """
+    from flask import request as _req
+    skip  = max(0, int(_req.args.get('skip',  0)))
+    limit = min(max_limit, max(1, int(_req.args.get('limit', default_limit))))
+    return skip, limit
+
+
 def register_error_handlers(app: Flask) -> None:
     """Register global error handlers on the Flask app."""
     from db import MySQLError

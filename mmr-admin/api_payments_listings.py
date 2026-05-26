@@ -20,7 +20,7 @@ from flask import request, session
 
 from auth import login_required, require_role
 from db import query, execute
-from helpers import json_response, handle_api_errors
+from helpers import json_response, handle_api_errors, get_pagination
 
 from api_payments import payments_bp
 
@@ -99,8 +99,7 @@ def api_pending_submissions():
     List all pending submissions.
     Query params: ?skip=0&limit=50&search=
     """
-    skip = int(request.args.get('skip', 0))
-    limit = int(request.args.get('limit', 50))
+    skip, limit = get_pagination()
     search = request.args.get('search', '').strip()
 
     sql = """
@@ -133,8 +132,7 @@ def api_unmatched_gmail():
     List all unmatched Gmail transactions (Notes IS NULL or UpdatedAt IS NULL).
     Query params: ?skip=0&limit=50&search=
     """
-    skip = int(request.args.get('skip', 0))
-    limit = int(request.args.get('limit', 50))
+    skip, limit = get_pagination()
     search = request.args.get('search', '').strip()
 
     base_where = " FROM gmail_transactions WHERE (Notes IS NULL OR UpdatedAt IS NULL)"
@@ -203,8 +201,7 @@ def api_payment_history():
       search  → filter by member name, MemberID, or PaymentID
     Returns: { payments, total, skip, limit }
     """
-    skip = int(request.args.get('skip', 0))
-    limit = int(request.args.get('limit', 50))
+    skip, limit = get_pagination()
     days = int(request.args.get('days', 30))
     search = request.args.get('search', '').strip()
 
@@ -288,8 +285,7 @@ def api_cancel_payment(payment_id):
 @handle_api_errors
 def api_autoguess_log():
     """Fetch historical autoguess runs from activity_log."""
-    limit = int(request.args.get('limit', 100))
-    skip = int(request.args.get('skip', 0))
+    skip, limit = get_pagination(default_limit=100)
 
     rows = query("""
         SELECT

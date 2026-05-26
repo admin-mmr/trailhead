@@ -1,3 +1,6 @@
+### 05-26 — Refactor: eliminate duplicate logic across 4 files
+Changed: (1) `payment_helpers.get_member_by_id` is now canonical (explicit cols + NYRRRunnerName/YearBorn); `api_members.py` imports+re-exports it instead of duplicating. (2) `sync_worker_fetch.FinisherFetcher` no longer defines `_pace_to_seconds`/`_seconds_to_pace` as static methods — imports from `nyrr_finisher_splitter`. (3) `helpers.get_pagination()` added; used in `api_payments_listings.py` (4 call sites). Status: all 20 test_imports modules clean. Next: remaining patterns (P4 raw cursor boilerplate, P5 bare jsonify).
+
 ### 05-25 18:00 UTC — admin portal: hash-based routing for back/forward + refresh
 
 Changed: `mmr-admin/templates/index.html` — replaced bare `setView()` calls with `navigate()` wrapper that calls `history.pushState` on every tab change; `popstate` listener syncs browser back/forward into React state; on refresh, reads `window.location.hash` to restore last tab instead of defaulting to payments. Status: committed. Next: smoke-test back/forward + refresh in browser.

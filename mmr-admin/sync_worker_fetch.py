@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 import mysql.connector.errors
 
 from nyrr_api import NyrrFinisher
+from nyrr_finisher_splitter import _pace_to_seconds, _seconds_to_pace
 
 logger = logging.getLogger(__name__)
 
@@ -267,18 +268,8 @@ class FinisherFetcher:
     # Divide-and-conquer
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _pace_to_seconds(pace: str) -> int:
-        parts = pace.split(':')
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + int(parts[1])
-        if len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        return 0
-
-    @staticmethod
-    def _seconds_to_pace(seconds: int) -> str:
-        return f"00:{seconds // 60:02d}:{seconds % 60:02d}"
+    # _pace_to_seconds / _seconds_to_pace live in nyrr_finisher_splitter (module-level),
+    # imported above — no local copies here.
 
     def _split_by_pace(self, age_from, age_to, gender, pace_min, pace_max, depth=0):
         """Bisect pace range until each shard <= 500.
@@ -302,8 +293,8 @@ class FinisherFetcher:
             self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender,
                                pace_min=pace_min, pace_max=pace_max, sort_desc=False)
         else:
-            min_sec = self._pace_to_seconds(pace_min)
-            max_sec = self._pace_to_seconds(pace_max)
+            min_sec = _pace_to_seconds(pace_min)
+            max_sec = _pace_to_seconds(pace_max)
             if max_sec - min_sec <= 1:
                 if self._already_synced(total, age_from=age_from, age_to=age_to,
                                         gender=gender, pace_min=pace_min, pace_max=pace_max):
@@ -314,7 +305,7 @@ class FinisherFetcher:
                                    pace_min=pace_min, pace_max=pace_max, sort_desc=False)
                 return
             mid_sec = (min_sec + max_sec) // 2
-            mid_pace = self._seconds_to_pace(mid_sec)
+            mid_pace = _seconds_to_pace(mid_sec)
             self._split_by_pace(age_from, age_to, gender, pace_min, mid_pace,  depth + 1)
             self._split_by_pace(age_from, age_to, gender, mid_pace, pace_max,  depth + 1)
 
