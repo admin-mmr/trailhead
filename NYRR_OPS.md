@@ -68,6 +68,10 @@ python3 basecamp/ops/sync_nyrr_events.py --mode single --event-code 26WASH
 # C — reconcile slug-form codes (Bug L path):
 python3 basecamp/ops/sync_nyrr_reconcile.py --mode reconcile
 # add --include-upcoming to also try future events; --dry-run to preview
+
+# D - backfill:
+mmr && nohup python3 basecamp/ops/sync_nyrr_events.py --mode weekly > /tmp/nyrr_backfill.log 2>&1 &
+
 ```
 
 A UI-side fix (always show Probe, even on Completed rows) is on the wishlist but not done yet.
