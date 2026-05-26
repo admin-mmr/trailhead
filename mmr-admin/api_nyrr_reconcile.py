@@ -3,12 +3,15 @@ NYRR count reconciliation endpoints.
 
 Compares stored NYRR finisher totals and live DB counts to identify
 events where the sync is complete (or close enough to mark complete).
+Also re-tags MMR runners without a full re-sync (recovery path when
+something clobbers team_code).
 
 Blueprint: nyrr_reconcile_bp
 Routes:
-  GET  /api/nyrr/reconcile          — per-event DB counts (fast, no API calls)
-  POST /api/nyrr/reconcile/<id>/probe — live NYRR probe for one event;
-                                        auto-marks Completed if gap within threshold
+  GET  /api/nyrr/reconcile                  — per-event DB counts (no API calls)
+  POST /api/nyrr/reconcile/<id>/probe       — live NYRR probe + auto-mark Completed
+  POST /api/nyrr/reconcile/<id>/tag-mmr     — re-tag team_code='MMR' for one event
+  POST /api/nyrr/reconcile/tag-mmr-batch    — re-tag many past events (optional since=YYYY-MM-DD)
 """
 
 from __future__ import annotations
@@ -21,6 +24,10 @@ from auth import login_required
 from db import query, execute
 from helpers import json_response
 from nyrr_api import NyrrApiClient
+from nyrr_api_models import NyrrTeam
+from sync_worker_backfill import TeamBackfiller
+
+MMR_TEAM_CODE = 'MMR'
 
 logger = logging.getLogger(__name__)
 
@@ -143,4 +150,142 @@ def api_nyrr_reconcile_probe(event_id):
         'gap':            gap,
         'pct':            pct,
         'marked_complete': marked_complete,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Shared helper — actually run the team-roster backfill for one event
+# ---------------------------------------------------------------------------
+
+def _reconcile_event_mmr(client: NyrrApiClient, event_id: int, event_code: str) -> dict:
+    """
+    Call teams/teamRunners for MMR + UPDATE/INSERT each row's team_code.
+    Then refresh nyrr_events.mmr_runner_count so the UI sees the new total.
+    Returns: {event_code, before_mmr, updated, inserted, after_mmr}.
+    """
+    before = query(
+        "SELECT COUNT(*) AS n FROM nyrr_event_runners "
+        "WHERE nyrr_event_id = %s AND team_code = %s",
+        [event_id, MMR_TEAM_CODE],
+    )
+    before_mmr = before[0]['n'] if before else 0
+
+    # TeamBackfiller iterates over a list of team objects — pass MMR alone.
+    backfiller = TeamBackfiller(client, event_id, event_code)
+    updated, inserted = backfiller.run([NyrrTeam(team_code=MMR_TEAM_CODE)])
+
+    # Refresh the per-event counter so the UI doesn't show a stale '0 MMR'.
+    execute("""
+        UPDATE nyrr_events
+           SET mmr_runner_count = (
+               SELECT COUNT(*) FROM nyrr_event_runners
+                WHERE nyrr_event_id = %s AND team_code = %s
+           )
+         WHERE id = %s
+    """, [event_id, MMR_TEAM_CODE, event_id])
+
+    after = query(
+        "SELECT COUNT(*) AS n FROM nyrr_event_runners "
+        "WHERE nyrr_event_id = %s AND team_code = %s",
+        [event_id, MMR_TEAM_CODE],
+    )
+    after_mmr = after[0]['n'] if after else 0
+
+    return {
+        'event_code': event_code,
+        'before_mmr': before_mmr,
+        'updated':    updated,
+        'inserted':   inserted,
+        'after_mmr':  after_mmr,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/nyrr/reconcile/<id>/tag-mmr   (single event)
+# ---------------------------------------------------------------------------
+
+@nyrr_reconcile_bp.route('/api/nyrr/reconcile/<int:event_id>/tag-mmr', methods=['POST'])
+@login_required
+def api_nyrr_tag_mmr_one(event_id):
+    """Re-tag MMR runners for one event via teams/teamRunners. No full re-sync."""
+    rows = query("SELECT id, event_code FROM nyrr_events WHERE id = %s", [event_id])
+    if not rows:
+        return json_response({'ok': False, 'error': 'Event not found'}, 404)
+
+    event_code = rows[0]['event_code']
+    try:
+        result = _reconcile_event_mmr(NyrrApiClient(), event_id, event_code)
+    except Exception as e:
+        logger.exception(f'tag-mmr failed for {event_code}: {e}')
+        return json_response({'ok': False, 'event_code': event_code, 'error': str(e)}, 500)
+
+    logger.info(
+        f'🏃 MMR reconcile: {event_code} '
+        f'{result["before_mmr"]} → {result["after_mmr"]} '
+        f'(+{result["updated"]} re-tagged, +{result["inserted"]} inserted)'
+    )
+    return json_response({'ok': True, **result})
+
+
+# ---------------------------------------------------------------------------
+# POST /api/nyrr/reconcile/tag-mmr-batch  (many past events)
+# ---------------------------------------------------------------------------
+
+@nyrr_reconcile_bp.route('/api/nyrr/reconcile/tag-mmr-batch', methods=['POST'])
+@login_required
+def api_nyrr_tag_mmr_batch():
+    """
+    Re-tag MMR across many past events.
+
+    Body (JSON, all optional):
+      since  : 'YYYY-MM-DD'  — only events with event_date >= since (default = 2024-01-01)
+      until  : 'YYYY-MM-DD'  — only events with event_date <= until (default = today)
+      limit  : int           — cap number of events processed (default 200)
+      only_zero_mmr : bool   — only events where mmr_runner_count = 0 (default True; the recovery case)
+
+    Synchronous: iterates events and returns a per-event summary. For very large
+    backlogs use 'limit' + run multiple times, or call the single-event endpoint
+    from the UI per-row.
+    """
+    body  = request.get_json(silent=True) or {}
+    since = body.get('since', '2024-01-01')
+    until = body.get('until')
+    limit = int(body.get('limit', 200))
+    only_zero_mmr = bool(body.get('only_zero_mmr', True))
+
+    sql  = ("SELECT id, event_code, event_date, mmr_runner_count "
+            "FROM nyrr_events WHERE event_date >= %s ")
+    args = [since]
+    if until:
+        sql  += "AND event_date <= %s "
+        args.append(until)
+    else:
+        sql  += "AND event_date <= CURDATE() "
+    if only_zero_mmr:
+        sql  += "AND (mmr_runner_count IS NULL OR mmr_runner_count = 0) "
+    sql += "ORDER BY event_date DESC LIMIT %s"
+    args.append(limit)
+
+    targets = query(sql, args)
+    if not targets:
+        return json_response({'ok': True, 'processed': 0, 'events': [], 'note': 'no candidates'})
+
+    client  = NyrrApiClient()
+    results = []
+    fail_count = 0
+    for ev in targets:
+        try:
+            r = _reconcile_event_mmr(client, ev['id'], ev['event_code'])
+            results.append({'ok': True, **r})
+        except Exception as e:
+            fail_count += 1
+            logger.warning(f'tag-mmr-batch: {ev["event_code"]} failed: {e}')
+            results.append({'ok': False, 'event_code': ev['event_code'], 'error': str(e)})
+
+    logger.info(f'🏃 MMR batch reconcile: processed {len(results)} events ({fail_count} failed)')
+    return json_response({
+        'ok':        True,
+        'processed': len(results),
+        'failed':    fail_count,
+        'events':    results,
     })

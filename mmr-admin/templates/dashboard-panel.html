@@ -96,6 +96,51 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
     }
   };
 
+  // Re-tag MMR for a single event (uses teams/teamRunners; no destructive reload).
+  const tagMmrOne = async (eventId, eventCode) => {
+    setLoadingIds(prev => ({ ...prev, [eventId]: true }));
+    setToast(`Re-tagging MMR for ${eventCode}...`);
+    try {
+      const r = await api(`/api/nyrr/reconcile/${eventId}/tag-mmr`, { method: 'POST' });
+      if (r.ok) {
+        setToast(`✅ ${eventCode}: ${r.before_mmr} → ${r.after_mmr} MMR (+${r.updated} re-tagged, +${r.inserted} inserted)`);
+        loadEvents();
+      } else {
+        setToast(`❌ ${eventCode}: ${r.error || 'tag-mmr failed'}`);
+      }
+    } catch (e) {
+      setToast('Tag MMR error: ' + e.message);
+    } finally {
+      setLoadingIds(prev => { const n = { ...prev }; delete n[eventId]; return n; });
+    }
+  };
+
+  // Batch: re-tag MMR across every past event where mmr_runner_count = 0.
+  // This is the recovery path for the team_code clobber bug.
+  const tagMmrBatch = async () => {
+    if (!window.confirm(
+      'Re-tag MMR runners on every past event with 0 MMR? ' +
+      'This calls NYRR teams/teamRunners for each event (may take a few minutes). ' +
+      'Safe to run — UPDATE-only, no destructive ops.'
+    )) return;
+    setToast('Reconciling MMR tags across past events (this may take a while)...');
+    try {
+      const r = await api('/api/nyrr/reconcile/tag-mmr-batch', {
+        method: 'POST',
+        body: JSON.stringify({ only_zero_mmr: true, since: '2024-01-01', limit: 500 }),
+      });
+      if (r.ok) {
+        const recovered = (r.events || []).filter(e => e.ok && e.after_mmr > 0).length;
+        setToast(`✅ Processed ${r.processed} events; recovered MMR tags on ${recovered}. Failed: ${r.failed || 0}.`);
+        loadEvents();
+      } else {
+        setToast(r.error || 'Batch reconcile failed');
+      }
+    } catch (e) {
+      setToast('Batch reconcile error: ' + e.message);
+    }
+  };
+
   return (
     <div>
 
@@ -126,6 +171,13 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
         </select>
         <button className="btn btn-primary" onClick={discoverEvents}>Discover New Events</button>
         <button className="btn btn-outline" onClick={discoverUpcoming}>Discover Upcoming</button>
+        <button
+          className="btn btn-outline"
+          onClick={tagMmrBatch}
+          title="Re-tag MMR runners across all past events with 0 MMR (recovery for cleared team_code)"
+        >
+          🏷 Reconcile MMR Tags
+        </button>
       </div>
 
       <div className="panel">
@@ -197,6 +249,14 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
                               onClick={() => triggerLoad(ev.id, ev.event_code, false, true)}
                             >
                               👟 MMR
+                            </button>
+                            <button
+                              className="btn btn-sm btn-outline"
+                              disabled={busy}
+                              title="Re-tag team_code='MMR' on existing rows (no destructive reload)"
+                              onClick={() => tagMmrOne(ev.id, ev.event_code)}
+                            >
+                              🏷 Re-tag
                             </button>
                             <button
                               className="btn btn-sm btn-red"

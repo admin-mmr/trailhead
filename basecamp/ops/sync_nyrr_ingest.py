@@ -3,9 +3,11 @@
 NYRR Sync — Stage 4 (Result Ingestion).
 
   process_pending_events       — pull pending events, ingest each one
-  ingest_event_runners         — core single-event ingestion (Pass 1 + Pass 2)
-  upsert_runner                — write a single nyrr_event_runners row
+  ingest_event_runners         — core single-event ingestion (Pass 1 + 2 + 3)
   collect_member_id_runners    — Pass 2 cross-club lookup for known members
+
+Row-level helpers live in sync_nyrr_upsert.py (upsert_runner +
+backfill_team_runners) to keep this file under the 400-LOC hard rule.
 
 Split out of sync_nyrr_events.py so each file stays under the 400-LOC limit.
 The auto-matcher is invoked inline after each event ingest (see Stage 5).
@@ -26,6 +28,7 @@ from sync_nyrr_helpers import (
     TEAM_CODE,
     append_processing_log,
 )
+from sync_nyrr_upsert import backfill_team_runners, upsert_runner
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +238,18 @@ def ingest_event_runners(
             )
             rows_written += p2_rows
 
+        # ---- Pass 3: Team-roster backfill ----
+        # finishers-filter (Pass 1 for completed events) doesn't return team
+        # info, so without this step the MMR tag is NULL for every row.
+        # Always run; idempotent. cursor.close() then reopen below because
+        # Pass 3 commits internally with its own cursor.
+        cursor.close()
+        p3_updated, p3_inserted = backfill_team_runners(
+            client, conn, event_id, event_code, TEAM_CODE,
+        )
+        rows_written += p3_inserted
+        cursor = conn.cursor()
+
         # Update event status + counters
         cursor.execute("""
             UPDATE nyrr_events
@@ -275,73 +290,6 @@ def ingest_event_runners(
         cursor2.close()
         cursor.close()
         return 0
-
-
-def upsert_runner(
-    cursor,
-    event_id: int,
-    runner: NyrrFinisher,
-    event_date: Any,
-    is_upcoming: bool = False,
-    is_registered_only: bool = False,
-) -> int:
-    """Upsert a single runner row.
-
-    Returns cursor.rowcount from MySQL's ON DUPLICATE KEY UPDATE:
-      1 = new row inserted
-      2 = existing row updated with changed values
-      0 = existing row matched but no values changed
-    """
-    full_name = f"{runner.first_name} {runner.last_name}".strip()
-    cursor.execute("""
-        INSERT INTO nyrr_event_runners
-            (nyrr_event_id, nyrr_runner_id, runner_name, first_name, last_name,
-             age, gender, city, state_province, bib_number,
-             finish_time, pace, overall_place, gender_place,
-             age_grade_time, age_grade_place, age_grade_percent,
-             team_code, is_registered_only, scan_timestamp)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-        ON DUPLICATE KEY UPDATE
-            runner_name        = VALUES(runner_name),
-            first_name         = VALUES(first_name),
-            last_name          = VALUES(last_name),
-            age                = VALUES(age),
-            gender             = VALUES(gender),
-            city               = VALUES(city),
-            state_province     = VALUES(state_province),
-            bib_number         = VALUES(bib_number),
-            finish_time        = VALUES(finish_time),
-            pace               = VALUES(pace),
-            overall_place      = VALUES(overall_place),
-            gender_place       = VALUES(gender_place),
-            age_grade_time     = VALUES(age_grade_time),
-            age_grade_place    = VALUES(age_grade_place),
-            age_grade_percent  = VALUES(age_grade_percent),
-            team_code          = VALUES(team_code),
-            is_registered_only = VALUES(is_registered_only),
-            scan_timestamp     = NOW()
-    """, (
-        event_id,
-        str(runner.runner_id),
-        full_name,
-        runner.first_name,
-        runner.last_name,
-        runner.age,
-        runner.gender,
-        getattr(runner, 'city', '') or '',
-        runner.state_province,
-        runner.bib,
-        runner.overall_time,
-        runner.pace,
-        runner.overall_place,
-        runner.gender_place,
-        getattr(runner, 'age_grade_time', '') or '',
-        getattr(runner, 'age_grade_place', None),
-        getattr(runner, 'age_grade_percent', None),
-        runner.team_code or None,
-        int(is_registered_only),
-    ))
-    return cursor.rowcount
 
 
 def collect_member_id_runners(
