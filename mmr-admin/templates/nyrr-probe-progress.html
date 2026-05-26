@@ -1,0 +1,36 @@
+// Banner shown above the NYRR Reconcile table while "Probe All" is running.
+// Coverage-check only — not a data load (see NyrrActiveLoads for that).
+//
+// Props:
+//   current : 1-based index of the event currently being probed
+//   total   : total event count
+//   code    : event_code of the in-flight probe (optional)
+initComponent('NyrrProbeProgress', ({ current, total, code }) => {
+  const pct = total > 0 ? Math.round(current / total * 100) : 0;
+  return (
+    <div style={{
+      marginBottom: 12,
+      padding: '10px 14px',
+      background: 'rgba(56,189,248,0.08)',
+      border: '1px solid rgba(56,189,248,0.25)',
+      borderRadius: 6,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text)' }}>
+        <span className="spinner" />
+        <span>
+          Probing <strong>{current}</strong> of <strong>{total}</strong>
+          {code && <> — <span style={{ fontFamily: 'monospace' }}>{code}</span></>}
+        </span>
+        <span style={{ marginLeft: 'auto', color: 'var(--text2)' }}>{pct}%</span>
+      </div>
+      <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          width: `${pct}%`,
+          height: '100%',
+          background: 'var(--accent, #38bdf8)',
+          transition: 'width 0.2s ease',
+        }} />
+      </div>
+    </div>
+  );
+});

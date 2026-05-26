@@ -1,5 +1,5 @@
 initComponent('NyrrReconcile', () => {
-  const { useState, useEffect, useCallback } = React;
+  const { useState, useEffect, useCallback, useRef } = React;
 
   const [events, setEvents]     = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -7,6 +7,13 @@ initComponent('NyrrReconcile', () => {
   const [liveData, setLiveData] = useState({});   // { [id]: probeResult }
   const [toast, setToast]       = useState('');
   const [bulkProgress, setBulkProgress] = useState(null); // { current, total, code } | null
+
+  // Multi-load tracker: { [eventId]: { eventCode, eventName, status, step, message,
+  //                                    rows_written, teams_processed, startedAt } }
+  // Each entry owns a setInterval whose cleanup fn lives in pollersRef.
+  const [activeLoads, setActiveLoads] = useState({});
+  const pollersRef = useRef({});    // { [eventId]: () => clearInterval }
+  const removersRef = useRef({});   // { [eventId]: timeoutId } — sched removal after done
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,6 +62,111 @@ initComponent('NyrrReconcile', () => {
     }
   };
 
+  // Schedule removal of a finished/errored entry from the panel after a short
+  // delay so the user can see the final ✓/❌. Also refreshes the table once.
+  const scheduleRemove = (eventId, delay = 4000) => {
+    if (removersRef.current[eventId]) clearTimeout(removersRef.current[eventId]);
+    removersRef.current[eventId] = setTimeout(() => {
+      setActiveLoads(prev => { const n = { ...prev }; delete n[eventId]; return n; });
+      delete removersRef.current[eventId];
+      load();  // pull fresh DB totals for the row
+    }, delay);
+  };
+
+  // Stop polling for an event (called on done / error / cancel / unmount).
+  const stopPolling = (eventId) => {
+    if (pollersRef.current[eventId]) {
+      pollersRef.current[eventId]();
+      delete pollersRef.current[eventId];
+    }
+  };
+
+  // Real data load — non-blocking. Multiple events can run concurrently; each
+  // POST triggers an independent background thread on the backend. We track
+  // them in activeLoads and poll /api/load/<code>/status for each every 3s.
+  const triggerLoad = async (ev, forceReload = false) => {
+    // Don't double-trigger if already in flight
+    if (activeLoads[ev.id] && !['done', 'error', 'cancelled'].includes(activeLoads[ev.id].status)) {
+      setToast(`${ev.event_code} is already loading`);
+      return;
+    }
+
+    // Seed the panel entry immediately so the user sees feedback even before
+    // the first /status response.
+    setActiveLoads(prev => ({
+      ...prev,
+      [ev.id]: {
+        eventCode: ev.event_code,
+        eventName: ev.event_name,
+        status: 'starting',
+        message: 'Starting…',
+        step: null, rows_written: 0, teams_processed: 0,
+        startedAt: Date.now(),
+        forceReload,
+      },
+    }));
+
+    try {
+      const r = await api(`/api/load/${ev.id}`, {
+        method: 'POST',
+        body: JSON.stringify({ force_reload: forceReload, mmr_only: false }),
+      });
+      if (!r.ok) {
+        setActiveLoads(prev => prev[ev.id]
+          ? { ...prev, [ev.id]: { ...prev[ev.id], status: 'error', message: r.error || 'Failed to start' } }
+          : prev);
+        scheduleRemove(ev.id);
+        return;
+      }
+    } catch (e) {
+      setActiveLoads(prev => prev[ev.id]
+        ? { ...prev, [ev.id]: { ...prev[ev.id], status: 'error', message: e.message } }
+        : prev);
+      scheduleRemove(ev.id);
+      return;
+    }
+
+    // Kick off polling. Cleanup fn stored in ref so unmount / cancel can stop it.
+    const intervalId = setInterval(async () => {
+      try {
+        const s = await api(`/api/load/${ev.event_code}/status`);
+        // Backend may briefly return not_found between the POST returning and
+        // the worker thread registering — keep polling rather than aborting.
+        if (s && s.status && s.status !== 'not_found') {
+          setActiveLoads(prev => prev[ev.id]
+            ? { ...prev, [ev.id]: { ...prev[ev.id], ...s } }
+            : prev);
+          if (s.status === 'done' || s.status === 'error' || s.status === 'cancelled') {
+            stopPolling(ev.id);
+            scheduleRemove(ev.id, s.status === 'done' ? 4000 : 8000);
+          }
+        }
+      } catch (e) {
+        stopPolling(ev.id);
+        setActiveLoads(prev => prev[ev.id]
+          ? { ...prev, [ev.id]: { ...prev[ev.id], status: 'error', message: 'Poll error: ' + e.message } }
+          : prev);
+        scheduleRemove(ev.id, 8000);
+      }
+    }, 3000);
+    pollersRef.current[ev.id] = () => clearInterval(intervalId);
+  };
+
+  const cancelLoad = async (eventId, eventCode) => {
+    try {
+      await api(`/api/load/${eventCode}/cancel`, { method: 'POST' });
+    } catch (e) {
+      setToast('Cancel error: ' + e.message);
+    }
+    // Polling will pick up status='cancelled' and the schedRemove path runs.
+  };
+
+  // Cleanup all timers on unmount.
+  useEffect(() => () => {
+    Object.values(pollersRef.current).forEach(fn => fn());
+    Object.values(removersRef.current).forEach(id => clearTimeout(id));
+  }, []);
+
   const probeAll = async () => {
     const total = events.length;
     try {
@@ -95,35 +207,17 @@ initComponent('NyrrReconcile', () => {
         </span>
       </div>
 
-      {bulkProgress && (() => {
-        const pct = Math.round(bulkProgress.current / bulkProgress.total * 100);
-        return (
-          <div style={{
-            marginBottom: 12,
-            padding: '10px 14px',
-            background: 'rgba(56,189,248,0.08)',
-            border: '1px solid rgba(56,189,248,0.25)',
-            borderRadius: 6,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text)' }}>
-              <span className="spinner" />
-              <span>
-                Probing <strong>{bulkProgress.current}</strong> of <strong>{bulkProgress.total}</strong>
-                {bulkProgress.code && <> — <span style={{ fontFamily: 'monospace' }}>{bulkProgress.code}</span></>}
-              </span>
-              <span style={{ marginLeft: 'auto', color: 'var(--text2)' }}>{pct}%</span>
-            </div>
-            <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{
-                width: `${pct}%`,
-                height: '100%',
-                background: 'var(--accent, #38bdf8)',
-                transition: 'width 0.2s ease',
-              }} />
-            </div>
-          </div>
-        );
-      })()}
+      {window.NyrrActiveLoads && (
+        <window.NyrrActiveLoads loads={activeLoads} onCancel={cancelLoad} />
+      )}
+
+      {bulkProgress && window.NyrrProbeProgress && (
+        <window.NyrrProbeProgress
+          current={bulkProgress.current}
+          total={bulkProgress.total}
+          code={bulkProgress.code}
+        />
+      )}
 
       {loading ? (
         <div style={{ color: 'var(--text2)', padding: 32, textAlign: 'center' }}>Loading…</div>
@@ -190,18 +284,24 @@ initComponent('NyrrReconcile', () => {
                     {dbMmr.toLocaleString()}
                   </td>
                   <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                    <button
-                      className="btn btn-sm btn-outline"
-                      disabled={isProbing || !!bulkProgress}
-                      onClick={() => probe(ev)}
-                      title={ev.processing_status === 'Completed'
-                        ? 'Re-probe NYRR API for live counts (will demote to Pending if coverage <99%)'
-                        : 'Probe NYRR API for live counts'}
-                    >
-                      {isProbing
-                        ? <><span className="spinner" /> Probing…</>
-                        : (ev.processing_status === 'Completed' ? '🔄 Re-Probe' : '🔍 Probe')}
-                    </button>
+                    {(() => {
+                      const ld = activeLoads[ev.id];
+                      const inFlight = ld && !['done', 'error', 'cancelled'].includes(ld.status);
+                      return (
+                        <button
+                          className="btn btn-sm btn-outline"
+                          disabled={!!inFlight || isProbing}
+                          onClick={() => triggerLoad(ev)}
+                          title={ev.processing_status === 'Completed'
+                            ? 'Re-fetch finishers from NYRR (incremental, non-destructive). Runs in background — you can start more.'
+                            : 'Fetch finishers from NYRR (3-step sync: finishers → teams → team backfill). Runs in background.'}
+                        >
+                          {inFlight
+                            ? <><span className="spinner" /> Loading…</>
+                            : (ev.processing_status === 'Completed' ? '🔄 Reload' : '▶ Load')}
+                        </button>
+                      );
+                    })()}
                   </td>
                 </tr>
               );
@@ -213,7 +313,8 @@ initComponent('NyrrReconcile', () => {
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
 
       <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text2)' }}>
-        Coverage ≥ 99% → auto-marked Completed. Coverage &lt; 99% on a Completed row → demoted back to Pending so the next sync re-fetches it. NYRR Total column uses stored value until probed.
+        <strong>Probe All</strong> (top): coverage check only; auto-marks Completed at ≥99% or demotes Completed→Pending below 99%.<br />
+        <strong>Action button</strong> (per row): runs the real 3-step finisher sync (NYRR → <code>nyrr_event_runners</code>) in the background. Click multiple rows to load them in parallel — progress appears at the top.
       </div>
     </div>
   );

@@ -1,0 +1,87 @@
+// Multi-load progress panel for the NYRR Reconcile tab.
+// One line per active /api/load/<id> job. Non-blocking: the parent table
+// stays interactive while loads run in background threads.
+//
+// Props:
+//   loads    : { [eventId]: { eventCode, status, step, message,
+//                             rows_written, teams_processed, startedAt } }
+//   onCancel : (eventId, eventCode) => void
+initComponent('NyrrActiveLoads', ({ loads, onCancel }) => {
+  const ids = Object.keys(loads);
+  if (ids.length === 0) return null;
+
+  return (
+    <div style={{
+      marginBottom: 12,
+      padding: '10px 14px',
+      background: 'rgba(56,189,248,0.06)',
+      border: '1px solid rgba(56,189,248,0.25)',
+      borderRadius: 6,
+    }}>
+      <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8, fontWeight: 600 }}>
+        🔄 Active loads ({ids.length}) — running in parallel
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {Object.entries(loads).map(([id, ld]) => {
+          const isDone   = ld.status === 'done';
+          const isError  = ld.status === 'error';
+          const isCancel = ld.status === 'cancelled';
+          const isTerm   = isDone || isError || isCancel;
+          const stepNum = (ld.step || '').includes('step1') ? 1
+                        : (ld.step || '').includes('step2') ? 2
+                        : (ld.step || '').includes('step3') ? 3 : 0;
+          const stepLabel = stepNum === 1 ? 'Fetching runners'
+                          : stepNum === 2 ? 'Fetching teams'
+                          : stepNum === 3 ? 'Backfilling team codes'
+                          : (ld.message || 'Starting…');
+          const icon = isDone   ? <span style={{ color: 'var(--green, #22c55e)' }}>✓</span>
+                     : isError  ? <span style={{ color: 'var(--red, #ef4444)' }}>❌</span>
+                     : isCancel ? <span style={{ color: 'var(--text2)' }}>🛑</span>
+                     : <span className="spinner" />;
+          return (
+            <div key={id} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '4px 6px',
+              fontSize: 13,
+              borderRadius: 4,
+              background: isError ? 'rgba(239,68,68,0.08)' : isDone ? 'rgba(34,197,94,0.06)' : 'transparent',
+            }}>
+              <span style={{ width: 18, display: 'inline-flex', justifyContent: 'center' }}>{icon}</span>
+              <span style={{ fontFamily: 'monospace', fontSize: 12, minWidth: 110, color: 'var(--text)' }}>
+                {ld.eventCode}
+              </span>
+              {stepNum > 0 && (
+                <span style={{ fontSize: 11, color: 'var(--text2)', minWidth: 56 }}>
+                  Step {stepNum}/3
+                </span>
+              )}
+              <span style={{ flex: 1, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {isError ? (ld.message || 'Error') : stepLabel}
+              </span>
+              {(ld.rows_written > 0) && (
+                <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                  📊 {ld.rows_written.toLocaleString()} rows
+                </span>
+              )}
+              {(ld.teams_processed > 0) && (
+                <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                  👥 {ld.teams_processed} teams
+                </span>
+              )}
+              {!isTerm && (
+                <button
+                  className="btn btn-sm btn-outline"
+                  style={{ padding: '2px 8px', fontSize: 11 }}
+                  onClick={() => onCancel(id, ld.eventCode)}
+                  title="Cancel this load"
+                >Cancel</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
