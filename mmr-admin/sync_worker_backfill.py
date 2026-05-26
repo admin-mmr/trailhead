@@ -37,7 +37,7 @@ class TeamBackfiller:
         total_backfilled = 0
         total_inserted   = 0
         for team in teams:
-            team_code = team.code
+            team_code = team.team_code
             all_runners = self.client.get_team_runners(self.event_code, team_code)
             u, i = self._process_team(team_code, all_runners)
             total_backfilled += u
