@@ -44,17 +44,15 @@ def _get_db_execute():
         return None
 
 
-def _make_job(job_id: str, initial_message: str, operation: str = 'sync') -> Dict[str, Any]:
+def _make_job(job_id: str, initial_message: str) -> Dict[str, Any]:
     return {
-        'jobId':       job_id,
-        'operation':   operation,
-        'status':      'queued',
-        'message':     initial_message,
-        'progress':    0,
-        'startedAt':   time.time(),
-        'updatedAt':   time.time(),
-        'completedAt': None,
-        'result':      None,
+        'jobId':     job_id,
+        'status':    'queued',
+        'message':   initial_message,
+        'progress':  0,
+        'startedAt': time.time(),
+        'updatedAt': time.time(),
+        'result':    None,
     }
 
 
@@ -86,7 +84,7 @@ def launch_job(
     Returns the job_id string.
     """
     job_id = _new_job_id()
-    job = _make_job(job_id, initial_message, operation)
+    job = _make_job(job_id, initial_message)
 
     # Insert into MySQL sync_jobs table
     db_execute = _get_db_execute()
@@ -126,8 +124,6 @@ def update_job(job_id: str, **fields) -> None:
         if job_id in _jobs:
             _jobs[job_id].update(fields)
             _jobs[job_id]['updatedAt'] = time.time()
-            if fields.get('status') in ('done', 'error') and not _jobs[job_id].get('completedAt'):
-                _jobs[job_id]['completedAt'] = time.time()
 
     # Sync to MySQL
     db_execute = _get_db_execute()
@@ -205,7 +201,6 @@ def get_job(job_id: str) -> Optional[Dict[str, Any]]:
                 # Convert MySQL row dict → in-memory job dict format
                 job_from_db = {
                     'jobId': row['JobID'],
-                    'operation': row['Operation'],
                     'status': row['Status'],
                     'message': row['Message'],
                     'progress': row['Progress'] or 0,
@@ -254,7 +249,6 @@ def list_jobs() -> list:
             for row in rows:
                 job_from_db = {
                     'jobId': row['JobID'],
-                    'operation': row['Operation'],
                     'status': row['Status'],
                     'message': row['Message'],
                     'progress': row['Progress'] or 0,
