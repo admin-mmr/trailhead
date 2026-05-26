@@ -116,6 +116,16 @@ class FinisherFetcher:
         logger.info(f"  └─ Total finishers (all ages) = {self.total_finishers}")
         self._update_job(nyrr_finisher_count=self.total_finishers)
 
+        # Top-level fast path: if MySQL already holds the whole event, skip
+        # the entire divide & conquer (saves ~hundreds of API calls on large
+        # events that have been ingested before).
+        if self.total_finishers > 0 and self._already_synced(self.total_finishers):
+            logger.info(f"  └─ ⏭️  Event already fully synced "
+                        f"({self.total_finishers} rows), skipping divide & conquer")
+            self._update_job(message=f'Step 1: Event already synced '
+                                     f'({self.total_finishers} rows). Skipping.')
+            return self.rows_written, self.total_finishers
+
         self._divide_and_conquer(0, 100)
         return self.rows_written, self.total_finishers
 
@@ -285,21 +295,20 @@ class FinisherFetcher:
         logger.info(f"{indent}└─ {label}: {total} items")
         if total == 0:
             return
+        # Shard-level fast path: skip whole subtree if NYRR count == MySQL count.
+        # Applies at every depth, so no need to push down to <=500.
+        if self._already_synced(total, age_from=age_from, age_to=age_to,
+                                gender=gender, pace_min=pace_min, pace_max=pace_max):
+            logger.info(f"{indent}└─ ⏭️  {label}: {total} already in DB, skipping subtree")
+            return
         if total <= 500:
-            if self._already_synced(total, age_from=age_from, age_to=age_to,
-                                    gender=gender, pace_min=pace_min, pace_max=pace_max):
-                logger.info(f"{indent}└─ ⏭️  {label}: {total} already in DB, skipping")
-                return
             self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender,
                                pace_min=pace_min, pace_max=pace_max, sort_desc=False)
         else:
             min_sec = _pace_to_seconds(pace_min)
             max_sec = _pace_to_seconds(pace_max)
             if max_sec - min_sec <= 1:
-                if self._already_synced(total, age_from=age_from, age_to=age_to,
-                                        gender=gender, pace_min=pace_min, pace_max=pace_max):
-                    logger.info(f"{indent}└─ ⏭️  {label}: collapsed range, {total} already in DB, skipping")
-                    return
+                # Already-synced check at top of function caught this if applicable.
                 logger.warning(f"{indent}└─ {label}: range collapsed; fetching anyway")
                 self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender,
                                    pace_min=pace_min, pace_max=pace_max, sort_desc=False)
@@ -318,10 +327,11 @@ class FinisherFetcher:
 
         if total == 0:
             return
+        # Shard-level fast path: skip whole subtree if MySQL already matches NYRR.
+        if self._already_synced(total, age_from=age_from, age_to=age_to, gender=gender):
+            logger.info(f"{indent}└─ ⏭️  {label}: {total} already in DB, skipping subtree")
+            return
         if total <= 500:
-            if self._already_synced(total, age_from=age_from, age_to=age_to, gender=gender):
-                logger.info(f"{indent}└─ ⏭️  {label}: {total} already in DB, skipping")
-                return
             self._upsert_pages(label, age_from=age_from, age_to=age_to, gender=gender, sort_desc=False)
         elif age_from == age_to:
             if gender is not None:

@@ -71,15 +71,20 @@ class FinisherSplitter:
         target_size: int = DEFAULT_TARGET_SIZE,
         max_age: int = 100,
         progress_cb: Optional[Callable[..., None]] = None,
+        should_skip_shard: Optional[Callable[..., bool]] = None,
     ) -> None:
-        self.client          = client
-        self.event_code      = event_code
-        self.target_size     = target_size
-        self.max_age         = max_age
-        self.progress_cb     = progress_cb or (lambda **kw: None)
-        self.total_finishers = 0
-        self.pages_yielded   = 0
-        self.rows_yielded    = 0
+        self.client            = client
+        self.event_code        = event_code
+        self.target_size       = target_size
+        self.max_age           = max_age
+        self.progress_cb       = progress_cb or (lambda **kw: None)
+        # Optional callback: receives (age_from, age_to, gender, pace_min,
+        # pace_max, expected) and returns True if MySQL already has `expected`
+        # rows matching that shard — splitter then skips the entire subtree.
+        self.should_skip_shard = should_skip_shard or (lambda **kw: False)
+        self.total_finishers   = 0
+        self.pages_yielded     = 0
+        self.rows_yielded      = 0
 
     # ------------------------------------------------------------------
     # Public iteration
@@ -100,6 +105,13 @@ class FinisherSplitter:
             event="probe", label="all", total=self.total_finishers,
         )
         if self.total_finishers == 0:
+            return
+        # Top-level fast path: if MySQL already holds the full event, skip everything.
+        if self.should_skip_shard(expected=self.total_finishers):
+            logger.info(
+                f"  [splitter] event_code={self.event_code}: "
+                f"{self.total_finishers} rows already in DB, skipping entire event"
+            )
             return
         yield from self._divide_and_conquer(0, self.max_age, gender=None, depth=0)
         logger.info(
@@ -206,6 +218,13 @@ class FinisherSplitter:
 
         if total == 0:
             return
+        # Shard-level fast path: if MySQL count for this slice already equals
+        # NYRR's total, skip the whole subtree (no need to split to <=target_size).
+        if self.should_skip_shard(
+            age_from=age_from, age_to=age_to, gender=gender, expected=total,
+        ):
+            logger.info(f"{indent}[splitter] {label}: {total} already in DB, skipping subtree")
+            return
         if total <= self.target_size:
             yield from self._fetch_pages(
                 label, age_from=age_from, age_to=age_to, gender=gender,
@@ -282,6 +301,13 @@ class FinisherSplitter:
         logger.info(f"{indent}[splitter] {label}: {total} items")
 
         if total == 0:
+            return
+        # Shard-level fast path on pace shards too.
+        if self.should_skip_shard(
+            age_from=age_from, age_to=age_to, gender=gender,
+            pace_min=pace_min, pace_max=pace_max, expected=total,
+        ):
+            logger.info(f"{indent}[splitter] {label}: {total} already in DB, skipping subtree")
             return
         if total <= self.target_size:
             yield from self._fetch_pages(

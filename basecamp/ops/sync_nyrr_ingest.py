@@ -141,7 +141,26 @@ def ingest_event_runners(
                 f'  [pass1] event has finishers — fetching ALL runners via '
                 f'finishers-filter divide-and-conquer (event_code={event_code})'
             )
-            splitter = FinisherSplitter(client, event_code)
+            # Skip-if-already-synced: compare NYRR totalItems vs MySQL count
+            # at every recursion level. Lets the splitter short-circuit the
+            # entire subtree (no need to push down to <=500) when criteria
+            # produce identical row counts on both sides.
+            count_cursor = conn.cursor()
+            def already_synced(*, expected, age_from=None, age_to=None,
+                               gender=None, pace_min=None, pace_max=None):
+                sql  = "SELECT COUNT(*) FROM nyrr_event_runners WHERE nyrr_event_id=%s"
+                args = [event_id]
+                if age_from is not None: sql += " AND age >= %s"; args.append(age_from)
+                if age_to   is not None: sql += " AND age <= %s"; args.append(age_to)
+                if gender   is not None: sql += " AND gender = %s"; args.append(gender)
+                if pace_min and pace_min != "00:00:00":
+                    sql += " AND pace >= %s"; args.append(pace_min)
+                if pace_max:
+                    sql += " AND pace <= %s"; args.append(pace_max)
+                count_cursor.execute(sql, args)
+                return count_cursor.fetchone()[0] == expected
+            splitter = FinisherSplitter(client, event_code,
+                                        should_skip_shard=already_synced)
             page_iter = splitter.iter_pages()
 
         for label, page in page_iter:
