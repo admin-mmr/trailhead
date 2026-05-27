@@ -30,6 +30,11 @@ class NyrrEvent:
     event_url: str = ""                     # results.nyrr.org link (not from API)
     is_virtual: bool = False
     logo_url: str = ""
+    # V030 fields
+    weather: str = ""                       # e.g. "Start: 61 degrees, humidity 63%..."
+    teams_count: int = 0                    # teamsCount — number of teams with finishers
+    has_age_graded_results: bool = False    # hasAgeGradedResults
+    photo_url: str = ""                     # photoUrl (e.g. marathonfoto.com link)
 
     @classmethod
     def from_api(cls, data: Dict[str, Any]) -> NyrrEvent:
@@ -45,6 +50,10 @@ class NyrrEvent:
             event_url=data.get("eventUrl", ""),
             is_virtual=bool(data.get("isVirtual", False)),
             logo_url=data.get("logoUrl", ""),
+            weather=data.get("weather") or "",
+            teams_count=data.get("teamsCount", 0) or 0,
+            has_age_graded_results=bool(data.get("hasAgeGradedResults", False)),
+            photo_url=data.get("photoUrl") or "",
         )
 
 

@@ -73,58 +73,69 @@ def _upsert_event_mmr_only(
     existing = cur.fetchone()
     cur.close()
 
+    # Parse event_date/year from start_date_time for both branches.
+    raw_dt = getattr(ev, 'start_date_time', None) or ''
+    event_date = raw_dt[:10] if raw_dt else None
+    event_year = int(raw_dt[:4]) if raw_dt else None
+
     if existing:
         # Already in DB — patch load_mode and any NULL metadata fields.
-        raw_dt = getattr(ev, 'start_date_time', None) or ''
-        event_date = raw_dt[:10] if raw_dt else None
-        event_year = int(raw_dt[:4]) if raw_dt else None
         upd = conn.cursor()
         upd.execute("""
             UPDATE nyrr_events
-               SET load_mode   = 'mmr_only',
-                   location    = COALESCE(location,  %s),
-                   distance    = COALESCE(distance,  %s),
-                   event_date  = COALESCE(event_date, %s),
-                   event_year  = COALESCE(event_year, %s)
+               SET load_mode              = 'mmr_only',
+                   location               = COALESCE(location,   %s),
+                   distance               = COALESCE(distance,   %s),
+                   distance_km            = COALESCE(distance_km, %s),
+                   event_date             = COALESCE(event_date,  %s),
+                   event_year             = COALESCE(event_year,  %s),
+                   is_virtual             = %s,
+                   weather                = COALESCE(weather,    %s),
+                   teams_count            = GREATEST(COALESCE(teams_count, 0), %s),
+                   has_age_graded_results = %s,
+                   photo_url              = COALESCE(photo_url,  %s)
              WHERE id = %s
         """, (
-            getattr(ev, 'venue', None),
-            getattr(ev, 'distance_name', None),
+            ev.venue or None,
+            ev.distance_name or None,
+            ev.distance_dimension or None,
             event_date,
             event_year,
+            int(ev.is_virtual),
+            ev.weather or None,
+            ev.teams_count or 0,
+            int(ev.has_age_graded_results),
+            ev.photo_url or None,
             existing['id'],
         ))
         conn.commit()
         upd.close()
-        logger.info(f"  [upsert] {ev.event_code!r} already exists (id={existing['id']}); load_mode → mmr_only, patched NULL fields")
+        logger.info(f"  [upsert] {ev.event_code!r} already exists (id={existing['id']}); patched NULL fields")
         return existing['id']
-
-    # Parse event_date and event_year from start_date_time (ISO datetime string).
-    event_date = None
-    event_year = None
-    raw_dt = getattr(ev, 'start_date_time', None) or ''
-    if raw_dt:
-        try:
-            event_date = raw_dt[:10]          # "YYYY-MM-DD"
-            event_year = int(raw_dt[:4])
-        except (ValueError, IndexError):
-            pass
 
     ins = conn.cursor()
     ins.execute("""
         INSERT INTO nyrr_events
-            (event_code, event_name, event_url, location, distance,
+            (event_code, event_name, event_url, location, distance, distance_km,
              event_date, event_year, is_upcoming, is_virtual,
+             weather, teams_count, has_age_graded_results, photo_url,
              processing_status, load_mode, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, 0, 0, 'Pending', 'mmr_only', NOW(), NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s,
+                'Pending', 'mmr_only', NOW(), NOW())
     """, (
         ev.event_code,
         ev.event_name,
         f"https://results.nyrr.org/event/{ev.event_code}/finishers",
-        getattr(ev, 'venue', None),           # NyrrEvent uses 'venue', not 'location'
-        getattr(ev, 'distance_name', None),   # NyrrEvent uses 'distance_name', not 'distance'
+        ev.venue or None,
+        ev.distance_name or None,
+        ev.distance_dimension or None,
         event_date,
         event_year,
+        int(ev.is_virtual),
+        ev.weather or None,
+        ev.teams_count or 0,
+        int(ev.has_age_graded_results),
+        ev.photo_url or None,
     ))
     conn.commit()
     new_id = ins.lastrowid

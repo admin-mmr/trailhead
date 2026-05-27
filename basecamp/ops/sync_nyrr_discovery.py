@@ -71,19 +71,36 @@ def discover_events(
             cursor.execute("""
                 INSERT INTO nyrr_events
                     (event_code, event_name, event_url, location, distance,
-                     event_date, event_year, is_upcoming, is_virtual, processing_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending')
-                ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP
+                     distance_km, event_date, event_year, is_upcoming, is_virtual,
+                     weather, teams_count, has_age_graded_results, photo_url,
+                     processing_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending')
+                ON DUPLICATE KEY UPDATE
+                    event_name    = VALUES(event_name),
+                    location      = COALESCE(location,  VALUES(location)),
+                    distance      = COALESCE(distance,  VALUES(distance)),
+                    distance_km   = COALESCE(distance_km, VALUES(distance_km)),
+                    is_virtual    = VALUES(is_virtual),
+                    weather       = COALESCE(weather, VALUES(weather)),
+                    teams_count   = VALUES(teams_count),
+                    has_age_graded_results = VALUES(has_age_graded_results),
+                    photo_url     = COALESCE(photo_url, VALUES(photo_url)),
+                    updated_at    = CURRENT_TIMESTAMP
             """, (
                 ev.event_code,
                 ev.event_name,
                 f"https://results.nyrr.org/event/{ev.event_code}/finishers",
-                ev.venue,
-                ev.distance_unit_code,
+                ev.venue or None,
+                ev.distance_name or None,               # human-readable: "Half-Marathon"
+                ev.distance_dimension or None,          # km float: 21.0824
                 event_date_str,
                 event_year,
                 int(upcoming),
                 int(ev.is_virtual),
+                ev.weather or None,
+                ev.teams_count or 0,
+                int(ev.has_age_graded_results),
+                ev.photo_url or None,
             ))
 
             existing_codes.add(ev.event_code)
