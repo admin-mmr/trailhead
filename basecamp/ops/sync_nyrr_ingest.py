@@ -239,7 +239,9 @@ def ingest_event_runners(
             )
 
         # ---- Pass 2: Member-ID search ----
-        if not is_registrant_refresh:
+        # Skip for mmr_only events — Pass 1 already fetched all MMR team runners,
+        # so cross-checking known members via runners/races is redundant and slow.
+        if not is_registrant_refresh and not mmr_only:
             p2_rows = collect_member_id_runners(
                 client, cursor, conn, event_id, event_code, event_date,
                 captured_ids, is_upcoming,
