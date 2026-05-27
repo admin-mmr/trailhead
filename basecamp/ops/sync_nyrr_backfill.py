@@ -59,7 +59,8 @@ def _probe_mmr_participation(client: NyrrApiClient, event_code: str) -> int:
 
 def _upsert_event_mmr_only(
     conn: mysql.connector.MySQLConnection,
-    ev,  # NyrrEvent dataclass
+    ev,               # NyrrEvent dataclass
+    mmr_count: int = 0,
 ) -> int:
     """Insert (or update) an nyrr_events row with load_mode='mmr_only'.
 
@@ -93,7 +94,8 @@ def _upsert_event_mmr_only(
                    weather                = COALESCE(weather,    %s),
                    teams_count            = GREATEST(COALESCE(teams_count, 0), %s),
                    has_age_graded_results = %s,
-                   photo_url              = COALESCE(photo_url,  %s)
+                   photo_url              = COALESCE(photo_url,  %s),
+                   mmr_finisher_count     = GREATEST(COALESCE(mmr_finisher_count, 0), %s)
              WHERE id = %s
         """, (
             ev.venue or None,
@@ -106,6 +108,7 @@ def _upsert_event_mmr_only(
             ev.teams_count or 0,
             int(ev.has_age_graded_results),
             ev.photo_url or None,
+            mmr_count,
             existing['id'],
         ))
         conn.commit()
@@ -119,8 +122,9 @@ def _upsert_event_mmr_only(
             (event_code, event_name, event_url, location, distance, distance_km,
              event_date, event_year, is_upcoming, is_virtual,
              weather, teams_count, has_age_graded_results, photo_url,
+             mmr_finisher_count,
              processing_status, load_mode, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s,
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s, %s,
                 'Pending', 'mmr_only', NOW(), NOW())
     """, (
         ev.event_code,
@@ -136,6 +140,7 @@ def _upsert_event_mmr_only(
         ev.teams_count or 0,
         int(ev.has_age_graded_results),
         ev.photo_url or None,
+        mmr_count,
     ))
     conn.commit()
     new_id = ins.lastrowid
@@ -208,7 +213,7 @@ def run_backfill_mmr_only(
                 if dry_run:
                     continue
 
-                event_id = _upsert_event_mmr_only(conn, ev)
+                event_id = _upsert_event_mmr_only(conn, ev, mmr_count=mmr_count)
 
                 # Skip re-fetching events already successfully completed.
                 cur = conn.cursor(dictionary=True)
