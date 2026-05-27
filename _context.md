@@ -1,3 +1,6 @@
+### 05-27 14:00 UTC — migration numbering hard rule
+Changed: CLAUDE.md — added MIGRATION NUMBERING HARD RULE: always run `ls db/MIGRATION_*.sql | sort | tail -3` before creating a migration; use max+1; filesystem is source of truth (not CLAUDE.md action-plan numbers). Status: committed. Next: resume P1 work.
+
 ### 05-27 — weekly load_mode consistency + stale metadata enrichment
 Changed: NEW db/MIGRATION_V029_nyrr_load_mode_series.sql (load_mode ENUM + series_id + backfill pre-2025 rows); sync_nyrr_discovery.py — discover_events now sets load_mode='full' in INSERT + ODKU (fixes mmr_only→full promotion), new enrich_stale_event_metadata() sweeps events with NULL distance_km/weather/photo_url; sync_nyrr_events.py — weekly pipeline calls enrich_stale_event_metadata after discover; import updated. All files parse clean; sync_nyrr_events.py 397 LOC ✅. Status: uncommitted. Next: run V029 on dev DB; commit with HOF work.
 
