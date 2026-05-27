@@ -12,16 +12,10 @@ Handles:
   5. Auto-matching         — inline Tier 1 (known name) + Tier 2 (unique last name)
   6. Match propagation     — backfill mmr_member_id across all historical rows
 
-Tables (migration 0007): nyrr_events, nyrr_event_runners, nyrr_processing_log
+Tables: nyrr_events, nyrr_event_runners, nyrr_processing_log
 
-Layout (CLAUDE.md hard rule: keep each file <400 LOC):
-  sync_nyrr_helpers.py    — DB conn, normalize_name, propagation, counters,
-                            birth-year inference
-  sync_nyrr_discovery.py  — Stages 1-3 (discover, promote, refresh registrants)
-  sync_nyrr_ingest.py     — Stage 4 (process_pending_events + ingest helpers)
-  sync_nyrr_matching.py   — Stage 5 (run_auto_matcher + Tier 1/2)
-  sync_nyrr_backfill.py   — P1e historical MMR-only backfill orchestrator
-  sync_nyrr_events.py     — orchestrators (daily/weekly/single) + CLI entry
+Layout: sync_nyrr_helpers / sync_nyrr_discovery / sync_nyrr_ingest /
+        sync_nyrr_matching / sync_nyrr_backfill / sync_nyrr_events (this file)
 
 Usage:
     # Daily recurring (batch of 10):
@@ -58,6 +52,7 @@ from sync_nyrr_helpers import (
 )
 from sync_nyrr_discovery import (
     discover_events,
+    enrich_stale_event_metadata,
     promote_completed_events,
     refresh_upcoming_registrants,
 )
@@ -170,6 +165,10 @@ def run_weekly_pipeline(
 
     try:
         summary['new_events'] = discover_events(client, conn)
+        # Enrich metadata for events with NULL distance_km/weather/photo_url
+        # (pre-V030 rows or events whose enrichment failed on insert).
+        # Weekly-only — daily pipeline skips this to stay fast.
+        summary['events_enriched'] = enrich_stale_event_metadata(client, conn)
         summary['events_promoted'] = promote_completed_events(conn)
         # Bug L: reconcile slug-coded past-date rows before result ingestion.
         # Weekly mode also tries upcoming rows (NYRR sometimes publishes the

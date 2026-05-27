@@ -1,3 +1,6 @@
+### 05-27 — weekly load_mode consistency + stale metadata enrichment
+Changed: NEW db/MIGRATION_V029_nyrr_load_mode_series.sql (load_mode ENUM + series_id + backfill pre-2025 rows); sync_nyrr_discovery.py — discover_events now sets load_mode='full' in INSERT + ODKU (fixes mmr_only→full promotion), new enrich_stale_event_metadata() sweeps events with NULL distance_km/weather/photo_url; sync_nyrr_events.py — weekly pipeline calls enrich_stale_event_metadata after discover; import updated. All files parse clean; sync_nyrr_events.py 397 LOC ✅. Status: uncommitted. Next: run V029 on dev DB; commit with HOF work.
+
 ### 05-26 18:30 UTC — split sync_nyrr_events.py (627→398 LOC ✅)
 Changed: NEW sync_nyrr_backfill.py (226 LOC) — _probe_mmr_participation + _upsert_event_mmr_only + run_backfill_mmr_only moved here; sync_nyrr_helpers.py (+44 LOC, 203→247) — reset_event_statuses moved here; sync_nyrr_events.py (627→398 LOC ✅) — imports updated. All 3 parse cleanly. Status: uncommitted. Next: commit all HOF + backfill work together.
 

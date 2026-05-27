@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import date
-from typing import Set
+from typing import List, Set
 
 import mysql.connector
 
@@ -74,8 +74,8 @@ def discover_events(
                     (event_code, event_name, event_url, location, distance,
                      distance_km, event_date, event_year, is_upcoming, is_virtual,
                      weather, teams_count, has_age_graded_results, photo_url,
-                     processing_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending')
+                     processing_status, load_mode)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', 'full')
                 ON DUPLICATE KEY UPDATE
                     event_name    = VALUES(event_name),
                     location      = COALESCE(location,  VALUES(location)),
@@ -86,6 +86,7 @@ def discover_events(
                     teams_count   = VALUES(teams_count),
                     has_age_graded_results = VALUES(has_age_graded_results),
                     photo_url     = COALESCE(photo_url, VALUES(photo_url)),
+                    load_mode     = 'full',
                     updated_at    = CURRENT_TIMESTAMP
             """, (
                 ev.event_code,
@@ -120,6 +121,55 @@ def discover_events(
     cursor.close()
     logger.info(f'[discover_events] Inserted {new_count} new events')
     return new_count
+
+
+# ===================================================================
+# Stage 1b: Enrich stale event metadata (weekly pass)
+# ===================================================================
+
+def enrich_stale_event_metadata(
+    client: NyrrApiClient,
+    conn: mysql.connector.MySQLConnection,
+    years: List[int] | None = None,
+) -> int:
+    """
+    Call events/details for events that are missing distance_km, weather,
+    photo_url, teams_count, or has_age_graded_results (columns added in V030).
+
+    Runs after discover_events in the weekly pipeline so pre-V030 events
+    and events that had a failed enrichment on insert get patched.
+
+    `years` limits the sweep to specific event_years (default: current + prior).
+    Returns: number of events enriched.
+    """
+    if years is None:
+        current_year = date.today().year
+        years = [current_year, current_year - 1]
+
+    placeholders = ', '.join(['%s'] * len(years))
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(f"""
+        SELECT id, event_code
+          FROM nyrr_events
+         WHERE event_year IN ({placeholders})
+           AND (distance_km IS NULL OR weather IS NULL OR photo_url IS NULL
+                OR teams_count = 0 OR has_age_graded_results IS NULL)
+         ORDER BY event_date DESC
+    """, tuple(years))
+    stale = cursor.fetchall()
+    cursor.close()
+
+    if not stale:
+        logger.info('[enrich_stale] No stale events found — all metadata current')
+        return 0
+
+    logger.info(f'[enrich_stale] {len(stale)} events need metadata enrichment')
+    for row in stale:
+        _enrich_event_metadata(client, conn, row['id'], row['event_code'])
+        time.sleep(API_SLEEP_SECONDS)
+
+    logger.info(f'[enrich_stale] Enrichment pass complete ({len(stale)} events)')
+    return len(stale)
 
 
 # ===================================================================
