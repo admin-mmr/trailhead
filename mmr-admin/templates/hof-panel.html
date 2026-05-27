@@ -1,0 +1,305 @@
+initComponent('HofPanel', () => {
+  // ── State ─────────────────────────────────────────────────────────────────
+  const [subView, setSubView]       = useState('series');   // 'series' | 'hof'
+  const [seriesList, setSeriesList] = useState([]);
+  const [selectedSeries, setSelectedSeries] = useState(null);
+  const [hofData, setHofData]       = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [toast, setToast]           = useState('');
+
+  // Create-series form
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName]       = useState('');
+  const [newSlug, setNewSlug]       = useState('');
+  const [newDist, setNewDist]       = useState('');
+  const [creating, setCreating]     = useState(false);
+
+  // Assign-events modal
+  const [assignSeries, setAssignSeries]   = useState(null);
+  const [assignPattern, setAssignPattern] = useState('');
+  const [assignPreview, setAssignPreview] = useState(null);
+  const [assigning, setAssigning]         = useState(false);
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
+  const loadSeries = () => {
+    setLoading(true);
+    api('/api/hof/series').then(r => {
+      if (r.ok) setSeriesList(r.series || []);
+      setLoading(false);
+    });
+  };
+
+  useEffect(() => { loadSeries(); }, []);
+
+  const openHof = (series) => {
+    setSelectedSeries(series);
+    setHofData(null);
+    setSubView('hof');
+    api(`/api/hof/series/${series.slug}`).then(r => {
+      if (r.ok) setHofData(r);
+    });
+  };
+
+  // ── Create series ─────────────────────────────────────────────────────────
+  const handleCreate = async () => {
+    if (!newName || !newSlug) return;
+    setCreating(true);
+    const r = await api('/api/hof/series', {
+      method: 'POST',
+      body: JSON.stringify({ name: newName, slug: newSlug, distance_km: newDist || null }),
+    });
+    setCreating(false);
+    if (r.ok) {
+      setToast(`Series "${newName}" created`);
+      setShowCreate(false);
+      setNewName(''); setNewSlug(''); setNewDist('');
+      loadSeries();
+    } else {
+      setToast(r.error || 'Failed to create series');
+    }
+    setTimeout(() => setToast(''), 3000);
+  };
+
+  // ── Assign events modal ───────────────────────────────────────────────────
+  const previewAssign = async () => {
+    if (!assignPattern) return;
+    setAssigning(true);
+    const r = await api(`/api/hof/series/${assignSeries.id}/assign-events`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pattern: assignPattern, dry_run: true }),
+    });
+    setAssigning(false);
+    if (r.ok) setAssignPreview(r.matched || []);
+  };
+
+  const confirmAssign = async () => {
+    setAssigning(true);
+    const r = await api(`/api/hof/series/${assignSeries.id}/assign-events`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pattern: assignPattern, dry_run: false }),
+    });
+    setAssigning(false);
+    if (r.ok) {
+      setToast(`Assigned ${r.updated} events to "${assignSeries.name}"`);
+      setAssignSeries(null);
+      setAssignPattern('');
+      setAssignPreview(null);
+      loadSeries();
+    } else {
+      setToast(r.error || 'Assign failed');
+    }
+    setTimeout(() => setToast(''), 3000);
+  };
+
+  // ── Render helpers ────────────────────────────────────────────────────────
+  const Medal = ({ rank }) => {
+    const medals = ['🥇', '🥈', '🥉'];
+    return medals[rank] || null;
+  };
+
+  const PodiumCard = ({ runner, rank }) => (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+      background: rank === 0 ? 'var(--bg-accent, #fffbea)' : 'var(--bg)',
+      border: '1px solid var(--border)', borderRadius: 6, marginBottom: 6,
+    }}>
+      <span style={{ fontSize: 20, minWidth: 28 }}><Medal rank={rank} /></span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: rank === 0 ? 700 : 500 }}>{runner.runner_name}</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>
+          {runner.finish_time} · {runner.event_name} {runner.event_year}
+        </div>
+      </div>
+    </div>
+  );
+
+  const CategoryBlock = ({ cat }) => (
+    <div style={{
+      background: 'var(--bg-card, #fff)', border: '1px solid var(--border)',
+      borderRadius: 8, padding: 16, marginBottom: 16,
+    }}>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>
+        {cat.label}
+        <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-muted, #888)', marginLeft: 8 }}>
+          {cat.label_zh}
+        </span>
+      </div>
+      {cat.podium.length === 0
+        ? <div style={{ color: 'var(--text-muted, #888)', fontSize: 13 }}>No data yet</div>
+        : cat.podium.map((runner, i) => <PodiumCard key={i} runner={runner} rank={i} />)
+      }
+    </div>
+  );
+
+  // ── Series Manager view ───────────────────────────────────────────────────
+  const SeriesManager = () => (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ margin: 0 }}>Race Series</h3>
+        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ New Series</button>
+      </div>
+
+      {loading ? <div>Loading…</div> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left' }}>
+              <th style={{ padding: '8px 12px' }}>Series</th>
+              <th style={{ padding: '8px 12px' }}>Distance</th>
+              <th style={{ padding: '8px 12px' }}>Events</th>
+              <th style={{ padding: '8px 12px' }}>MMR Data</th>
+              <th style={{ padding: '8px 12px' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {seriesList.length === 0 && (
+              <tr><td colSpan={5} style={{ padding: 16, color: 'var(--text-muted, #888)' }}>
+                No series yet. Create one and assign events to it.
+              </td></tr>
+            )}
+            {seriesList.map(s => (
+              <tr key={s.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '10px 12px', fontWeight: 600 }}>
+                  {s.name}
+                  <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', fontWeight: 400 }}>{s.slug}</div>
+                </td>
+                <td style={{ padding: '10px 12px', color: 'var(--text-muted, #888)' }}>
+                  {s.distance_km ? `${s.distance_km} km` : '—'}
+                </td>
+                <td style={{ padding: '10px 12px' }}>{s.event_count || 0}</td>
+                <td style={{ padding: '10px 12px' }}>
+                  {s.events_with_mmr > 0
+                    ? <span style={{ color: 'green' }}>✅ {s.events_with_mmr} events</span>
+                    : <span style={{ color: 'var(--text-muted, #888)' }}>—</span>}
+                </td>
+                <td style={{ padding: '10px 12px', display: 'flex', gap: 8 }}>
+                  <button className="btn btn-sm" onClick={() => openHof(s)}>View HOF</button>
+                  <button className="btn btn-sm btn-secondary"
+                    onClick={() => { setAssignSeries(s); setAssignPattern(''); setAssignPreview(null); }}>
+                    Assign Events
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* Create series modal */}
+      {showCreate && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div style={{ background: 'var(--bg)', borderRadius: 10, padding: 28, minWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 18px' }}>New Race Series</h3>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Name</label>
+            <input className="input" style={{ width: '100%', marginBottom: 12 }}
+              placeholder="e.g. Brooklyn Half" value={newName}
+              onChange={e => { setNewName(e.target.value); setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')); }} />
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Slug (URL key)</label>
+            <input className="input" style={{ width: '100%', marginBottom: 12 }}
+              placeholder="e.g. brooklyn-half" value={newSlug}
+              onChange={e => setNewSlug(e.target.value)} />
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Distance (km, optional)</label>
+            <input className="input" style={{ width: '100%', marginBottom: 20 }}
+              placeholder="e.g. 21.0975" type="number" step="0.001" value={newDist}
+              onChange={e => setNewDist(e.target.value)} />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleCreate} disabled={creating || !newName || !newSlug}>
+                {creating ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign events modal */}
+      {assignSeries && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div style={{ background: 'var(--bg)', borderRadius: 10, padding: 28, minWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 6px' }}>Assign Events</h3>
+            <div style={{ color: 'var(--text-muted, #888)', fontSize: 13, marginBottom: 16 }}>
+              Series: <strong>{assignSeries.name}</strong>
+            </div>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Event name pattern (LIKE match)</label>
+            <input className="input" style={{ width: '100%', marginBottom: 12 }}
+              placeholder='e.g. Brooklyn Half' value={assignPattern}
+              onChange={e => { setAssignPattern(e.target.value); setAssignPreview(null); }} />
+            {assignPreview !== null && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 13, marginBottom: 6, fontWeight: 600 }}>
+                  Preview — {assignPreview.length} events matched:
+                </div>
+                <div style={{ maxHeight: 160, overflowY: 'auto', fontSize: 12, background: 'var(--bg-alt, #f8f8f8)', borderRadius: 6, padding: '8px 12px' }}>
+                  {assignPreview.length === 0
+                    ? <span style={{ color: 'var(--text-muted, #888)' }}>No events match this pattern</span>
+                    : assignPreview.map(code => <div key={code}>{code}</div>)
+                  }
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+              <button className="btn" onClick={() => setAssignSeries(null)}>Cancel</button>
+              <button className="btn btn-secondary" onClick={previewAssign} disabled={assigning || !assignPattern}>
+                {assigning ? 'Checking…' : 'Preview'}
+              </button>
+              <button className="btn btn-primary"
+                onClick={confirmAssign}
+                disabled={assigning || !assignPreview || assignPreview.length === 0}>
+                Confirm Assign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── HOF Table view ────────────────────────────────────────────────────────
+  const HofTable = () => (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <button className="btn btn-sm" onClick={() => setSubView('series')}>← Back to Series</button>
+        <h3 style={{ margin: 0 }}>🏆 {selectedSeries?.name} — Hall of Fame</h3>
+        {selectedSeries?.distance_km && (
+          <span style={{ fontSize: 13, color: 'var(--text-muted, #888)' }}>
+            {selectedSeries.distance_km} km
+          </span>
+        )}
+      </div>
+
+      {!hofData ? (
+        <div>Loading HOF data…</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 13, color: 'var(--text-muted, #888)', marginBottom: 20 }}>
+            All-time best across {hofData.series?.event_count || 0} event editions
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+            {(hofData.categories || []).map(cat => (
+              <CategoryBlock key={cat.key} cat={cat} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  // ── Root render ───────────────────────────────────────────────────────────
+  return (
+    <div style={{ padding: '24px 0' }}>
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 20, right: 24, background: 'var(--bg-accent, #e8f5e9)',
+          border: '1px solid var(--border)', borderRadius: 8, padding: '10px 18px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.12)', zIndex: 2000, fontWeight: 500,
+        }}>{toast}</div>
+      )}
+      {subView === 'series' ? <SeriesManager /> : <HofTable />}
+    </div>
+  );
+});

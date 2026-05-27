@@ -195,6 +195,8 @@ from api_audit import audit_bp
 app.register_blueprint(audit_bp)
 from api_audit_members import audit_members_bp
 app.register_blueprint(audit_members_bp)
+from api_hof import hof_bp
+app.register_blueprint(hof_bp)
 
 
 # ---------------------------------------------------------------------------

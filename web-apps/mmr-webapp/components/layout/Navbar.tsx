@@ -10,9 +10,10 @@ import { clsx } from 'clsx'
 import type { SessionUser } from '@/types'
 
 const NAV_LINKS = [
-  { href: '/',       keyEn: 'nav.home' as const },
-  { href: '/join',   keyEn: 'nav.join' as const },
-  { href: '/donate', keyEn: 'nav.donate' as const },
+  { href: '/',              keyEn: 'nav.home' as const },
+  { href: '/join',          keyEn: 'nav.join' as const },
+  { href: '/hall-of-fame',  keyEn: 'nav.hof' as const },
+  { href: '/donate',        keyEn: 'nav.donate' as const },
 ] as const
 
 /** Profile avatar — shows initials in a colored circle */

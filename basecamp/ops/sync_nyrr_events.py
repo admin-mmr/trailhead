@@ -20,6 +20,7 @@ Layout (CLAUDE.md hard rule: keep each file <400 LOC):
   sync_nyrr_discovery.py  — Stages 1-3 (discover, promote, refresh registrants)
   sync_nyrr_ingest.py     — Stage 4 (process_pending_events + ingest helpers)
   sync_nyrr_matching.py   — Stage 5 (run_auto_matcher + Tier 1/2)
+  sync_nyrr_backfill.py   — P1e historical MMR-only backfill orchestrator
   sync_nyrr_events.py     — orchestrators (daily/weekly/single) + CLI entry
 
 Usage:
@@ -52,6 +53,7 @@ from nyrr_api import NyrrApiClient
 from sync_nyrr_helpers import (
     get_db_connection,
     infer_birth_year,
+    reset_event_statuses,
     update_matched_counts,
 )
 from sync_nyrr_discovery import (
@@ -65,6 +67,7 @@ from sync_nyrr_ingest import (
 )
 from sync_nyrr_matching import run_auto_matcher
 from sync_nyrr_reconcile import reconcile_slug_event_codes
+from sync_nyrr_backfill import run_backfill_mmr_only
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -234,50 +237,6 @@ def run_reconcile_only(
     return summary
 
 
-def reset_event_statuses(
-    conn: mysql.connector.MySQLConnection,
-    *,
-    include_upcoming: bool = False,
-    dry_run: bool = False,
-) -> Dict[str, Any]:
-    """Reset Completed/Error events to Pending so they'll be re-ingested.
-
-    Safe: the upsert in ingest_event_runners uses ON DUPLICATE KEY UPDATE,
-    so re-processing never duplicates rows — it just refreshes them in place.
-
-    By default only past-date events are reset (upcoming ones have live
-    registrant data that shouldn't be clobbered by a full finisher fetch).
-    Pass include_upcoming=True to reset those too.
-
-    Returns: {reset_count, dry_run}
-    """
-    date_clause = "" if include_upcoming else "AND event_date < CURDATE()"
-    cur = conn.cursor(dictionary=True)
-    cur.execute(f"""
-        SELECT COUNT(*) AS n FROM nyrr_events
-        WHERE processing_status IN ('Completed', 'Error')
-          {date_clause}
-    """)
-    count = cur.fetchone()['n']
-    cur.close()
-
-    if dry_run:
-        logger.info(f"[reset] DRY-RUN: would reset {count} events to Pending")
-        return {'reset_count': count, 'dry_run': True}
-
-    upd = conn.cursor()
-    upd.execute(f"""
-        UPDATE nyrr_events
-           SET processing_status = 'Pending', notes = NULL
-         WHERE processing_status IN ('Completed', 'Error')
-           {date_clause}
-    """)
-    conn.commit()
-    upd.close()
-    logger.info(f"[reset] ✅ Reset {count} events to Pending")
-    return {'reset_count': count, 'dry_run': False}
-
-
 def run_single_event(
     client: NyrrApiClient,
     conn: mysql.connector.MySQLConnection,
@@ -343,10 +302,11 @@ def main() -> None:
         description='NYRR Event Sync Pipeline — Phase 2'
     )
     parser.add_argument(
-        '--mode', choices=['daily', 'weekly', 'single', 'reconcile'],
+        '--mode', choices=['daily', 'weekly', 'single', 'reconcile', 'backfill-mmr-only'],
         default='daily',
         help='Pipeline mode (default: daily). "reconcile" runs only the '
-             'Bug L slug→canonical pass.',
+             'Bug L slug→canonical pass. "backfill-mmr-only" loads MMR team '
+             'runners for historical events (pre-2025 by default).',
     )
     parser.add_argument(
         '--batch-size', type=int, default=10,
@@ -366,7 +326,15 @@ def main() -> None:
     )
     parser.add_argument(
         '--dry-run', action='store_true',
-        help='reconcile mode: report planned changes without writing',
+        help='reconcile/backfill-mmr-only mode: report planned changes without writing',
+    )
+    parser.add_argument(
+        '--year-from', type=int, default=2015,
+        help='backfill-mmr-only mode: first year to backfill (default: 2015)',
+    )
+    parser.add_argument(
+        '--year-to', type=int, default=2024,
+        help='backfill-mmr-only mode: last year to backfill (default: 2024)',
     )
     parser.add_argument(
         '--reprocess-all', action='store_true',
@@ -401,6 +369,13 @@ def main() -> None:
             summary = run_reconcile_only(
                 client, conn,
                 include_upcoming=args.include_upcoming,
+                dry_run=args.dry_run,
+            )
+        elif args.mode == 'backfill-mmr-only':
+            summary = run_backfill_mmr_only(
+                client, conn,
+                year_from=args.year_from,
+                year_to=args.year_to,
                 dry_run=args.dry_run,
             )
         else:

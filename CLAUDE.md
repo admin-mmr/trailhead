@@ -191,6 +191,35 @@ Existing: `basecamp/ops/sync_nyrr_events.py` + 3-tier auto-matcher in `api_event
 **P1d — NYRR phases 3-5 (optional, weeks 5-7)**
 Member backfill report (members never matched), race-history in member tooltip, annual MMR finishes summary. Defer until P1c shows signal.
 
+**P1e — Historical MMR-only backfill 2015–2024 (~1 day)**
+Data scope: pre-2025 events load MMR runners only (`team_code='MMR'` via teams endpoint); 2025+ loads all finishers. See **NYRR_OPS.md § 6** for full policy.
+- Migration `MIGRATION_V029`: (a) `nyrr_event_series` table (`id`, `name`, `slug` UNIQUE, `distance_km DECIMAL`, `notes`, `created_at`); (b) `nyrr_events.series_id INT NULL FK → nyrr_event_series.id`; (c) `nyrr_events.load_mode ENUM('full','mmr_only') NOT NULL DEFAULT 'full'`; backfill: `UPDATE nyrr_events SET load_mode='mmr_only' WHERE event_date < '2025-01-01'`. End with self-registration INSERT.
+- `sync_worker.py`: gate Step 1 on `load_mode='full'`; when `mmr_only`, run Steps 2+3 only, set `Completed` if `rows_written > 0`.
+- `basecamp/ops/sync_nyrr_events.py`: new `--mode backfill-mmr-only [--year-from 2015] [--year-to 2024]` — iterates years via `events/search?year=Y`, checks MMR participation (`teams/MMR/teamRunners?eventCode=X&pageSize=1 → totalItems > 0`), inserts event with `load_mode='mmr_only'`, syncs.
+- GitHub Action: add weekly `backfill-mmr-only` step (runs until all pre-2025 events imported).
+- Test: `tests/test_sync_worker_modes.py` — assert Step 1 not called when `load_mode='mmr_only'`.
+
+**P1f — Hall of Fame backend (~4h)**
+See **NYRR_OPS.md § 7** for full requirements (8 categories, what counts, API shape).
+- New `mmr-admin/api_hof.py` (~200 LOC), blueprint `hof_bp`:
+  - `GET /api/hof/series` — list of series with `{id, name, slug, event_count, categories_populated}`.
+  - `GET /api/hof/series/<slug>` — 8-category HOF (best time, runner name, event_year) + top-3 podium per category. Core SQL: `MIN(TIME_TO_SEC(finish_time))` over `nyrr_event_runners JOIN nyrr_events` WHERE `team_code='MMR'` AND `series_id=X` GROUP BY gender/age band.
+  - `GET /api/hof/event/<event_code>` — same, scoped to one race edition.
+  - `POST /api/hof/series` (admin) — create series. `PATCH /api/hof/series/<id>/assign-events` — bulk-assign `nyrr_events.series_id` by name pattern.
+- Register blueprint in `mmr-admin/app.py`.
+- CORS: allow public `GET /api/hof/*` from webapp domain.
+
+**P1g — Hall of Fame admin tab (~3h)**
+- New `mmr-admin/templates/hof-panel.html` (~250 LOC, `initComponent('HofPanel', ...)` pattern).
+- Two sub-views: **Series Manager** (table of series, "+ New", "Assign Events" modal with name-pattern preview); **HOF Table** (select series → 8-category grid with best time / runner / year; toggle for per-year drill-down).
+- Register as top-level tab `🏆 Hall of Fame` in `mmr-admin/templates/index.html` (after NYRR Todos). Update `component-loader.js`.
+
+**P1h — Hall of Fame public page (~4h)**
+- New `web-apps/mmr-webapp/src/app/hall-of-fame/page.tsx` (App Router, no auth).
+- Fetches `/api/hof/series` on load; series card → expand to 8-category HOF table.
+- i18n: English + Chinese for all category labels (男子/女子, Open/40+/50+/60+).
+- Add to site nav. Mobile-responsive.
+
 **P2 — Code health (background)**
 Splits flagged by CLAUDE.md hard rule (use `test_imports.py` for parity):
 | File | LOC | Limit | Effort |

@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date
-from typing import Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 import mysql.connector
@@ -201,3 +201,47 @@ def infer_birth_year(
     if updated > 0:
         logger.info(f'[birth_year] Updated YearBornGuess for {updated} members')
     return updated
+
+
+def reset_event_statuses(
+    conn: mysql.connector.MySQLConnection,
+    *,
+    include_upcoming: bool = False,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Reset Completed/Error events to Pending so they'll be re-ingested.
+
+    Safe: the upsert in ingest_event_runners uses ON DUPLICATE KEY UPDATE,
+    so re-processing never duplicates rows — it just refreshes them in place.
+
+    By default only past-date events are reset (upcoming ones have live
+    registrant data that shouldn't be clobbered by a full finisher fetch).
+    Pass include_upcoming=True to reset those too.
+
+    Returns: {reset_count, dry_run}
+    """
+    date_clause = "" if include_upcoming else "AND event_date < CURDATE()"
+    cur = conn.cursor(dictionary=True)
+    cur.execute(f"""
+        SELECT COUNT(*) AS n FROM nyrr_events
+        WHERE processing_status IN ('Completed', 'Error')
+          {date_clause}
+    """)
+    count = cur.fetchone()['n']
+    cur.close()
+
+    if dry_run:
+        logger.info(f"[reset] DRY-RUN: would reset {count} events to Pending")
+        return {'reset_count': count, 'dry_run': True}
+
+    upd = conn.cursor()
+    upd.execute(f"""
+        UPDATE nyrr_events
+           SET processing_status = 'Pending', notes = NULL
+         WHERE processing_status IN ('Completed', 'Error')
+           {date_clause}
+    """)
+    conn.commit()
+    upd.close()
+    logger.info(f"[reset] ✅ Reset {count} events to Pending")
+    return {'reset_count': count, 'dry_run': False}

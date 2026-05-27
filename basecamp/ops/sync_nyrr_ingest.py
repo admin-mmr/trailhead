@@ -53,8 +53,10 @@ def process_pending_events(
     logger.info(f'[process_pending] Fetching pending events (batch_size={batch_size})...')
     cursor = conn.cursor(dictionary=True)
 
+    # V029: include load_mode so ingest can skip full finisher fetch for mmr_only events.
     query = """
-        SELECT id, event_code, event_name, event_date, is_upcoming
+        SELECT id, event_code, event_name, event_date, is_upcoming,
+               COALESCE(load_mode, 'full') AS load_mode
         FROM nyrr_events
         WHERE processing_status = 'Pending'
         ORDER BY event_date DESC
@@ -71,10 +73,11 @@ def process_pending_events(
     total_rows = 0
 
     for ev in pending:
+        mmr_only = ev.get('load_mode') == 'mmr_only'
         logger.info(f'[process_pending] {total_events + 1}/{len(pending)}: '
-                     f'{ev["event_code"]} "{ev["event_name"]}"')
+                     f'{ev["event_code"]} "{ev["event_name"]}" (load_mode={ev.get("load_mode","full")})')
 
-        rows = ingest_event_runners(client, conn, ev, triggered_by='System')
+        rows = ingest_event_runners(client, conn, ev, triggered_by='System', mmr_only=mmr_only)
 
         # Run inline auto-matching for this event (Stages 5a + 5b)
         matched = run_auto_matcher(conn, event_id=ev['id'])
@@ -94,11 +97,16 @@ def ingest_event_runners(
     event: Dict[str, Any],
     triggered_by: str = 'System',
     is_registrant_refresh: bool = False,
+    mmr_only: bool = False,
 ) -> int:
     """
     Core ingestion for a single event:
       Pass 1: Club search (get_team_runners for MMR)
       Pass 2: Member-ID search (cross-reference members who race under other clubs)
+
+    When mmr_only=True (V029 load_mode='mmr_only'), fetches only the MMR team
+    runners via teams/teamRunners and skips the full finisher divide-and-conquer.
+    Used for pre-2025 historical backfill where we only care about MMR members.
 
     Upserts rows into nyrr_event_runners and updates nyrr_events status.
 
@@ -122,15 +130,15 @@ def ingest_event_runners(
         # ---- Pass 1: Fetch runners and stream-upsert ----
         # For completed events: use FinisherSplitter to get ALL finishers
         # (divide-and-conquer over age × gender × pace to stay under NYRR's
-        # ~500-row per-query cap). For upcoming events: NYRR's finishers-filter
-        # has no data yet, so keep the team-runners path for registrants.
+        # ~500-row per-query cap). For upcoming events or mmr_only events:
+        # use the team-runners path (MMR team only, no divide-and-conquer).
         captured_ids: Set[str] = set()
         rows_written = 0
         total_inserts = 0
         total_updates = 0
         page_num = 0
 
-        if is_upcoming:
+        if is_upcoming or mmr_only:
             logger.info(
                 f'  [pass1] event is upcoming — fetching MMR registrants '
                 f'via teams/teamRunners (event_code={event_code} team={TEAM_CODE})'

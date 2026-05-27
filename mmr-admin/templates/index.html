@@ -52,6 +52,7 @@
   <script type="text/babel" src="/templates/sync-panel.html"></script>
   <script type="text/babel" src="/templates/processing-log.html"></script>
   <script type="text/babel" src="/templates/autoguess-log-panel.html"></script>
+  <script type="text/babel" src="/templates/hof-panel.html"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -299,7 +300,7 @@ const App = () => {
   const [userEmail, setUserEmail] = useState('');
   const [versionInfo, setVersionInfo] = useState(null);
 
-  const VALID_VIEWS = new Set(['payments','autoguess_log','members','district','audit','reconcile','duplicates','sync','admins','log','pyexec','tables','dashboard','detail','nyrr_queue','nyrr_reconcile','settings']);
+  const VALID_VIEWS = new Set(['payments','autoguess_log','members','district','audit','reconcile','duplicates','sync','admins','log','pyexec','tables','dashboard','detail','nyrr_queue','nyrr_reconcile','settings','hof']);
 
   // Hash-based navigation: keeps back/forward and refresh in sync
   const navigate = useCallback((v, replace = false) => {
@@ -423,6 +424,7 @@ const App = () => {
             )}
             <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => navigate('tables')}>Data Browser</button>
             <button className={`tab ${['dashboard', 'detail', 'nyrr_queue'].includes(view) ? 'active' : ''}`} onClick={() => navigate('dashboard')}>NYRR Todos</button>
+            <button className={`tab ${view === 'hof' ? 'active' : ''}`} onClick={() => navigate('hof')}>🏆 Hall of Fame</button>
           </div>
 
           {/* NYRR sub-tabs: Todos (dashboard), Match Queue, Reconcile */}
@@ -505,6 +507,7 @@ const App = () => {
       {view === 'pyexec' && window.PythonExecPanel && React.createElement(window.PythonExecPanel)}
       {view === 'pycode' && window.PythonCodeEditor && React.createElement(window.PythonCodeEditor)}
       {view === 'settings' && window.Settings && React.createElement(window.Settings, { onClose: () => navigate('dashboard') })}
+      {view === 'hof' && window.HofPanel && React.createElement(window.HofPanel)}
     </div>
   );
 };

@@ -274,3 +274,64 @@ basecamp/
 ```
 
 See **CLAUDE.md → NYRR BUG TRACKER** for the active bug list and **ACTION PLAN P1c** for the match-queue roadmap.
+
+---
+
+## 6. Data scope policy — full vs. MMR-only load
+
+Two load modes govern how many finishers are fetched per event. Stored in `nyrr_events.load_mode ENUM('full','mmr_only')` (added in MIGRATION_V029).
+
+| Mode | Events | What is fetched | Steps run |
+|---|---|---|---|
+| `full` | `event_date >= 2025-01-01` (and all future events) | All finishers via `runners/finishers-filter` (Steps 1+2+3) | Step 1: full finisher fetch → Step 2: MMR team roster → Step 3: backfill `team_code='MMR'` |
+| `mmr_only` | `event_date < 2025-01-01`, back to 2015 | Only MMR-listed runners via `teams/MMR/teamRunners` (Steps 2+3 only) | **Skip Step 1.** Step 2: MMR team roster → Step 3: upsert with `team_code='MMR'`. Mark `Completed` when `rows_written > 0`. |
+
+**Why MMR-only for pre-2025:** Fetching 5000+ finishers per event × ~10 events/year × 10 years = ~500k rows we don't need. For Hall of Fame purposes, only runners who actively listed MMR as their club count.
+
+**Discovery of pre-2025 events:** Use `events/search?year=<Y>` (2015–2024) filtered to events where `teams/MMR/teamRunners` returns at least 1 row. The `--mode backfill-mmr-only` CLI flag (added in P1e) handles this.
+
+**load_mode assignment rules:**
+- New event discovered with `event_date >= 2025-01-01` → `full`
+- New event discovered with `event_date < 2025-01-01` → `mmr_only`
+- Existing rows default to `full`; migration backfills pre-2025 rows to `mmr_only`
+
+---
+
+## 7. Hall of Fame — requirements
+
+**Goal:** Surface the all-time best MMR performance per race series, per age-gender category.
+
+### What counts as an MMR result
+- `nyrr_event_runners.team_code = 'MMR'` (runner listed MMR as their club at race time)
+- Runner does **not** need to be matched to an MMR member (`mmr_member_id` may be NULL)
+- Covers all events from MMR's first NYRR race through present
+
+### Event series grouping
+Events are grouped into a **series** (e.g., "NYC Half Marathon", "Queens 10K", "NYC Marathon"). Multiple calendar years of the same race share one series row. Stored in `nyrr_event_series` table (added in MIGRATION_V029); each `nyrr_events` row has a `series_id FK`.
+
+Admin can assign `series_id` manually or via bulk name-pattern match. Unassigned events appear in a "Needs grouping" bucket.
+
+### Age-gender categories (8 total)
+Age is read from `nyrr_event_runners.age` (set at race time by NYRR).
+
+| Category | Filter |
+|---|---|
+| Men Open | `gender IN ('M','Male')` |
+| Men 40+ | same + `age >= 40` |
+| Men 50+ | same + `age >= 50` |
+| Men 60+ | same + `age >= 60` |
+| Women Open | `gender IN ('W','F','Female')` |
+| Women 40+ | same + `age >= 40` |
+| Women 50+ | same + `age >= 50` |
+| Women 60+ | same + `age >= 60` |
+
+"Open" = all ages, no lower bound. Best time = `MIN(finish_time)` comparing as `TIME` (finish_time is stored as `HH:MM:SS` string; cast via `TIME_TO_SEC(CONCAT('00:',finish_time))` for sub-1hr races or `TIME_TO_SEC(finish_time)` directly).
+
+### API shape (see CLAUDE.md ACTION PLAN P1f for full spec)
+- `GET /api/hof/series` — list of series with name, best overall finish, category count
+- `GET /api/hof/series/<slug>` — all 8 categories, best time + runner name + year per category, all-time podium (top 3 per category)
+- `GET /api/hof/event/<event_code>` — same but scoped to one specific year's race
+
+### Pages
+- **Admin panel tab** `🏆 Hall of Fame` (new `templates/hof-panel.html`) — includes series management (assign events to series, edit series names)
+- **Public Next.js page** `/hall-of-fame` — read-only, no auth required

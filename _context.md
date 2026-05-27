@@ -1,3 +1,12 @@
+### 05-26 18:30 UTC — split sync_nyrr_events.py (627→398 LOC ✅)
+Changed: NEW sync_nyrr_backfill.py (226 LOC) — _probe_mmr_participation + _upsert_event_mmr_only + run_backfill_mmr_only moved here; sync_nyrr_helpers.py (+44 LOC, 203→247) — reset_event_statuses moved here; sync_nyrr_events.py (627→398 LOC ✅) — imports updated. All 3 parse cleanly. Status: uncommitted. Next: commit all HOF + backfill work together.
+
+### 05-26 18:00 UTC — P1e–P1h implemented (HOF backend + admin + public page + V029)
+Changed: MIGRATION_V029 (nyrr_event_series + load_mode), api_sync.py (auto-derive mmr_only from DB), sync_nyrr_ingest.py (mmr_only param + load_mode in pending query), sync_nyrr_events.py (backfill-mmr-only CLI mode), api_hof.py (HOF blueprint, CORS), hof-panel.html, index.html (🏆 tab), hall-of-fame/page.tsx (public), Navbar + translations (nav.hof). Status: uncommitted. Next: run V029 on dev DB; create first series via HOF admin tab; test /hall-of-fame page; then commit. ⚠️ sync_nyrr_events.py is now 627 LOC (limit 400) — recommend splitting run_backfill_mmr_only() into sync_nyrr_backfill.py.
+
+### 05-26 15:30 UTC — Hall of Fame + historical backfill requirements added
+Changed: NYRR_OPS.md (§6 data scope policy, §7 HOF requirements), CLAUDE.md (ACTION PLAN P1e–P1h). Status: planning only, no code written. Next: start P1e (MIGRATION_V029 + load_mode gate in sync_worker).
+
 ### 05-26 — NYRR Reconcile UI: bulk progress + auto-demote + per-row Re-Probe
 Changed: 2 files. (1) `mmr-admin/templates/nyrr-reconcile.html` — `probeAll()` no longer skips Completed rows (walks every event); added `bulkProgress` state + sky-blue banner above the table showing "Probing X of Y — <event_code>" + percent + progress bar; button relabeled "🔍 Probe All" / "⏳ Probing…"; gapColor green band tightened to ≥99%; Action column is now always a real button (`🔍 Probe` for non-Completed, `🔄 Re-Probe` for Completed) — `✓ Done` text removed; probe handler also applies new `r.demoted` flag client-side + toasts; footer copy updated. (2) `mmr-admin/api_nyrr_reconcile.py` — `COMPLETE_THRESHOLD` bumped 0.98→0.99; probe endpoint gains a demote branch: if `db_total < 99% * nyrr_total` AND row is Completed, flip `processing_status='Pending'` and append a `[demoted: ...]` notes line; response now returns `demoted: bool`. Status: uncommitted. Next: run V028 on prod (still pending from prior entry); user clicks 🔍 Probe All — Completed rows with <99% coverage demote to Pending and get picked up by next weekly sync cron.
 

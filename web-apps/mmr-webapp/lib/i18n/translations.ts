@@ -10,6 +10,7 @@ export const translations = {
   'nav.login':      { en: 'Login',      zh: '登录' },
   'nav.logout':     { en: 'Logout',     zh: '退出' },
   'nav.donate':     { en: 'Donate',     zh: '捐赠' },
+  'nav.hof':        { en: 'Hall of Fame', zh: '荣誉殿堂' },
   'nav.admin':      { en: 'Admin',      zh: '管理' },
 
   // ─── Hero ───────────────────────────────────────────────────

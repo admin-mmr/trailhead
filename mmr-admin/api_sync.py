@@ -50,8 +50,12 @@ def api_load_event(event_id):
     event = rows[0]
     event_code = event['event_code']
     force_reload = request.json.get('force_reload', False)
-    mmr_only     = request.json.get('mmr_only', False)
-    logger.info(f"📋 Event found: event_code={event_code}, force_reload={force_reload}, mmr_only={mmr_only}")
+    # load_mode='mmr_only' (V029) overrides whatever the caller passes; the DB
+    # is the authoritative source for how this event should be fetched.
+    db_load_mode = event.get('load_mode', 'full')
+    mmr_only = (db_load_mode == 'mmr_only') or bool(request.json.get('mmr_only', False))
+    logger.info(f"📋 Event found: event_code={event_code}, force_reload={force_reload}, "
+                f"mmr_only={mmr_only} (db_load_mode={db_load_mode!r})")
 
     start_sync(event_id, event_code, force_reload, mmr_only=mmr_only)
     return json_response({'ok': True, 'event_code': event_code, 'status': 'started'})
