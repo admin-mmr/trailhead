@@ -116,6 +116,16 @@ const PaymentsPanel = () => {
 
   useEffect(() => { fetchLastSync(); return () => { if (stopPollRef.current) stopPollRef.current(); }; }, [fetchLastSync]);
 
+  // Inject pulse keyframe once (no JSX, no external CSS dependency)
+  useEffect(() => {
+    if (!document.getElementById('stale-pulse-style')) {
+      const s = document.createElement('style');
+      s.id = 'stale-pulse-style';
+      s.textContent = '@keyframes stale-pulse{0%,100%{opacity:1}50%{opacity:0.55}}';
+      document.head.appendChild(s);
+    }
+  }, []);
+
   const handleSubmissionFocus = useCallback((submissionId) => {
     if (focusedSubmissionId === submissionId) {
       setFocusedSubmissionId(null);
@@ -239,12 +249,44 @@ const PaymentsPanel = () => {
 
   const lastSyncMs = toMs(lastSyncTime);
 
+  const STALE_HOURS = 24;
+  const isStale = !lastSyncMs || (Date.now() - lastSyncMs) > STALE_HOURS * 3_600_000;
+  const hoursOld = lastSyncMs ? Math.round((Date.now() - lastSyncMs) / 3_600_000) : null;
+
   return e('div', null,
     toast && e('div', {
       style: { position: 'fixed', top: 16, right: 16, zIndex: 200, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', padding: '10px 16px', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }
     }, toast),
 
     e(MemberTooltip, { memberId: tooltip.memberId, anchorRect: tooltip.rect, data: tooltip.data }),
+
+    // Stale-sync warning banner
+    isStale && e('div', {
+      style: {
+        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10,
+        padding: '10px 14px', borderRadius: 'var(--radius)',
+        background: '#fffbea', border: '1px solid #f59e0b', fontSize: 13,
+      }
+    },
+      e('span', { style: { color: '#b45309', fontWeight: 600 } }, '⚠️ Gmail data is stale'),
+      e('span', { style: { color: '#78350f', fontSize: 12 } },
+        hoursOld !== null
+          ? `Last sync was ${hoursOld}h ago — sync before running Autoguess.`
+          : 'No sync on record — sync Gmail transactions first.'
+      ),
+      e('button', {
+        className: 'btn btn-sm',
+        onClick: handleSyncNow,
+        disabled: syncStatus === 'running',
+        style: {
+          marginLeft: 'auto', fontSize: 12, fontWeight: 700,
+          background: '#f59e0b', color: '#fff', border: 'none',
+          borderRadius: 'var(--radius)', padding: '5px 14px',
+          cursor: syncStatus === 'running' ? 'not-allowed' : 'pointer',
+          animation: syncStatus === 'running' ? 'none' : 'stale-pulse 1.6s ease-in-out infinite',
+        },
+      }, syncStatus === 'running' ? '⏳ Syncing…' : '📥 Sync Now'),
+    ),
 
     // Gmail sync bar
     e('div', {
@@ -273,14 +315,16 @@ const PaymentsPanel = () => {
       e('button', {
         className: 'btn btn-sm',
         onClick: handleAutoguess,
-        disabled: loading,
-        title: 'Automatically match transactions with explicit memberID in memo',
+        disabled: loading || isStale,
+        title: isStale
+          ? '⚠️ Sync Gmail transactions first — data is more than 24h old'
+          : 'Automatically match transactions with explicit memberID in memo',
         style: {
           fontSize: 12, fontWeight: 600,
           background: 'var(--accent)', color: '#fff', border: 'none',
           borderRadius: 'var(--radius)', padding: '5px 14px',
-          cursor: loading ? 'not-allowed' : 'pointer',
-          opacity: loading ? 0.5 : 1,
+          cursor: (loading || isStale) ? 'not-allowed' : 'pointer',
+          opacity: (loading || isStale) ? 0.4 : 1,
         },
       }, loading ? '⏳ Autoguessing…' : '🤖 Autoguess'),
     ),

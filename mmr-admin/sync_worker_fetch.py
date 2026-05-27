@@ -81,6 +81,9 @@ class FinisherFetcher:
         self.rows_written    = 0
         self.pages_written   = 0
         self.total_finishers = 0
+        # Cache: (age, gender) -> row_count, built once at run() start.
+        # None = not yet populated.
+        self._db_cache: Optional[Dict[tuple, int]] = None
 
     # ------------------------------------------------------------------
     # Entry point
@@ -126,6 +129,7 @@ class FinisherFetcher:
                                      f'({self.total_finishers} rows). Skipping.')
             return self.rows_written, self.total_finishers
 
+        self._build_db_cache()
         self._divide_and_conquer(0, 100)
         return self.rows_written, self.total_finishers
 
@@ -247,15 +251,74 @@ class FinisherFetcher:
     # Reconciliation helper
     # ------------------------------------------------------------------
 
+    def _build_db_cache(self) -> None:
+        """Load per-(age, gender) row counts into self._db_cache in one query.
+
+        Called once before divide-and-conquer starts. Lets _already_synced
+        answer age/gender questions without extra DB round-trips — eliminates
+        redundant probes when a shard was partially synced in a prior run.
+        """
+        self.cursor.execute(
+            "SELECT age, gender, COUNT(*) "
+            "FROM nyrr_event_runners "
+            "WHERE nyrr_event_id = %s "
+            "GROUP BY age, gender",
+            (self.event_id,),
+        )
+        cache: Dict[tuple, int] = {}
+        for age, gender, cnt in self.cursor.fetchall():
+            cache[(age, gender)] = cnt
+        self._db_cache = cache
+        total_cached = sum(cache.values())
+        logger.debug(f"  └─ DB cache built: {len(cache)} (age,gender) buckets, "
+                     f"{total_cached} rows total")
+
+    def _cached_count(self, *, age_from=None, age_to=None, gender=None) -> int:
+        """Sum cache entries matching the given age range and optional gender."""
+        total = 0
+        for (age, g), cnt in self._db_cache.items():
+            if age_from is not None and age < age_from:
+                continue
+            if age_to is not None and age > age_to:
+                continue
+            if gender is not None and g != gender:
+                continue
+            total += cnt
+        return total
+
     def _already_synced(self, expected: int, *, age_from=None, age_to=None,
                         gender=None, pace_min=None, pace_max=None) -> bool:
         """Return True if MySQL already holds `expected` rows for this shard.
 
-        Builds the WHERE clause dynamically so None criteria are omitted.
-        Pace strings are zero-padded ("00:MM:SS") so VARCHAR comparison is safe.
+        For age/gender queries uses the in-memory cache (built once at run
+        start) to avoid extra DB round-trips. Falls through to a live DB
+        query only for pace-range sub-shards, which the cache doesn't track.
         """
         if expected == 0:
             return False
+        # Pace queries: cache has no pace granularity — hit DB directly.
+        if pace_min is not None or pace_max is not None:
+            sql = ("SELECT COUNT(*) FROM nyrr_event_runners "
+                   "WHERE nyrr_event_id = %s")
+            params = [self.event_id]
+            if age_from is not None:
+                sql += " AND age >= %s";  params.append(age_from)
+            if age_to is not None:
+                sql += " AND age <= %s";  params.append(age_to)
+            if gender is not None:
+                sql += " AND gender = %s"; params.append(gender)
+            if pace_min is not None and pace_min != "00:00:00":
+                sql += " AND pace >= %s";  params.append(pace_min)
+            if pace_max is not None:
+                sql += " AND pace <= %s";  params.append(pace_max)
+            self.cursor.execute(sql, params)
+            row = self.cursor.fetchone()
+            return (row[0] if row else 0) == expected
+        # Age/gender queries: use cache.
+        if self._db_cache is not None:
+            return self._cached_count(age_from=age_from, age_to=age_to,
+                                      gender=gender) == expected
+        # Cache not ready (shouldn't happen) — fall back to DB.
         sql = ("SELECT COUNT(*) FROM nyrr_event_runners "
                "WHERE nyrr_event_id = %s")
         params = [self.event_id]
@@ -265,14 +328,9 @@ class FinisherFetcher:
             sql += " AND age <= %s";  params.append(age_to)
         if gender is not None:
             sql += " AND gender = %s"; params.append(gender)
-        if pace_min is not None and pace_min != "00:00:00":
-            sql += " AND pace >= %s";  params.append(pace_min)
-        if pace_max is not None:
-            sql += " AND pace <= %s";  params.append(pace_max)
         self.cursor.execute(sql, params)
         row = self.cursor.fetchone()
-        mysql_count = row[0] if row else 0
-        return mysql_count == expected
+        return (row[0] if row else 0) == expected
 
     # ------------------------------------------------------------------
     # Divide-and-conquer
