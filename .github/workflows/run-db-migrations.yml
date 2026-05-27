@@ -56,6 +56,8 @@ jobs:
               # Run migration and capture output
               if mysql ${MYSQL_CONN} < "$migration_file" 2>&1 | tee /tmp/migration_output.txt; then
                 echo "✅ Success: $(basename $migration_file)"
+                # Archive instead of delete — preserves history in git
+                mv "$migration_file" db/archive/
               else
                 echo "❌ Failed: $(basename $migration_file)"
                 cat /tmp/migration_output.txt
@@ -66,6 +68,14 @@ jobs:
 
           echo ""
           echo "✨ All migrations completed successfully"
+
+      - name: Commit archived migrations
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add db/archive/ db/MIGRATION_V*.sql 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "chore: archive deployed migrations [skip ci]"
+          git push
 
       - name: Verify schema_migrations table
         env:
