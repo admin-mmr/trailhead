@@ -352,3 +352,55 @@ def set_event_series(event_id):
     execute("UPDATE nyrr_events SET series_id = %s WHERE id = %s", [series_id, event_id])
     logger.info(f"[hof] event_id={event_id} series_id → {series_id}")
     return json_response({'ok': True, 'event_id': event_id, 'series_id': series_id})
+
+
+@hof_bp.route('/api/hof/events/<int:event_id>/distance', methods=['PATCH'])
+@login_required
+def set_event_distance(event_id):
+    """Update the distance label for a single event.
+
+    Body: { "distance": "Half Marathon" }
+    """
+    body     = request.get_json() or {}
+    distance = (body.get('distance') or '').strip() or None
+    execute("UPDATE nyrr_events SET distance = %s WHERE id = %s", [distance, event_id])
+    logger.info(f"[hof] event_id={event_id} distance → {distance!r}")
+    return json_response({'ok': True, 'event_id': event_id, 'distance': distance})
+
+
+@hof_bp.route('/api/hof/refresh-mmr-counts', methods=['POST'])
+@login_required
+def refresh_mmr_counts():
+    """Recompute mmr_runner_count from nyrr_event_runners for Completed events.
+
+    Targets events where processing_status='Completed' AND mmr_runner_count=0.
+    Pass { "all": true } to rescan every Completed event regardless of current count.
+    """
+    body     = request.get_json() or {}
+    scan_all = bool(body.get('all', False))
+
+    where = "processing_status = 'Completed'"
+    if not scan_all:
+        where += " AND (mmr_runner_count IS NULL OR mmr_runner_count = 0)"
+
+    events = query(f"SELECT id FROM nyrr_events WHERE {where}")
+    if not events:
+        return json_response({'ok': True, 'updated': 0, 'message': 'Nothing to refresh'})
+
+    for ev in events:
+        execute("""
+            UPDATE nyrr_events
+               SET mmr_runner_count = (
+                       SELECT COUNT(*) FROM nyrr_event_runners
+                        WHERE nyrr_event_id = %s AND team_code = 'MMR'
+                   ),
+                   mmr_matched_count = (
+                       SELECT COUNT(*) FROM nyrr_event_runners
+                        WHERE nyrr_event_id = %s AND team_code = 'MMR'
+                          AND mmr_member_id IS NOT NULL
+                   )
+             WHERE id = %s
+        """, [ev['id'], ev['id'], ev['id']])
+
+    logger.info(f"[hof] refresh-mmr-counts: {len(events)} events (all={scan_all})")
+    return json_response({'ok': True, 'updated': len(events)})

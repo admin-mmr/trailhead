@@ -290,10 +290,12 @@ initComponent('HofPanel', () => {
   );
 
   // ── Events editor state ───────────────────────────────────────────────────
-  const [eventsData, setEventsData]     = useState([]);
-  const [eventsLoading, setEventsLoading] = useState(false);
-  const [evFilter, setEvFilter]         = useState({ q: '', year: '', unassigned: false });
-  const [saving, setSaving]             = useState({});   // { [event_id]: true }
+  const [eventsData, setEventsData]         = useState([]);
+  const [eventsLoading, setEventsLoading]   = useState(false);
+  const [evFilter, setEvFilter]             = useState({ q: '', year: '', unassigned: false });
+  const [saving, setSaving]                 = useState({});   // { [event_id]: true }
+  const [editingDist, setEditingDist]       = useState({});   // { [event_id]: 'draft value' }
+  const [refreshingCounts, setRefreshingCounts] = useState(false);
 
   const loadEvents = (f = evFilter) => {
     setEventsLoading(true);
@@ -328,6 +330,44 @@ initComponent('HofPanel', () => {
     }
   };
 
+  const saveDistance = async (eventId) => {
+    const dist = editingDist[eventId];
+    if (dist === undefined) return;
+    setSaving(s => ({ ...s, [eventId]: true }));
+    const r = await api(`/api/hof/events/${eventId}/distance`, {
+      method: 'PATCH',
+      body: JSON.stringify({ distance: dist }),
+    });
+    setSaving(s => { const n = { ...s }; delete n[eventId]; return n; });
+    setEditingDist(d => { const n = { ...d }; delete n[eventId]; return n; });
+    if (r.ok) {
+      setEventsData(prev => prev.map(ev =>
+        ev.id === eventId ? { ...ev, distance: r.distance } : ev
+      ));
+      setToast('Distance saved');
+      setTimeout(() => setToast(''), 2000);
+    } else {
+      setToast(r.error || 'Save failed');
+      setTimeout(() => setToast(''), 3000);
+    }
+  };
+
+  const handleRefreshCounts = async (all) => {
+    setRefreshingCounts(true);
+    const r = await api('/api/hof/refresh-mmr-counts', {
+      method: 'POST',
+      body: JSON.stringify({ all }),
+    });
+    setRefreshingCounts(false);
+    if (r.ok) {
+      setToast(`MMR counts refreshed for ${r.updated} events`);
+      if (eventsData.length > 0) loadEvents();
+    } else {
+      setToast(r.error || 'Refresh failed');
+    }
+    setTimeout(() => setToast(''), 3000);
+  };
+
   // ── Events editor view ────────────────────────────────────────────────────
   const EventsEditor = () => (
     <div>
@@ -347,6 +387,10 @@ initComponent('HofPanel', () => {
             Unassigned only
           </label>
           <button className="btn btn-primary btn-sm" onClick={() => loadEvents()}>Search</button>
+          <button className="btn btn-sm btn-secondary" title="Recount MMR runners for Completed events with 0"
+            disabled={refreshingCounts} onClick={() => handleRefreshCounts(false)}>
+            {refreshingCounts ? 'Refreshing…' : '↻ MMR Counts'}
+          </button>
         </div>
       </div>
 
@@ -360,42 +404,74 @@ initComponent('HofPanel', () => {
             <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', background: 'var(--bg-alt, #f8f8f8)' }}>
               <th style={{ padding: '8px 10px' }}>Event</th>
               <th style={{ padding: '8px 10px' }}>Date</th>
-              <th style={{ padding: '8px 10px' }}>Distance</th>
+              <th style={{ padding: '8px 10px' }}>Distance <span style={{ fontWeight: 400, fontSize: 11 }}>(click to edit)</span></th>
               <th style={{ padding: '8px 10px' }}>MMR</th>
               <th style={{ padding: '8px 10px' }}>Series</th>
             </tr>
           </thead>
           <tbody>
-            {eventsData.map(ev => (
-              <tr key={ev.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '8px 10px' }}>
-                  <div style={{ fontWeight: 500 }}>{ev.event_name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>{ev.event_code}</div>
-                </td>
-                <td style={{ padding: '8px 10px', color: 'var(--text-muted, #888)' }}>
-                  {ev.event_date ? ev.event_date.slice(0, 10) : ev.event_year || '—'}
-                </td>
-                <td style={{ padding: '8px 10px', color: 'var(--text-muted, #888)' }}>
-                  {ev.distance || '—'}
-                </td>
-                <td style={{ padding: '8px 10px' }}>{ev.mmr_runner_count || 0}</td>
-                <td style={{ padding: '8px 10px' }}>
-                  <select
-                    className="input"
-                    style={{ fontSize: 12, padding: '3px 6px', minWidth: 160 }}
-                    value={ev.series_id ?? ''}
-                    disabled={!!saving[ev.id]}
-                    onChange={e => setEventSeries(ev.id, e.target.value)}
-                  >
-                    <option value="">— unassigned —</option>
-                    {seriesList.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                  {saving[ev.id] && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text-muted, #888)' }}>saving…</span>}
-                </td>
-              </tr>
-            ))}
+            {eventsData.map(ev => {
+              const isEditingDist = editingDist[ev.id] !== undefined;
+              return (
+                <tr key={ev.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 10px' }}>
+                    <div style={{ fontWeight: 500 }}>{ev.event_name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>{ev.event_code}</div>
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--text-muted, #888)' }}>
+                    {ev.event_date ? ev.event_date.slice(0, 10) : ev.event_year || '—'}
+                  </td>
+                  <td style={{ padding: '4px 10px' }}>
+                    {isEditingDist ? (
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <input className="input" style={{ fontSize: 12, padding: '2px 6px', width: 130 }}
+                          value={editingDist[ev.id]}
+                          onChange={e => setEditingDist(d => ({ ...d, [ev.id]: e.target.value }))}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveDistance(ev.id);
+                            if (e.key === 'Escape') setEditingDist(d => { const n = { ...d }; delete n[ev.id]; return n; });
+                          }}
+                          autoFocus />
+                        <button className="btn btn-sm btn-primary" style={{ padding: '2px 8px', fontSize: 11 }}
+                          onClick={() => saveDistance(ev.id)} disabled={!!saving[ev.id]}>✓</button>
+                        <button className="btn btn-sm" style={{ padding: '2px 8px', fontSize: 11 }}
+                          onClick={() => setEditingDist(d => { const n = { ...d }; delete n[ev.id]; return n; })}>✕</button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => setEditingDist(d => ({ ...d, [ev.id]: ev.distance || '' }))}
+                        style={{ cursor: 'pointer', color: ev.distance ? 'var(--text-muted, #888)' : 'var(--danger, #c00)',
+                                 borderBottom: '1px dashed var(--border)', paddingBottom: 1 }}
+                        title="Click to edit">
+                        {ev.distance || '(empty)'}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: '8px 10px',
+                    color: (ev.mmr_runner_count || 0) === 0 && ev.processing_status === 'Completed'
+                      ? 'var(--danger, #c00)' : 'inherit' }}>
+                    {ev.mmr_runner_count || 0}
+                    {(ev.mmr_runner_count || 0) === 0 && ev.processing_status !== 'Completed' &&
+                      <span style={{ fontSize: 10, color: 'var(--text-muted, #888)', marginLeft: 4 }}>pending</span>}
+                  </td>
+                  <td style={{ padding: '8px 10px' }}>
+                    <select
+                      className="input"
+                      style={{ fontSize: 12, padding: '3px 6px', minWidth: 160 }}
+                      value={ev.series_id ?? ''}
+                      disabled={!!saving[ev.id]}
+                      onChange={e => setEventSeries(ev.id, e.target.value)}
+                    >
+                      <option value="">— unassigned —</option>
+                      {seriesList.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                    {saving[ev.id] && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text-muted, #888)' }}>saving…</span>}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -429,9 +505,9 @@ initComponent('HofPanel', () => {
         </div>
       )}
 
-      {subView === 'series'  && <SeriesManager />}
-      {subView === 'events'  && <EventsEditor />}
-      {subView === 'hof'     && <HofTable />}
+      {subView === 'series'  && SeriesManager()}
+      {subView === 'events'  && EventsEditor()}
+      {subView === 'hof'     && HofTable()}
     </div>
   );
 });

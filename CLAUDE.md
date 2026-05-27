@@ -36,11 +36,6 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 - Runners: `sync_runners.py` (6 export/import operations + full_sync orchestration)
 - GAS integration: `api_sheets_diags.py` (webhook wrapper with retry logic)
 
-**Deprecated files (removed 04-04):**
-1. `basecamp/python/google_sheets_snapshot.py` — Old snapshot/diff logic (replaced by direct GAS webhook)
-2. `mmr-admin/sheets_sync.py` — Fire-and-forget single-record POSTs (replaced by batch exports)
-3. `basecamp/ops/sync_sheets_to_mysql.py` — Legacy CLI tool with duplicated validation logic (archived; not in GitHub Actions)
-
 **MySQL Procedures (all active):**
 - `generate_member_id()` — Auto-generate sequential IDs on member create
 - `sp_admin_update_member_status()` — Admin override with audit trail
@@ -81,22 +76,7 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 **Schema Validation Tools:**
 - `validate_schema.py`: Automated validator detects NULL violations, FK orphans, ENUM mismatches, missing PKs, duplicate uniques. Run: `python3 db/validate_schema.py`
 
-**Error Messaging System (V007):**
-
-✅ **DEPLOYED — Known Issue Fixed in V008**
-1. **MIGRATION_V007_improve_error_messages.sql** (DEPLOYED)
-   - Creates error_context table (19 cols: value, constraint, suggestion, occurrence tracking)
-   - Adds 3 validation triggers (submissions/members/payments) — auto-log violations
-   - Adds 10 CHECK constraints (Status, Amount, Email, PaymentDate, etc.)
-   - Creates v_unresolved_errors view + sp_error_summary_report(days) procedure
-   - Enhances activity_log with ErrorContext, ErrorSeverity, StackTrace
-   - Known Issue: Reports duplicate column error if columns already exist (non-blocking)
-
-2. **MIGRATION_V008_fix_v007_duplicate_columns.sql** (OPTIONAL — idempotent fix)
-   - Checks INFORMATION_SCHEMA before adding columns
-   - Safe to re-run; skips columns that already exist
-   - Ensures V007 can be re-run without errors
-   - Duration: <1 min
+**Error Messaging System:** V007 + V008 deployed. `error_context` table, 3 validation triggers, 10 CHECK constraints, `v_unresolved_errors` view, `sp_error_summary_report(days)` procedure.
 
 **Monitoring & Debugging:**
 ```sql
@@ -105,72 +85,28 @@ CALL sp_error_summary_report(7);    -- Error trends (last 7 days)
 SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL 24 HOUR GROUP BY Severity;
 ```
 
-## MMR ADMIN UI — FULL SPLIT + OPTIMIZATION COMPLETE (04-04, PHASES 1-4 + Optimization)
-**Refactored:** `mmr-admin/templates/index.html` extracted 9 components + CSS + component loader (2085 lines → external files).
-- **Before:** `index.html` 2600 lines, 37K tokens
-- **After:** `index.html` 370 lines | 9 external .html components | 1 external .css file | 1 component loader .js | Total: 2628 lines (-3% footprint vs. original, -60% index.html)
+## MMR ADMIN UI — ARCHITECTURE
+**Tabs:** 1. Payments | 2. Members (Members, Members by District, 🔍 Renewal Audit) | 3. Sync with Google | 4. Admins (Admins, Sync Log, Python Exec, Data Query) | 5. Data Browser | 6. NYRR Todos
 
-**Architecture Changes (04-04):**
-1. Payments | 2. Members (sub-tabs: Members, Members by District, 🔍 Renewal Audit) | 3. Sync with Google | 4. Admins (sub-tabs: Admins, Sync Log, Python Exec, Data Query) | 5. Data Browser | 6. NYRR Todos
+**Components** (`mmr-admin/templates/`): `dashboard-panel.html`, `python-code-editor.html`, `python-exec-panel.html`, `table-browser.html`, `match-modal.html`, `admin-panel.html`, `settings-panel.html`, `sync-panel.html`, `processing-log.html` + `styles.css` (static/).
 
-**Extracted Components (Phases 1, 2, 3 & 4):**
-- `dashboard-panel.html` (653 lines) — NYRR Todos: Dashboard + EventDetail views, event discovery, runner matching, column filters, CSV export
-- `python-code-editor.html` (256 lines) — Python Code Editor: code input, execution, result display, example templates
-- `python-exec-panel.html` (152 lines) — Python Exec: function list, execution, result display
-- `table-browser.html` (292 lines) — Data Browser: table explorer, column visibility, sorting, filtering, CSV export
-- `match-modal.html` (196 lines) — Event runner matching: search, confirm, duplicate detection
-- `admin-panel.html` (199 lines) — Admin management: user list, role assignment, refresh/auto-guess triggers
-- `settings-panel.html` (95 lines) — Database settings: connection config, presets, custom connection
-- `sync-panel.html` (202 lines) — Sync orchestration: MySQL↔Google exports, Google↔MySQL imports, full sync with job polling + JobCard sub-component
-- `processing-log.html` (52 lines) — Sync log viewer: job history table with timestamp, event, status, rows, trigger, error details
-- **`styles.css` (180 lines)** — All CSS removed from inline `<style>` tag. Single source of truth for theming.
+**File pattern:** Components use `initComponent('Name', () => { ... })` via `/static/component-loader.js`. React hooks exported globally — no redeclaration needed. CSS: `<link rel="stylesheet" href="/static/styles.css">`. Components rendered via `window.Component && React.createElement(window.Component, props)`.
 
-**Remaining embedded (shared utilities only):**
-- StatusBadge, MatchBar, Toast, SimpleProgressModal — UI helpers (70 lines total)
-- App shell: auth, version check, tab routing, view state (299 lines)
-
-**File pattern:**
-- External components registered with `window.ComponentName`, loaded via `<script type="text/babel" src="/templates/component.html">`
-- CSS linked in `<head>`: `<link rel="stylesheet" href="/static/styles.css">`
-- Components rendered via `window.Component && React.createElement(window.Component, props)`
-- All shared utilities and CSS centralized for maintainability
-
-**Optimization (Component Loader):**
-- Created `/static/component-loader.js` (18 lines) — eliminates boilerplate across all components
-- Each component refactored: `initComponent('Name', () => { ... })` instead of `const Name = () => { ... }; window.Name = Name;`
-- All 9 components refactored (dashboard-panel, python-code-editor, python-exec-panel, table-browser, match-modal, admin-panel, settings-panel, sync-panel, processing-log)
-- **Footprint savings:** 4247 → 2628 lines (-1619 lines, -38% reduction)
-- **Component loader also exports React hooks globally** — no need to redeclare `useState`, `useEffect`, etc. in each file
-- Cleaner, DRY approach — single source of truth for component registration and React API
-
-## NYRR BUG TRACKER (active — May 2026)
-Local sync currently marks events "Completed" with 0 runners. Bugs identified 2026-05-25; fix in P0 order. Resume protocol: scan the table, pick the first row not marked ✅; if file/line numbers shifted, re-grep before patching.
-
-| ID | Severity | File | Issue | Status |
-|---|---|---|---|---|
-| A | P0 (data loss) | `sync_worker.py:474-486` + `:73-76` | Sets `processing_status='Completed'` even when `rows_written=0`; combined with destructive `force_reload` delete this wipes good data on empty NYRR responses | ✅ fixed 2026-05-25 — preflight probe before DELETE; status gated on rows_written>0; job state surfaces error to UI |
-| B | P0 (latent crash) | `sync_worker.py:86-101` | `ON DUPLICATE KEY UPDATE` clause uses stray `)` + `NEW.col` (MySQL 8.0.19+ syntax). Will explode the first time NYRR actually returns finishers (MySQL 5.7 needs `VALUES(col)`) | ✅ fixed 2026-05-25 — rewrote with `VALUES(col)` syntax |
-| C | P0 (silent no-op) | `sync_worker.py:426-432` | `_upsert_team_runners` is a stub returning `(0,0)` — Step 3 never actually writes `team_code` | ✅ fixed 2026-05-25 — implemented UPDATE-by-runner_id with INSERT fallback for Step-1 misses |
-| D | P1 (root cause) | `nyrr_events.event_code` + `sync_worker.py` | Probe confirmed `rbc-brooklyn-half` slug returns 0. Fixed: `sync_worker._resolve_slug_to_canonical()` detects hyphens, calls `events/search`, word-overlap matches to canonical code, updates DB in-place before sync proceeds | ✅ fixed 2026-05-25 |
-| E | P1 (broken UI) | `api_events_discovery.py:33-40` | Calls `search_events(limit=100, status='live')` with invalid kwargs and reads `event.get('code')` on dataclass — "Discover New Events" button can't work | ✅ fixed 2026-05-25 — scan current + prior year via `year=` kwarg; dataclass attr access |
-| F | P2 (false positives) | `api_events.py:228, 276` | Tier 3 (first OR last name) skips age guard when member has neither `YearBorn` nor `YearBornGuess`. Tighten: when no birth year, demote to Tier 2 only | ✅ fixed 2026-05-25 — removed `OR (YearBorn IS NULL AND YearBornGuess IS NULL)` escape hatch from Tier 3 |
-| G | P2 (silent miss) | `api_events.py:234, 282` | Gender check compares NYRR `M/W/X` to `m/f/o` from members — `W` never matches `Female`. Add normalization map | ✅ fixed 2026-05-25 — CASE WHEN M→Male / W→Female / X→Other in both Tier 2 and Tier 3 SQL |
-| H | P2 (DRY) | `api_events.py:185-300` | Three near-identical "after Tier N update members.NYRRRunnerName" blocks — extract one helper | ✅ fixed 2026-05-25 — `_backfill_member_name_and_year(cursor, event_id, match_method)` helper; 3 call sites |
-| I | P2 (worker timeout) | `api_events.py:301+` | Tier 4 rapidfuzz runs in-request; on Azure with 25k runners × 1.5k members ≈ 37M comparisons → OOM. Move to background worker | ✅ fixed 2026-05-25 — extracted to `fuzzy_worker.py` + `api_events_fuzzy.py`; POST /api/events/<id>/fuzzy-match starts background thread, GET /status polls it |
-| J | P3 (CLAUDE.md hard rule) | `sync_worker.py` 785 LOC | Exceeds 400 LOC. Split fetch logic into `sync_worker_fetch.py` | ✅ fixed 2026-05-25 — split into `sync_worker.py` (344 LOC), `sync_worker_fetch.py` (301 LOC, FinisherFetcher class), `sync_worker_backfill.py` (136 LOC, TeamBackfiller class); public API `start_sync/get_job_status/cancel_job` replaces private names |
-| K | P3 (CLAUDE.md hard rule) | `api_events.py` 474 LOC | Exceeds 400 LOC. Split after H | ✅ fixed 2026-05-25 — Tier 4 removal + fuzzy move brought to 398 LOC |
-| M | **P0 (infinite loop + silent data loss)** | `basecamp/python/nyrr_finisher_splitter.py::_split_by_pace` + identical bug in `mmr-admin/sync_worker_fetch.py::_split_by_pace` | Pace bisection only tracked `pace_max`; right-recursion called itself with parent's same `max_pace` → infinite loop AND the upper-pace half of every age×gender shard was never fetched (silent data loss). Caught on B2026 women age 25: re-fetched pace 00:00-00:09:14 (227 items) every few seconds while never touching 00:09:14-00:18:29. | ✅ fixed 2026-05-25 — added `pace_min` param; left=[pace_min, mid], right=[mid, pace_max]; mid=avg(min,max) not max/2; guard for collapsed range (≤1s) falls through to fetch instead of recursing. Synced basecamp→mmr-admin. |
-| L | **P0 (reconciliation impossible)** | `nyrr_events` rows + `basecamp/ops/sync_nyrr_events.py` (discovery) + `sync_worker._resolve_slug_to_canonical` | Events discovered while *upcoming* are stored with slug-form `event_code` (e.g. `rbc-brooklyn-half`, `boardwalk-kids-run-at-the-rbc-brooklyn-half`, `virtual-rbc-brooklyn-half`) and a **registration** `event_url` (`events.nyrr.org/<slug>`). After `event_date` passes, NYRR publishes results under a canonical short code (e.g. `H2026`, `26RHALFS3`) at a **different** URL (`results.nyrr.org/event/<canonical>/finishers`). Bug D's `_resolve_slug_to_canonical` fired **only inside `start_sync`** and never updated `event_url`. | ✅ fixed 2026-05-25 — (a) new `mmr-admin/sync_worker_reconcile.py` + `basecamp/ops/sync_nyrr_reconcile.py` with `reconcile_slug_event_codes()` that scans `event_date<NOW() AND event_code LIKE '%-%'` and resolves via `events/search`; (b) reconciliation now updates BOTH `event_code` AND `event_url` (rewrites to canonical results.nyrr.org); (c) `sync_worker._sync_worker` slug-resolution branch also updates `event_url` now, and aborts past-date syncs whose slug failed to resolve (prevents Bug A's destructive empty fetch); (d) wired into daily pipeline as Step 2.5 (past-date only), weekly pipeline (also tries upcoming), new `--mode reconcile [--include-upcoming] [--dry-run]` CLI, and `POST /api/discover/reconcile-slugs` admin endpoint. Both reconcile modules guard the UNIQUE(event_code) constraint by detecting duplicate canonical rows and flagging for manual merge. |
+## NYRR SYNC — KEY FILES (all bugs resolved 2026-05-25)
+- `sync_worker.py` (344 LOC) + `sync_worker_fetch.py` (FinisherFetcher, pace bisection with `pace_min`/`pace_max`) + `sync_worker_backfill.py` (TeamBackfiller) + `sync_worker_reconcile.py` (slug→canonical + `event_url` fix)
+- `basecamp/ops/sync_nyrr_reconcile.py` — `reconcile_slug_event_codes()`, also wired as `POST /api/discover/reconcile-slugs` and daily/weekly pipeline steps
+- `api_events.py` (398 LOC) — 3-tier matcher; gender normalized M/W/X→Male/Female/Other; Tier 3 requires birth year; `_backfill_member_name_and_year()` helper
+- `fuzzy_worker.py` + `api_events_fuzzy.py` — Tier 4 background thread (`POST /api/events/<id>/fuzzy-match`, `GET /status`)
+- `api_events_discovery.py` — scans current + prior year via `year=` kwarg
 
 ## ACTION PLAN (active — May 2026)
 Sequenced backlog. P0=quick wins (this week), P1=features asked for, P2=code health.
 
-**P0 — Operational quick wins (~1 day total)**
+**P0 — Operational quick wins**
 1. Re-enable `.github/workflows/sync-nyrr-weekly.yml` cron schedule (currently manual-only); smoke-test one event end-to-end.
-2. ✅ DONE (2026-05-05, commit 7a557cf) — Doc cleanup: 13 stray .md files removed (PAYMENTS_*, FUZZY_*, REFACTOR_BLUEPRINT, SCHEMA_ANALYSIS, PROJECT_PLAN, ROUTES_REFERENCE, PAYMENTS_DESIGN, AUDIT_RENEWAL_FEATURE, mmr-admin/REFACTOR_SESSION_2026-04-01.md). Re-audit 2026-05-18 confirmed none present.
-3. Verify V023 deployed: `SELECT version FROM schema_migrations ORDER BY id DESC LIMIT 5;`
-4. **NEW** — Flagged for review (untracked, violates HARD RULE): `PUBLIC_SITE_PLAN.md` (318 lines, dated 2026-05-19). Either fold into CLAUDE.md or move to a tracked planning location.
-5. **NEW** — Flagged for review (root-level, possibly stale): `WeChat_Member_Matching_Agent_Prompt.md` (321 lines) and `MONOREPO.md` (364 lines). Evaluate whether content belongs in CLAUDE.md or should stay as separate docs.
+2. Deploy `MIGRATION_V031_normalize_event_distances.sql` (ready, self-registering).
+3. Flagged for review (untracked, violates HARD RULE): `PUBLIC_SITE_PLAN.md` (318 lines, dated 2026-05-19). Either fold into CLAUDE.md or move to tracked planning location.
+4. Flagged for review (root-level, possibly stale): `WeChat_Member_Matching_Agent_Prompt.md` (321 lines) and `MONOREPO.md` (364 lines). Evaluate whether content belongs in CLAUDE.md or should stay as separate docs.
 
 **P1a — Payments staleness gate (~3h, frontend only)**
 File: `mmr-admin/static/PaymentsPanel.js` (~30 LOC). Existing `lastSyncTime` from `/api/sync/jobs` already wired (line 48-124). Add: `STALE_HOURS=24`; `isStale = age>24h || lastSyncTime===null`. When stale: yellow banner above sync bar with hours-old + pulsing "Sync Now" button; pass `disabled={isStale}` to autoguess button (line 213) with tooltip. After sync completes, `fetchLastSync()` re-runs (line 102) → banner clears. No backend change.
@@ -193,7 +129,7 @@ Member backfill report (members never matched), race-history in member tooltip, 
 
 **P1e — Historical MMR-only backfill 2015–2024 (~1 day)**
 Data scope: pre-2025 events load MMR runners only (`team_code='MMR'` via teams endpoint); 2025+ loads all finishers. See **NYRR_OPS.md § 6** for full policy.
-- Migration `MIGRATION_V029`: (a) `nyrr_event_series` table (`id`, `name`, `slug` UNIQUE, `distance_km DECIMAL`, `notes`, `created_at`); (b) `nyrr_events.series_id INT NULL FK → nyrr_event_series.id`; (c) `nyrr_events.load_mode ENUM('full','mmr_only') NOT NULL DEFAULT 'full'`; backfill: `UPDATE nyrr_events SET load_mode='mmr_only' WHERE event_date < '2025-01-01'`. End with self-registration INSERT.
+- Migration `MIGRATION_V032` (**⚠️ verify number before creating** — V029–V031 are taken): (a) `nyrr_event_series` table (`id`, `name`, `slug` UNIQUE, `distance_km DECIMAL`, `notes`, `created_at`); (b) `nyrr_events.series_id INT NULL FK → nyrr_event_series.id`; (c) `nyrr_events.load_mode ENUM('full','mmr_only') NOT NULL DEFAULT 'full'`; backfill: `UPDATE nyrr_events SET load_mode='mmr_only' WHERE event_date < '2025-01-01'`. End with self-registration INSERT.
 - `sync_worker.py`: gate Step 1 on `load_mode='full'`; when `mmr_only`, run Steps 2+3 only, set `Completed` if `rows_written > 0`.
 - `basecamp/ops/sync_nyrr_events.py`: new `--mode backfill-mmr-only [--year-from 2015] [--year-to 2024]` — iterates years via `events/search?year=Y`, checks MMR participation (`teams/MMR/teamRunners?eventCode=X&pageSize=1 → totalItems > 0`), inserts event with `load_mode='mmr_only'`, syncs.
 - GitHub Action: add weekly `backfill-mmr-only` step (runs until all pre-2025 events imported).
@@ -232,12 +168,6 @@ Splits flagged by CLAUDE.md hard rule (use `test_imports.py` for parity):
 
 **P3 — Open questions**
 NYRR backfill depth (recommend 2024+). Add `validate_schema.py` to CI? Include NYRR registrants in match queue? Member-merge tool (deferred — FK risk; revisit if dupes accumulate).
-
-**Milestones**
-- Week 1: P0 done + P1a shipped
-- Week 2: P1b in production (V024 + UI)
-- Week 4: P1c phases 1-2 (queue + fuzzy)
-- Week 7: P1d (stretch)
 
 ## QUICK REFS
 **Key files:** `db/schema_snapshot.sql`, `load-env.sh`, `mmr-admin/api_*.py`, `mmr-admin/test_imports.py`.
@@ -337,4 +267,4 @@ Run this mental checklist — catches the class of bugs that appeared in the pol
 **Context updates:** 3 lines max (`### MM-DD HH:MM UTC — title` + `Changed: X. Status: Y. Next: Z.`). Insert at top. No re-reads; use str_replace. Trim to 3 sessions; move excess to `_context_archive.md`.
 **Efficiency:** Don't read files you don't need. Batch edits. Use grep/glob, not bash find. Cache knowledge. Never cat large files; use `head`/`sed`/`grep`. Error message first before source code. Diff-first edits. Chain shell commands. Always `python3`/`pip3`.
 
-**Last updated:** May 5, 2026
+**Last updated:** May 27, 2026
