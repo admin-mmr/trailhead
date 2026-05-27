@@ -296,3 +296,59 @@ def assign_events(series_id):
         'matched': [r['event_code'] for r in matched],
         'updated': len(ids),
     })
+
+
+@hof_bp.route('/api/hof/events', methods=['GET'])
+@login_required
+def list_events_for_series_edit():
+    """List nyrr_events for the series editor — all events, with their series assignment.
+
+    Query params:
+      year        — filter by event_year (int)
+      unassigned  — if "1", only events with series_id IS NULL
+      q           — name search (LIKE)
+    """
+    year       = request.args.get('year', type=int)
+    unassigned = request.args.get('unassigned') == '1'
+    q          = (request.args.get('q') or '').strip()
+
+    where, params = ['1=1'], []
+    if year:
+        where.append('e.event_year = %s'); params.append(year)
+    if unassigned:
+        where.append('e.series_id IS NULL')
+    if q:
+        where.append('e.event_name LIKE %s'); params.append(f'%{q}%')
+
+    rows = query(f"""
+        SELECT e.id, e.event_code, e.event_name, e.event_year, e.event_date,
+               e.distance, e.processing_status, e.mmr_runner_count,
+               e.series_id, s.name AS series_name
+          FROM nyrr_events e
+          LEFT JOIN nyrr_event_series s ON s.id = e.series_id
+         WHERE {' AND '.join(where)}
+         ORDER BY e.event_date DESC, e.event_name
+         LIMIT 300
+    """, params)
+    return json_response({'ok': True, 'events': rows})
+
+
+@hof_bp.route('/api/hof/events/<int:event_id>/series', methods=['PATCH'])
+@login_required
+def set_event_series(event_id):
+    """Set (or clear) series_id on a single event.
+
+    Body: { "series_id": 3 }   — assign
+          { "series_id": null } — clear
+    """
+    body      = request.get_json() or {}
+    series_id = body.get('series_id')   # None = clear
+
+    if series_id is not None:
+        exists = query("SELECT id FROM nyrr_event_series WHERE id = %s", [series_id])
+        if not exists:
+            return json_response({'ok': False, 'error': 'Series not found'}, 404)
+
+    execute("UPDATE nyrr_events SET series_id = %s WHERE id = %s", [series_id, event_id])
+    logger.info(f"[hof] event_id={event_id} series_id → {series_id}")
+    return json_response({'ok': True, 'event_id': event_id, 'series_id': series_id})

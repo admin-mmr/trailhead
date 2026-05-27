@@ -1,6 +1,6 @@
 initComponent('HofPanel', () => {
   // ── State ─────────────────────────────────────────────────────────────────
-  const [subView, setSubView]       = useState('series');   // 'series' | 'hof'
+  const [subView, setSubView]       = useState('series');   // 'series' | 'hof' | 'events'
   const [seriesList, setSeriesList] = useState([]);
   const [selectedSeries, setSelectedSeries] = useState(null);
   const [hofData, setHofData]       = useState(null);
@@ -289,6 +289,119 @@ initComponent('HofPanel', () => {
     </div>
   );
 
+  // ── Events editor state ───────────────────────────────────────────────────
+  const [eventsData, setEventsData]     = useState([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [evFilter, setEvFilter]         = useState({ q: '', year: '', unassigned: false });
+  const [saving, setSaving]             = useState({});   // { [event_id]: true }
+
+  const loadEvents = (f = evFilter) => {
+    setEventsLoading(true);
+    const params = new URLSearchParams();
+    if (f.q)          params.set('q', f.q);
+    if (f.year)       params.set('year', f.year);
+    if (f.unassigned) params.set('unassigned', '1');
+    api(`/api/hof/events?${params}`).then(r => {
+      if (r.ok) setEventsData(r.events || []);
+      setEventsLoading(false);
+    });
+  };
+
+  const setEventSeries = async (eventId, seriesId) => {
+    setSaving(s => ({ ...s, [eventId]: true }));
+    const r = await api(`/api/hof/events/${eventId}/series`, {
+      method: 'PATCH',
+      body: JSON.stringify({ series_id: seriesId === '' ? null : Number(seriesId) }),
+    });
+    setSaving(s => { const n = { ...s }; delete n[eventId]; return n; });
+    if (r.ok) {
+      setEventsData(prev => prev.map(ev =>
+        ev.id === eventId
+          ? { ...ev, series_id: r.series_id, series_name: seriesList.find(s => s.id === r.series_id)?.name || null }
+          : ev
+      ));
+      setToast('Saved');
+      setTimeout(() => setToast(''), 2000);
+    } else {
+      setToast(r.error || 'Save failed');
+      setTimeout(() => setToast(''), 3000);
+    }
+  };
+
+  // ── Events editor view ────────────────────────────────────────────────────
+  const EventsEditor = () => (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0 }}>Assign Series to Events</h3>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input className="input" placeholder="Search name…" style={{ width: 180 }}
+            value={evFilter.q}
+            onChange={e => setEvFilter(f => ({ ...f, q: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && loadEvents()} />
+          <input className="input" placeholder="Year" type="number" style={{ width: 80 }}
+            value={evFilter.year}
+            onChange={e => setEvFilter(f => ({ ...f, year: e.target.value }))} />
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={evFilter.unassigned}
+              onChange={e => setEvFilter(f => ({ ...f, unassigned: e.target.checked }))} />
+            Unassigned only
+          </label>
+          <button className="btn btn-primary btn-sm" onClick={() => loadEvents()}>Search</button>
+        </div>
+      </div>
+
+      {eventsLoading ? <div>Loading…</div> : eventsData.length === 0 ? (
+        <div style={{ color: 'var(--text-muted, #888)', padding: 16 }}>
+          No events. Use Search to load events (max 300).
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', background: 'var(--bg-alt, #f8f8f8)' }}>
+              <th style={{ padding: '8px 10px' }}>Event</th>
+              <th style={{ padding: '8px 10px' }}>Date</th>
+              <th style={{ padding: '8px 10px' }}>Distance</th>
+              <th style={{ padding: '8px 10px' }}>MMR</th>
+              <th style={{ padding: '8px 10px' }}>Series</th>
+            </tr>
+          </thead>
+          <tbody>
+            {eventsData.map(ev => (
+              <tr key={ev.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '8px 10px' }}>
+                  <div style={{ fontWeight: 500 }}>{ev.event_name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>{ev.event_code}</div>
+                </td>
+                <td style={{ padding: '8px 10px', color: 'var(--text-muted, #888)' }}>
+                  {ev.event_date ? ev.event_date.slice(0, 10) : ev.event_year || '—'}
+                </td>
+                <td style={{ padding: '8px 10px', color: 'var(--text-muted, #888)' }}>
+                  {ev.distance || '—'}
+                </td>
+                <td style={{ padding: '8px 10px' }}>{ev.mmr_runner_count || 0}</td>
+                <td style={{ padding: '8px 10px' }}>
+                  <select
+                    className="input"
+                    style={{ fontSize: 12, padding: '3px 6px', minWidth: 160 }}
+                    value={ev.series_id ?? ''}
+                    disabled={!!saving[ev.id]}
+                    onChange={e => setEventSeries(ev.id, e.target.value)}
+                  >
+                    <option value="">— unassigned —</option>
+                    {seriesList.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  {saving[ev.id] && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text-muted, #888)' }}>saving…</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+
   // ── Root render ───────────────────────────────────────────────────────────
   return (
     <div style={{ padding: '24px 0' }}>
@@ -299,7 +412,26 @@ initComponent('HofPanel', () => {
           boxShadow: '0 2px 8px rgba(0,0,0,0.12)', zIndex: 2000, fontWeight: 500,
         }}>{toast}</div>
       )}
-      {subView === 'series' ? <SeriesManager /> : <HofTable />}
+
+      {/* Sub-tab nav (only when not in HOF drill-down) */}
+      {subView !== 'hof' && (
+        <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+          {[['series', '📋 Series'], ['events', '🗂 Events']].map(([v, label]) => (
+            <button key={v} onClick={() => { setSubView(v); if (v === 'events' && eventsData.length === 0) loadEvents(); }}
+              style={{
+                padding: '8px 18px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500,
+                borderBottom: subView === v ? '2px solid var(--primary, #4f46e5)' : '2px solid transparent',
+                background: 'none', color: subView === v ? 'var(--primary, #4f46e5)' : 'inherit',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {subView === 'series'  && <SeriesManager />}
+      {subView === 'events'  && <EventsEditor />}
+      {subView === 'hof'     && <HofTable />}
     </div>
   );
 });

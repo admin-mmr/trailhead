@@ -74,16 +74,41 @@ def _upsert_event_mmr_only(
     cur.close()
 
     if existing:
-        # Already in DB — just ensure load_mode is set; leave processing_status alone.
+        # Already in DB — patch load_mode and any NULL metadata fields.
+        raw_dt = getattr(ev, 'start_date_time', None) or ''
+        event_date = raw_dt[:10] if raw_dt else None
+        event_year = int(raw_dt[:4]) if raw_dt else None
         upd = conn.cursor()
-        upd.execute(
-            "UPDATE nyrr_events SET load_mode = 'mmr_only' WHERE id = %s",
-            (existing['id'],),
-        )
+        upd.execute("""
+            UPDATE nyrr_events
+               SET load_mode   = 'mmr_only',
+                   location    = COALESCE(location,  %s),
+                   distance    = COALESCE(distance,  %s),
+                   event_date  = COALESCE(event_date, %s),
+                   event_year  = COALESCE(event_year, %s)
+             WHERE id = %s
+        """, (
+            getattr(ev, 'venue', None),
+            getattr(ev, 'distance_name', None),
+            event_date,
+            event_year,
+            existing['id'],
+        ))
         conn.commit()
         upd.close()
-        logger.info(f"  [upsert] {ev.event_code!r} already exists (id={existing['id']}); load_mode → mmr_only")
+        logger.info(f"  [upsert] {ev.event_code!r} already exists (id={existing['id']}); load_mode → mmr_only, patched NULL fields")
         return existing['id']
+
+    # Parse event_date and event_year from start_date_time (ISO datetime string).
+    event_date = None
+    event_year = None
+    raw_dt = getattr(ev, 'start_date_time', None) or ''
+    if raw_dt:
+        try:
+            event_date = raw_dt[:10]          # "YYYY-MM-DD"
+            event_year = int(raw_dt[:4])
+        except (ValueError, IndexError):
+            pass
 
     ins = conn.cursor()
     ins.execute("""
@@ -96,10 +121,10 @@ def _upsert_event_mmr_only(
         ev.event_code,
         ev.event_name,
         f"https://results.nyrr.org/event/{ev.event_code}/finishers",
-        getattr(ev, 'location', None),
-        getattr(ev, 'distance', None),
-        getattr(ev, 'event_date', None),
-        getattr(ev, 'event_year', None),
+        getattr(ev, 'venue', None),           # NyrrEvent uses 'venue', not 'location'
+        getattr(ev, 'distance_name', None),   # NyrrEvent uses 'distance_name', not 'distance'
+        event_date,
+        event_year,
     ))
     conn.commit()
     new_id = ins.lastrowid
