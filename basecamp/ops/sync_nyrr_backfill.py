@@ -57,6 +57,50 @@ def _probe_mmr_participation(client: NyrrApiClient, event_code: str) -> int:
         return 0
 
 
+def _enrich_event_metadata(
+    client: NyrrApiClient,
+    conn: mysql.connector.MySQLConnection,
+    event_id: int,
+    event_code: str,
+) -> None:
+    """Fetch events/details for one event and patch the columns that
+    events/search always returns as null/0:
+      distance_km, weather, photo_url, teams_count, has_age_graded_results.
+
+    Safe to call on any event; silently skips on API failure.
+    """
+    try:
+        det = client.get_event_details(event_code)
+    except Exception as e:
+        logger.warning(f"  [enrich] events/details failed for {event_code}: {e}")
+        return
+
+    upd = conn.cursor()
+    upd.execute("""
+        UPDATE nyrr_events
+           SET distance_km            = COALESCE(distance_km, %s),
+               weather                = COALESCE(weather,     %s),
+               photo_url              = COALESCE(photo_url,   %s),
+               teams_count            = GREATEST(COALESCE(teams_count, 0), %s),
+               has_age_graded_results = %s
+         WHERE id = %s
+    """, (
+        det.distance_dimension or None,
+        det.weather or None,
+        det.photo_url or None,
+        det.teams_count or 0,
+        int(det.has_age_graded_results),
+        event_id,
+    ))
+    conn.commit()
+    upd.close()
+    logger.info(
+        f"  [enrich] {event_code!r}: km={det.distance_dimension}, "
+        f"teams={det.teams_count}, weather={'yes' if det.weather else 'no'}, "
+        f"photo={'yes' if det.photo_url else 'no'}"
+    )
+
+
 def _upsert_event_mmr_only(
     conn: mysql.connector.MySQLConnection,
     ev,               # NyrrEvent dataclass
@@ -214,6 +258,7 @@ def run_backfill_mmr_only(
                     continue
 
                 event_id = _upsert_event_mmr_only(conn, ev, mmr_count=mmr_count)
+                _enrich_event_metadata(client, conn, event_id, ev.event_code)
 
                 # Skip re-fetching events already successfully completed.
                 cur = conn.cursor(dictionary=True)

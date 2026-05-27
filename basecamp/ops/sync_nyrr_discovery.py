@@ -20,6 +20,7 @@ import mysql.connector
 
 from nyrr_api import NyrrApiClient
 from sync_nyrr_helpers import API_SLEEP_SECONDS, is_upcoming_event
+from sync_nyrr_backfill import _enrich_event_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,13 @@ def discover_events(
 
             existing_codes.add(ev.event_code)
             new_count += 1
+
+            # Fetch events/details to populate distance_km, weather, photo_url,
+            # teams_count, has_age_graded_results — events/search returns null/0
+            # for all of these.
+            event_id_row = cursor.lastrowid
+            if event_id_row:
+                _enrich_event_metadata(client, conn, event_id_row, ev.event_code)
 
         time.sleep(API_SLEEP_SECONDS)
 
