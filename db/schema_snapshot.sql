@@ -14,6 +14,7 @@ member_duplicate_dismissals	InnoDB	utf8mb4_unicode_ci
 member_log	InnoDB	utf8mb4_unicode_ci	
 members	InnoDB	utf8mb4_unicode_ci	
 nyrr_event_runners	InnoDB	utf8mb4_unicode_ci	
+nyrr_event_series	InnoDB	utf8mb4_unicode_ci	Race-distance series registry for Hall of Fame grouping
 nyrr_events	InnoDB	utf8mb4_unicode_ci	
 nyrr_processing_log	InnoDB	utf8mb4_unicode_ci	
 password_reset_tokens	InnoDB	utf8mb4_unicode_ci	
@@ -209,34 +210,51 @@ nyrr_event_runners	26	matched_at	datetime	YES	NULL
 nyrr_event_runners	27	scan_timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 nyrr_event_runners	28	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 nyrr_event_runners	29	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+nyrr_event_series	1	id	int	NO	NULL	auto_increment	PRI	
+nyrr_event_series	2	name	varchar(200)	NO	NULL			Human-readable series name, e.g. "Brooklyn Half"
+nyrr_event_series	3	slug	varchar(100)	NO	NULL		UNI	URL-safe identifier, e.g. "brooklyn-half"
+nyrr_event_series	4	distance_km	decimal(6,3)	YES	NULL			Canonical race distance in km (NULL = multi-distance)
+nyrr_event_series	5	notes	text	YES	NULL			
+nyrr_event_series	6	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+nyrr_event_series	7	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
 nyrr_events	1	id	int	NO	NULL	auto_increment	PRI	
 nyrr_events	2	event_code	varchar(255)	YES	NULL		UNI	
 nyrr_events	3	event_name	varchar(255)	NO	NULL			
 nyrr_events	4	event_url	varchar(500)	YES	NULL			
 nyrr_events	5	location	varchar(255)	YES	NULL			
 nyrr_events	6	distance	varchar(50)	YES	NULL			
-nyrr_events	7	event_date	date	YES	NULL		MUL	
-nyrr_events	8	event_year	smallint	YES	NULL		MUL	
-nyrr_events	9	is_upcoming	tinyint(1)	NO	0		MUL	
-nyrr_events	10	is_virtual	tinyint(1)	NO	0			
-nyrr_events	11	processing_status	enum('Pending','InProgress','Completed','Error')	NO	Pending		MUL	
-nyrr_events	12	processed_at	datetime	YES	NULL			
-nyrr_events	13	processed_by	varchar(100)	YES	NULL			
-nyrr_events	14	result_count	int	NO	0			
-nyrr_events	15	nyrr_finisher_count	int	YES	NULL		MUL	
-nyrr_events	16	mmr_runner_count	int	NO	0			
-nyrr_events	17	mmr_matched_count	int	NO	0			
-nyrr_events	18	notes	text	YES	NULL			
-nyrr_events	19	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
-nyrr_events	20	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
+nyrr_events	7	distance_km	decimal(6,3)	YES	NULL			Canonical race distance in km from NYRR distanceDimension
+nyrr_events	8	weather	varchar(500)	YES	NULL			Weather conditions at race time from NYRR API
+nyrr_events	9	photo_url	varchar(500)	YES	NULL			Photo partner URL (e.g. marathonfoto) from NYRR API
+nyrr_events	10	teams_count	int	NO	0			teamsCount from NYRR API — number of teams with finishers
+nyrr_events	11	has_age_graded_results	tinyint(1)	NO	0			hasAgeGradedResults from NYRR API
+nyrr_events	12	event_date	date	YES	NULL		MUL	
+nyrr_events	13	event_year	smallint	YES	NULL		MUL	
+nyrr_events	14	is_upcoming	tinyint(1)	NO	0		MUL	
+nyrr_events	15	is_virtual	tinyint(1)	NO	0			
+nyrr_events	16	processing_status	enum('Pending','InProgress','Completed','Error')	NO	Pending		MUL	
+nyrr_events	17	processed_at	datetime	YES	NULL			
+nyrr_events	18	processed_by	varchar(100)	YES	NULL			
+nyrr_events	19	result_count	int	NO	0			
+nyrr_events	20	nyrr_finisher_count	int	YES	NULL		MUL	
+nyrr_events	21	mmr_runner_count	int	NO	0			
+nyrr_events	22	mmr_matched_count	int	NO	0			
+nyrr_events	23	mmr_finisher_count	int	YES	NULL			
+nyrr_events	24	notes	text	YES	NULL			
+nyrr_events	25	series_id	int	YES	NULL		MUL	
+nyrr_events	26	load_mode	enum('full','mmr_only')	NO	full		MUL	
+nyrr_events	27	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+nyrr_events	28	updated_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED on update CURRENT_TIMESTAMP		
 nyrr_processing_log	1	id	int	NO	NULL	auto_increment	PRI	
 nyrr_processing_log	2	run_timestamp	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED	MUL	
 nyrr_processing_log	3	triggered_by	varchar(100)	YES	NULL			
 nyrr_processing_log	4	nyrr_event_id	int	YES	NULL		MUL	
 nyrr_processing_log	5	run_status	enum('Success','PartialSuccess','Failed')	NO	NULL		MUL	
 nyrr_processing_log	6	rows_written	int	NO	0			
-nyrr_processing_log	7	error_details	text	YES	NULL			
-nyrr_processing_log	8	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
+nyrr_processing_log	7	teams_processed	int	NO	0			
+nyrr_processing_log	8	elapsed_sec	int	NO	0			
+nyrr_processing_log	9	error_details	text	YES	NULL			
+nyrr_processing_log	10	created_at	datetime	NO	CURRENT_TIMESTAMP	DEFAULT_GENERATED		
 password_reset_tokens	1	TokenID	varchar(50)	NO	NULL		PRI	
 password_reset_tokens	2	Email	varchar(255)	NO	NULL		MUL	
 password_reset_tokens	3	TokenHash	varchar(255)	NO	NULL			
@@ -475,6 +493,8 @@ nyrr_event_runners	idx_team_code	1	1	team_code	BTREE	YES
 nyrr_event_runners	PRIMARY	0	1	id	BTREE	
 nyrr_event_runners	uq_event_bib	0	1	nyrr_event_id	BTREE	
 nyrr_event_runners	uq_event_bib	0	2	bib_number	BTREE	
+nyrr_event_series	PRIMARY	0	1	id	BTREE	
+nyrr_event_series	uq_series_slug	0	1	slug	BTREE	
 nyrr_events	idx_event_date	1	1	event_date	BTREE	YES
 nyrr_events	idx_event_year	1	1	event_year	BTREE	YES
 nyrr_events	idx_finisher_count	1	1	nyrr_finisher_count	BTREE	YES
@@ -482,7 +502,9 @@ nyrr_events	idx_finisher_gap	1	1	event_date	BTREE	YES
 nyrr_events	idx_finisher_gap	1	2	nyrr_finisher_count	BTREE	YES
 nyrr_events	idx_finisher_gap	1	3	result_count	BTREE	
 nyrr_events	idx_is_upcoming	1	1	is_upcoming	BTREE	
+nyrr_events	idx_load_mode	1	1	load_mode	BTREE	
 nyrr_events	idx_processing_status	1	1	processing_status	BTREE	
+nyrr_events	idx_series_id	1	1	series_id	BTREE	YES
 nyrr_events	PRIMARY	0	1	id	BTREE	
 nyrr_events	uq_event_code	0	1	event_code	BTREE	YES
 nyrr_processing_log	idx_log_event_id	1	1	nyrr_event_id	BTREE	YES
@@ -534,6 +556,7 @@ section
 table	column_name	constraint_name	ref_table	ref_column	UPDATE_RULE	DELETE_RULE
 admin_member_overrides	TargetMemberID	fk_override_member	members	MemberID	NO ACTION	CASCADE
 nyrr_event_runners	nyrr_event_id	fk_event_runners_event	nyrr_events	id	NO ACTION	CASCADE
+nyrr_events	series_id	fk_nyrr_events_series	nyrr_event_series	id	NO ACTION	SET NULL
 nyrr_processing_log	nyrr_event_id	fk_processing_log_event	nyrr_events	id	NO ACTION	SET NULL
 payments	MemberID	fk_payments_member	members	MemberID	NO ACTION	SET NULL
 sheets_sync_log	JobID	fk_sheets_sync_log_jobid	sync_jobs	JobID	NO ACTION	CASCADE
@@ -584,121 +607,3 @@ trg_payments_sync_membership_only	INSERT	payments	AFTER	BEGIN\n    -- Declare lo
 trg_payments_sync_to_gmail_on_change	UPDATE	payments	AFTER	BEGIN\n    DECLARE v_new_notes TEXT;\n    DECLARE v_old_notes TEXT;\n    DECLARE v_latest_update DATETIME;\n    SELECT \n        GROUP_CONCAT(CONCAT('(', MemberID, ', ', IFNULL(PaymentType, 'N/A'), ', ', Amount, ')') SEPARATOR '; '),\n        MAX(UpdatedAt)\n    INTO v_new_notes, v_latest_update\n    FROM payments\n    WHERE TransactionNumber = NEW.TransactionNumber;\n    SELECT Notes INTO v_old_notes \n    FROM gmail_transactions \n    WHERE TransactionNumber = NEW.TransactionNumber;\n    IF v_old_notes IS NULL OR v_new_notes <> v_old_notes THEN\n        UPDATE gmail_transactions\n        SET \n            Notes = v_new_notes,\n            UpdatedAt = v_latest_update\n        WHERE TransactionNumber = NEW.TransactionNumber;\n    END IF;\nEND
 trg_payments_update_approve_submission	UPDATE	payments	AFTER	BEGIN\n    \n    IF (NEW.SubmissionID IS NOT NULL AND NEW.SubmissionID != '')\n       AND (OLD.SubmissionID IS NULL OR OLD.SubmissionID = '')\n    THEN\n        UPDATE submissions\n        SET\n            Status      = 'approved',\n            PaymentID   = NEW.PaymentID,\n            UpdatedByID = NEW.ProcessedBy\n        WHERE SubmissionID = NEW.SubmissionID\n          AND Status = 'pending';\n    END IF;\nEND
 trg_submissions_insert_validate	INSERT	submissions	BEFORE	BEGIN\n  DECLARE error_context_id VARCHAR(50);\n  DECLARE error_msg TEXT;\n  DECLARE error_code VARCHAR(50);\n\n  SET error_context_id = UUID();\n\n  IF NEW.`SubmissionID` IS NULL THEN\n    SET error_code = 'SUBM_NULL_ID';\n    SET error_msg = CONCAT(\n      'Submission ID cannot be NULL. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `ValidValueExamples`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      'Cannot create submission without unique ID',\n      'SubmissionID column received NULL value on INSERT',\n      'submissions', 'SubmissionID', 'NULL',\n      '["sub_abc123xyz", "sub_2026_001"]',\n      'Ensure UUID is generated before INSERT. Check application code.',\n      'CRITICAL'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NOT EXISTS (SELECT 1 FROM `members` WHERE `MemberID` = NEW.`MemberID`) THEN\n    SET error_code = 'SUBM_FK_INVALID_MEMBER';\n    SET error_msg = CONCAT(\n      'MemberID "', NEW.`MemberID`, '" does not exist in members table. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ConstraintName`, `ProblematicValue`,\n      `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      CONCAT('Invalid MemberID: ', NEW.`MemberID`),\n      'Foreign key validation failed: referenced member does not exist',\n      'submissions', 'MemberID', 'fk_submissions_members',\n      NEW.`MemberID`,\n      'Verify MemberID exists in members table before creating submission',\n      'ERROR'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NEW.`Status` NOT IN ('pending','approved','cancelled','expired') THEN\n    SET error_code = 'SUBM_INVALID_STATUS';\n    SET error_msg = CONCAT(\n      'Invalid Status value: "', NEW.`Status`, '". ',\n      'Allowed: pending, approved, cancelled, expired. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `AllowedRange`, `ValidValueExamples`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      CONCAT('Invalid submission status: ', NEW.`Status`),\n      'Status enum constraint violated',\n      'submissions', 'Status', NEW.`Status`,\n      'pending | approved | cancelled | expired',\n      '["pending", "approved"]',\n      'Use one of the allowed status values. Default is "pending".',\n      'ERROR'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\n\n  IF NEW.`Amount` IS NOT NULL AND NEW.`Amount` < 0 THEN\n    SET error_code = 'SUBM_NEGATIVE_AMOUNT';\n    SET error_msg = CONCAT(\n      'Amount cannot be negative: ', NEW.`Amount`, '. ',\n      'Error: ', error_context_id\n    );\n    INSERT INTO `error_context` (\n      `ErrorContextID`, `ErrorCode`, `ErrorMessage`, `TechnicalMessage`,\n      `TableName`, `ColumnName`, `ProblematicValue`,\n      `AllowedRange`, `SuggestedFix`, `Severity`\n    ) VALUES (\n      error_context_id, error_code,\n      'Submission amount is negative',\n      'Amount validation failed: received negative value',\n      'submissions', 'Amount', CAST(NEW.`Amount` AS CHAR),\n      '>= 0',\n      'Ensure amount is positive. Use absolute value or check calculation logic.',\n      'WARNING'\n    );\n    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = error_msg;\n  END IF;\nEND
-
-
--- ── MIGRATION_V026: Public site tables ──────────────────────────────────
-CREATE TABLE IF NOT EXISTS board_members (
-  id            INT PRIMARY KEY AUTO_INCREMENT,
-  name          VARCHAR(100) NOT NULL,
-  role          VARCHAR(100) NOT NULL,
-  bio           TEXT,
-  photo_url     VARCHAR(500),
-  email         VARCHAR(255),
-  term_year     INT,
-  display_order INT          DEFAULT 0,
-  is_active     BOOLEAN      DEFAULT TRUE,
-  created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-  updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS coaches (
-  id              INT PRIMARY KEY AUTO_INCREMENT,
-  name            VARCHAR(100) NOT NULL,
-  specialty       VARCHAR(200),
-  bio             TEXT,
-  photo_url       VARCHAR(500),
-  certifications  TEXT,
-  contact_email   VARCHAR(255),
-  display_order   INT       DEFAULT 0,
-  is_active       BOOLEAN   DEFAULT TRUE,
-  created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS weekly_runs (
-  id               INT PRIMARY KEY AUTO_INCREMENT,
-  day_of_week      TINYINT      NOT NULL,          -- 0=Sunday .. 6=Saturday
-  start_time       TIME         NOT NULL,
-  location_name    VARCHAR(200) NOT NULL,
-  location_address VARCHAR(500),
-  location_lat     DECIMAL(10,8),
-  location_lng     DECIMAL(11,8),
-  pace_group       VARCHAR(50),                    -- e.g. "Easy 9–10 min/mi"
-  distance_miles   DECIMAL(4,1),
-  description      TEXT,
-  coach_id         INT NULL,
-  is_active        BOOLEAN DEFAULT TRUE,
-  FOREIGN KEY (coach_id) REFERENCES coaches(id)
-);
-CREATE TABLE IF NOT EXISTS training_plans (
-  id             INT PRIMARY KEY AUTO_INCREMENT,
-  slug           VARCHAR(100) UNIQUE NOT NULL,
-  title          VARCHAR(200) NOT NULL,
-  goal_distance  VARCHAR(50),                      -- "Marathon", "Half", "5K"
-  duration_weeks INT,
-  level          VARCHAR(50),                      -- "Beginner", "Intermediate", "Advanced"
-  description    TEXT,
-  full_plan_url  VARCHAR(500),                     -- PDF in Azure Storage
-  is_published   BOOLEAN   DEFAULT FALSE,
-  updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS team_records (
-  id            INT PRIMARY KEY AUTO_INCREMENT,
-  distance      VARCHAR(50)        NOT NULL,       -- "5K", "Marathon"
-  gender        ENUM('M','F','X')  NOT NULL,
-  age_group     VARCHAR(20),                       -- "Overall", "M40-49"
-  time_seconds  INT                NOT NULL,
-  athlete_name  VARCHAR(100)       NOT NULL,
-  member_id     VARCHAR(10) NULL,
-  race_name     VARCHAR(200),
-  race_date     DATE,
-  race_location VARCHAR(200),
-  is_verified   BOOLEAN DEFAULT FALSE,
-  INDEX idx_distance_gender (distance, gender),
-  FOREIGN KEY (member_id) REFERENCES members(MemberID)
-);
-CREATE TABLE IF NOT EXISTS races (
-  id               INT PRIMARY KEY AUTO_INCREMENT,
-  name             VARCHAR(200) NOT NULL,
-  race_date        DATE         NOT NULL,
-  distance         VARCHAR(50),
-  location         VARCHAR(200),
-  registration_url VARCHAR(500),
-  description      TEXT,
-  recap_mdx        TEXT,                           -- post-race recap in MDX
-  is_team_event    BOOLEAN DEFAULT FALSE,
-  INDEX idx_date (race_date)
-);
-CREATE TABLE IF NOT EXISTS sponsors (
-  id            INT PRIMARY KEY AUTO_INCREMENT,
-  name          VARCHAR(200) NOT NULL,
-  tier          VARCHAR(50),                       -- "Gold", "Silver", "Bronze", "Partner"
-  logo_url      VARCHAR(500),
-  website_url   VARCHAR(500),
-  description   TEXT,
-  start_date    DATE,
-  end_date      DATE,
-  is_active     BOOLEAN DEFAULT TRUE,
-  display_order INT     DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS contact_submissions (
-  id         INT PRIMARY KEY AUTO_INCREMENT,
-  name       VARCHAR(100) NOT NULL,
-  email      VARCHAR(255) NOT NULL,
-  subject    VARCHAR(200),
-  message    TEXT         NOT NULL,
-  status     ENUM('new','read','replied','archived') DEFAULT 'new',
-  ip_address VARCHAR(45),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ── MIGRATION_V027: nyrr_processing_log metrics ───────────────────────────
-ALTER TABLE nyrr_processing_log
-  ADD COLUMN teams_processed INT NOT NULL DEFAULT 0
-  AFTER rows_written;
-ALTER TABLE nyrr_processing_log
-  ADD COLUMN elapsed_sec INT NOT NULL DEFAULT 0
-  AFTER teams_processed;
-
--- ── MIGRATION_V028: mmr_finisher_count ──────────────────────────────────
-ALTER TABLE nyrr_events
-  ADD COLUMN mmr_finisher_count INT NULL
-  AFTER mmr_matched_count;
