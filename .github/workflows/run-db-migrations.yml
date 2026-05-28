@@ -1,5 +1,8 @@
 name: MySQL - Run Database Migrations
 
+permissions:
+  contents: write
+
 # Trigger on:
 # 1. Pushes to main that modify db/* migration files
 # 2. Manual trigger from Actions UI
