@@ -181,7 +181,7 @@ NYRR backfill depth (recommend 2024+). Add `validate_schema.py` to CI? Include N
 | `mmr-web` | Start Next.js webapp dev server (`web-apps/mmr-webapp/start-dev.sh`) |
 | `mmr-check` | TypeScript typecheck (`npx tsc --noEmit`), no full build |
 | `mmr-log` | `git log --oneline -15` |
-| `nyrr` | Start Flask admin **locally** (`mmr-admin/app.py`) at http://localhost:5001 |
+| `nyrr` | Start Flask admin **locally** (`mmr-admin/app.py`) at http://localhost:5050 |
 | `adm-test` | Run `mmr-admin/test_imports.py` (import parity check) |
 | `adm-logs` | Stream **Azure** webapp logs live |
 | `adm-restart` | Restart **Azure** webapp (not local) |
@@ -230,7 +230,7 @@ python3 basecamp/ops/sync_nyrr_events.py --mode single --event-code 26WASH
 
 **Via admin UI locally:**
 ```bash
-mmr && nyrr   # start Flask admin at http://localhost:5001
+mmr && nyrr   # start Flask admin at http://localhost:5050
 # → NYRR Todos tab → filter by "Pending" → click ▶ Load per event
 # → "Discover New Events" to pull current year from NYRR API first
 ```

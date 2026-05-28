@@ -13,6 +13,14 @@ initComponent('HofPanel', () => {
   const [newSlug, setNewSlug]       = useState('');
   const [newDist, setNewDist]       = useState('');
   const [creating, setCreating]     = useState(false);
+  const [distOptions, setDistOptions] = useState([]);
+
+  // Known distance → km mappings (canonical values after V031)
+  const DIST_KM = {
+    '5K': 5.0, '10K': 10.0, '15K': 15.0,
+    '1 Mile': 1.6093, '4 Miles': 6.4374, '5 Miles': 8.0467,
+    'Half Marathon': 21.0975, 'Marathon': 42.195,
+  };
 
   // Assign-events modal
   const [assignSeries, setAssignSeries]   = useState(null);
@@ -41,12 +49,19 @@ initComponent('HofPanel', () => {
   };
 
   // ── Create series ─────────────────────────────────────────────────────────
+  const openCreate = () => {
+    setShowCreate(true);
+    if (distOptions.length === 0) {
+      api('/api/hof/distances').then(r => { if (r.ok) setDistOptions(r.distances || []); });
+    }
+  };
+
   const handleCreate = async () => {
     if (!newName || !newSlug) return;
     setCreating(true);
     const r = await api('/api/hof/series', {
       method: 'POST',
-      body: JSON.stringify({ name: newName, slug: newSlug, distance_km: newDist || null }),
+      body: JSON.stringify({ name: newName, slug: newSlug, distance_km: DIST_KM[newDist] ?? null }),
     });
     setCreating(false);
     if (r.ok) {
@@ -92,51 +107,85 @@ initComponent('HofPanel', () => {
   };
 
   // ── Render helpers ────────────────────────────────────────────────────────
-  const Medal = ({ rank }) => {
-    const medals = ['🥇', '🥈', '🥉'];
-    return medals[rank] || null;
-  };
+  const RANK_STYLES = [
+    { bg: '#FFFBEB', border: '#F59E0B', label: '#92400E', badge: '#F59E0B', badgeText: '#fff', emoji: '🥇' },
+    { bg: '#F8FAFC', border: '#94A3B8', label: '#475569', badge: '#94A3B8', badgeText: '#fff', emoji: '🥈' },
+    { bg: '#FFF7F0', border: '#C2784F', label: '#7C3A1E', badge: '#C2784F', badgeText: '#fff', emoji: '🥉' },
+  ];
 
-  const PodiumCard = ({ runner, rank }) => (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
-      background: rank === 0 ? 'var(--bg-accent, #fffbea)' : 'var(--bg)',
-      border: '1px solid var(--border)', borderRadius: 6, marginBottom: 6,
-    }}>
-      <span style={{ fontSize: 20, minWidth: 28 }}><Medal rank={rank} /></span>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: rank === 0 ? 700 : 500 }}>{runner.runner_name}</div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>
-          {runner.finish_time} · {runner.event_name} {runner.event_year}
+  const PodiumCard = ({ runner, rank }) => {
+    const s = RANK_STYLES[rank] || RANK_STYLES[2];
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: rank === 0 ? '12px 14px' : '9px 14px',
+        background: s.bg,
+        borderLeft: `4px solid ${s.border}`,
+        borderRadius: '0 6px 6px 0',
+        marginBottom: rank === 0 ? 8 : 5,
+        boxShadow: rank === 0 ? '0 1px 4px rgba(0,0,0,0.07)' : 'none',
+      }}>
+        <span style={{
+          fontSize: rank === 0 ? 22 : 17, minWidth: 26, textAlign: 'center',
+          filter: rank === 0 ? 'drop-shadow(0 1px 2px rgba(0,0,0,0.15))' : 'none',
+        }}>{s.emoji}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontWeight: rank === 0 ? 700 : 600,
+            fontSize: rank === 0 ? 15 : 13,
+            color: s.label,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{runner.runner_name}</div>
+          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+            {runner.event_year} · {runner.finish_time}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  const CategoryBlock = ({ cat }) => (
-    <div style={{
-      background: 'var(--bg-card, #fff)', border: '1px solid var(--border)',
-      borderRadius: 8, padding: 16, marginBottom: 16,
-    }}>
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>
-        {cat.label}
-        <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-muted, #888)', marginLeft: 8 }}>
-          {cat.label_zh}
-        </span>
+  const CAT_COLORS = {
+    Male:   { header: '#1E3A5F', accent: '#3B82F6', tag: '#DBEAFE', tagText: '#1E40AF' },
+    Female: { header: '#4A1942', accent: '#EC4899', tag: '#FCE7F3', tagText: '#9D174D' },
+  };
+
+  const CategoryBlock = ({ cat }) => {
+    const c = CAT_COLORS[cat.gender] || CAT_COLORS.Male;
+    const ageLabel = cat.min_age ? `${cat.min_age}+` : 'Open';
+    return (
+      <div style={{
+        background: 'var(--bg-card, #fff)',
+        border: `1px solid ${c.accent}44`,
+        borderTop: `3px solid ${c.accent}`,
+        borderRadius: 8, overflow: 'hidden',
+      }}>
+        <div style={{
+          background: c.header, color: '#fff',
+          padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>{cat.label}</span>
+          <span style={{
+            background: c.tag, color: c.tagText,
+            fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10,
+          }}>{ageLabel}</span>
+          <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 'auto' }}>{cat.label_zh}</span>
+        </div>
+        <div style={{ padding: '12px 10px 10px' }}>
+          {cat.podium.length === 0
+            ? <div style={{ color: '#aaa', fontSize: 13, padding: '6px 4px' }}>No data yet</div>
+            : cat.podium.map((runner, i) => <PodiumCard key={i} runner={runner} rank={i} />)
+          }
+        </div>
       </div>
-      {cat.podium.length === 0
-        ? <div style={{ color: 'var(--text-muted, #888)', fontSize: 13 }}>No data yet</div>
-        : cat.podium.map((runner, i) => <PodiumCard key={i} runner={runner} rank={i} />)
-      }
-    </div>
-  );
+    );
+  };
 
   // ── Series Manager view ───────────────────────────────────────────────────
   const SeriesManager = () => (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h3 style={{ margin: 0 }}>Race Series</h3>
-        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ New Series</button>
+        <button className="btn btn-primary" onClick={openCreate}>+ New Series</button>
       </div>
 
       {loading ? <div>Loading…</div> : (
@@ -200,10 +249,15 @@ initComponent('HofPanel', () => {
             <input className="input" style={{ width: '100%', marginBottom: 12 }}
               placeholder="e.g. brooklyn-half" value={newSlug}
               onChange={e => setNewSlug(e.target.value)} />
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Distance (km, optional)</label>
-            <input className="input" style={{ width: '100%', marginBottom: 20 }}
-              placeholder="e.g. 21.0975" type="number" step="0.001" value={newDist}
-              onChange={e => setNewDist(e.target.value)} />
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Distance (optional)</label>
+            <select className="input" style={{ width: '100%', marginBottom: 20 }}
+              value={newDist}
+              onChange={e => setNewDist(e.target.value)}>
+              <option value="">— select —</option>
+              {distOptions.map(d => (
+                <option key={d} value={d}>{d}{DIST_KM[d] != null ? ` (${DIST_KM[d]} km)` : ''}</option>
+              ))}
+            </select>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleCreate} disabled={creating || !newName || !newSlug}>
@@ -279,7 +333,7 @@ initComponent('HofPanel', () => {
           <div style={{ fontSize: 13, color: 'var(--text-muted, #888)', marginBottom: 20 }}>
             All-time best across {hofData.series?.event_count || 0} event editions
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
             {(hofData.categories || []).map(cat => (
               <CategoryBlock key={cat.key} cat={cat} />
             ))}

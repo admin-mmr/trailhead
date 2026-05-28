@@ -20,6 +20,7 @@ Top-3 podium per category, best-effort (skips runners with no finish_time).
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, request, make_response
@@ -87,8 +88,8 @@ def _build_hof_sql(
             r.gender,
             r.age,
             r.mmr_member_id,
-            e.event_name,
-            e.event_year,
+            ANY_VALUE(e.event_name) AS event_name,
+            ANY_VALUE(e.event_year) AS event_year,
             MIN(TIME_TO_SEC(r.finish_time)) AS best_sec,
             MIN(r.finish_time)              AS best_time
         FROM nyrr_event_runners r
@@ -111,9 +112,11 @@ def _build_hof_sql(
     return dedup_sql, params + [gender]
 
 
-def _run_hof_for_scope(where_clause: str, params: list) -> List[Dict[str, Any]]:
-    """Run all 8 HOF categories and return the combined result list."""
+def _run_hof_for_scope(where_clause: str, params: list) -> tuple[List[Dict[str, Any]], List[Dict]]:
+    """Run all 8 HOF categories and return (results, debug_timings)."""
     results = []
+    timings = []
+    t_total = time.time()
     for cat in _CATEGORIES:
         sql, sql_params = _build_hof_sql(
             where_clause, params,
@@ -121,7 +124,11 @@ def _run_hof_for_scope(where_clause: str, params: list) -> List[Dict[str, Any]]:
             min_age=cat['min_age'],
             limit=3,
         )
+        t0 = time.time()
         rows = query(sql, sql_params)
+        elapsed_ms = round((time.time() - t0) * 1000)
+        timings.append({'category': cat['label'], 'ms': elapsed_ms, 'rows': len(rows)})
+        logger.debug('[hof] %s → %dms, %d rows', cat['label'], elapsed_ms, len(rows))
         podium = [
             {
                 'runner_name': r['runner_name'],
@@ -138,7 +145,8 @@ def _run_hof_for_scope(where_clause: str, params: list) -> List[Dict[str, Any]]:
             'podium': podium,
             'best': podium[0] if podium else None,
         })
-    return results
+    timings.append({'category': '__total__', 'ms': round((time.time() - t_total) * 1000), 'rows': None})
+    return results, timings
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +154,7 @@ def _run_hof_for_scope(where_clause: str, params: list) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 @hof_bp.route('/api/hof/series', methods=['GET', 'OPTIONS'])
+@handle_api_errors
 def get_series_list():
     """List all series with event count and whether HOF data is available."""
     if request.method == 'OPTIONS':
@@ -176,6 +185,7 @@ def get_series_list():
 
 
 @hof_bp.route('/api/hof/series/<slug>', methods=['GET', 'OPTIONS'])
+@handle_api_errors
 def get_series_hof(slug):
     """8-category Hall of Fame for a series (all editions combined)."""
     if request.method == 'OPTIONS':
@@ -189,14 +199,15 @@ def get_series_hof(slug):
         return _cors(json_response({'ok': False, 'error': 'Series not found'}), 404)
 
     series = series_rows[0]
-    categories = _run_hof_for_scope(
+    categories, timings = _run_hof_for_scope(
         where_clause="e.series_id = %s",
         params=[series['id']],
     )
-    return _cors(json_response({'ok': True, 'series': series, 'categories': categories}))
+    return _cors(json_response({'ok': True, 'series': series, 'categories': categories, 'debug_timings': timings}))
 
 
 @hof_bp.route('/api/hof/event/<event_code>', methods=['GET', 'OPTIONS'])
+@handle_api_errors
 def get_event_hof(event_code):
     """8-category Hall of Fame scoped to a single race edition."""
     if request.method == 'OPTIONS':
@@ -210,11 +221,11 @@ def get_event_hof(event_code):
         return _cors(json_response({'ok': False, 'error': 'Event not found'}), 404)
 
     event = event_rows[0]
-    categories = _run_hof_for_scope(
+    categories, timings = _run_hof_for_scope(
         where_clause="r.nyrr_event_id = %s",
         params=[event['id']],
     )
-    return _cors(json_response({'ok': True, 'event': event, 'categories': categories}))
+    return _cors(json_response({'ok': True, 'event': event, 'categories': categories, 'debug_timings': timings}))
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +377,19 @@ def set_event_distance(event_id):
     execute("UPDATE nyrr_events SET distance = %s WHERE id = %s", [distance, event_id])
     logger.info(f"[hof] event_id={event_id} distance → {distance!r}")
     return json_response({'ok': True, 'event_id': event_id, 'distance': distance})
+
+
+@hof_bp.route('/api/hof/distances', methods=['GET', 'OPTIONS'])
+def get_distinct_distances():
+    """Return distinct non-null distance values from nyrr_events, ordered by frequency."""
+    if request.method == 'OPTIONS':
+        return _cors(json_response({}))
+    rows = query(
+        "SELECT distance, COUNT(*) AS cnt FROM nyrr_events "
+        "WHERE distance IS NOT NULL AND TRIM(distance) != '' "
+        "GROUP BY distance ORDER BY cnt DESC"
+    )
+    return _cors(json_response({'ok': True, 'distances': [r['distance'] for r in rows]}))
 
 
 @hof_bp.route('/api/hof/refresh-mmr-counts', methods=['POST'])
