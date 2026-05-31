@@ -121,7 +121,16 @@ def api_event_runners(event_id):
 
     sql = """
         SELECT er.*, e.event_code, e.event_name, e.event_date,
-               m.Status as member_status
+               m.Status        AS member_status,
+               m.FirstName     AS member_first_name,
+               m.LastName      AS member_last_name,
+               m.Email         AS member_email,
+               m.District      AS member_district,
+               m.PhoneNumber   AS member_phone,
+               m.Type          AS member_type,
+               m.Gender        AS member_gender,
+               m.Expiration    AS member_expiration,
+               m.NYRRRunnerName AS member_nyrr_name
         FROM nyrr_event_runners er
         JOIN nyrr_events e ON e.id = er.nyrr_event_id
         LEFT JOIN members m ON m.MemberID = er.mmr_member_id
