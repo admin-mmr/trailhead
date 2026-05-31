@@ -2,7 +2,7 @@
 Tests for db.py connection pool configuration.
 
 Verifies:
-- Pool is created with pool_size=10 (raised from 5 to handle sync-worker
+- Pool is created with pool_size=8 (raised from 3 to handle sync-worker
   contention where one long-running streaming operation holds a slot for
   minutes while regular API requests compete for the remaining slots).
 - Pool is NOT created until the first get_conn() call (lazy init).
@@ -44,10 +44,10 @@ def _make_pool(conn=None):
 # ---------------------------------------------------------------------------
 
 class TestPoolSize:
-    """Pool must be created with pool_size=10."""
+    """Pool must be created with pool_size=8."""
 
-    def test_pool_created_with_size_10(self):
-        """MySQLConnectionPool constructor must receive pool_size=10."""
+    def test_pool_created_with_size_8(self):
+        """MySQLConnectionPool constructor must receive pool_size=8."""
         import db
         db._pool = None  # ensure fresh creation
 
@@ -60,14 +60,14 @@ class TestPoolSize:
         with patch('db.MySQLConnectionPool', side_effect=fake_pool_ctor):
             db._get_pool()
 
-        assert captured.get('pool_size') == 10, (
-            f"Expected pool_size=10, got {captured.get('pool_size')}. "
+        assert captured.get('pool_size') == 8, (
+            f"Expected pool_size=8, got {captured.get('pool_size')}. "
             "A sync worker holds a connection for the entire NYRR streaming "
-            "duration; pool_size=5 is exhausted under concurrent API traffic."
+            "duration; a small pool is exhausted under concurrent API traffic."
         )
 
-    def test_pool_size_not_five(self):
-        """Regression: pool_size=5 caused exhaustion during sync operations."""
+    def test_pool_size_not_three(self):
+        """Regression: pool_size=3 caused exhaustion during sync operations."""
         import db
         db._pool = None
 
@@ -80,8 +80,8 @@ class TestPoolSize:
         with patch('db.MySQLConnectionPool', side_effect=fake_pool_ctor):
             db._get_pool()
 
-        assert captured.get('pool_size') != 5, \
-            "pool_size=5 was the value that caused pool exhaustion — must not regress"
+        assert captured.get('pool_size') != 3, \
+            "pool_size=3 was the value that caused pool exhaustion — must not regress"
 
 
 # ---------------------------------------------------------------------------

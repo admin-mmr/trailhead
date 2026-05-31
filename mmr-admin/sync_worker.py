@@ -365,6 +365,7 @@ def _db_final_status(event_id, event_code, status, notes, log_status,
 
 
 def _db_log_cancellation(event_id):
+    conn2 = None
     try:
         conn2 = get_conn()
         cur2  = conn2.cursor()
@@ -377,12 +378,19 @@ def _db_log_cancellation(event_id):
             VALUES (%s, 'Viewer', 'Cancelled', 'User requested cancellation')
         """, (event_id,))
         conn2.commit()
-        cur2.close(); conn2.close()
+        cur2.close()
     except Exception as e:
         logger.error(f"  └─ Failed to log cancellation: {e}")
+    finally:
+        if conn2:
+            try:
+                conn2.close()  # always return slot to pool
+            except Exception as close_err:
+                logger.warning(f"  └─ Error closing cancellation DB connection: {close_err}")
 
 
 def _db_log_error(event_id, error_str):
+    conn2 = None
     try:
         conn2 = get_conn()
         cur2  = conn2.cursor()
@@ -395,9 +403,15 @@ def _db_log_error(event_id, error_str):
             VALUES (%s, 'Viewer', 'Failed', 0, %s)
         """, (event_id, error_str[:2000]))
         conn2.commit()
-        cur2.close(); conn2.close()
+        cur2.close()
     except Exception as e:
         logger.error(f"  └─ Failed to log error: {e}")
+    finally:
+        if conn2:
+            try:
+                conn2.close()  # always return slot to pool
+            except Exception as close_err:
+                logger.warning(f"  └─ Error closing error-log DB connection: {close_err}")
 
 
 # ---------------------------------------------------------------------------

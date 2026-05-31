@@ -1,3 +1,6 @@
+### 05-31 20:56 UTC — fix DB pool exhaustion (conn leak on worker error paths)
+Changed: sync_worker.py — _db_log_cancellation/_db_log_error now close conn2 in try/finally (was leaking a slot whenever an UPDATE/INSERT raised on the cancel/error path); db.py pool_size 3→8; tests/test_pool_size.py realigned to 8 (was asserting 10 vs code's 3); NEW tests/test_sync_worker_conn_lifecycle.py. Status: all tests green, committed. Next: monitor pool under live sync load.
+
 ### 05-31 — fix match-queue runtime bugs (unsigned underflow + field mismatch)
 Changed: api_nyrr_match.py + api_events.py — wrapped YEAR(CURDATE()) in CAST(... AS SIGNED) (BIGINT UNSIGNED underflow 1690 when age diff negative); api_members.py search SELECT +Gender/YearBorn/YearBornGuess/NYRRRunnerName; match-modal.html now reads PascalCase (was blank rows). NEW tests/test_sql_unsigned_arithmetic.py + tests/test_match_modal_contract.py. Status: uncommitted, all tests green. Next: commit.
 

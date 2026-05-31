@@ -104,7 +104,7 @@ def _get_pool() -> MySQLConnectionPool:
                     logger.info(f'[DB] Creating connection pool: {cfg["user"]}@{cfg["host"]}/{cfg["database"]}')
                     _pool = MySQLConnectionPool(
                         pool_name='mmr_admin',
-                        pool_size=3,          # keep headroom for CLI processes
+                        pool_size=8,          # headroom for sync-worker contention + concurrent API traffic
                         pool_reset_session=True,
                         host=cfg['host'],
                         user=cfg['user'],
