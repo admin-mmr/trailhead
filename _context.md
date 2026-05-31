@@ -1,6 +1,3 @@
-### 05-31 — member-info tooltip on matched-runner badge
-Changed: api_events.py /runners query +member_first_name/last_name/email/district/phone/type/gender/expiration/nyrr_name (was only member_status); dashboard-panel.html NEW MemberInfoBadge component — fixed-position floating tooltip on hover (avoids scroll-container clip, flips above near viewport bottom), replaces plain badge in match-cell. Status: committed, JSX not compile-tested locally. Next: verify live via nyrr → event → hover badge.
-
 ### 05-31 20:56 UTC — fix DB pool exhaustion (conn leak on worker error paths)
 Changed: sync_worker.py — _db_log_cancellation/_db_log_error now close conn2 in try/finally (was leaking a slot whenever an UPDATE/INSERT raised on the cancel/error path); db.py pool_size 3→8; tests/test_pool_size.py realigned to 8 (was asserting 10 vs code's 3); NEW tests/test_sync_worker_conn_lifecycle.py. Status: all tests green, committed. Next: monitor pool under live sync load.
 

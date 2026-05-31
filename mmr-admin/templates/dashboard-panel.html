@@ -312,84 +312,6 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
 });
 
 // ═══════════════════════════════════════════════════
-// Member ID badge with floating member-info tooltip on hover
-// ═══════════════════════════════════════════════════
-function MemberInfoBadge({ runner }) {
-  const [hover, setHover] = useState(false);
-  const [coords, setCoords] = useState({ top: 0, left: 0 });
-  const ref = React.useRef(null);
-
-  const show = () => {
-    if (ref.current) {
-      const r = ref.current.getBoundingClientRect();
-      // Position below the badge; flip above if near the bottom of the viewport.
-      const below = r.bottom + 240 < window.innerHeight;
-      setCoords({
-        top: below ? r.bottom + 6 : r.top - 6,
-        left: Math.min(r.left, window.innerWidth - 332),
-        flip: !below,
-      });
-    }
-    setHover(true);
-  };
-  const hide = () => setHover(false);
-
-  const fullName = [runner.member_first_name, runner.member_last_name].filter(Boolean).join(' ');
-  const fmtExp = runner.member_expiration
-    ? new Date(runner.member_expiration).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-    : '—';
-  const fields = [
-    ['Status', runner.member_status || 'unknown'],
-    ['Type', runner.member_type || '—'],
-    ['District', runner.member_district || '—'],
-    ['Email', runner.member_email || '—'],
-    ['Phone', runner.member_phone || '—'],
-    ['Expires', fmtExp],
-    ['NYRR name', runner.member_nyrr_name || '—'],
-  ];
-
-  return (
-    <span
-      ref={ref}
-      onMouseEnter={show}
-      onMouseLeave={hide}
-      style={{ display: 'inline-block' }}
-    >
-      <span className="badge badge-green" style={{ cursor: 'help' }}>
-        {runner.mmr_member_id}
-      </span>
-      {hover && (
-        <div
-          style={{
-            position: 'fixed',
-            top: coords.top, left: coords.left,
-            transform: coords.flip ? 'translateY(-100%)' : 'none',
-            zIndex: 1000,
-            background: 'var(--surface)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)', boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-            padding: '10px 12px', width: 300, fontSize: 12,
-            color: 'var(--text)', pointerEvents: 'none', textAlign: 'left',
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>
-            {fullName || runner.mmr_member_id}
-            <span style={{ color: 'var(--text2)', fontWeight: 400, marginLeft: 6 }}>
-              {runner.mmr_member_id}
-            </span>
-          </div>
-          {fields.map(([k, v]) => (
-            <div key={k} style={{ display: 'flex', gap: 8, lineHeight: 1.7 }}>
-              <span style={{ color: 'var(--text2)', minWidth: 70, flexShrink: 0 }}>{k}</span>
-              <span style={{ wordBreak: 'break-word' }}>{v}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </span>
-  );
-}
-
-// ═══════════════════════════════════════════════════
 // Event detail view
 // ═══════════════════════════════════════════════════
 initComponent('EventDetail', ({ eventId, onBack }) => {
@@ -727,7 +649,9 @@ initComponent('EventDetail', ({ eventId, onBack }) => {
                     <td>
                       {r.mmr_member_id ? (
                         <div className="match-cell">
-                          <MemberInfoBadge runner={r} />
+                          <span className="badge badge-green" title={`Status: ${r.member_status || 'unknown'}`}>
+                            {r.mmr_member_id}
+                          </span>
                           <button className="btn-unmatch" onClick={() => handleUnmatch(r)} title="Remove this match">
                             ↩ Unmatch
                           </button>
