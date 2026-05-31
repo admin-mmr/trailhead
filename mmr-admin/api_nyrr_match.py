@@ -68,7 +68,7 @@ def _candidates_for_runner(runner: dict) -> list[dict]:
         age_clause = """
             AND (
                 (m.YearBorn IS NULL AND m.YearBornGuess IS NULL)
-                OR ABS(YEAR(CURDATE()) - COALESCE(m.YearBorn, m.YearBornGuess) - %s) <= 2
+                OR ABS(CAST(YEAR(CURDATE()) AS SIGNED) - COALESCE(m.YearBorn, m.YearBornGuess) - %s) <= 2
             )
         """
         age_params = [age]

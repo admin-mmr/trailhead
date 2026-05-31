@@ -159,7 +159,7 @@ def _backfill_member_name_and_year(cursor, event_id: int, match_method: str) -> 
         UPDATE members m
         INNER JOIN nyrr_event_runners er ON m.MemberID = er.mmr_member_id
         SET m.NYRRRunnerName = er.runner_name,
-            m.YearBornGuess = CASE WHEN m.YearBornGuess IS NULL THEN YEAR(CURDATE()) - er.age ELSE m.YearBornGuess END,
+            m.YearBornGuess = CASE WHEN m.YearBornGuess IS NULL THEN CAST(YEAR(CURDATE()) AS SIGNED) - er.age ELSE m.YearBornGuess END,
             m.UpdatedAt = NOW()
         WHERE er.match_method = %s
           AND er.nyrr_event_id = %s
@@ -234,9 +234,9 @@ def api_run_automatch(event_id):
               -- Age/gender validation: only if member has YearBorn or YearBornGuess
               AND (
                 -- If member has YearBorn set, validate runner age matches
-                (m.YearBorn IS NOT NULL AND ABS(YEAR(CURDATE()) - m.YearBorn - er.age) <= 1)
+                (m.YearBorn IS NOT NULL AND ABS(CAST(YEAR(CURDATE()) AS SIGNED) - m.YearBorn - er.age) <= 1)
                 -- OR if member has YearBornGuess, validate runner age matches
-                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(YEAR(CURDATE()) - m.YearBornGuess - er.age) <= 1)
+                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(CAST(YEAR(CURDATE()) AS SIGNED) - m.YearBornGuess - er.age) <= 1)
                 -- OR if member has no birth year, skip validation
                 OR (m.YearBorn IS NULL AND m.YearBornGuess IS NULL)
               )
@@ -279,9 +279,9 @@ def api_run_automatch(event_id):
               -- Age validation: require YearBorn or YearBornGuess for Tier 3 (partial name is too loose to skip)
               AND (
                 -- If member has YearBorn set, validate runner age matches
-                (m.YearBorn IS NOT NULL AND ABS(YEAR(CURDATE()) - m.YearBorn - er.age) <= 1)
+                (m.YearBorn IS NOT NULL AND ABS(CAST(YEAR(CURDATE()) AS SIGNED) - m.YearBorn - er.age) <= 1)
                 -- OR if member has YearBornGuess, validate runner age matches
-                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(YEAR(CURDATE()) - m.YearBornGuess - er.age) <= 1)
+                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(CAST(YEAR(CURDATE()) AS SIGNED) - m.YearBornGuess - er.age) <= 1)
                 -- Note: no fallback for missing birth year — Tier 3 requires age confirmation
               )
               -- Optional: also check gender if both have gender data

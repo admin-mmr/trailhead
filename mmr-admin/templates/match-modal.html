@@ -17,10 +17,10 @@ initComponent('MatchModal', ({ runner, onClose, onMatched }) => {
 
   const getConfidence = (member) => {
     const rName = (runner.runner_name || '').trim().toLowerCase();
-    const mName = `${member.first_name} ${member.last_name}`.trim().toLowerCase();
-    const nyrrName = (member.nyrr_runner_name || '').trim().toLowerCase();
+    const mName = `${member.FirstName || ''} ${member.LastName || ''}`.trim().toLowerCase();
+    const nyrrName = (member.NYRRRunnerName || '').trim().toLowerCase();
     const exactName = rName === mName || rName === nyrrName;
-    const gm = genderMatch(runner.gender, member.gender);
+    const gm = genderMatch(runner.gender, member.Gender);
     if (exactName && gm === true)  return { label: 'Strong match', cls: 'badge-green' };
     if (exactName && gm === null)  return { label: 'Name match',   cls: 'badge-blue' };
     if (exactName && gm === false) return { label: 'Name ⚠ gender', cls: 'badge-yellow' };
@@ -45,7 +45,7 @@ initComponent('MatchModal', ({ runner, onClose, onMatched }) => {
     setError('');
     const r = await api(`/api/runners/${runner.id}/match`, {
       method: 'POST',
-      body: JSON.stringify({ member_id: confirming.member_id }),
+      body: JSON.stringify({ member_id: confirming.MemberID }),
     });
     setSaving(false);
     if (r.ok) {
@@ -59,8 +59,8 @@ initComponent('MatchModal', ({ runner, onClose, onMatched }) => {
 
   const runnerNameLc = (runner.runner_name || '').trim().toLowerCase();
   const exactDupes = results.filter(m =>
-    `${m.first_name} ${m.last_name}`.trim().toLowerCase() === runnerNameLc ||
-    (m.nyrr_runner_name || '').trim().toLowerCase() === runnerNameLc
+    `${m.FirstName || ''} ${m.LastName || ''}`.trim().toLowerCase() === runnerNameLc ||
+    (m.NYRRRunnerName || '').trim().toLowerCase() === runnerNameLc
   );
 
   return (
@@ -93,12 +93,12 @@ initComponent('MatchModal', ({ runner, onClose, onMatched }) => {
               <div className="detail">
                 Link <strong style={{ color: 'var(--text)' }}>{runner.runner_name}</strong>
                 {' → '}
-                <strong style={{ color: 'var(--text)' }}>{confirming.first_name} {confirming.last_name}</strong>
+                <strong style={{ color: 'var(--text)' }}>{confirming.FirstName} {confirming.LastName}</strong>
                 {' '}
-                <span style={{ color: 'var(--text2)', fontSize: 12 }}>({confirming.member_id} · {confirming.email})</span>
+                <span style={{ color: 'var(--text2)', fontSize: 12 }}>({confirming.MemberID} · {confirming.Email})</span>
               </div>
-              {genderMatch(runner.gender, confirming.gender) === false && (
-                <div className="gender-warn">⚠ Gender mismatch: runner is {runner.gender}, member is {confirming.gender}</div>
+              {genderMatch(runner.gender, confirming.Gender) === false && (
+                <div className="gender-warn">⚠ Gender mismatch: runner is {runner.gender}, member is {confirming.Gender}</div>
               )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary btn-sm" onClick={handleConfirm} disabled={saving}>
@@ -148,16 +148,16 @@ initComponent('MatchModal', ({ runner, onClose, onMatched }) => {
                     {results.map(m => {
                       const conf = getConfidence(m);
                       return (
-                        <tr key={m.member_id}>
+                        <tr key={m.MemberID}>
                           <td>
-                            <div style={{ fontWeight: 500 }}>{m.first_name} {m.last_name}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text2)' }}>{m.member_id} · {m.email}</div>
+                            <div style={{ fontWeight: 500 }}>{m.FirstName} {m.LastName}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text2)' }}>{m.MemberID} · {m.Email}</div>
                           </td>
-                          <td style={{ fontSize: 13 }}>{m.gender || '—'}</td>
-                          <td style={{ fontSize: 13 }}>{m.year_born || '—'}</td>
-                          <td style={{ fontSize: 12, color: 'var(--text2)' }}>{m.nyrr_runner_name || '—'}</td>
+                          <td style={{ fontSize: 13 }}>{m.Gender || '—'}</td>
+                          <td style={{ fontSize: 13 }}>{m.YearBorn || m.YearBornGuess || '—'}</td>
+                          <td style={{ fontSize: 12, color: 'var(--text2)' }}>{m.NYRRRunnerName || '—'}</td>
                           <td>
-                            <span className={`badge ${m.status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{m.status}</span>
+                            <span className={`badge ${m.Status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{m.Status}</span>
                           </td>
                           <td>
                             {conf.cls

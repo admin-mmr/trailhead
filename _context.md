@@ -1,3 +1,6 @@
+### 05-31 — fix match-queue runtime bugs (unsigned underflow + field mismatch)
+Changed: api_nyrr_match.py + api_events.py — wrapped YEAR(CURDATE()) in CAST(... AS SIGNED) (BIGINT UNSIGNED underflow 1690 when age diff negative); api_members.py search SELECT +Gender/YearBorn/YearBornGuess/NYRRRunnerName; match-modal.html now reads PascalCase (was blank rows). NEW tests/test_sql_unsigned_arithmetic.py + tests/test_match_modal_contract.py. Status: uncommitted, all tests green. Next: commit.
+
 ### 05-27 14:00 UTC — migration numbering hard rule
 Changed: CLAUDE.md — added MIGRATION NUMBERING HARD RULE: always run `ls db/MIGRATION_*.sql | sort | tail -3` before creating a migration; use max+1; filesystem is source of truth (not CLAUDE.md action-plan numbers). Status: committed. Next: resume P1 work.
 

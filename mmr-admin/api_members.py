@@ -114,7 +114,8 @@ def _build_member_search(tokens: list[str]) -> tuple[str, list]:
 
     sql = f"""
         SELECT MemberID, FirstName, LastName, WeChatID, Email,
-               Type, FamilyID, District, Status, Expiration, MembershipFeePaid
+               Type, FamilyID, District, Status, Expiration, MembershipFeePaid,
+               Gender, YearBorn, YearBornGuess, NYRRRunnerName
         FROM members
         WHERE {where}
         ORDER BY
