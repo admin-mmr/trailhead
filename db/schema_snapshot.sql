@@ -1,3 +1,4 @@
+^C -- query aborted
 section
 === 1. TABLES ===
 table	engine	collation	comment
