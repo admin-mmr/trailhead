@@ -211,7 +211,7 @@ initComponent('Dashboard', ({ onSelectEvent, onGoSettings }) => {
                       {tableEvents.map(ev => (
                 <tr key={ev.id}>
                   <td>
-                    <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id); }} style={{ fontWeight: 600 }}>{ev.event_name}</a>
+                    <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id, ev.event_code); }} style={{ fontWeight: 600 }}>{ev.event_name}</a>
                     {ev.event_url && (
                       <div style={{ fontSize: 11 }}>
                         <a href={ev.event_url} target="_blank" rel="noopener noreferrer"
@@ -392,7 +392,7 @@ function MemberInfoBadge({ runner }) {
 // ═══════════════════════════════════════════════════
 // Event detail view
 // ═══════════════════════════════════════════════════
-initComponent('EventDetail', ({ eventId, onBack }) => {
+initComponent('EventDetail', ({ eventId, eventCode, onBack }) => {
   const [event, setEvent] = useState(null);
   const [runners, setRunners] = useState([]);
   const [filter, setFilter] = useState({ q: '', team: '', matched: '', unmatched: '' });
@@ -407,14 +407,25 @@ initComponent('EventDetail', ({ eventId, onBack }) => {
   const [showColSelector, setShowColSelector] = useState(false);
   const [toast, setToast] = useState('');
   const [matchModal, setMatchModal] = useState(null); // runner row being matched
+  const _resolvedEventId = React.useRef(eventId); // numeric id, may be resolved async from eventCode
   const [runnerPage, setRunnerPage] = useState(1);
   const [runnerPerPage, setRunnerPerPage] = useState(100);
 
   useEffect(() => {
-    api(`/api/events/${eventId}`).then(r => r.ok && setEvent(r.data));
-    const saved = localStorage.getItem(`mmr_runner_colfilters_${eventId}`);
+    const url = eventId ? `/api/events/${eventId}` : `/api/events/by-code/${eventCode}`;
+    api(url).then(r => {
+      if (r.ok) {
+        setEvent(r.data);
+        // If we loaded by code, cache the numeric id for runner fetches
+        if (!eventId && r.data && r.data.id) {
+          _resolvedEventId.current = r.data.id;
+        }
+      }
+    });
+    const cacheKey = eventId || eventCode;
+    const saved = localStorage.getItem(`mmr_runner_colfilters_${cacheKey}`);
     if (saved) setColFilters(JSON.parse(saved));
-  }, [eventId]);
+  }, [eventId, eventCode]);
 
   useEffect(() => {
     setLoading(true);
@@ -423,20 +434,23 @@ initComponent('EventDetail', ({ eventId, onBack }) => {
     if (filter.team) p.set('team', filter.team);
     if (filter.matched) p.set('matched', '1');
     if (filter.unmatched) p.set('unmatched', '1');
-    api(`/api/events/${eventId}/runners?${p}`).then(r => {
+    const eid = eventId || (event && event.id);
+    if (!eid) { setLoading(false); return; }
+    api(`/api/events/${eid}/runners?${p}`).then(r => {
       if (r.ok) setRunners(r.data);
       setLoading(false);
       setRunnerPage(1);
     });
-  }, [eventId, filter]);
+  }, [eventId, event, filter]);
 
   useEffect(() => {
     localStorage.setItem('mmr_runner_cols', JSON.stringify(visibleCols));
   }, [visibleCols]);
 
   useEffect(() => {
-    localStorage.setItem(`mmr_runner_colfilters_${eventId}`, JSON.stringify(colFilters));
-  }, [colFilters, eventId]);
+    const cacheKey = eventId || eventCode;
+    localStorage.setItem(`mmr_runner_colfilters_${cacheKey}`, JSON.stringify(colFilters));
+  }, [colFilters, eventId, eventCode]);
 
   // ── Hooks must all come before any early return (Rules of Hooks) ──────────
 

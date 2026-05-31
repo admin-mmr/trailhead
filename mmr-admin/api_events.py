@@ -110,6 +110,30 @@ def api_event_detail(event_id):
     return json_response({'ok': True, 'data': event})
 
 
+@events_bp.route('/api/events/by-code/<event_code>')
+@login_required
+def api_event_detail_by_code(event_code):
+    """Single event detail looked up by event_code string."""
+    rows = query("SELECT * FROM nyrr_events WHERE event_code = %s", [event_code.upper()])
+    if not rows:
+        return json_response({'ok': False, 'error': 'Not found'}, 404)
+    event = rows[0]
+    live_counts = query("""
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN team_code = 'MMR' THEN 1 ELSE 0 END) as mmr_count,
+          SUM(CASE WHEN mmr_member_id IS NOT NULL THEN 1 ELSE 0 END) as matched_count
+        FROM nyrr_event_runners
+        WHERE nyrr_event_id = %s
+    """, [event['id']])
+    if live_counts:
+        counts = live_counts[0]
+        event['result_count'] = counts.get('total') or 0
+        event['mmr_runner_count'] = counts.get('mmr_count') or 0
+        event['mmr_matched_count'] = counts.get('matched_count') or 0
+    return json_response({'ok': True, 'data': event})
+
+
 @events_bp.route('/api/events/<int:event_id>/runners')
 @login_required
 def api_event_runners(event_id):

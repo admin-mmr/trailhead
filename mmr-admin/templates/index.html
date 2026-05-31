@@ -296,11 +296,20 @@ const SimpleProgressModal = ({ isOpen, eventCode, onClose }) => {
 const App = () => {
   const [view, setView] = useState('loading'); // loading | restricted | dashboard | detail | tables | log | settings | admins | pyexec | pycode
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const [selectedEventCode, setSelectedEventCode] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userEmail, setUserEmail] = useState('');
   const [versionInfo, setVersionInfo] = useState(null);
 
   const VALID_VIEWS = new Set(['payments','autoguess_log','members','district','audit','reconcile','duplicates','sync','admins','log','pyexec','tables','dashboard','detail','nyrr_queue','nyrr_reconcile','settings','hof']);
+
+  // Parse a raw hash string like "detail/B2026" → { view, eventCode }
+  const parseHash = (hash) => {
+    if (hash.startsWith('detail/')) {
+      return { view: 'detail', eventCode: hash.slice(7) };
+    }
+    return { view: VALID_VIEWS.has(hash) ? hash : null, eventCode: null };
+  };
 
   // Hash-based navigation: keeps back/forward and refresh in sync
   const navigate = useCallback((v, replace = false) => {
@@ -313,7 +322,11 @@ const App = () => {
   useEffect(() => {
     const onPop = () => {
       const hash = window.location.hash.slice(1);
-      if (VALID_VIEWS.has(hash)) setView(hash);
+      const parsed = parseHash(hash);
+      if (parsed.view) {
+        setView(parsed.view);
+        if (parsed.eventCode) setSelectedEventCode(parsed.eventCode);
+      }
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -332,8 +345,13 @@ const App = () => {
         } else {
           // Honour hash on refresh; fall back to payments
           const hash = window.location.hash.slice(1);
-          const initial = VALID_VIEWS.has(hash) ? hash : 'payments';
-          navigate(initial, true);
+          const parsed = parseHash(hash);
+          if (parsed.view) {
+            if (parsed.eventCode) setSelectedEventCode(parsed.eventCode);
+            navigate(parsed.view, true);
+          } else {
+            navigate('payments', true);
+          }
         }
       } else if (r.status === 401 || r.status === 403 || r.redirect) {
         window.location = '/login';
@@ -343,8 +361,14 @@ const App = () => {
     });
   }, []);
 
-  const selectEvent = (id) => { setSelectedEventId(id); navigate('detail'); };
-  const goBack = () => { setSelectedEventId(null); navigate('dashboard'); };
+  const selectEvent = (id, eventCode) => {
+    setSelectedEventId(id);
+    setSelectedEventCode(eventCode || null);
+    const hash = eventCode ? `detail/${eventCode}` : 'detail';
+    setView('detail');
+    history.pushState(null, '', '#' + hash);
+  };
+  const goBack = () => { setSelectedEventId(null); setSelectedEventCode(null); navigate('dashboard'); };
 
   const handleSignOut = () => {
     window.location = '/logout';
@@ -490,7 +514,7 @@ const App = () => {
       )}
 
       {view === 'dashboard' && window.Dashboard && React.createElement(window.Dashboard, { onSelectEvent: selectEvent, onGoSettings: () => navigate('settings') })}
-      {view === 'detail' && selectedEventId && window.EventDetail && React.createElement(window.EventDetail, { eventId: selectedEventId, onBack: goBack })}
+      {view === 'detail' && (selectedEventId || selectedEventCode) && window.EventDetail && React.createElement(window.EventDetail, { eventId: selectedEventId, eventCode: selectedEventCode, onBack: goBack })}
       {view === 'payments' && window.PaymentsPanel && React.createElement(window.PaymentsPanel)}
       {view === 'autoguess_log' && window.AutoguessLogPanel && React.createElement(window.AutoguessLogPanel)}
       {view === 'members' && window.MembersPanel && React.createElement(window.MembersPanel)}
