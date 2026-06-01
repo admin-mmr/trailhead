@@ -192,7 +192,20 @@ def get_series_hof(slug):
         return _cors('', 204)
 
     series_rows = query(
-        "SELECT id, name, slug, distance_km, notes FROM nyrr_event_series WHERE slug = %s",
+        """
+        SELECT
+            s.id,
+            s.name,
+            s.slug,
+            s.distance_km,
+            s.notes,
+            COUNT(e.id)                            AS event_count,
+            SUM(e.processing_status = 'Completed') AS events_completed
+        FROM nyrr_event_series s
+        LEFT JOIN nyrr_events e ON e.series_id = s.id
+        WHERE s.slug = %s
+        GROUP BY s.id, s.name, s.slug, s.distance_km, s.notes
+        """,
         [slug],
     )
     if not series_rows:

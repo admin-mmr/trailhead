@@ -114,12 +114,14 @@ function CategoryCard({ cat }: { cat: HofCategory }) {
   )
 }
 
-function SeriesCard({ series, onExpand }: { series: Series; onExpand: () => void }) {
+function SeriesCard({ series, onExpand, isExpanded }: { series: Series; onExpand: () => void; isExpanded?: boolean }) {
   const { lang } = useLang()
   const hasData = series.events_with_mmr > 0
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden ${
+      isExpanded ? 'sticky top-16 z-30' : ''
+    }`}>
       <div className="p-5 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -221,6 +223,7 @@ export default function HallOfFamePage() {
               <SeriesCard
                 series={series}
                 onExpand={() => handleExpand(series)}
+                isExpanded={expandedSlug === series.slug}
               />
 
               {/* Expanded HOF grid */}

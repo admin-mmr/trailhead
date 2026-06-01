@@ -1,3 +1,6 @@
+### 06-01 01:04 UTC — HOF: sticky series title + fix "undefined editions"
+Changed: hall-of-fame/page.tsx SeriesCard takes isExpanded → sticky top-16 z-30 when its HOF grid is open (title stays pinned below navbar while scrolling categories); api_hof.py get_series_hof now aggregates event_count/events_completed (detail query only selected id/name/slug/distance/notes → frontend showed "Across undefined race editions"). Status: committed, test_imports clean. Next: verify live on Azure SWA.
+
 ### 05-31 — webapp build version stamp (deploy diagnostic)
 Changed: next.config.mjs exposes NEXT_PUBLIC_APP_VERSION/BUILD_SHA/BUILD_TIME at build time; Azure SWA workflow env +BUILD_SHA=github.sha; Footer.tsx shows "vX · sha · time" line. Status: committed, tsc clean (full build skipped, next.config eval verified). Next: manual workflow run → compare footer SHA vs git HEAD to isolate stale-deploy vs CDN cache.
 
