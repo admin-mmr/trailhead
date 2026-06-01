@@ -51,11 +51,9 @@ interface SeriesHof {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const ADMIN_API = process.env.NEXT_PUBLIC_ADMIN_API_URL ?? 'http://localhost:5001'
-
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${ADMIN_API}${path}`)
+    const res = await fetch(path)
     if (!res.ok) return null
     return res.json() as Promise<T>
   } catch {
