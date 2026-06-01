@@ -106,9 +106,7 @@ function CategoryCard({ cat }: { cat: HofCategory }) {
           {lang === 'zh' ? '暂无数据' : 'No data yet'}
         </p>
       ) : (
-        cat.podium.map((runner, i) => (
-          <PodiumRow key={i} runner={runner} rank={i} />
-        ))
+        <PodiumRow runner={cat.best ?? cat.podium[0]} rank={0} />
       )}
     </div>
   )

@@ -1,3 +1,6 @@
+### 06-01 — HOF public page: record keeper only (drop 2nd/3rd)
+Changed: hall-of-fame/page.tsx CategoryCard renders single PodiumRow for cat.best (🥇) instead of mapping podium; updated hall-of-fame.test.tsx to assert 2nd place + 🥈 absent. API still returns full podium (display-only). Status: committed, jest not run (sandbox bus error — run locally). Next: verify live on Azure SWA.
+
 ### 06-01 01:04 UTC — HOF: sticky series title + fix "undefined editions"
 Changed: hall-of-fame/page.tsx SeriesCard takes isExpanded → sticky top-16 z-30 when its HOF grid is open (title stays pinned below navbar while scrolling categories); api_hof.py get_series_hof now aggregates event_count/events_completed (detail query only selected id/name/slug/distance/notes → frontend showed "Across undefined race editions"). Status: committed, test_imports clean. Next: verify live on Azure SWA.
 

@@ -300,10 +300,10 @@ describe('expand behavior', () => {
 // ── 6. Category card rendering ────────────────────────────────────────────────
 
 describe('category card', () => {
-  it('shows podium runners with medals', async () => {
+  it('shows only the record keeper, not 2nd/3rd', async () => {
     const runner1 = makeRunner({ runner_name: 'Top Runner', finish_time: '00:35:00' })
     const runner2 = makeRunner({ runner_name: 'Second Runner', finish_time: '00:36:00' })
-    const cat = makeCategory('male_open', 'Male', { podium: [runner1, runner2] })
+    const cat = makeCategory('male_open', 'Male', { best: runner1, podium: [runner1, runner2] })
     const series = makeSeries()
 
     mockFetch(
@@ -315,9 +315,9 @@ describe('category card', () => {
     await act(async () => { fireEvent.click(screen.getByText(/view hof/i)) })
 
     await waitFor(() => screen.getByText('Top Runner'))
-    expect(screen.getByText('Second Runner')).toBeInTheDocument()
+    expect(screen.queryByText('Second Runner')).not.toBeInTheDocument()
     expect(screen.getByText('🥇')).toBeInTheDocument()
-    expect(screen.getByText('🥈')).toBeInTheDocument()
+    expect(screen.queryByText('🥈')).not.toBeInTheDocument()
   })
 
   it('shows "No data yet" for empty category', async () => {
