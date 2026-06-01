@@ -28,6 +28,7 @@ describe('getRequiredTier — public routes', () => {
     '/membership/inactive',
     '/blog/post-1',
     '/events',
+    '/hall-of-fame',
   ])('"%s" is public', (path) => {
     expectTier(path, 'public')
   })
