@@ -121,6 +121,9 @@ export default function Footer() {
       {/* Copyright bar */}
       <div style={{ borderTop: '1px solid rgba(212,168,67,0.15)', padding: '1.25rem 1.5rem', textAlign: 'center', fontSize: '0.72rem', color: 'rgba(255,255,255,0.55)', lineHeight: 1.6, maxWidth: '860px', margin: '0 auto' }}>
         © {FOUNDING_YEAR}–{year} Misty Mountain Runners. 岚山跑团 （Misty Mountain Runners, MMR) is a not-for-profit organization recognized as tax-exempt under Section 501(c)(3) of the Internal Revenue Code. Contributions to MMR are tax deductible to the extent allowed by law.
+        <div style={{ marginTop: '0.5rem', fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>
+          v{process.env.NEXT_PUBLIC_APP_VERSION} · {process.env.NEXT_PUBLIC_BUILD_SHA} · {process.env.NEXT_PUBLIC_BUILD_TIME}
+        </div>
       </div>
     </footer>
   )

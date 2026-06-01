@@ -26,6 +26,7 @@ jobs:
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         env:
+          BUILD_SHA: ${{ github.sha }}            # surfaced in footer version stamp
           NEXTAUTH_URL: https://orange-tree-0d70d110f.4.azurestaticapps.net
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}

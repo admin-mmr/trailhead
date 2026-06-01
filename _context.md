@@ -1,3 +1,6 @@
+### 05-31 — webapp build version stamp (deploy diagnostic)
+Changed: next.config.mjs exposes NEXT_PUBLIC_APP_VERSION/BUILD_SHA/BUILD_TIME at build time; Azure SWA workflow env +BUILD_SHA=github.sha; Footer.tsx shows "vX · sha · time" line. Status: committed, tsc clean (full build skipped, next.config eval verified). Next: manual workflow run → compare footer SHA vs git HEAD to isolate stale-deploy vs CDN cache.
+
 ### 05-31 — member-info tooltip on matched-runner badge
 Changed: api_events.py /runners query +member_first_name/last_name/email/district/phone/type/gender/expiration/nyrr_name (was only member_status); dashboard-panel.html NEW MemberInfoBadge component — fixed-position floating tooltip on hover (avoids scroll-container clip, flips above near viewport bottom), replaces plain badge in match-cell. Status: committed, JSX not compile-tested locally. Next: verify live via nyrr → event → hover badge.
 
