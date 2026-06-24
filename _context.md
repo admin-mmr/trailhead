@@ -1,3 +1,6 @@
+### 06-24 03:18 UTC — re-enable mmr-admin auto-deploy
+Changed: .github/workflows/deploy-mmr-admin.yml — uncommented push trigger (branches: main; paths: mmr-admin/**, basecamp/python/**, workflow file); was manual-only ("DISABLED for April"). Status: committed + pushed. Next: confirm Deploy MMR Admin action fires on this push.
+
 ### 06-24 03:11 UTC — HOF Assign Events modal: readable preview
 Changed: api_hof.py assign-events now returns matched as {event_code, event_name, event_year} (was event_code only), ORDER BY event_year DESC; hof-panel.html preview renders event_name (code muted in parens) on fixed #fff/#1a1a1a (was invisible --text on light box in dark mode). Status: committed, py_compile clean. Next: verify live on Azure.
 
