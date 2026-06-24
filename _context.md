@@ -1,3 +1,6 @@
+### 06-24 03:11 UTC — HOF Assign Events modal: readable preview
+Changed: api_hof.py assign-events now returns matched as {event_code, event_name, event_year} (was event_code only), ORDER BY event_year DESC; hof-panel.html preview renders event_name (code muted in parens) on fixed #fff/#1a1a1a (was invisible --text on light box in dark mode). Status: committed, py_compile clean. Next: verify live on Azure.
+
 ### 06-01 — HOF public page: record keeper only (drop 2nd/3rd)
 Changed: hall-of-fame/page.tsx CategoryCard renders single PodiumRow for cat.best (🥇) instead of mapping podium; updated hall-of-fame.test.tsx to assert 2nd place + 🥈 absent. API still returns full podium (display-only). Status: committed, jest not run (sandbox bus error — run locally). Next: verify live on Azure SWA.
 

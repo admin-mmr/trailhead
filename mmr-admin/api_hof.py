@@ -294,15 +294,19 @@ def assign_events(series_id):
 
     like_pattern = f"%{pattern}%"
     matched = query(
-        "SELECT id, event_code, event_name FROM nyrr_events WHERE event_name LIKE %s",
+        "SELECT id, event_code, event_name, event_year FROM nyrr_events "
+        "WHERE event_name LIKE %s ORDER BY event_year DESC, event_name",
         [like_pattern],
     )
+
+    def _row(r):
+        return {'event_code': r['event_code'], 'event_name': r['event_name'], 'event_year': r['event_year']}
 
     if dry_run or not matched:
         return json_response({
             'ok': True,
             'dry_run': True,
-            'matched': [r['event_code'] for r in matched],
+            'matched': [_row(r) for r in matched],
             'matched_count': len(matched),
         })
 
@@ -317,7 +321,7 @@ def assign_events(series_id):
     return json_response({
         'ok': True,
         'dry_run': False,
-        'matched': [r['event_code'] for r in matched],
+        'matched': [_row(r) for r in matched],
         'updated': len(ids),
     })
 
