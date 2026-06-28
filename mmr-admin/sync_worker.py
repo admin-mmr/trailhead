@@ -435,6 +435,21 @@ def get_job_status(event_code: str) -> Dict[str, Any] | None:
         return dict(job) if job else None
 
 
+def get_all_jobs(active_only: bool = True) -> list[Dict[str, Any]]:
+    """Snapshot of all known sync jobs in this process (for the activity rail).
+
+    active_only=True returns just jobs still running. Each dict gains an
+    'event_code' key so the caller doesn't need the registry key separately.
+    """
+    with _jobs_lock:
+        out = []
+        for code, job in _jobs.items():
+            if active_only and job.get('status') != 'running':
+                continue
+            out.append({'event_code': code, **job})
+        return out
+
+
 def cancel_job(event_code: str) -> bool:
     """Request cancellation for a running job. Returns True if job found."""
     with _jobs_lock:

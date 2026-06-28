@@ -83,6 +83,44 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 _THROTTLE_LOCK = threading.Lock()
 _LAST_REQUEST_TS = 0.0
 
+# Process-wide rate-limit telemetry, read by the admin Sync Activity rail via
+# get_throttle_stats(). Mutated only under _THROTTLE_LOCK. `in_backoff` counts
+# requests currently sleeping on a retry — >0 means we're actively being
+# rate-limited right now.
+_STATS = {
+    "total_requests":  0,
+    "total_retries":   0,
+    "total_429":       0,
+    "last_429_at":     None,   # epoch seconds (time.time())
+    "last_request_at": None,   # epoch seconds
+    "in_backoff":      0,
+}
+
+
+def _stat_bump(**deltas) -> None:
+    """Apply integer deltas / value sets to _STATS under the lock."""
+    with _THROTTLE_LOCK:
+        for k, v in deltas.items():
+            if k in ("last_429_at", "last_request_at"):
+                _STATS[k] = v
+            else:
+                _STATS[k] += v
+
+
+def get_throttle_stats() -> Dict[str, Any]:
+    """Snapshot of process-wide NYRR rate-limit telemetry for the activity rail.
+
+    Adds derived fields: ``last_429_age_sec`` (None if never) and ``health``
+    ('backing_off' if currently retrying or a 429 hit in the last 30s, else
+    'healthy')."""
+    with _THROTTLE_LOCK:
+        s = dict(_STATS)
+    now = time.time()
+    age = (now - s["last_429_at"]) if s["last_429_at"] else None
+    s["last_429_age_sec"] = round(age, 1) if age is not None else None
+    s["health"] = "backing_off" if (s["in_backoff"] > 0 or (age is not None and age < 30)) else "healthy"
+    return s
+
 
 # ---------------------------------------------------------------------------
 # Client
@@ -146,6 +184,8 @@ class NyrrApiClient(_NyrrEndpointsMixin):
             if wait > 0:
                 time.sleep(wait)
             _LAST_REQUEST_TS = time.monotonic()
+            _STATS["total_requests"]  += 1
+            _STATS["last_request_at"]  = time.time()
 
     def _retry_delay(self, attempt: int, retry_after: Optional[str]) -> float:
         """Seconds to wait before retry ``attempt`` (0-based). Honors the
@@ -180,7 +220,9 @@ class NyrrApiClient(_NyrrEndpointsMixin):
                 delay = self._retry_delay(attempt, None)
                 logger.warning("[api] %s network error (%s) — retry %d/%d in %.1fs",
                                path, exc, attempt + 1, self.max_retries, delay)
+                _stat_bump(total_retries=1, in_backoff=1)
                 time.sleep(delay)
+                _stat_bump(in_backoff=-1)
                 attempt += 1
                 continue
 
@@ -188,7 +230,10 @@ class NyrrApiClient(_NyrrEndpointsMixin):
                 delay = self._retry_delay(attempt, resp.headers.get("Retry-After"))
                 logger.warning("[api] %s -> HTTP %d — retry %d/%d in %.1fs",
                                path, resp.status_code, attempt + 1, self.max_retries, delay)
+                _stat_bump(total_retries=1, in_backoff=1,
+                           **({"total_429": 1, "last_429_at": time.time()} if resp.status_code == 429 else {}))
                 time.sleep(delay)
+                _stat_bump(in_backoff=-1)
                 attempt += 1
                 continue
 

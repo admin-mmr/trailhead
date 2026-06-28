@@ -174,6 +174,9 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
 
   return (
     <div onClick={() => menuOpen && setMenuOpen(null)}>
+      {/* Sync Activity rail — process-wide NYRR health + in-flight loads */}
+      {window.NyrrActivityRail && <window.NyrrActivityRail />}
+
       {/* Stat cards */}
       {stats && (
         <div className="stat-grid" style={{ marginBottom: 16 }}>

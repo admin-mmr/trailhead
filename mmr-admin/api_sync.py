@@ -21,7 +21,8 @@ from flask import Blueprint, request
 from auth import login_required
 from db import query, get_conn, execute
 from helpers import json_response
-from sync_worker import start_sync, get_job_status, cancel_job
+from sync_worker import start_sync, get_job_status, cancel_job, get_all_jobs
+from nyrr_api import get_throttle_stats
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -81,6 +82,24 @@ def api_sync_status(event_code):
     """Get current sync job status."""
     job = get_job_status(event_code) or {'status': 'not_found', 'message': 'No sync job for this event'}
     return json_response(job)
+
+
+@sync_bp.route('/api/nyrr/activity')
+@login_required
+def api_nyrr_activity():
+    """Sync Activity rail feed: process-wide NYRR rate-limit health + in-flight
+    load jobs. Read-only and cheap — safe to poll every few seconds.
+
+    Note: only sees activity in THIS process (the admin web app). CLI / GitHub
+    Action runs are separate processes and won't appear here.
+    """
+    jobs = get_all_jobs(active_only=True)
+    return json_response({
+        'ok': True,
+        'throttle': get_throttle_stats(),
+        'jobs': jobs,
+        'active_count': len(jobs),
+    })
 
 
 @sync_bp.route('/api/sync/membership-fees', methods=['POST'])

@@ -1,3 +1,6 @@
+### 06-27 — Sync Activity rail (visibility / "what's running")
+Changed: nyrr_api.py adds process-wide _STATS + get_throttle_stats() (requests/retries/429/in_backoff, derived health+last_429_age) recorded in _post/_throttle. sync_worker.get_all_jobs(active_only). New GET /api/nyrr/activity (api_sync.py) = throttle health + in-flight load jobs. New static/NyrrActivityRail.js (107 LOC) polls it every 4s → 🟢/🟡 health chip + running-load chips + req counter; rendered top of NyrrEvents. Scope: this process only (CLI/GH runs separate). Verified: py_compile, stats behavior test, babel JSX, test_imports clean, synced. NOT committed.
+
 ### 06-27 — Probe-budget cap in sync_worker_fetch (429 root cause pt.2)
 Changed: FinisherFetcher now counts probes; PROBE_BUDGET (env NYRR_PROBE_BUDGET, default 600) caps per-run divide-and-conquer probes. _budget_exhausted() guards _divide_and_conquer + _split_by_pace → recursion unwinds cleanly when hit, keeps fetched rows, surfaces "paused — re-run to resume" job message. Resume is free: _already_synced skips synced subtrees. New tests/test_sync_worker_budget.py (4 tests, all pass standalone). py_compile clean. NOT committed. Pairs with the nyrr_api throttle/backoff. Next: surface throttle/budget state in a Sync Activity rail (P1b).
 
