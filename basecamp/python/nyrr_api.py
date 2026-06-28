@@ -26,6 +26,9 @@ Layout (CLAUDE.md hard rule: keep each file <400 LOC):
 from __future__ import annotations
 
 import logging
+import os
+import random
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -62,6 +65,24 @@ DEFAULT_PAGE_SIZE = 51          # matches the GAS client / NYRR's apparent defau
 DEFAULT_SLEEP_SECONDS = 2.0     # polite delay between paginated requests
 REQUEST_TIMEOUT = 30            # seconds
 
+# --- Rate-limit / retry defaults (overridable via env or constructor) -------
+# Minimum gap between ANY two NYRR requests *across the whole process*. This is
+# the single global throttle that stops probe storms (divide-and-conquer) and
+# concurrent callers (weekly sync + manual Load + Probe All) from bursting the
+# API into a 429. Enforced under a module-level lock in _throttle().
+DEFAULT_MIN_REQUEST_INTERVAL = float(os.environ.get("NYRR_MIN_REQUEST_INTERVAL", "0.5"))
+DEFAULT_MAX_RETRIES = int(os.environ.get("NYRR_MAX_RETRIES", "5"))
+DEFAULT_BACKOFF_BASE = float(os.environ.get("NYRR_BACKOFF_BASE", "2.0"))   # seconds
+DEFAULT_BACKOFF_MAX = float(os.environ.get("NYRR_BACKOFF_MAX", "60.0"))    # seconds
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+# Process-wide throttle state. A single lock + timestamp shared by every
+# NyrrApiClient instance and every thread, so all NYRR traffic is serialized to
+# at most one request per DEFAULT_MIN_REQUEST_INTERVAL regardless of how many
+# loaders/probes are running.
+_THROTTLE_LOCK = threading.Lock()
+_LAST_REQUEST_TS = 0.0
+
 
 # ---------------------------------------------------------------------------
 # Client
@@ -91,11 +112,19 @@ class NyrrApiClient(_NyrrEndpointsMixin):
         page_size: int = DEFAULT_PAGE_SIZE,
         sleep_seconds: float = DEFAULT_SLEEP_SECONDS,
         timeout: int = REQUEST_TIMEOUT,
+        min_interval: float = DEFAULT_MIN_REQUEST_INTERVAL,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        backoff_base: float = DEFAULT_BACKOFF_BASE,
+        backoff_max: float = DEFAULT_BACKOFF_MAX,
     ):
         self.base_url = base_url.rstrip("/")
         self.page_size = page_size
         self.sleep_seconds = sleep_seconds
         self.timeout = timeout
+        self.min_interval = min_interval
+        self.max_retries = max_retries
+        self.backoff_base = backoff_base
+        self.backoff_max = backoff_max
         self.session = requests.Session()
         self.session.headers.update({
             "Content-Type": "application/json",
@@ -106,14 +135,69 @@ class NyrrApiClient(_NyrrEndpointsMixin):
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _throttle(self) -> None:
+        """Block until at least ``min_interval`` has elapsed since the last NYRR
+        request made by ANY client/thread in this process. Holding the lock
+        across the sleep is intentional: it serializes all NYRR traffic, so a
+        probe storm or two concurrent loaders can never burst the API."""
+        global _LAST_REQUEST_TS
+        with _THROTTLE_LOCK:
+            wait = self.min_interval - (time.monotonic() - _LAST_REQUEST_TS)
+            if wait > 0:
+                time.sleep(wait)
+            _LAST_REQUEST_TS = time.monotonic()
+
+    def _retry_delay(self, attempt: int, retry_after: Optional[str]) -> float:
+        """Seconds to wait before retry ``attempt`` (0-based). Honors the
+        server's Retry-After header when present, else exponential backoff with
+        jitter, capped at ``backoff_max``."""
+        if retry_after:
+            try:
+                return min(float(retry_after), self.backoff_max)
+            except ValueError:
+                pass
+        delay = min(self.backoff_base * (2 ** attempt), self.backoff_max)
+        return delay + random.uniform(0, delay * 0.25)  # jitter avoids thundering herd
+
     def _post(self, path: str, body: Dict[str, Any]) -> Any:
-        """POST JSON to the API and return the parsed response."""
+        """POST JSON to the API and return the parsed response.
+
+        Every NYRR call funnels through here, so this is where the global
+        throttle and 429/5xx retry-with-backoff live. Raises NyrrApiError after
+        ``max_retries`` exhausted so callers see a clean, typed failure instead
+        of a bare HTTPError."""
         url = f"{self.base_url}/{path.lstrip('/')}"
         logger.debug("POST %s  body=%s", url, body)
 
-        resp = self.session.post(url, json=body, timeout=self.timeout)
-        resp.raise_for_status()
-        return resp.json()
+        attempt = 0
+        while True:
+            self._throttle()
+            try:
+                resp = self.session.post(url, json=body, timeout=self.timeout)
+            except requests.RequestException as exc:
+                if attempt >= self.max_retries:
+                    raise NyrrApiError(f"POST {path} failed after {attempt} retries: {exc}") from exc
+                delay = self._retry_delay(attempt, None)
+                logger.warning("[api] %s network error (%s) — retry %d/%d in %.1fs",
+                               path, exc, attempt + 1, self.max_retries, delay)
+                time.sleep(delay)
+                attempt += 1
+                continue
+
+            if resp.status_code in RETRYABLE_STATUS and attempt < self.max_retries:
+                delay = self._retry_delay(attempt, resp.headers.get("Retry-After"))
+                logger.warning("[api] %s -> HTTP %d — retry %d/%d in %.1fs",
+                               path, resp.status_code, attempt + 1, self.max_retries, delay)
+                time.sleep(delay)
+                attempt += 1
+                continue
+
+            if resp.status_code in RETRYABLE_STATUS:
+                raise NyrrApiError(
+                    f"POST {path} still HTTP {resp.status_code} after {self.max_retries} retries"
+                )
+            resp.raise_for_status()
+            return resp.json()
 
     def _paginate(
         self,

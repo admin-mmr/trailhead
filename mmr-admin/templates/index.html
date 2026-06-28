@@ -43,6 +43,12 @@
   <!-- External components (extracted for modularity) -->
   <script type="text/babel" src="/templates/dashboard-panel.html"></script>
   <script type="text/babel" src="/templates/nyrr-reconcile.html"></script>
+  <!-- NYRR progress helpers (define window.NyrrActiveLoads / NyrrProbeProgress) -->
+  <script type="text/babel" src="/templates/nyrr-active-loads.html"></script>
+  <script type="text/babel" src="/templates/nyrr-probe-progress.html"></script>
+  <!-- Merged NYRR events view (Todos + Reconcile): controller hook then view -->
+  <script type="text/babel" src="/static/NyrrEventsActions.js"></script>
+  <script type="text/babel" src="/static/NyrrEvents.js"></script>
   <script type="text/babel" src="/templates/python-code-editor.html"></script>
   <script type="text/babel" src="/templates/python-exec-panel.html"></script>
   <script type="text/babel" src="/templates/table-browser.html"></script>
@@ -447,19 +453,16 @@ const App = () => {
               <button className={`tab ${view === 'admins' || view === 'log' || view === 'pyexec' ? 'active' : ''}`} onClick={() => navigate('admins')}>Admins</button>
             )}
             <button className={`tab ${view === 'tables' ? 'active' : ''}`} onClick={() => navigate('tables')}>Data Browser</button>
-            <button className={`tab ${['dashboard', 'detail', 'nyrr_queue'].includes(view) ? 'active' : ''}`} onClick={() => navigate('dashboard')}>NYRR Todos</button>
+            <button className={`tab ${['dashboard', 'detail', 'nyrr_queue', 'nyrr_reconcile'].includes(view) ? 'active' : ''}`} onClick={() => navigate('dashboard')}>NYRR</button>
             <button className={`tab ${view === 'hof' ? 'active' : ''}`} onClick={() => navigate('hof')}>🏆 Hall of Fame</button>
           </div>
 
-          {/* NYRR sub-tabs: Todos (dashboard), Match Queue, Reconcile */}
+          {/* NYRR sub-tabs: Events (merged Todos+Reconcile), Match Queue */}
           {['dashboard', 'detail', 'nyrr_queue', 'nyrr_reconcile'].includes(view) ? (
             <div className="tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-              <button className={`tab ${view === 'dashboard' || view === 'detail' ? 'active' : ''}`} onClick={() => navigate('dashboard')}>📋 Todos</button>
+              <button className={`tab ${['dashboard', 'detail', 'nyrr_reconcile'].includes(view) ? 'active' : ''}`} onClick={() => navigate('dashboard')}>📋 Events</button>
               {(userRole === 'super_admin' || userRole === 'admin') && (
                 <button className={`tab ${view === 'nyrr_queue' ? 'active' : ''}`} onClick={() => navigate('nyrr_queue')}>🏃 Match Queue</button>
-              )}
-              {(userRole === 'super_admin' || userRole === 'admin') && (
-                <button className={`tab ${view === 'nyrr_reconcile' ? 'active' : ''}`} onClick={() => navigate('nyrr_reconcile')}>🔄 Reconcile</button>
               )}
             </div>
           ) : null}
@@ -513,7 +516,7 @@ const App = () => {
         </>
       )}
 
-      {view === 'dashboard' && window.Dashboard && React.createElement(window.Dashboard, { onSelectEvent: selectEvent, onGoSettings: () => navigate('settings') })}
+      {view === 'dashboard' && window.NyrrEvents && React.createElement(window.NyrrEvents, { onSelectEvent: selectEvent, onGoSettings: () => navigate('settings') })}
       {view === 'detail' && (selectedEventId || selectedEventCode) && window.EventDetail && React.createElement(window.EventDetail, { eventId: selectedEventId, eventCode: selectedEventCode, onBack: goBack })}
       {view === 'payments' && window.PaymentsPanel && React.createElement(window.PaymentsPanel)}
       {view === 'autoguess_log' && window.AutoguessLogPanel && React.createElement(window.AutoguessLogPanel)}
@@ -523,7 +526,7 @@ const App = () => {
       {view === 'reconcile' && window.ReconcilePanel && React.createElement(window.ReconcilePanel)}
       {view === 'duplicates' && window.MembersDuplicates && React.createElement(window.MembersDuplicates, { onOpenMember: (id) => { navigate('members'); } })}
       {view === 'nyrr_queue' && window.NyrrMatchQueue && React.createElement(window.NyrrMatchQueue)}
-      {view === 'nyrr_reconcile' && window.NyrrReconcile && React.createElement(window.NyrrReconcile)}
+      {view === 'nyrr_reconcile' && window.NyrrEvents && React.createElement(window.NyrrEvents, { onSelectEvent: selectEvent, onGoSettings: () => navigate('settings') })}
       {view === 'sync' && window.SyncPanel && React.createElement(window.SyncPanel)}
       {view === 'tables' && window.TableBrowser && React.createElement(window.TableBrowser)}
       {view === 'log' && window.ProcessingLog && React.createElement(window.ProcessingLog)}

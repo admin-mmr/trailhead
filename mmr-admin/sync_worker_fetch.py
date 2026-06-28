@@ -12,6 +12,7 @@ FinisherFetcher(client, event_id, event_code, conn, cursor, jobs, lock)
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any, Dict, Optional
 
@@ -24,6 +25,14 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES  = 3
 RETRY_DELAY  = 2   # seconds between lock-timeout retries
+
+# Per-run cap on divide-and-conquer probe calls (pageSize=1 totalItems lookups).
+# Bounds the worst-case probe explosion on huge events so a single load can't
+# monopolize the NYRR API. When the budget is hit the recursion unwinds cleanly
+# and keeps whatever rows it fetched; because _already_synced skips subtrees
+# that MySQL already holds, simply re-running the load RESUMES from where it
+# paused and eventually completes. Override via env for big backfills.
+PROBE_BUDGET = int(os.environ.get("NYRR_PROBE_BUDGET", "600"))
 
 # MySQL 5.7-compatible UPSERT (VALUES(col) syntax — no `AS new_row` alias from 8.0.19+)
 _UPSERT_SQL = """
@@ -70,6 +79,7 @@ class FinisherFetcher:
         cursor: Any,
         jobs: Dict[str, Any],
         lock: Any,
+        probe_budget: int = PROBE_BUDGET,
     ) -> None:
         self.client       = client
         self.event_id     = event_id
@@ -81,6 +91,11 @@ class FinisherFetcher:
         self.rows_written    = 0
         self.pages_written   = 0
         self.total_finishers = 0
+        # Probe budget (per run). _probe_count increments on every API probe;
+        # _budget_hit latches True once exceeded so recursion unwinds & we warn once.
+        self.probe_budget = probe_budget
+        self._probe_count = 0
+        self._budget_hit  = False
         # Cache: (age, gender) -> row_count, built once at run() start.
         # None = not yet populated.
         self._db_cache: Optional[Dict[tuple, int]] = None
@@ -131,6 +146,15 @@ class FinisherFetcher:
 
         self._build_db_cache()
         self._divide_and_conquer(0, 100)
+        if self._budget_hit:
+            logger.warning(
+                "  └─ Step 1 paused for %s: probe budget reached at %d/%d runners "
+                "after %d probes. Re-run to resume.",
+                self.event_code, self.rows_written, self.total_finishers, self._probe_count,
+            )
+            self._update_job(message=(
+                f'Step 1 paused: probe budget ({self.probe_budget}) reached at '
+                f'{self.rows_written}/{self.total_finishers} runners. Re-run to resume.'))
         return self.rows_written, self.total_finishers
 
     # ------------------------------------------------------------------
@@ -164,6 +188,7 @@ class FinisherFetcher:
                pace_min=None, pace_max=None, sort_column="bib",
                sort_desc=False, return_pace=False):
         """Single pageSize=1 call to get totalItems for a filter combination."""
+        self._probe_count += 1
         data = self.client._post("runners/finishers-filter", {
             "eventCode": self.event_code,
             "ageFrom":   age_from,
@@ -339,6 +364,24 @@ class FinisherFetcher:
     # _pace_to_seconds / _seconds_to_pace live in nyrr_finisher_splitter (module-level),
     # imported above — no local copies here.
 
+    def _budget_exhausted(self) -> bool:
+        """True once this run has spent its probe budget. Latches _budget_hit
+        and warns once so the recursion can unwind without spamming logs."""
+        if self._probe_count < self.probe_budget:
+            return False
+        if not self._budget_hit:
+            self._budget_hit = True
+            logger.warning(
+                "  └─ ⛔ probe budget (%d) reached for %s after %d rows — "
+                "pausing divide & conquer. Re-run the load to resume "
+                "(already-synced shards are skipped).",
+                self.probe_budget, self.event_code, self.rows_written,
+            )
+            self._update_job(message=(
+                f'Step 1: probe budget ({self.probe_budget}) reached — paused at '
+                f'{self.rows_written} rows. Re-run to resume.'))
+        return True
+
     def _split_by_pace(self, age_from, age_to, gender, pace_min, pace_max, depth=0):
         """Bisect pace range until each shard <= 500.
 
@@ -346,6 +389,8 @@ class FinisherFetcher:
         tracked — right-recursion never narrowed, upper-pace half was
         never fetched, infinite loop on the right side).
         """
+        if self._budget_exhausted():
+            return
         indent = "  " * (depth + 3)
         total = self._probe(age_from=age_from, age_to=age_to, gender=gender,
                             pace_min=pace_min, pace_max=pace_max)
@@ -377,6 +422,8 @@ class FinisherFetcher:
             self._split_by_pace(age_from, age_to, gender, mid_pace, pace_max,  depth + 1)
 
     def _divide_and_conquer(self, age_from, age_to, gender=None, depth=0):
+        if self._budget_exhausted():
+            return
         indent = "  " * (depth + 2)
         label = f"age {age_from}-{age_to}" + (f" gender={gender}" if gender else "")
         total = self._probe(age_from=age_from, age_to=age_to, gender=gender)
