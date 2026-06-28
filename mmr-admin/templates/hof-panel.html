@@ -26,7 +26,12 @@ initComponent('HofPanel', () => {
   const [assignSeries, setAssignSeries]   = useState(null);
   const [assignPattern, setAssignPattern] = useState('');
   const [assignPreview, setAssignPreview] = useState(null);
+  const [assignChecked, setAssignChecked] = useState({});  // { [event_code]: bool }
   const [assigning, setAssigning]         = useState(false);
+
+  // Likely kids / youth races — auto-unchecked in preview (re-checkable)
+  const KIDS_RE = /\b(kid|kids|youth|kid['’]?s|rising new york|rnyrr|dash|family|fun run|diaper|toddler|tot|stroller|pee[\s-]?wee)\b/i;
+  const isKidsEvent = (name) => KIDS_RE.test(name || '');
 
   // ── Data fetching ─────────────────────────────────────────────────────────
   const loadSeries = () => {
@@ -84,14 +89,31 @@ initComponent('HofPanel', () => {
       body: JSON.stringify({ pattern: assignPattern, dry_run: true }),
     });
     setAssigning(false);
-    if (r.ok) setAssignPreview(r.matched || []);
+    if (r.ok) {
+      const matched = r.matched || [];
+      setAssignPreview(matched);
+      // Default: everything checked except likely kids races
+      const checked = {};
+      matched.forEach(m => { checked[m.event_code] = !isKidsEvent(m.event_name); });
+      setAssignChecked(checked);
+    }
+  };
+
+  const toggleAssignAll = (value) => {
+    const next = {};
+    (assignPreview || []).forEach(m => { next[m.event_code] = value; });
+    setAssignChecked(next);
   };
 
   const confirmAssign = async () => {
+    const codes = (assignPreview || [])
+      .filter(m => assignChecked[m.event_code])
+      .map(m => m.event_code);
+    if (codes.length === 0) return;
     setAssigning(true);
     const r = await api(`/api/hof/series/${assignSeries.id}/assign-events`, {
       method: 'PATCH',
-      body: JSON.stringify({ pattern: assignPattern, dry_run: false }),
+      body: JSON.stringify({ event_codes: codes }),
     });
     setAssigning(false);
     if (r.ok) {
@@ -99,6 +121,7 @@ initComponent('HofPanel', () => {
       setAssignSeries(null);
       setAssignPattern('');
       setAssignPreview(null);
+      setAssignChecked({});
       loadSeries();
     } else {
       setToast(r.error || 'Assign failed');
@@ -223,7 +246,7 @@ initComponent('HofPanel', () => {
                 <td style={{ padding: '10px 12px', display: 'flex', gap: 8 }}>
                   <button className="btn btn-sm" onClick={() => openHof(s)}>View HOF</button>
                   <button className="btn btn-sm btn-secondary"
-                    onClick={() => { setAssignSeries(s); setAssignPattern(''); setAssignPreview(null); }}>
+                    onClick={() => { setAssignSeries(s); setAssignPattern(''); setAssignPreview(null); setAssignChecked({}); }}>
                     Assign Events
                   </button>
                 </td>
@@ -283,33 +306,63 @@ initComponent('HofPanel', () => {
             <input className="input" style={{ width: '100%', marginBottom: 12 }}
               placeholder='e.g. Brooklyn Half' value={assignPattern}
               onChange={e => { setAssignPattern(e.target.value); setAssignPreview(null); }} />
-            {assignPreview !== null && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 13, marginBottom: 6, fontWeight: 600 }}>
-                  Preview — {assignPreview.length} events matched:
+            {assignPreview !== null && (() => {
+              const selCount = assignPreview.filter(m => assignChecked[m.event_code]).length;
+              return (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      Preview — {selCount} of {assignPreview.length} selected
+                    </span>
+                    {assignPreview.length > 0 && (
+                      <span style={{ marginLeft: 'auto', fontSize: 12 }}>
+                        <a onClick={() => toggleAssignAll(true)}
+                          style={{ cursor: 'pointer', color: 'var(--primary, #4f46e5)' }}>Select all</a>
+                        <span style={{ color: '#bbb', margin: '0 6px' }}>·</span>
+                        <a onClick={() => toggleAssignAll(false)}
+                          style={{ cursor: 'pointer', color: 'var(--primary, #4f46e5)' }}>Select none</a>
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ maxHeight: 200, overflowY: 'auto', fontSize: 12, background: '#ffffff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 6, padding: '8px 12px' }}>
+                    {assignPreview.length === 0
+                      ? <span style={{ color: '#666' }}>No events match this pattern</span>
+                      : assignPreview.map(m => {
+                          const kid = isKidsEvent(m.event_name);
+                          return (
+                            <label key={m.event_code}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', cursor: 'pointer' }}>
+                              <input type="checkbox"
+                                checked={!!assignChecked[m.event_code]}
+                                onChange={e => setAssignChecked(c => ({ ...c, [m.event_code]: e.target.checked }))} />
+                              <span style={{ color: '#1a1a1a', fontWeight: 500 }}>{m.event_name}</span>
+                              <span style={{ color: '#888', fontSize: 11 }}>({m.event_code})</span>
+                              {kid && (
+                                <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 600,
+                                  background: '#FEF3C7', color: '#92400E', padding: '1px 6px', borderRadius: 8 }}>
+                                  kids?
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })
+                    }
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginTop: 6 }}>
+                    Kids/youth races are unchecked by default — re-check any you want to include.
+                  </div>
                 </div>
-                <div style={{ maxHeight: 160, overflowY: 'auto', fontSize: 12, background: '#ffffff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 6, padding: '8px 12px' }}>
-                  {assignPreview.length === 0
-                    ? <span style={{ color: '#666' }}>No events match this pattern</span>
-                    : assignPreview.map(m => (
-                        <div key={m.event_code} style={{ padding: '2px 0' }}>
-                          <span style={{ color: '#1a1a1a', fontWeight: 500 }}>{m.event_name}</span>
-                          <span style={{ color: '#888', fontSize: 11, marginLeft: 6 }}>({m.event_code})</span>
-                        </div>
-                      ))
-                  }
-                </div>
-              </div>
-            )}
+              );
+            })()}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
-              <button className="btn" onClick={() => setAssignSeries(null)}>Cancel</button>
+              <button className="btn" onClick={() => { setAssignSeries(null); setAssignChecked({}); }}>Cancel</button>
               <button className="btn btn-secondary" onClick={previewAssign} disabled={assigning || !assignPattern}>
                 {assigning ? 'Checking…' : 'Preview'}
               </button>
               <button className="btn btn-primary"
                 onClick={confirmAssign}
-                disabled={assigning || !assignPreview || assignPreview.length === 0}>
-                Confirm Assign
+                disabled={assigning || !assignPreview || assignPreview.filter(m => assignChecked[m.event_code]).length === 0}>
+                Confirm Assign ({assignPreview ? assignPreview.filter(m => assignChecked[m.event_code]).length : 0})
               </button>
             </div>
           </div>

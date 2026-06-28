@@ -1,3 +1,6 @@
+### 06-27 — HOF Assign Events: deselectable preview + kids auto-uncheck
+Changed: api_hof.py assign-events now accepts explicit event_codes (confirm path assigns only those; pattern path still serves dry_run preview + legacy assign-all). hof-panel.html preview gains per-row checkboxes + Select all/none toggle + live selected count; likely kids/youth races (KIDS_RE: kid/youth/dash/rising new york/family/fun run/etc.) auto-unchecked with "kids?" badge; confirm POSTs only checked codes. Fixes: confirm used to re-run LIKE and assign every match, ignoring preview. Status: py_compile + test_imports clean; NOT browser-tested. Next: smoke-test via nyrr → HOF → Assign Events; widen KIDS_RE if real kids-event names differ.
+
 ### 06-27 — Sync Activity rail (visibility / "what's running")
 Changed: nyrr_api.py adds process-wide _STATS + get_throttle_stats() (requests/retries/429/in_backoff, derived health+last_429_age) recorded in _post/_throttle. sync_worker.get_all_jobs(active_only). New GET /api/nyrr/activity (api_sync.py) = throttle health + in-flight load jobs. New static/NyrrActivityRail.js (107 LOC) polls it every 4s → 🟢/🟡 health chip + running-load chips + req counter; rendered top of NyrrEvents. Scope: this process only (CLI/GH runs separate). Verified: py_compile, stats behavior test, babel JSX, test_imports clean, synced. NOT committed.
 

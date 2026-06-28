@@ -278,19 +278,48 @@ def create_series():
 def assign_events(series_id):
     """Bulk-assign nyrr_events.series_id by event_name LIKE pattern.
 
-    Body: { "pattern": "Brooklyn Half", "dry_run": false }
-    Returns: { matched: [event_code, ...], updated: N }
+    Body (preview):  { "pattern": "Brooklyn Half", "dry_run": true }
+    Body (confirm):  { "event_codes": ["B2026", ...] }   # only these get assigned
+    Body (legacy):   { "pattern": "Brooklyn Half", "dry_run": false }  # assigns all matches
+    Returns: { matched: [{event_code, event_name, event_year}, ...], updated: N }
     """
-    body    = request.get_json() or {}
-    pattern = (body.get('pattern') or '').strip()
-    dry_run = bool(body.get('dry_run', False))
-
-    if not pattern:
-        return json_response({'ok': False, 'error': 'pattern is required'}, 400)
+    body        = request.get_json() or {}
+    pattern     = (body.get('pattern') or '').strip()
+    dry_run     = bool(body.get('dry_run', False))
+    event_codes = body.get('event_codes')   # explicit selection from preview checkboxes
 
     series_rows = query("SELECT id, name FROM nyrr_event_series WHERE id = %s", [series_id])
     if not series_rows:
         return json_response({'ok': False, 'error': 'Series not found'}, 404)
+
+    def _row(r):
+        return {'event_code': r['event_code'], 'event_name': r['event_name'], 'event_year': r['event_year']}
+
+    # ── Confirm path: assign only the explicitly selected events ──────────────
+    if event_codes is not None:
+        codes = [c for c in event_codes if c]
+        if not codes:
+            return json_response({'ok': False, 'error': 'No events selected'}, 400)
+        placeholders = ', '.join(['%s'] * len(codes))
+        matched = query(
+            "SELECT id, event_code, event_name, event_year FROM nyrr_events "
+            f"WHERE event_code IN ({placeholders}) ORDER BY event_year DESC, event_name",
+            codes,
+        )
+        ids = [r['id'] for r in matched]
+        for event_id in ids:
+            execute("UPDATE nyrr_events SET series_id = %s WHERE id = %s", [series_id, event_id])
+        logger.info(f"[hof] Assigned series_id={series_id} to {len(ids)} selected events")
+        return json_response({
+            'ok': True,
+            'dry_run': False,
+            'matched': [_row(r) for r in matched],
+            'updated': len(ids),
+        })
+
+    # ── Pattern path: preview (dry_run) or legacy assign-all ─────────────────
+    if not pattern:
+        return json_response({'ok': False, 'error': 'pattern is required'}, 400)
 
     like_pattern = f"%{pattern}%"
     matched = query(
@@ -298,9 +327,6 @@ def assign_events(series_id):
         "WHERE event_name LIKE %s ORDER BY event_year DESC, event_name",
         [like_pattern],
     )
-
-    def _row(r):
-        return {'event_code': r['event_code'], 'event_name': r['event_name'], 'event_year': r['event_year']}
 
     if dry_run or not matched:
         return json_response({
