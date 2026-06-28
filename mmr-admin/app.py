@@ -142,6 +142,9 @@ app.register_blueprint(admin_bp)
 from api_events import events_bp
 app.register_blueprint(events_bp)
 
+from api_events_discovery import events_discovery_bp
+app.register_blueprint(events_discovery_bp)
+
 from api_events_fuzzy import events_fuzzy_bp
 app.register_blueprint(events_fuzzy_bp)
 

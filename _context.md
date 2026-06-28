@@ -1,3 +1,6 @@
+### 06-28 22:35 UTC — fix: register events_discovery_bp (404 on Discover)
+Changed: app.py registers events_discovery_bp after events_bp. Routes /api/discover, /api/discover-upcoming, /api/discover/reconcile-slugs were defined but blueprint only imported into api_events.py, never registered → Flask 404 on all Discover buttons. Status: app.py parses; registration asserted. NOT browser-tested. Next: smoke-test Discover Upcoming live.
+
 ### 06-28 21:54 UTC — NYRR load progress %, auto-refresh, collapsible stats
 Changed: sync_worker.py adds _compute_progress (weighted step1 0-70 / step2 72 / step3 75-99 / done 100) exposed as progress_pct in get_job_status + get_all_jobs; stores teams_total in step2. nyrr-active-loads.html renders determinate/indeterminate progress bar + % + elapsed timer (styles.css adds @keyframes nyrrIndeterminate). NyrrEvents.js: row Load button shows % while in-flight; stat cards (Total Events/MMR Runners/Upcoming) moved to bottom behind collapsed-by-default "Totals" toggle (localStorage nyrrStatsOpen). NyrrEventsActions.js: load() gains {silent} flag; auto-refreshes events+stats every 15s while any load in flight. Status: test_imports clean; _compute_progress unit-checked standalone; NOT browser-tested. Next: smoke-test live; consider stalled-load warning (no row progress in N min) + reconcile row state with /api/nyrr/activity on reload.
 
