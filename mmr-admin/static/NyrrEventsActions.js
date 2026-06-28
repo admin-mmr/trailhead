@@ -35,8 +35,8 @@ window.useNyrrEventsController = function useNyrrEventsController() {
   }
 
   // ---- data load ----------------------------------------------------------
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     const params = new URLSearchParams();
     if (filter.status) params.set('status', filter.status);
     if (filter.year)   params.set('year', filter.year);
@@ -64,6 +64,19 @@ window.useNyrrEventsController = function useNyrrEventsController() {
 
   useEffect(() => { loadStats(); loadYears(); }, []);
   useEffect(() => { load(); }, [load]);
+
+  // ---- auto-refresh while loads are in flight -----------------------------
+  // Per-event pollers update the activeLoads dict, but the events table itself
+  // (MMR runners / matched counts) only refreshed on completion. Refresh it
+  // silently every 15s while anything is running so the numbers stay live.
+  const hasInFlight = Object.values(activeLoads).some(
+    ld => !['done', 'error', 'cancelled'].includes(ld.status)
+  );
+  useEffect(() => {
+    if (!hasInFlight) return;
+    const id = setInterval(() => { load({ silent: true }); loadStats(); }, 15000);
+    return () => clearInterval(id);
+  }, [hasInFlight, load]);
 
   // ---- finisher load + polling (sync-lens actions) ------------------------
   const stopPolling = (id) => {

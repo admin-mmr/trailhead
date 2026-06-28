@@ -219,6 +219,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool, mmr_only: b
         with _jobs_lock:
             _jobs[event_code]['message'] = f'Step 2 complete: {len(teams)} teams. Backfilling team_code...'
             _jobs[event_code]['step2_elapsed_sec'] = step2_elapsed
+            _jobs[event_code]['teams_total'] = len(teams)
 
         # --- Step 3: Backfill team_code ---
         logger.info("⏱️  STEP 3: Backfilling team_code...")
@@ -428,11 +429,54 @@ def start_sync(event_id: int, event_code: str, force_reload: bool = False, mmr_o
     t.start()
 
 
+def _compute_progress(job: Dict[str, Any]) -> int | None:
+    """Best-effort overall completion percentage (0-100) for a sync job.
+
+    The three steps are weighted so the bar advances monotonically:
+      step 1 (finishers fetch) → 0-70%   (rows_written / nyrr_finisher_count)
+      step 2 (team list)       → ~72%    (brief, indeterminate)
+      step 3 (team backfill)   → 75-99%  (teams_processed / teams_total)
+      done / complete          → 100%
+
+    Returns None when we genuinely can't estimate (so the UI can show an
+    indeterminate spinner instead of a misleading 0%).
+    """
+    status = job.get('status')
+    if status in ('done', 'complete'):
+        return 100
+    if status in ('error', 'cancelled'):
+        return None
+
+    step = job.get('step') or ''
+
+    if 'step1' in step:
+        total = job.get('nyrr_finisher_count') or 0
+        written = job.get('rows_written') or 0
+        if total > 0:
+            return max(1, min(70, round(written / total * 70)))
+        return None  # total not probed yet → indeterminate
+    if 'step2' in step:
+        return 72
+    if 'step3' in step:
+        total = job.get('teams_total') or 0
+        done = job.get('teams_processed') or 0
+        if total > 0:
+            return min(99, 75 + round(done / total * 24))
+        return 75
+    if step in ('init', 'slug_resolution', ''):
+        return 1
+    return None
+
+
 def get_job_status(event_code: str) -> Dict[str, Any] | None:
     """Return a copy of the in-flight job status dict, or None."""
     with _jobs_lock:
         job = _jobs.get(event_code)
-        return dict(job) if job else None
+        if not job:
+            return None
+        snap = dict(job)
+        snap['progress_pct'] = _compute_progress(snap)
+        return snap
 
 
 def get_all_jobs(active_only: bool = True) -> list[Dict[str, Any]]:
@@ -446,7 +490,9 @@ def get_all_jobs(active_only: bool = True) -> list[Dict[str, Any]]:
         for code, job in _jobs.items():
             if active_only and job.get('status') != 'running':
                 continue
-            out.append({'event_code': code, **job})
+            entry = {'event_code': code, **job}
+            entry['progress_pct'] = _compute_progress(entry)
+            out.append(entry)
         return out
 
 

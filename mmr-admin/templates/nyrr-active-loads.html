@@ -7,8 +7,27 @@
 //                             rows_written, teams_processed, startedAt } }
 //   onCancel : (eventId, eventCode) => void
 initComponent('NyrrActiveLoads', ({ loads, onCancel }) => {
+  const { useState, useEffect } = React;
   const ids = Object.keys(loads);
+
+  // Tick once a second so the elapsed timer stays live without the parent
+  // re-rendering. Hook runs unconditionally (before the early return).
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   if (ids.length === 0) return null;
+
+  const fmtElapsed = (startedAt) => {
+    if (!startedAt) return '';
+    const sec = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60), s = sec % 60;
+    if (m < 60) return `${m}m ${s}s`;
+    return `${Math.floor(m / 60)}h ${m % 60}m`;
+  };
 
   return (
     <div style={{
@@ -38,6 +57,9 @@ initComponent('NyrrActiveLoads', ({ loads, onCancel }) => {
                      : isError  ? <span style={{ color: 'var(--red, #ef4444)' }}>❌</span>
                      : isCancel ? <span style={{ color: 'var(--text2)' }}>🛑</span>
                      : <span className="spinner" />;
+          const pct = isDone ? 100
+                    : (typeof ld.progress_pct === 'number' ? ld.progress_pct : null);
+          const indeterminate = !isTerm && pct === null;
           return (
             <div key={id} style={{
               display: 'flex',
@@ -57,9 +79,33 @@ initComponent('NyrrActiveLoads', ({ loads, onCancel }) => {
                   Step {stepNum}/3
                 </span>
               )}
-              <span style={{ flex: 1, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ minWidth: 120, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {isError ? (ld.message || 'Error') : stepLabel}
               </span>
+              {/* Progress bar — determinate when we have a %, else indeterminate sweep */}
+              {!isTerm && (
+                <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 80 }}>
+                  <span style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(127,127,127,0.18)', overflow: 'hidden', position: 'relative' }}>
+                    <span style={{
+                      position: 'absolute', top: 0, bottom: 0, left: 0,
+                      width: indeterminate ? '40%' : `${pct}%`,
+                      background: 'var(--accent, #38bdf8)',
+                      borderRadius: 3,
+                      transition: 'width 0.4s ease',
+                      animation: indeterminate ? 'nyrrIndeterminate 1.2s ease-in-out infinite' : 'none',
+                    }} />
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 34, textAlign: 'right' }}>
+                    {pct === null ? '…' : `${pct}%`}
+                  </span>
+                </span>
+              )}
+              {isDone && <span style={{ flex: 1 }} />}
+              {ld.startedAt && !isTerm && (
+                <span style={{ fontSize: 11, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                  ⏱ {fmtElapsed(ld.startedAt)}
+                </span>
+              )}
               {(ld.rows_written > 0) && (
                 <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                   📊 {ld.rows_written.toLocaleString()} rows

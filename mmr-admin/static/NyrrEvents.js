@@ -41,6 +41,15 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
   };
   const activeLenses = isWide ? ['sync', 'coverage'] : [lens];
 
+  const [statsOpen, setStatsOpen] = useState(() => {
+    try { return localStorage.getItem('nyrrStatsOpen') === '1'; } catch (e) { return false; }
+  });
+  const toggleStats = () => setStatsOpen(o => {
+    const n = !o;
+    try { localStorage.setItem('nyrrStatsOpen', n ? '1' : '0'); } catch (e) {}
+    return n;
+  });
+
   // ---- pure render helpers ------------------------------------------------
   const gapColor = (pct) => pct === null ? 'var(--text2)' : pct >= 99 ? '#22c55e' : pct >= 90 ? '#f59e0b' : '#ef4444';
   const fmt = (n) => (n || n === 0) ? Number(n).toLocaleString() : '—';
@@ -90,7 +99,9 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
           title={isCompleted ? 'Re-fetch finishers (incremental, non-destructive)' : 'Fetch finishers from NYRR (3-step sync). Runs in background.'}
           onClick={() => triggerLoad(ev)}
         >
-          {inFlight ? <><span className="spinner" /> Loading…</> : (isCompleted ? '🔄 Reload' : '▶ Load')}
+          {inFlight
+            ? <><span className="spinner" /> {typeof ld.progress_pct === 'number' ? `${ld.progress_pct}%` : 'Loading…'}</>
+            : (isCompleted ? '🔄 Reload' : '▶ Load')}
         </button>
         <button
           className="btn btn-sm btn-outline"
@@ -177,15 +188,6 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
       {/* Sync Activity rail — process-wide NYRR health + in-flight loads */}
       {window.NyrrActivityRail && <window.NyrrActivityRail />}
 
-      {/* Stat cards */}
-      {stats && (
-        <div className="stat-grid" style={{ marginBottom: 16 }}>
-          <div className="stat-card"><div className="label">Total Events</div><div className="value">{stats.total_events}</div></div>
-          <div className="stat-card"><div className="label">MMR Runners</div><div className="value">{stats.total_mmr_runners}</div></div>
-          <div className="stat-card"><div className="label">Upcoming</div><div className="value accent">{stats.upcoming_events}</div></div>
-        </div>
-      )}
-
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <button className="btn btn-outline btn-sm" onClick={load} disabled={loading || !!bulkProgress}>↺ Refresh</button>
@@ -227,6 +229,32 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
           </>
         )}
       </div>
+
+      {/* Stat cards — collapsed by default, parked at the bottom */}
+      {stats && (
+        <div style={{ marginTop: 16 }}>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={toggleStats}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <span>{statsOpen ? '▾' : '▸'}</span>
+            <span>Totals</span>
+            {!statsOpen && (
+              <span style={{ color: 'var(--text2)', fontWeight: 400 }}>
+                {fmt(stats.total_events)} events · {fmt(stats.total_mmr_runners)} MMR runners · {fmt(stats.upcoming_events)} upcoming
+              </span>
+            )}
+          </button>
+          {statsOpen && (
+            <div className="stat-grid" style={{ marginTop: 8 }}>
+              <div className="stat-card"><div className="label">Total Events</div><div className="value">{stats.total_events}</div></div>
+              <div className="stat-card"><div className="label">MMR Runners</div><div className="value">{stats.total_mmr_runners}</div></div>
+              <div className="stat-card"><div className="label">Upcoming</div><div className="value accent">{stats.upcoming_events}</div></div>
+            </div>
+          )}
+        </div>
+      )}
 
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </div>
