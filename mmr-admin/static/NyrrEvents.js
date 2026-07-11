@@ -53,6 +53,14 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
   // ---- pure render helpers ------------------------------------------------
   const gapColor = (pct) => pct === null ? 'var(--text2)' : pct >= 99 ? '#22c55e' : pct >= 90 ? '#f59e0b' : '#ef4444';
   const fmt = (n) => (n || n === 0) ? Number(n).toLocaleString() : '—';
+  // Render a 'YYYY-MM-DD' date in LOCAL time. `new Date('YYYY-MM-DD')` parses as
+  // UTC midnight, which shows one day early in US timezones (e.g. 6/28 → 6/27).
+  const fmtDate = (s) => {
+    if (!s) return '—';
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s);
+    return d.toLocaleDateString();
+  };
   const SYNC_HEADERS = ['MMR Runners', 'All Runners', 'Matched', 'Match %'];
   const COV_HEADERS  = ['NYRR Total', 'DB Total', 'Coverage', 'NYRR MMR', 'DB MMR'];
   const menuItemStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px',
@@ -154,7 +162,7 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
                     )}
                   </td>
                   <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{ev.event_code || '—'}</td>
-                  <td>{ev.event_date ? new Date(ev.event_date).toLocaleDateString() : '—'}</td>
+                  <td>{fmtDate(ev.event_date)}</td>
                   <td>{window.StatusBadge ? <window.StatusBadge status={ev.processing_status} /> : ev.processing_status}</td>
                   {lenses.includes('sync') && renderSyncCells(ev)}
                   {lenses.includes('coverage') && renderCovCells(ev)}

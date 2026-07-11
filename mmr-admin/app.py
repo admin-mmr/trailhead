@@ -203,6 +203,18 @@ app.register_blueprint(hof_bp)
 
 
 # ---------------------------------------------------------------------------
+# NYRR automation scheduler (runs in-process on App Service; replaces the
+# GitHub Actions NYRR sync). No-op unless ENABLE_NYRR_SCHEDULER=1.
+# ---------------------------------------------------------------------------
+if 'test_imports.py' not in sys.argv[0]:
+    try:
+        from nyrr_scheduler import init_scheduler
+        init_scheduler()
+    except Exception:
+        _logging.getLogger(__name__).exception('Failed to start NYRR scheduler')
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 

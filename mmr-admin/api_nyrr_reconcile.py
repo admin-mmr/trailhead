@@ -60,7 +60,7 @@ def api_nyrr_reconcile_list():
             SUM(CASE WHEN r.team_code = 'MMR' THEN 1 ELSE 0 END) AS db_mmr
         FROM nyrr_events e
         LEFT JOIN nyrr_event_runners r ON r.nyrr_event_id = e.id
-        WHERE e.event_date < CURDATE()
+        WHERE e.event_date <= CURDATE()
         GROUP BY e.id
         ORDER BY e.event_date DESC
     """)

@@ -6,7 +6,7 @@ Extracted from api_events.py to keep routes modular.
 import os
 import re
 import requests
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify
 from auth import login_required
 from db import execute, query
@@ -121,88 +121,115 @@ def api_discover_events():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+# --- Haku "Upcoming Events" widget (current 2026 markup) -------------------
+# NOTE: the old series_id/query_type params return HTTP 500 and the old markup
+# exposed a data-event-code attribute that no longer exists. The live widget
+# (as embedded on nyrr.org) uses widget_scope/widget_title params, requires the
+# nyrr.org Origin/Referer, and exposes only a registration slug — used here as
+# event_code (reconcile resolves it to the canonical code once results post).
+_HAKU_PARAMS = {
+    "widget_title": "Upcoming Events",
+    "widget_scope": "Endurance, Ticketed, Volunteer, Trainings, Auction",
+    "title_font_family": "Inter", "body_font_family": "Inter",
+    "name_font_family": "Inter", "tag_font_family": "Inter",
+    "price_font_family": "Inter", "filter_font_family": "Inter",
+}
+_HAKU_HEADERS = {
+    "accept": "text/html",
+    "origin": "https://www.nyrr.org",
+    "referer": "https://www.nyrr.org/",
+    "user-agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/149.0.0.0 Safari/537.36"),
+}
+
+
+def _parse_haku_blocks(html_text):
+    """Yield a dict per <div class="upcoming-event"> block in the widget HTML."""
+    import html as _html
+    for block in re.split(r'<div class="upcoming-event"', html_text)[1:]:
+        d = re.search(r'data-start-date="([^"]+)"', block)
+        edate = None
+        if d:
+            try:
+                edate = datetime.strptime(d.group(1), "%Y/%m/%d").date()
+            except ValueError:
+                edate = None
+        s = re.search(r'events\.nyrr\.org/([^"?]+)', block)
+        slug = s.group(1).strip('/') if s else None
+        t = re.search(r'upcoming-race-title">([^<]+)<', block)
+        title = _html.unescape(t.group(1).strip()) if t else 'Unknown'
+        loc = re.search(r'upcoming-race-location">([^<]+)<', block)
+        location = _html.unescape(loc.group(1).strip()) if loc else None
+        st = re.search(r'data-sub-types="([^"]*)"', block)
+        yield {'slug': slug, 'title': title, 'date': edate,
+               'location': location, 'sub_types': st.group(1) if st else ''}
+
+
+def discover_upcoming_events(start_date=None, end_date=None,
+                             include_volunteers=False, exclude_youth=True):
+    """Scrape NYRR's Haku 'Upcoming Events' widget and upsert new races.
+
+    Callable from both the HTTP route and the scheduler. Defaults to a rolling
+    next-12-months window. Returns a summary dict.
+    """
+    if not NYRR_UPCOMING_API_KEY:
+        return {'ok': False, 'error': 'NYRR_HAKU_API_KEY not configured'}
+
+    start_date = start_date or date.today()
+    end_date = end_date or (date.today() + timedelta(days=365))
+
+    params = dict(_HAKU_PARAMS, api_key=NYRR_UPCOMING_API_KEY)
+    headers = dict(_HAKU_HEADERS, **{'x-api-key': NYRR_UPCOMING_API_KEY})
+    resp = requests.get(NYRR_UPCOMING_API, params=params, headers=headers, timeout=20)
+    if resp.status_code != 200:
+        return {'ok': False, 'error': f'Haku widget HTTP {resp.status_code}'}
+
+    discovered = skipped = filtered = 0
+    for ev in _parse_haku_blocks(resp.text):
+        slug, name, edate = ev['slug'], ev['title'], ev['date']
+        if not slug or edate is None or not (start_date <= edate <= end_date):
+            filtered += 1
+            continue
+        is_vol = 'volunteer' in name.lower() or 'volunteer' in ev['sub_types'].lower()
+        if is_vol and not include_volunteers:
+            filtered += 1
+            continue
+        if exclude_youth and 'rising nyrr' in name.lower():
+            filtered += 1
+            continue
+        if query("SELECT id FROM nyrr_events WHERE event_code = %s", [slug]):
+            skipped += 1
+            continue
+        try:
+            execute("""
+                INSERT INTO nyrr_events
+                (event_code, event_name, event_url, location, event_date,
+                 event_year, is_upcoming, is_virtual, processing_status)
+                VALUES (%s, %s, %s, %s, %s, %s, 1, 0, 'Pending')
+            """, (slug, name, f"https://events.nyrr.org/{slug}", ev['location'],
+                  edate, edate.year))
+            discovered += 1
+        except Exception as insert_err:
+            print(f"[discover-upcoming] insert error {slug!r}: {insert_err}", flush=True)
+
+    return {'ok': True, 'discovered': discovered, 'skipped': skipped,
+            'filtered': filtered,
+            'window': [start_date.isoformat(), end_date.isoformat()]}
+
+
 @events_discovery_bp.route('/api/discover-upcoming', methods=['POST'])
 @login_required
 def api_discover_upcoming():
-    """Fetch upcoming/announced events from the NYRR public widget API.
-
-    The NYRR announces upcoming events in their public widget, which we scrape
-    to discover events before they appear in the official event list.
-    """
+    """Fetch upcoming/announced races from NYRR's public Haku widget."""
     try:
-        if not NYRR_UPCOMING_API_KEY:
-            return jsonify({'ok': False, 'error': 'NYRR_HAKU_API_KEY not configured'}), 400
-
-        # Fetch HTML from the widget API
-        url = (f"{NYRR_UPCOMING_API}?api_key={NYRR_UPCOMING_API_KEY}"
-               f"&series_id=1&query_type=upcoming_races")
-        headers = {
-            'Accept': 'application/json',
-            'x-api-key': NYRR_UPCOMING_API_KEY,
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        html = response.text
-
-        # Split on each upcoming-event block
-        blocks = re.split(r'<div\s+class="upcoming-event"', html)
-
-        inserted = 0
-        for block in blocks[1:]:  # Skip first empty split
-            try:
-                # Extract event code
-                m = re.search(r'data-event-code="([^"]+)"', block)
-                code = m.group(1) if m else None
-                if not code:
-                    continue
-
-                # Check if already in DB
-                existing = query("SELECT id FROM nyrr_events WHERE event_code = %s", [code])
-                if existing:
-                    continue
-
-                # Extract name
-                m = re.search(r'class="upcoming-race-title"[^>]*>([^<]+)<', block)
-                name = m.group(1) if m else 'Unknown'
-
-                # Extract date
-                m = re.search(r'class="upcoming-race-date"[^>]*>([^<]+)<', block)
-                date_str = m.group(1) if m else ''
-
-                # Parse date (format: "Mon, Jan 01, 2025")
-                event_date_obj = None
-                try:
-                    event_date_obj = datetime.strptime(date_str, "%a, %b %d, %Y").date()
-                except ValueError:
-                    event_date_obj = None
-
-                # Determine if upcoming
-                upcoming = (event_date_obj > date.today()) if event_date_obj else True
-
-                # Extract year
-                event_year = event_date_obj.year if event_date_obj else datetime.now().year
-
-                # Try to insert
-                try:
-                    execute("""
-                        INSERT INTO nyrr_events
-                        (event_code, event_name, event_date, event_year, is_upcoming, is_virtual, processing_status)
-                        VALUES (%s, %s, %s, %s, %s, %s, 'Pending')
-                    """,
-                        (code, name, event_date_obj, event_year, int(upcoming), 0)
-                    )
-                    inserted += 1
-                except Exception as db_err:
-                    print(f'[discover-upcoming] DB insert error for code={code!r} (len={len(code)}): {db_err}', flush=True)
-                    pass
-
-            except Exception as block_err:
-                print(f'[discover-upcoming] Block parse error: {block_err}', flush=True)
-                pass
-
-        return jsonify({'ok': True, 'discovered': inserted})
-
+        body = request.get_json(silent=True) or {}
+        result = discover_upcoming_events(
+            include_volunteers=bool(body.get('include_volunteers', False)),
+            exclude_youth=bool(body.get('exclude_youth', True)),
+        )
+        return jsonify(result), (200 if result.get('ok') else 400)
     except Exception as e:
         import traceback
-        tb = traceback.format_exc()
-        print(f'[discover-upcoming] Error: {e}\n{tb}', flush=True)
+        print(f'[discover-upcoming] Error: {e}\n{traceback.format_exc()}', flush=True)
         return jsonify({'ok': False, 'error': str(e)}), 500

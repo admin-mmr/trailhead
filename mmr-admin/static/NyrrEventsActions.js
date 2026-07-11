@@ -31,7 +31,12 @@ window.useNyrrEventsController = function useNyrrEventsController() {
   function isPast(ev) {
     if (!ev.event_date) return true;
     const t = new Date(); t.setHours(0, 0, 0, 0);
-    return new Date(ev.event_date) < t;
+    // Parse 'YYYY-MM-DD' as LOCAL midnight (not UTC, which shifts a day in US
+    // timezones). `<=` so an event dated today (race already run) counts as past,
+    // matching the coverage panel's `event_date <= CURDATE()` filter.
+    const m = String(ev.event_date).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(ev.event_date);
+    return d <= t;
   }
 
   // ---- data load ----------------------------------------------------------

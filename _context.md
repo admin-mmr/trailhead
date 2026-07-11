@@ -1,3 +1,6 @@
+### 07-11 UTC — fix: repair upcoming-event discovery + in-app NYRR scheduler
+Changed: api_events_discovery.py discover_upcoming_events() rewritten — old series_id/query_type Haku params + data-event-code markup were dead (HTTP 500 / no matches → silent 0 discovered); now uses live nyrr.org widget params/headers (Origin/Referer spoof, widget_title/widget_scope) + slug-based event_code. New nyrr_scheduler.py (in-process APScheduler, ENABLE_NYRR_SCHEDULER=1) replaces deleted sync-nyrr-weekly.yml; new discover_upcoming.py CLI debug tool; api_nyrr_reconcile.py + NyrrEvents(Actions).js fix past/today date-boundary (UTC-parse off-by-one). Status: committed; py_compile + test_imports clean; NOT browser/live-tested. Next: flip ENABLE_NYRR_SCHEDULER=1 on Azure once verified, confirm cron replaces old GH Action.
+
 ### 06-28 22:35 UTC — fix: register events_discovery_bp (404 on Discover)
 Changed: app.py registers events_discovery_bp after events_bp. Routes /api/discover, /api/discover-upcoming, /api/discover/reconcile-slugs were defined but blueprint only imported into api_events.py, never registered → Flask 404 on all Discover buttons. Status: app.py parses; registration asserted. NOT browser-tested. Next: smoke-test Discover Upcoming live.
 
