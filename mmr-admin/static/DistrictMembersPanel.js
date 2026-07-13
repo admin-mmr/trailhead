@@ -318,7 +318,7 @@ window.DistrictMembersPanel = () => {
   };
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1600px', margin: '0 auto' }}>
+    <div className="mobile-tight" style={{ padding: '20px', maxWidth: '1600px', margin: '0 auto' }}>
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ margin: '0 0 16px 0', fontSize: '24px', fontWeight: '600' }}>
           Members by District
