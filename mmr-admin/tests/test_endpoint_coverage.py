@@ -183,6 +183,44 @@ COVERAGE: dict[tuple[str, str], str] = {
     ('GET',  '/api/query/config'):                 'test_api_smoke_extended.py',
     ('GET',  '/api/query/diag'):                   'test_api_smoke_extended.py',
     ('POST', '/api/query/execute'):                'test_api_smoke_extended.py',
+
+    # --- event discovery ---
+    ('POST', '/api/discover'):                     'test_api_smoke_nyrr_hof.py',
+    ('POST', '/api/discover-upcoming'):            'test_api_smoke_nyrr_hof.py',
+    ('POST', '/api/discover/reconcile-slugs'):     'test_api_smoke_nyrr_hof.py',
+
+    # --- events: by-code + Tier-4 fuzzy ---
+    ('GET',  '/api/events/by-code/<event_code>'):  'test_api_smoke_nyrr_hof.py',
+    ('POST', '/api/events/<event_id>/fuzzy-match'): 'test_api_smoke_nyrr_hof.py',
+    ('GET',  '/api/events/<event_id>/fuzzy-match/status'): 'test_api_smoke_nyrr_hof.py',
+
+    # --- NYRR activity / match queue / reconcile ---
+    ('GET',  '/api/nyrr/activity'):                'test_api_smoke_nyrr_hof.py',
+    ('GET',  '/api/nyrr/match-queue'):             'test_api_smoke_nyrr_hof.py',
+    ('POST', '/api/nyrr/match-queue/bulk-confirm'): 'test_api_smoke_nyrr_hof.py',
+    ('GET',  '/api/nyrr/reconcile'):               'test_api_smoke_nyrr_hof.py',
+    ('POST', '/api/nyrr/reconcile/<event_id>/probe'): 'test_api_smoke_nyrr_hof.py',
+    ('POST', '/api/nyrr/reconcile/<event_id>/tag-mmr'): 'test_api_smoke_nyrr_hof.py',
+    ('POST', '/api/nyrr/reconcile/tag-mmr-batch'): 'test_api_smoke_nyrr_hof.py',
+
+    # --- Hall of Fame ---
+    ('GET',   '/api/hof/series'):                  'test_api_smoke_nyrr_hof.py',
+    ('GET',   '/api/hof/series/<slug>'):           'test_api_smoke_nyrr_hof.py',
+    ('GET',   '/api/hof/event/<event_code>'):      'test_api_smoke_nyrr_hof.py',
+    ('GET',   '/api/hof/events'):                  'test_api_smoke_nyrr_hof.py',
+    ('GET',   '/api/hof/distances'):               'test_api_smoke_nyrr_hof.py',
+    ('POST',  '/api/hof/series'):                  'test_api_smoke_nyrr_hof.py',
+    ('PATCH', '/api/hof/series/<series_id>/assign-events'): 'test_api_smoke_nyrr_hof.py',
+    ('PATCH', '/api/hof/events/<event_id>/series'): 'test_api_smoke_nyrr_hof.py',
+    ('PATCH', '/api/hof/events/<event_id>/distance'): 'test_api_smoke_nyrr_hof.py',
+    ('POST',  '/api/hof/refresh-mmr-counts'):      'test_api_smoke_nyrr_hof.py',
+
+    # --- members duplicates (covered by domain tests) ---
+    ('GET',  '/api/members/duplicates'):           'test_members_duplicates.py',
+    ('POST', '/api/members/duplicates/dismiss'):   'test_members_duplicates.py',
+
+    # --- sync last-import (covered by contract tests) ---
+    ('GET',  '/api/sync/last-import'):             'test_sync_jobs_contract.py',
 }
 
 

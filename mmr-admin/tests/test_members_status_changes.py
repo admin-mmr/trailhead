@@ -556,19 +556,26 @@ class TestRevertNullStatusRegression:
     All fixes must be present in the latest active migration for sp_revert_admin_override.
     """
 
-    # V015 is the canonical version (supersedes V011–V014 for the revert SP)
+    # Migration files are deleted after deploy (CLAUDE.md), so the checks run
+    # against db/schema_snapshot.sql — the source of truth for deployed DDL.
+    # V015 was the canonical migration (superseding V011–V014 for the revert SP).
     MIGRATION_PATH = os.path.abspath(
-        os.path.join(os.path.dirname(__file__),
-                     '../../db/MIGRATION_V015_fix_revert_audit_insert.sql')
+        os.path.join(os.path.dirname(__file__), '../../db/schema_snapshot.sql')
     )
 
     def _proc_body(self, sql: str) -> str:
-        """Return the text starting at CREATE PROCEDURE sp_revert_admin_override."""
-        create_pos = sql.find('CREATE PROCEDURE sp_revert_admin_override')
-        assert create_pos != -1, (
-            "sp_revert_admin_override CREATE PROCEDURE not found in migration file."
+        """Return the sp_revert_admin_override body from the schema snapshot.
+
+        The snapshot stores each procedure as a single line:
+        PROCEDURE<TAB>sp_revert_admin_override<TAB><TAB>proc_body: BEGIN\\n...
+        """
+        for line in sql.splitlines():
+            if 'sp_revert_admin_override' in line and 'proc_body' in line:
+                return line
+        raise AssertionError(
+            "sp_revert_admin_override not found in db/schema_snapshot.sql — "
+            "was the procedure dropped, or the snapshot not re-exported?"
         )
-        return sql[create_pos:]
 
     def test_migration_contains_status_is_not_null_guard(self):
         """

@@ -176,6 +176,9 @@ def _clean_sql(sql: str) -> str:
     sql = re.sub(r"'[^']*'|\"[^\"]*\"", "''", sql)
     # Strip aliases: AS identifier → AS _alias_
     sql = re.sub(r'\bAS\s+\w+', 'AS _alias_', sql, flags=re.IGNORECASE)
+    # Strip function names: an identifier directly before '(' is a call
+    # (ROUND, TIME_TO_SEC, …), never a column — args inside are still checked.
+    sql = re.sub(r'\b[A-Za-z_]\w*\s*\(', '(', sql)
     # Strip table-position tokens: FROM/JOIN/UPDATE/INTO followed by identifier
     # (these are table names, not columns)
     sql = re.sub(
