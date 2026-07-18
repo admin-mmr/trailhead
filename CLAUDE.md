@@ -103,12 +103,12 @@ SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL
 Sequenced backlog. P0=operational (this week), P1=features remaining, P2=code health.
 Shipped since May plan (all on main): P1a staleness gate, P1b duplicate detection, P1c match queue + Tier-4 fuzzy, P1e mmr-only backfill (V029 `load_mode`, `run_backfill_mmr_only`), P1f HOF backend (`api_hof.py`), P1g HOF admin tab (`hof-panel.html`). Also: security audit (auth gaps/SQLi/secrets, `test_auth_matrix.py`), Payments Gmail auto-import on load, in-app NYRR scheduler (`nyrr_scheduler.py` replaces deleted `sync-nyrr-weekly.yml` workflow), pytest suite repaired (1348 pass / 0 fail).
 
-**P0 — Operational**
+**P0 — Operational** (ALL DONE 07-18)
 1. ~~Scheduler flag~~ DONE 07-18: `ENABLE_NYRR_SCHEDULER=1` set on `mmr-nyrr-viewer`; logs confirm `[scheduler] started — discovery '0 6 1 * *', finisher '0 2 * * 2'` (discovery: 1st of month 06:00 UTC; finishers: Tue 02:00 UTC).
 2. ~~Payments auto-import browser test~~ DONE 07-18: verified live on prod — auto-runs once per load, banner clears.
 3. ~~Repo-root `.venv`~~ DONE 07-18: recreated; `mmr` alias works again.
 4. ~~Stray root docs~~ RESOLVED 07-18: all three kept as sanctioned standing docs (see Docs discipline).
-5. Confirm `MIGRATION_V031` applied (migration files are deleted post-deploy; only the DB knows): `mysql-mmr -e "SELECT version FROM schema_migrations ORDER BY executed_at DESC LIMIT 5;"`.
+5. ~~Verify V031~~ DONE 07-18: confirmed via Data Query — V031 applied 2026-05-28; current latest migration is **V032** (nyrr_event_series FK). Next migration = V033.
 
 **P1h — Hall of Fame public page (~4h) — NOT shipped**
 - New `web-apps/mmr-webapp/src/app/hall-of-fame/page.tsx` (App Router, no auth).
