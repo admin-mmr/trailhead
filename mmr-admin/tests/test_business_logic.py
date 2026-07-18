@@ -421,8 +421,8 @@ class TestManualApproveOrphan:
 
         mock_query.side_effect = query_side_effect
 
-        with patch('api_payments.execute') as mock_exec, \
-             patch('api_payments.get_member_by_id', return_value=self._member_row()):
+        with patch('api_payments_actions.execute') as mock_exec, \
+             patch('api_payments_actions.get_member_by_id', return_value=self._member_row()):
             with client.session_transaction() as sess:
                 sess['user'] = {'email': 'admin@mmrunners.org', 'role': 'admin'}
             r = self._post(client, {'transactionNumber': 'TX001', 'memberID': 'A0001'})
@@ -451,8 +451,8 @@ class TestManualApproveOrphan:
 
         mock_query.side_effect = query_side_effect
 
-        with patch('api_payments.execute') as mock_exec, \
-             patch('api_payments.get_member_by_id', return_value=self._member_row()):
+        with patch('api_payments_actions.execute') as mock_exec, \
+             patch('api_payments_actions.get_member_by_id', return_value=self._member_row()):
             r = self._post(client, {'transactionNumber': 'TX001', 'memberID': 'A0001'})
 
         assert r.status_code == 200
@@ -472,8 +472,8 @@ class TestManualApproveOrphan:
 
         mock_query.side_effect = query_side_effect
 
-        with patch('api_payments.execute') as mock_exec, \
-             patch('api_payments.get_member_by_id', return_value=self._member_row()):
+        with patch('api_payments_actions.execute') as mock_exec, \
+             patch('api_payments_actions.get_member_by_id', return_value=self._member_row()):
             r = self._post(client, {'transactionNumber': 'TX001', 'memberID': 'A0001'})
 
         assert r.status_code == 200

@@ -388,7 +388,7 @@ class TestPaymentsExtended:
 
     def test_cancel_payment_returns_ok(self, client, mock_query):
         """Cancel must return 200 ok:true. Uses execute() (commits), not query()."""
-        with patch('api_payments.execute', return_value=1):
+        with patch('api_payments_listings.execute', return_value=1):
             r = _post(client, '/api/payments/cancel/PAY_NOPE')
         assert r.status_code == 200
         j = r.get_json()

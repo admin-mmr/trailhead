@@ -239,7 +239,9 @@ def dismiss_duplicate():
     if not dup_key:
         return json_response({'ok': False, 'error': 'dup_key is required'}, 400)
 
-    admin_email = session.get('user', {}).get('email', 'unknown')
+    # dismissed_by is NOT NULL; the sentinel is email-shaped so the value stays
+    # valid if it ever flows into an Email-constrained column (chk_actlog_email_valid).
+    admin_email = session.get('user', {}).get('email') or 'dev-bypass@localhost'
 
     query(
         """

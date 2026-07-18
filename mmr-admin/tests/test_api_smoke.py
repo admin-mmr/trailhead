@@ -45,7 +45,10 @@ class TestConfig:
         assert b'Missing key' in r.data
 
     def test_get_config_with_key_200(self, client, mock_query):
-        mock_query.return_value = [{'ConfigValue': '2025-09-01'}]
+        # get_config loads the whole config table into config_cache,
+        # so the seeded row must carry ConfigKey too.
+        mock_query.return_value = [{'ConfigKey': 'MembershipCollectionStart',
+                                    'ConfigValue': '2025-09-01'}]
         r = client.get('/api/config/get?key=MembershipCollectionStart')
         data = ok(r)
         assert data.get('success') is True
