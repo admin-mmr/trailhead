@@ -46,8 +46,8 @@ const PaymentsPanel = () => {
 
   // Gmail sync bar state
   const [lastSyncTime, setLastSyncTime] = useState(null);
-  const [syncJobId, setSyncJobId]       = useState(null);
   const [syncStatus, setSyncStatus]     = useState(null); // null | 'running' | 'done' | 'error'
+  const [syncStep, setSyncStep]         = useState(null); // 'transactions' | 'members'
   const stopPollRef = useRef(null);  // holds cleanup fn returned by pollUntilDone
   const [activeGmailPopover, setActiveGmailPopover] = useState(null);
   const [popoverAnchorRect, setPopoverAnchorRect] = useState(null);
@@ -85,36 +85,54 @@ const PaymentsPanel = () => {
     });
   }, []);
 
-  const pollSyncJob = useCallback((jobId) => {
-    if (stopPollRef.current) stopPollRef.current();
-    stopPollRef.current = window.pollUntilDone(jobId, {
-      onDone: () => {
+  // Launch one import job and resolve when it completes (rejects on error/expiry).
+  const runImportJob = useCallback((endpoint) => new Promise((resolve, reject) => {
+    api(endpoint, { method: 'POST' }).then(r => {
+      if (!r || !r.job_id) {
+        reject(new Error((r && r.error) || `Failed to launch ${endpoint}`));
+        return;
+      }
+      if (stopPollRef.current) stopPollRef.current();
+      stopPollRef.current = window.pollUntilDone(r.job_id, {
+        onDone: resolve,
+        onError: (job) => reject(new Error((job && job.message) || 'Sync failed')),
+      });
+    }).catch(reject);
+  }), []);
+
+  // Sync = Gmail transactions import, then new-member import (both Sheets → MySQL).
+  const handleSyncNow = useCallback(() => {
+    setSyncStatus('running');
+    setSyncStep('transactions');
+    runImportJob('/api/sync/import/transactions')
+      .then(() => {
+        setSyncStep('members');
+        return runImportJob('/api/sync/import/members');
+      })
+      .then(() => {
         setSyncStatus('done');
+        setSyncStep(null);
         fetchLastSync();
         loadAll();
         setTimeout(() => setSyncStatus(null), 4000);
-      },
-      onError: () => {
+      })
+      .catch(() => {
         setSyncStatus('error');
+        setSyncStep(null);
         setTimeout(() => setSyncStatus(null), 4000);
-      },
-    });
-  }, [fetchLastSync]);
+      });
+  }, [runImportJob, fetchLastSync]);
 
-  const handleSyncNow = useCallback(() => {
-    setSyncStatus('running');
-    api('/api/sync/import/transactions', { method: 'POST' }).then(r => {
-      if (r && r.job_id) {
-        setSyncJobId(r.job_id);
-        pollSyncJob(r.job_id);
-      } else {
-        setSyncStatus('error');
-        setTimeout(() => setSyncStatus(null), 4000);
-      }
-    });
-  }, [pollSyncJob]);
-
-  useEffect(() => { fetchLastSync(); return () => { if (stopPollRef.current) stopPollRef.current(); }; }, [fetchLastSync]);
+  // On the first Payments view of a page load, kick off the import sequence
+  // automatically (guarded so tab switches back here don't re-trigger it).
+  useEffect(() => {
+    fetchLastSync();
+    if (!window.__paymentsAutoSyncStarted) {
+      window.__paymentsAutoSyncStarted = true;
+      handleSyncNow();
+    }
+    return () => { if (stopPollRef.current) stopPollRef.current(); };
+  }, [fetchLastSync, handleSyncNow]);
 
   // Inject pulse keyframe once (no JSX, no external CSS dependency)
   useEffect(() => {
@@ -232,10 +250,10 @@ const PaymentsPanel = () => {
   }, []);
 
   // Gmail sync status bar
-  const syncBarColor = syncStatus === 'completed' ? 'var(--green, #22c55e)' : syncStatus === 'error' ? '#dc2626' : 'var(--accent)';
-  const syncBarLabel = syncStatus === 'running'   ? '⏳ Syncing…'
-                     : syncStatus === 'completed' ? '✓ Sync complete'
-                     : syncStatus === 'error'     ? '✗ Sync failed'
+  const syncBarColor = syncStatus === 'done' ? 'var(--green, #22c55e)' : syncStatus === 'error' ? '#dc2626' : 'var(--accent)';
+  const syncBarLabel = syncStatus === 'running' ? (syncStep === 'members' ? '⏳ Importing new members…' : '⏳ Syncing Gmail…')
+                     : syncStatus === 'done'    ? '✓ Sync complete'
+                     : syncStatus === 'error'   ? '✗ Sync failed'
                      : 'Sync Now';
 
   // completedAt from backend is Unix seconds (time.time()); multiply by 1000 for JS Date.
@@ -296,7 +314,7 @@ const PaymentsPanel = () => {
         background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 13,
       }
     },
-      e('span', { style: { color: 'var(--text2)' } }, '📥 Gmail Transactions'),
+      e('span', { style: { color: 'var(--text2)' } }, '📥 Gmail Transactions + New Members'),
       e('span', { style: { color: 'var(--text2)', fontSize: 12 } },
         'Last imported: ', e('strong', { style: { color: 'var(--text)' } }, fmtSyncTime(lastSyncTime)),
       ),
