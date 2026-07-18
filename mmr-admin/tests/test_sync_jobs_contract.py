@@ -2,11 +2,16 @@
 Contract tests for sync job status strings.
 
 Pins the backend status vocabulary ('queued'|'running'|'done'|'error') and
-asserts the frontend JS reads the same values — catching the class of bug
-where sync_jobs.py emits 'done' but PaymentsPanel.js filtered for 'completed',
-causing "Last imported: Never" even after a successful sync.
+the server-side last-import chain — catching the class of bug where
+sync_jobs emits 'done' but a consumer filters for 'completed', causing
+"Last imported: Never" even after a successful sync.
 
-No live DB required — sync_jobs in-memory store is used directly.
+Architecture note: operation/completedAt live only in the MySQL sync_jobs
+table (Operation, CompletedAt); the in-memory dicts no longer carry them.
+PaymentsPanel reads GET /api/sync/last-import and polls via
+window.pollUntilDone — there is no client-side job filtering anymore.
+
+No live DB required — MySQL writes are asserted via a mocked db.execute.
 
 Run:
     cd mmr-admin
@@ -41,154 +46,143 @@ VALID_ALL_STATUSES      = {'queued', 'running', 'done', 'error'}
 
 
 # ---------------------------------------------------------------------------
-# 0. In-memory job dict field contract — the fetchLastSync filter depends on
-#    these three fields being present on every job dict:
-#      • operation   — must match 'import_transactions' to find the right job
-#      • completedAt — must be non-None after terminal status, for sort/filter
-#      • status      — must be 'done' for the filter to pass
+# 0. Server-side last-import contract.
 #
-#  Root bugs caught here:
-#    a) _make_job omitted 'operation' → j.operation always undefined → filter never matched
-#    b) launch_job didn't pass operation into _make_job → same result
-#    c) update_job never set completedAt in memory → j.completedAt always None → filter never matched
-#    d) fmtSyncTime used new Date(seconds) not new Date(seconds*1000) → displayed 1970 dates
+#    The 'Last imported: Never' display no longer filters jobs client-side.
+#    Since commit 8d81782 the in-memory job dicts carry no operation/completedAt
+#    — those live only in the MySQL sync_jobs table (Operation, CompletedAt),
+#    and PaymentsPanel reads GET /api/sync/last-import instead.
+#
+#    The chain that must not break:
+#      launch_job persists Operation → update_job stamps CompletedAt on
+#      done/error → /api/sync/last-import selects Operation='import_transactions'
+#      AND Status='done' → returns Unix SECONDS → PaymentsPanel reads
+#      r.completedAt and multiplies by 1000 for new Date().
 # ---------------------------------------------------------------------------
 
-class TestInMemoryJobFieldContract:
+class TestServerSideLastImportContract:
 
-    def test_make_job_includes_operation(self):
-        """`_make_job` must include 'operation' so fetchLastSync can filter by operation type."""
-        from sync_jobs import _make_job
-        job = _make_job('test-id', 'test', 'import_transactions')
-        assert 'operation' in job, (
-            "_make_job must include 'operation' in the job dict. "
-            "Without it, j.operation is undefined in JS and fetchLastSync "
-            "filter (j.operation === 'import_transactions') never matches."
-        )
-        assert job['operation'] == 'import_transactions'
-
-    def test_launch_job_passes_operation_to_dict(self):
-        """`launch_job` must store operation on the in-memory dict, not just in MySQL."""
-        from sync_jobs import _jobs, launch_job, _lock
+    def test_launch_job_persists_operation_to_mysql(self):
+        """launch_job must write Operation to sync_jobs — /api/sync/last-import
+        filters on it, so a job inserted without it never counts as an import."""
+        from unittest.mock import MagicMock
+        from sync_jobs import launch_job
 
         done = threading.Event()
         def noop(job_id): done.set()
 
-        with patch(_DB_PATCH, return_value=None):
-            job_id = launch_job(noop, initial_message='test', operation='import_transactions')
+        db_execute = MagicMock()
+        with patch(_DB_PATCH, return_value=db_execute):
+            launch_job(noop, initial_message='test', operation='import_transactions')
         done.wait(timeout=3)
 
-        with _lock:
-            job = _jobs.get(job_id, {})
-        assert job.get('operation') == 'import_transactions', (
-            f"launch_job must pass operation to the in-memory job dict. "
-            f"Got: {job.get('operation')!r}. "
-            "Without this, fetchLastSync's j.operation filter always fails."
+        assert db_execute.called, "launch_job must INSERT into sync_jobs"
+        sql, params = db_execute.call_args[0]
+        assert 'Operation' in sql
+        assert 'import_transactions' in params, (
+            f"launch_job must pass the operation into the INSERT params. Got: {params}"
         )
 
-    def test_make_job_includes_completed_at_as_none(self):
-        """`_make_job` must include 'completedAt' key (initially None)."""
-        from sync_jobs import _make_job
-        job = _make_job('test-id', 'test', 'import_transactions')
-        assert 'completedAt' in job, (
-            "_make_job must include 'completedAt' key (set to None initially). "
-            "Without the key, update_job's 'not _jobs[job_id].get(completedAt)' "
-            "guard works but JS sort (new Date(undefined)) breaks silently."
-        )
-        assert job['completedAt'] is None
+    def test_update_job_stamps_completed_at_on_done(self):
+        """update_job(status='done') must set CompletedAt=NOW() in MySQL.
+        Without it, /api/sync/last-import's CompletedAt IS NOT NULL filter never
+        matches — 'Last imported: Never' shows even after a successful sync."""
+        from unittest.mock import MagicMock
+        from sync_jobs import update_job
 
-    def test_update_job_sets_completed_at_in_memory_on_done(self):
-        """`update_job` must set completedAt in the in-memory dict when status→done."""
-        from sync_jobs import _jobs, launch_job, update_job, _lock
+        db_execute = MagicMock()
+        with patch(_DB_PATCH, return_value=db_execute):
+            update_job('any-job-id', status='done', message='finished', progress=100)
 
-        done_event = threading.Event()
-        def worker(job_id):
-            update_job(job_id, status='running', message='working')
-            update_job(job_id, status='done', message='finished', progress=100)
-            done_event.set()
-
-        with patch(_DB_PATCH, return_value=None):
-            job_id = launch_job(worker, initial_message='test', operation='import_transactions')
-        done_event.wait(timeout=3)
-
-        with _lock:
-            job = _jobs.get(job_id, {})
-
-        assert job.get('completedAt') is not None, (
-            "update_job must set completedAt in the in-memory dict when status='done'. "
-            "Without this, fetchLastSync's j.completedAt filter is always falsy — "
-            "'Last imported: Never' shows even after a successful sync."
-        )
-        assert isinstance(job['completedAt'], float), (
-            f"completedAt must be a Unix timestamp (float). Got: {job.get('completedAt')!r}"
+        assert db_execute.called
+        sql = db_execute.call_args[0][0]
+        assert 'CompletedAt = NOW()' in sql, (
+            f"update_job must stamp CompletedAt when status='done'. SQL was: {sql}"
         )
 
-    def test_completed_at_is_unix_seconds_not_milliseconds(self):
-        """completedAt must be Unix seconds (time.time()), not milliseconds.
-        The JS side multiplies by 1000 before passing to new Date().
-        If the backend emits milliseconds, JS would multiply again → wrong date.
-        """
-        from sync_jobs import _jobs, launch_job, update_job, _lock
+    def test_update_job_stamps_completed_at_on_error(self):
+        from unittest.mock import MagicMock
+        from sync_jobs import update_job
 
-        done_event = threading.Event()
-        def worker(job_id):
-            update_job(job_id, status='done', message='done', progress=100)
-            done_event.set()
+        db_execute = MagicMock()
+        with patch(_DB_PATCH, return_value=db_execute):
+            update_job('any-job-id', status='error', message='boom')
 
-        with patch(_DB_PATCH, return_value=None):
-            job_id = launch_job(worker, initial_message='test', operation='import_transactions')
-        done_event.wait(timeout=3)
+        sql = db_execute.call_args[0][0]
+        assert 'CompletedAt = NOW()' in sql
 
-        with _lock:
-            job = _jobs.get(job_id, {})
+    def test_update_job_no_completed_at_while_running(self):
+        """Non-terminal updates must NOT stamp CompletedAt — a running job that
+        already shows a completion time would report imports that never finished."""
+        from unittest.mock import MagicMock
+        from sync_jobs import update_job
 
-        ts = job.get('completedAt', 0)
-        assert ts < 1e12, (
-            f"completedAt={ts} looks like milliseconds (>1e12). "
-            "Backend must emit Unix seconds. JS does ts*1000 before new Date()."
-        )
-        # Should be within 10 seconds of now
-        assert abs(time.time() - ts) < 10, (
-            f"completedAt={ts} is not close to now ({time.time():.0f}). "
-            "Likely set incorrectly."
+        db_execute = MagicMock()
+        with patch(_DB_PATCH, return_value=db_execute):
+            update_job('any-job-id', status='running', message='working')
+
+        sql = db_execute.call_args[0][0]
+        assert 'CompletedAt' not in sql, (
+            f"update_job must not stamp CompletedAt for status='running'. SQL was: {sql}"
         )
 
-    def test_fetch_last_sync_filter_works_end_to_end(self):
-        """
-        Simulate what fetchLastSync does: filter list_jobs() result for
-        operation='import_transactions', status='done', completedAt truthy.
-        A job created and completed via launch_job/update_job must survive this filter.
-        """
-        from sync_jobs import _jobs, launch_job, update_job, list_jobs, _lock
+    def test_last_import_endpoint_returns_unix_seconds(self, client, mock_query):
+        """/api/sync/last-import must return Unix SECONDS — PaymentsPanel does
+        ts*1000 before new Date(); emitting milliseconds would display wrong dates."""
+        from datetime import datetime
+        completed = datetime(2026, 7, 1, 12, 0, 0)
+        mock_query.return_value = [{'CompletedAt': completed}]
 
-        done_event = threading.Event()
-        def worker(job_id):
-            update_job(job_id, status='running', message='importing')
-            update_job(job_id, status='done', message='702 rows imported', progress=100)
-            done_event.set()
-
-        with patch(_DB_PATCH, return_value=None):
-            with patch('sync_jobs.list_jobs', wraps=lambda: list(dict(_jobs).values())):
-                job_id = launch_job(worker, initial_message='test', operation='import_transactions')
-                done_event.wait(timeout=3)
-
-                with _lock:
-                    all_jobs = list(_jobs.values())
-
-        # Apply the exact JS filter from fetchLastSync
-        matched = [
-            j for j in all_jobs
-            if j.get('operation') == 'import_transactions'
-            and j.get('status') == 'done'
-            and j.get('completedAt')
-        ]
-
-        assert matched, (
-            "No jobs survived the fetchLastSync filter "
-            "(operation='import_transactions' AND status='done' AND completedAt truthy). "
-            "This is why 'Last imported: Never' shows even after a successful sync. "
-            f"Jobs in store: {[{k: v for k, v in j.items() if k in ('operation','status','completedAt')} for j in all_jobs]}"
+        r = client.get('/api/sync/last-import')
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j['ok'] is True
+        assert j['completedAt'] == completed.timestamp()
+        assert j['completedAt'] < 1e12, (
+            "completedAt looks like milliseconds — backend must emit seconds"
         )
+
+    def test_last_import_sql_filters_done_import_transactions(self, client, mock_query):
+        """The endpoint's SQL must filter Status='done' (backend vocabulary — the
+        original bug was filtering on 'completed') and Operation='import_transactions'."""
+        from datetime import datetime
+        mock_query.return_value = [{'CompletedAt': datetime(2026, 7, 1)}]
+
+        client.get('/api/sync/last-import')
+
+        sql, params = mock_query.call_args[0]
+        assert "Status = 'done'" in sql, (
+            f"last-import must filter Status = 'done', never 'completed'. SQL: {sql}"
+        )
+        assert 'import_transactions' in params
+        assert 'CompletedAt IS NOT NULL' in sql
+
+    def test_last_import_falls_back_to_gmail_timestamp(self, client, mock_query):
+        """With no sync_jobs record (e.g. after a DB wipe), the endpoint must fall
+        back to MAX(Timestamp) in gmail_transactions rather than returning None."""
+        from datetime import datetime
+        latest_tx = datetime(2026, 6, 15, 8, 30, 0)
+
+        def qside(sql, *a, **kw):
+            if 'sync_jobs' in sql:
+                return []
+            return [{'ts': latest_tx}]
+
+        mock_query.side_effect = qside
+        r = client.get('/api/sync/last-import')
+        j = r.get_json()
+        assert j['ok'] is True
+        assert j['completedAt'] == latest_tx.timestamp()
+
+    def test_last_import_returns_none_when_no_data(self, client, mock_query):
+        """No jobs and no transactions → ok:true with completedAt:null (the frontend
+        renders 'Never') — not a 500."""
+        mock_query.return_value = []
+        r = client.get('/api/sync/last-import')
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j['ok'] is True
+        assert j['completedAt'] is None
 
 
 # ---------------------------------------------------------------------------
@@ -285,18 +279,24 @@ class TestSyncJobsBackendContract:
 
 class TestPaymentsPanelFrontendContract:
 
-    def test_payments_panel_filters_on_done_not_completed(self):
+    def test_payments_panel_reads_last_import_endpoint(self):
         """
-        PaymentsPanel.js must use 'done' (backend vocabulary) for its success
-        state. Using 'completed' is the bug fixed in commit 876f11d.
+        fetchLastSync must read GET /api/sync/last-import and use r.completedAt.
+        The 'done' filtering moved server-side (the endpoint's SQL filters
+        Status='done' — pinned in TestServerSideLastImportContract); the old
+        client-side jobs filter is gone by design.
         """
         assert PAYMENTS_JS.exists(), f"PaymentsPanel.js not found at {PAYMENTS_JS}"
         src = PAYMENTS_JS.read_text()
 
-        # Must contain the correct success-state comparison
-        assert "=== 'done'" in src, (
-            "PaymentsPanel.js must compare its sync state to 'done'. "
-            "If this is 'completed', the success UI never renders."
+        assert '/api/sync/last-import' in src, (
+            "PaymentsPanel.js fetchLastSync must call /api/sync/last-import. "
+            "Filtering /api/sync/jobs client-side misses jobs after a process "
+            "restart (in-memory store is empty) — 'Last imported: Never'."
+        )
+        assert 'completedAt' in src, (
+            "PaymentsPanel.js must read r.completedAt from the last-import "
+            "response to populate the Last imported display."
         )
 
     def test_payments_panel_does_not_filter_on_completed(self):
@@ -313,28 +313,20 @@ class TestPaymentsPanelFrontendContract:
             f"Found: {bad_lines}"
         )
 
-    def test_poll_stop_condition_includes_done(self):
+    def test_no_raw_setinterval_polling(self):
         """
-        Regression: pollSyncJob's clearInterval must trigger on status === 'done'.
-
-        Bug: the interval callback checked (status === 'completed' || status === 'error')
-        but the backend emits 'done'. The interval never fired clearInterval, so the
-        poller ran forever after every successful sync (visible as repeated
-        '[FETCH] Job ... COMPLETE status=done, still being polled' in Flask logs).
-
-        Fix: condition must include 'done'.
+        PaymentsPanel.js must not manage its own setInterval — all job polling
+        goes through window.pollUntilDone (CLAUDE.md polling pattern), whose
+        stop-on-'done' behaviour is pinned by TestPollUntilDoneUtility. A raw
+        setInterval here is how the poll-forever-after-success bug came back
+        once already ('completed' vs 'done' vocabulary drift).
         """
         src = PAYMENTS_JS.read_text()
-
-        # After the refactor, polling is delegated to window.pollUntilDone,
-        # which stops on 'done' internally (asserted by the index.html tests).
-        if 'pollUntilDone' in src:
-            return
-        # Legacy path: own setInterval must have a branch that stops on 'done'
-        assert "status === 'done'" in src, (
-            "The poll stop condition must include status === 'done'. "
-            "Without this, the 2-second interval runs forever after a successful sync."
+        assert 'setInterval' not in src, (
+            "PaymentsPanel.js must not use a raw setInterval for job polling — "
+            "delegate to window.pollUntilDone (defined in index.html)."
         )
+        assert 'pollUntilDone' in src
 
     def test_poll_stop_condition_not_done_only_via_completed(self):
         """

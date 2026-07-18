@@ -123,7 +123,7 @@ window.ReconcilePanel = () => {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 16 }}>
+    <div className="mobile-tight" style={{ maxWidth: 900, margin: '0 auto', padding: 16 }}>
 
       {/* Info banner */}
       <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: 6, padding: '14px 18px', marginBottom: 20 }}>

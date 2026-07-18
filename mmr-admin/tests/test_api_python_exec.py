@@ -185,7 +185,10 @@ class TestExecuteCode:
         j = r.get_json()
         # Should not error — 'query' is in the exec namespace
         assert j['status'] == 'ok'
-        assert 'function' in j.get('output_text', '').lower() or 'method' in j.get('output_text', '').lower()
+        # 'magicmock' accepted: the mock_query fixture patches db.query, so the
+        # exec env sees the mock under tests. The point is that `query` resolves.
+        out = j.get('output_text', '').lower()
+        assert any(t in out for t in ('function', 'method', 'magicmock'))
 
     def test_multiline_code_works(self, client, mock_query):
         code = '\n'.join([

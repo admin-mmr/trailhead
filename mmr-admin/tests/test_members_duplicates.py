@@ -98,7 +98,9 @@ class TestGetDuplicatesStructure:
         assert 'name' not in data
 
     def test_401_when_unauthenticated(self, client):
-        r = client.get('/api/members/duplicates')
+        # conftest sets DEV_BYPASS_AUTH=true; disable it so login_required runs.
+        with patch('auth.DEV_BYPASS_AUTH', False):
+            r = client.get('/api/members/duplicates')
         assert r.status_code in (401, 302)
 
 
@@ -269,9 +271,11 @@ class TestDismissDuplicate:
         assert r.get_json()['ok'] is False
 
     def test_401_when_unauthenticated(self, client, mock_query):
-        r = client.post(
-            '/api/members/duplicates/dismiss',
-            data=json.dumps({'dup_type': 'name', 'dup_key': 'x'}),
-            content_type='application/json',
-        )
+        # conftest sets DEV_BYPASS_AUTH=true; disable it so login_required runs.
+        with patch('auth.DEV_BYPASS_AUTH', False):
+            r = client.post(
+                '/api/members/duplicates/dismiss',
+                data=json.dumps({'dup_type': 'name', 'dup_key': 'x'}),
+                content_type='application/json',
+            )
         assert r.status_code in (401, 302)

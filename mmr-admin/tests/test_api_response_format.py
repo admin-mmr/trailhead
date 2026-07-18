@@ -53,14 +53,14 @@ class TestMemberQuickFormat:
     """
 
     def test_member_quick_single_found_has_ok_key(self, client, mock_query):
-        with patch('api_payments.get_member_by_id', return_value=_MEMBER_ROW):
+        with patch('api_payments_lookups.get_member_by_id', return_value=_MEMBER_ROW):
             j = ok_json(client.get('/api/payments/member-quick/A0001'))
         assert 'ok' in j, f"Response missing 'ok' key: {j}"
         assert j['ok'] is True
         assert 'data' in j, f"Response missing 'data' key: {j}"
 
     def test_member_quick_single_not_found_has_ok_false(self, client, mock_query):
-        with patch('api_payments.get_member_by_id', return_value=None):
+        with patch('api_payments_lookups.get_member_by_id', return_value=None):
             r = client.get('/api/payments/member-quick/ZZZZ')
         j = r.get_json()
         assert j is not None
@@ -69,13 +69,13 @@ class TestMemberQuickFormat:
 
     def test_member_quick_single_data_is_dict(self, client, mock_query):
         """data must be a dict (member), not a list or bare value."""
-        with patch('api_payments.get_member_by_id', return_value=_MEMBER_ROW):
+        with patch('api_payments_lookups.get_member_by_id', return_value=_MEMBER_ROW):
             j = ok_json(client.get('/api/payments/member-quick/A0001'))
         assert isinstance(j['data'], dict), f"data should be a dict, got {type(j['data'])}"
 
     def test_member_quick_single_data_contains_expected_fields(self, client, mock_query):
         """data must include the fields the tooltip reads."""
-        with patch('api_payments.get_member_by_id', return_value=_MEMBER_ROW):
+        with patch('api_payments_lookups.get_member_by_id', return_value=_MEMBER_ROW):
             j = ok_json(client.get('/api/payments/member-quick/A0001'))
         for field in ('MemberID', 'FirstName', 'LastName', 'Type'):
             assert field in j['data'], f"data missing field '{field}': {j['data']}"
