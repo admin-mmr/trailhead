@@ -15,6 +15,7 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
   const { useState, useEffect } = React;
 
   const WIDE_BREAKPOINT = 1100;
+  const MOBILE_BREAKPOINT = 640;
 
   const {
     events, stats, loading, dbError, toast, setToast, filter, years,
@@ -53,6 +54,15 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
   // ---- pure render helpers ------------------------------------------------
   const gapColor = (pct) => pct === null ? 'var(--text2)' : pct >= 99 ? '#22c55e' : pct >= 90 ? '#f59e0b' : '#ef4444';
   const fmt = (n) => (n || n === 0) ? Number(n).toLocaleString() : '—';
+  // Event names arrive HTML-escaped from NYRR (e.g. "Hope &amp; Possibility").
+  // Decode to text via a detached textarea (reads .value, never injects into the DOM).
+  const decodeHtml = (s) => {
+    if (s == null) return s;
+    if (typeof document === 'undefined') return String(s);
+    const t = document.createElement('textarea');
+    t.innerHTML = String(s);
+    return t.value;
+  };
   // Render a 'YYYY-MM-DD' date in LOCAL time. `new Date('YYYY-MM-DD')` parses as
   // UTC midnight, which shows one day early in US timezones (e.g. 6/28 → 6/27).
   const fmtDate = (s) => {
@@ -93,6 +103,64 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
       </>
     );
   };
+
+  // ---- mobile: compact label/value metrics (same data as the table cells) ----
+  const syncStats = (ev) => [
+    ['MMR', ev.mmr_runner_count || 0],
+    ['All', ev.result_count || 0],
+    ['Matched', ev.mmr_matched_count || 0],
+    ['Match %', `${ev.match_pct || 0}%`],
+  ];
+  const covStats = (ev) => {
+    const live = liveData[ev.id];
+    const nyrr    = live ? live.nyrr_total : ev.nyrr_total;
+    const dbTotal = live ? live.db_total   : ev.db_total;
+    const dbMmr   = live ? live.db_mmr     : ev.db_mmr;
+    const nyrrMmr = live ? live.nyrr_mmr   : ev.nyrr_mmr;
+    const pct = (nyrr && nyrr > 0) ? Math.round((dbTotal || 0) / nyrr * 100) : null;
+    return [
+      ['NYRR', nyrr > 0 ? fmt(nyrr) : '—'],
+      ['DB', fmt(dbTotal)],
+      ['Cov', pct !== null ? `${pct}%` : '—'],
+      ['NYRR MMR', nyrrMmr !== null && nyrrMmr !== undefined ? fmt(nyrrMmr) : '—'],
+      ['DB MMR', fmt(dbMmr)],
+    ];
+  };
+
+  const renderCards = (rows, lenses) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {rows.map(ev => {
+        const metrics = [];
+        if (lenses.includes('sync')) metrics.push(...syncStats(ev));
+        if (lenses.includes('coverage')) metrics.push(...covStats(ev));
+        return (
+          <div key={ev.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 12, background: 'var(--surface)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+              <div style={{ minWidth: 0 }}>
+                <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id, ev.event_code); }} style={{ fontWeight: 600 }}>{decodeHtml(ev.event_name)}</a>
+                {ev.event_url && (
+                  <a href={ev.event_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 11, marginLeft: 6 }} title="View on NYRR">↗ NYRR</a>
+                )}
+              </div>
+              <div style={{ flexShrink: 0 }}>{window.StatusBadge ? <window.StatusBadge status={ev.processing_status} /> : ev.processing_status}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '6px 0 8px', fontSize: 12, color: 'var(--text2)' }}>
+              <span style={{ fontFamily: 'monospace' }}>{ev.event_code || '—'}</span>
+              <span>{fmtDate(ev.event_date)}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {metrics.map(([label, val], i) => (
+                <span key={i} style={{ fontSize: 11, background: 'var(--surface2)', borderRadius: 6, padding: '3px 8px' }}>
+                  <span style={{ color: 'var(--text2)' }}>{label}: </span><strong>{val}</strong>
+                </span>
+              ))}
+            </div>
+            {renderActions(ev)}
+          </div>
+        );
+      })}
+    </div>
+  );
 
   const renderActions = (ev) => {
     const ld = activeLoads[ev.id];
@@ -137,6 +205,7 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
     return (
       <>
         <h3 style={{ marginTop: 20, marginBottom: 8, fontSize: 16, fontWeight: 600 }}>{title} ({rows.length})</h3>
+        {width < MOBILE_BREAKPOINT ? renderCards(rows, lenses) : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -154,7 +223,7 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
               {rows.map(ev => (
                 <tr key={ev.id}>
                   <td>
-                    <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id, ev.event_code); }} style={{ fontWeight: 600 }}>{ev.event_name}</a>
+                    <a href="#" onClick={e => { e.preventDefault(); onSelectEvent(ev.id, ev.event_code); }} style={{ fontWeight: 600 }}>{decodeHtml(ev.event_name)}</a>
                     {ev.event_url && (
                       <div style={{ fontSize: 11 }}>
                         <a href={ev.event_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }} title="View on NYRR">↗ NYRR</a>
@@ -172,6 +241,7 @@ initComponent('NyrrEvents', ({ onSelectEvent, onGoSettings }) => {
             </tbody>
           </table>
         </div>
+        )}
       </>
     );
   };

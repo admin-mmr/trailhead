@@ -226,6 +226,9 @@ tr:hover td { background: var(--surface); }
 
   /* Toast: full-width bottom */
   .toast { left: 8px; right: 8px; bottom: 8px; text-align: center; }
+
+  /* Panels/modals with hardcoded inline padding: tighten on small screens */
+  .mobile-tight { padding: 10px !important; }
 }
 
 @keyframes stale-pulse {
