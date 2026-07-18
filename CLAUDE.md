@@ -171,7 +171,7 @@ NYRR backfill depth (recommend 2024+). Add `validate_schema.py` to CI? Include N
 
 ## QUICK REFS
 **Key files:** `db/schema_snapshot.sql`, `load-env.sh`, `mmr-admin/api_*.py`, `mmr-admin/test_imports.py`.
-**Azure:** `mmr-mysql-v4` (Sweden Central), use `mysql-mmr` alias.
+**Azure:** `mmr-mysql-v4` (Sweden Central), use `mysql-mmr` alias. App Service `mmr-nyrr-viewer`, resource group `mmr-resources` (see `adm-logs`/`adm-status` aliases).
 
 **Shell shortcuts (defined in `~/.zshrc`):**
 | Command | What it does |

@@ -3,8 +3,13 @@ In-app NYRR automation scheduler (runs on the Azure App Service that hosts
 mmr-admin — replaces the deleted GitHub Actions NYRR sync workflow).
 
 Two scheduled jobs:
-  • monthly  — discover upcoming races (rolling next-12-months window) via the
-               Haku widget, so the calendar stays populated ahead of time.
+  • monthly  — discover new races via events/search (rmsprodapi.nyrr.org).
+               NOTE: the Haku widget / nyrr.org itself sit behind Queue-it bot
+               protection that 403s/redirects server-to-server requests no
+               matter the API key, so it can't be the discovery source here —
+               events/search is the only endpoint that actually works
+               unattended, at the cost of shorter lead time (it only lists a
+               race once NYRR posts it toward results, not months ahead).
   • weekly   — the "expensive" pipeline: promote past upcoming events, load
                finisher data for every Pending past event (sequential, reusing
                the tested sync_worker), then reconcile slug-coded event codes.
@@ -29,15 +34,12 @@ import time
 import atexit
 import logging
 import threading
-from datetime import date, timedelta
-
 logger = logging.getLogger(__name__)
 
 # Schedules (overridable via env). Defaults: 1st of month 06:00 UTC discovery;
 # Tuesdays 02:00 UTC finisher pipeline (matches the old GitHub cron).
 DISCOVERY_CRON = os.environ.get("NYRR_DISCOVERY_CRON", "0 6 1 * *")
 FINISHER_CRON = os.environ.get("NYRR_FINISHER_CRON", "0 2 * * 2")
-DISCOVERY_MONTHS_AHEAD = int(os.environ.get("NYRR_DISCOVERY_MONTHS_AHEAD", "12"))
 
 # Per-event completion states reported by sync_worker.get_job_status().
 _TERMINAL = {"done", "complete", "error", "cancelled", "canceled"}
@@ -50,12 +52,11 @@ _lock_fh = None  # kept open for process lifetime to hold the flock
 # ---------------------------------------------------------------------------
 
 def run_discovery():
-    """Monthly: populate upcoming races for the next N months."""
-    from api_events_discovery import discover_upcoming_events
-    end = date.today() + timedelta(days=30 * DISCOVERY_MONTHS_AHEAD)
-    logger.info("[scheduler] discovery start (window today..%s)", end)
+    """Monthly: discover new races via events/search."""
+    from api_events_discovery import discover_current_events
+    logger.info("[scheduler] discovery start")
     try:
-        result = discover_upcoming_events(end_date=end, exclude_youth=True)
+        result = discover_current_events()
         logger.info("[scheduler] discovery done: %s", result)
     except Exception:
         logger.exception("[scheduler] discovery failed")
