@@ -34,12 +34,10 @@ export async function middleware(req: NextRequest) {
   }
 
   const token = req.cookies.get('mmr_session')?.value
-  console.log(`[middleware] ${pathname} | tier=${tier} | mmr_session cookie: ${token ? `present (${token.length} chars)` : 'MISSING'}`)
   if (!token) return toLogin(req)
 
   try {
     const { payload } = await jwtVerify(token, SECRET)
-    console.log(`[middleware] ${pathname} | JWT valid | status=${payload.status}`)
 
     // 'admin' tier at the edge: require active status (actual admin check in route handlers)
     if ((tier === 'active' || tier === 'admin') && payload.status !== 'active') {
@@ -50,8 +48,7 @@ export async function middleware(req: NextRequest) {
     }
 
     return NextResponse.next({ request: { headers: requestHeaders } })
-  } catch (err) {
-    console.log(`[middleware] ${pathname} | JWT verification FAILED:`, (err as Error).message)
+  } catch {
     return toLogin(req)
   }
 }

@@ -88,6 +88,8 @@ def login_required(f):
                 return json_response({'ok': False, 'error': 'Not authenticated'}, 401)
             return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
+    # Marker for tests/test_auth_matrix.py — propagates through @wraps stacking
+    decorated_function._auth_login_required = True
     return decorated_function
 
 
@@ -148,6 +150,8 @@ def require_role(min_role: str):
 
             logger.info(f'[REQUIRE_ROLE] ALLOWED: {email} ({user_role}) accessing {min_role} endpoint')
             return f(*args, **kwargs)
+        # Marker for tests/test_auth_matrix.py — propagates through @wraps stacking
+        decorated_function._auth_min_role = min_role
         return decorated_function
     return decorator
 

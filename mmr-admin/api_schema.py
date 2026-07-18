@@ -2,18 +2,19 @@
 """
 Schema export endpoints.
 
-TSV snapshot (audit/diff):
-    curl https://<host>/api/export-schema > db/schema_snapshot.sql
+Both endpoints require an authenticated admin session (browser). For headless
+export use the direct MySQL query instead:
     mysql-mmr < db/queries/schema_snapshot_query.sql > db/schema_snapshot.sql
 
-Executable DDL (testcontainers seed):
-    curl https://<host>/api/export-schema-ddl > db/schema_integration.sql
+TSV snapshot (audit/diff):        GET /api/export-schema     → db/schema_snapshot.sql
+Executable DDL (testcontainers):  GET /api/export-schema-ddl → db/schema_integration.sql
 """
 
 import os
 import re
 from flask import Blueprint, Response
 import mysql.connector
+from auth import login_required, require_role
 
 schema_bp = Blueprint('schema', __name__, url_prefix='/api')
 
@@ -115,6 +116,8 @@ def _run_snapshot():
 
 
 @schema_bp.route('/export-schema', methods=['GET'])
+@login_required
+@require_role('admin')
 def export_schema():
     """Export schema as TSV — identical to: mysql-mmr < db/queries/schema_snapshot_query.sql"""
     try:
@@ -257,6 +260,8 @@ def _run_ddl_export():
 
 
 @schema_bp.route('/export-schema-ddl', methods=['GET'])
+@login_required
+@require_role('admin')
 def export_schema_ddl():
     """Export executable DDL — safe to pipe directly into testcontainers MySQL."""
     try:
