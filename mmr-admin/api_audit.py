@@ -102,6 +102,8 @@ def api_unmatch_transaction():
 # ---------------------------------------------------------------------------
 
 @audit_bp.route('/api/config/get')
+@login_required
+@require_role('admin')
 @handle_api_errors
 def api_get_config():
     """Get a config value by key."""

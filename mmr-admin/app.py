@@ -71,7 +71,14 @@ from flask import Flask, send_file
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-prod')
+# Azure (WEBSITE_SITE_NAME set) must provide SECRET_KEY — a guessable session
+# secret allows forging admin sessions. Local dev falls back to a fixed key.
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    if os.environ.get('WEBSITE_SITE_NAME'):
+        raise RuntimeError('SECRET_KEY must be set in production (App Service settings)')
+    _secret_key = 'dev-secret-key-local-only'
+app.secret_key = _secret_key
 app.json.sort_keys = False
 
 # ---------------------------------------------------------------------------
@@ -222,4 +229,5 @@ if __name__ == '__main__':
     init_tables()
     port = int(os.environ.get('PORT', 5050))
     print(f'\n  NYRR Data Viewer starting on http://localhost:{port}\n')
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port,
+            debug=not os.environ.get('WEBSITE_SITE_NAME'))
