@@ -99,72 +99,39 @@ SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL
 - `fuzzy_worker.py` + `api_events_fuzzy.py` — Tier 4 background thread (`POST /api/events/<id>/fuzzy-match`, `GET /status`)
 - `api_events_discovery.py` — scans current + prior year via `year=` kwarg
 
-## ACTION PLAN (active — May 2026)
-Sequenced backlog. P0=quick wins (this week), P1=features asked for, P2=code health.
+## ACTION PLAN (active — July 2026)
+Sequenced backlog. P0=operational (this week), P1=features remaining, P2=code health.
+Shipped since May plan (all on main): P1a staleness gate, P1b duplicate detection, P1c match queue + Tier-4 fuzzy, P1e mmr-only backfill (V029 `load_mode`, `run_backfill_mmr_only`), P1f HOF backend (`api_hof.py`), P1g HOF admin tab (`hof-panel.html`). Also: security audit (auth gaps/SQLi/secrets, `test_auth_matrix.py`), Payments Gmail auto-import on load, in-app NYRR scheduler (`nyrr_scheduler.py` replaces deleted `sync-nyrr-weekly.yml` workflow), pytest suite repaired (1348 pass / 0 fail).
 
-**P0 — Operational quick wins**
-1. Re-enable `.github/workflows/sync-nyrr-weekly.yml` cron schedule (currently manual-only); smoke-test one event end-to-end.
-2. Deploy `MIGRATION_V031_normalize_event_distances.sql` (ready, self-registering).
-3. Flagged for review (untracked, violates HARD RULE): `PUBLIC_SITE_PLAN.md` (318 lines, dated 2026-05-19). Either fold into CLAUDE.md or move to tracked planning location.
-4. Flagged for review (root-level, possibly stale): `WeChat_Member_Matching_Agent_Prompt.md` (321 lines) and `MONOREPO.md` (364 lines). Evaluate whether content belongs in CLAUDE.md or should stay as separate docs.
+**P0 — Operational**
+1. Flip `ENABLE_NYRR_SCHEDULER=1` on Azure webapp `mmr-nyrr-viewer` (scheduler is a no-op until then): `az webapp config appsettings set --name mmr-nyrr-viewer --resource-group mmr-resources --settings ENABLE_NYRR_SCHEDULER=1`. Verify via `adm-logs` → look for `[scheduler] started — discovery ...`.
+2. Browser smoke-test Payments tab auto-import (committed 07-13, never browser-tested): load tab → auto-runs import transactions → import members once per page load; staleness banner clears after sync.
+3. Recreate repo-root `.venv` (the `mmr` alias expects it): `python3 -m venv .venv && source .venv/bin/activate && pip install -r mmr-admin/requirements.txt -r basecamp/requirements.txt`.
+4. Stray root docs still pending decision: `PUBLIC_SITE_PLAN.md`, `MONOREPO.md`, `WeChat_Member_Matching_Agent_Prompt.md` — fold into CLAUDE.md or delete.
+5. Confirm `MIGRATION_V031` applied (migration files are deleted post-deploy; only the DB knows): `mysql-mmr -e "SELECT version FROM schema_migrations ORDER BY id DESC LIMIT 5;"`.
 
-**P1a — Payments staleness gate (~3h, frontend only)**
-File: `mmr-admin/static/PaymentsPanel.js` (~30 LOC). Existing `lastSyncTime` from `/api/sync/jobs` already wired (line 48-124). Add: `STALE_HOURS=24`; `isStale = age>24h || lastSyncTime===null`. When stale: yellow banner above sync bar with hours-old + pulsing "Sync Now" button; pass `disabled={isStale}` to autoguess button (line 213) with tooltip. After sync completes, `fetchLastSync()` re-runs (line 102) → banner clears. No backend change.
-
-**P1b — Members duplicate detection (~6h)**
-- Migration `db/MIGRATION_V024_member_duplicate_dismissals.sql` (~15 LOC): table `member_duplicate_dismissals (id, dup_type ENUM('name','phone','wechat'), dup_key VARCHAR(255), dismissed_by, dismissed_at)` UNIQUE(dup_type, dup_key); end with self-registration INSERT.
-- Backend `mmr-admin/api_members_duplicates.py` (new, ~150 LOC): `GET /api/members/duplicates?type=name|phone|wechat|all`, `POST /api/members/duplicates/dismiss`. Three queries grouping on LOWER(TRIM(FirstName))+LOWER(TRIM(LastName)) (excluding same FamilyID), PhoneNumber, WeChatID. HAVING COUNT(*)>1. LEFT JOIN dismissals to filter out resolved.
-- Register blueprint in `mmr-admin/app.py`.
-- UI `mmr-admin/static/MembersDuplicates.js` (~200 LOC): 3 collapsible sections, side-by-side member cards, "Mark not a duplicate" + "Open member" actions. **No auto-merge** (FK risk).
-- Sub-tab "🔁 Duplicates" in `mmr-admin/templates/index.html` under Members.
-- Tests `mmr-admin/tests/test_members_duplicates.py` (~80 LOC): seed 3 same-name rows distinct FamilyID → assert group; dismiss → assert filtered.
-
-**P1c — NYRR matching (extends existing pipeline; weeks 3-4)**
-Existing: `basecamp/ops/sync_nyrr_events.py` + 3-tier auto-matcher in `api_events.py:155 api_run_automatch` (NYRRRunnerName / first+last+age±1 / partial+age±1).
-- **Week 3 — review queue:** New panel "🏃 Match Queue" under NYRR Todos. `GET /api/nyrr/match-queue` returns unmatched finishers (mmr_member_id IS NULL AND is_registered_only=0) + top-3 candidates per row (same first OR last name, age±2 if YearBorn known). UI uses existing `match-modal.html` and `POST /api/runners/<id>/match`. Bulk "Confirm all single-candidate hits."
-- **Week 4 — Tier-4 fuzzy:** Migration V025 adds `confidence_score TINYINT NULL` + extends `match_method` ENUM with `auto_fuzzy`. Add `rapidfuzz` to `mmr-admin/requirements.txt`. Extend `api_run_automatch` with Tier-4 (token_set_ratio≥90 + age±2). Tier-4 hits flagged yellow in queue for re-confirmation.
-
-**P1d — NYRR phases 3-5 (optional, weeks 5-7)**
-Member backfill report (members never matched), race-history in member tooltip, annual MMR finishes summary. Defer until P1c shows signal.
-
-**P1e — Historical MMR-only backfill 2015–2024 (~1 day)**
-Data scope: pre-2025 events load MMR runners only (`team_code='MMR'` via teams endpoint); 2025+ loads all finishers. See **NYRR_OPS.md § 6** for full policy.
-- Migration `MIGRATION_V032` (**⚠️ verify number before creating** — V029–V031 are taken): (a) `nyrr_event_series` table (`id`, `name`, `slug` UNIQUE, `distance_km DECIMAL`, `notes`, `created_at`); (b) `nyrr_events.series_id INT NULL FK → nyrr_event_series.id`; (c) `nyrr_events.load_mode ENUM('full','mmr_only') NOT NULL DEFAULT 'full'`; backfill: `UPDATE nyrr_events SET load_mode='mmr_only' WHERE event_date < '2025-01-01'`. End with self-registration INSERT.
-- `sync_worker.py`: gate Step 1 on `load_mode='full'`; when `mmr_only`, run Steps 2+3 only, set `Completed` if `rows_written > 0`.
-- `basecamp/ops/sync_nyrr_events.py`: new `--mode backfill-mmr-only [--year-from 2015] [--year-to 2024]` — iterates years via `events/search?year=Y`, checks MMR participation (`teams/MMR/teamRunners?eventCode=X&pageSize=1 → totalItems > 0`), inserts event with `load_mode='mmr_only'`, syncs.
-- GitHub Action: add weekly `backfill-mmr-only` step (runs until all pre-2025 events imported).
-- Test: `tests/test_sync_worker_modes.py` — assert Step 1 not called when `load_mode='mmr_only'`.
-
-**P1f — Hall of Fame backend (~4h)**
-See **NYRR_OPS.md § 7** for full requirements (8 categories, what counts, API shape).
-- New `mmr-admin/api_hof.py` (~200 LOC), blueprint `hof_bp`:
-  - `GET /api/hof/series` — list of series with `{id, name, slug, event_count, categories_populated}`.
-  - `GET /api/hof/series/<slug>` — 8-category HOF (best time, runner name, event_year) + top-3 podium per category. Core SQL: `MIN(TIME_TO_SEC(finish_time))` over `nyrr_event_runners JOIN nyrr_events` WHERE `team_code='MMR'` AND `series_id=X` GROUP BY gender/age band.
-  - `GET /api/hof/event/<event_code>` — same, scoped to one race edition.
-  - `POST /api/hof/series` (admin) — create series. `PATCH /api/hof/series/<id>/assign-events` — bulk-assign `nyrr_events.series_id` by name pattern.
-- Register blueprint in `mmr-admin/app.py`.
-- CORS: allow public `GET /api/hof/*` from webapp domain.
-
-**P1g — Hall of Fame admin tab (~3h)**
-- New `mmr-admin/templates/hof-panel.html` (~250 LOC, `initComponent('HofPanel', ...)` pattern).
-- Two sub-views: **Series Manager** (table of series, "+ New", "Assign Events" modal with name-pattern preview); **HOF Table** (select series → 8-category grid with best time / runner / year; toggle for per-year drill-down).
-- Register as top-level tab `🏆 Hall of Fame` in `mmr-admin/templates/index.html` (after NYRR Todos). Update `component-loader.js`.
-
-**P1h — Hall of Fame public page (~4h)**
+**P1h — Hall of Fame public page (~4h) — NOT shipped**
 - New `web-apps/mmr-webapp/src/app/hall-of-fame/page.tsx` (App Router, no auth).
 - Fetches `/api/hof/series` on load; series card → expand to 8-category HOF table.
 - i18n: English + Chinese for all category labels (男子/女子, Open/40+/50+/60+).
-- Add to site nav. Mobile-responsive.
+- Add to site nav. Mobile-responsive. Backend + CORS already live (`api_hof.py`).
+
+**P1d — NYRR phases 3-5 (optional) — NOT shipped**
+Member backfill report (members never matched), race-history in member tooltip, annual MMR finishes summary. Defer until match-queue usage shows signal.
 
 **P2 — Code health (background)**
-Splits flagged by CLAUDE.md hard rule (use `test_imports.py` for parity):
-| File | LOC | Limit | Effort |
-|---|---|---|---|
-| `static/Members.js` | 1022 | 300 | 4h |
-| `api_payments.py` | 1086 | 400 | 4h |
-| `nyrr_api.py` (basecamp/python — source of truth) | 823 | 400 | 3h |
-| `basecamp/ops/sync_nyrr_events.py` | 1022 | 400 | 3h |
-| `static/MembersStatusPanel.js` | 701 | 300 | 3h |
+May-plan offenders were split (Members.js 78, api_payments.py 46). Current worst (hard-rule limits: py 400, JS 300):
+| File | LOC | Limit |
+|---|---|---|
+| `mmr-admin/sync_worker.py` | 506 | 400 |
+| `static/PaymentsPanel.js` | 506 | 300 |
+| `mmr-admin/api_members_status.py` | 501 | 400 |
+| `static/DistrictMemberFilters.js` | 473 | 300 |
+| `mmr-admin/api_hof.py` | 473 | 400 |
+| `mmr-admin/sync_worker_fetch.py` | 473 | 400 |
+| `static/DistrictMembersPanel.js` | 441 | 300 |
+| `static/DistrictMemberTable.js` | 433 | 300 |
+(+6 more py files 402–459 LOC; rerun `find mmr-admin -name '*.py' -not -path '*/tests/*' -exec wc -l {} +` before picking one.)
 
 **P3 — Open questions**
 NYRR backfill depth (recommend 2024+). Add `validate_schema.py` to CI? Include NYRR registrants in match queue? Member-merge tool (deferred — FK risk; revisit if dupes accumulate).
@@ -267,4 +234,4 @@ Run this mental checklist — catches the class of bugs that appeared in the pol
 **Context updates:** 3 lines max (`### MM-DD HH:MM UTC — title` + `Changed: X. Status: Y. Next: Z.`). Insert at top. No re-reads; use str_replace. Trim to 3 sessions; move excess to `_context_archive.md`.
 **Efficiency:** Don't read files you don't need. Batch edits. Use grep/glob, not bash find. Cache knowledge. Never cat large files; use `head`/`sed`/`grep`. Error message first before source code. Diff-first edits. Chain shell commands. Always `python3`/`pip3`.
 
-**Last updated:** May 27, 2026
+**Last updated:** July 18, 2026
