@@ -431,7 +431,8 @@ const DistrictMemberFilters = ({
             <div style={{
               position: 'absolute', top: '100%', left: 0, marginTop: '8px',
               background: 'var(--surface)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)', padding: '12px', minWidth: '300px',
+              borderRadius: 'var(--radius)', padding: '12px',
+              minWidth: 'min(300px, calc(100vw - 24px))', maxWidth: 'calc(100vw - 24px)',
               maxHeight: '400px', overflowY: 'auto', zIndex: 1000,
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
             }}>
