@@ -350,21 +350,39 @@ class TestPaymentsPanelFrontendContract:
     def test_ui_refresh_triggered_on_done(self):
         """
         Regression: fetchLastSync() and loadAll() must fire on sync success.
-        After the refactor, PaymentsPanel delegates to pollUntilDone whose
-        onDone callback must call both.
+        After the two-step refactor, handleSyncNow's success branch (the .then
+        after both imports) must call both.
         """
         src = PAYMENTS_JS.read_text()
-        # After refactor: onDone callback in pollSyncJob must call fetchLastSync + loadAll
         assert 'fetchLastSync' in src, "fetchLastSync() must be called on sync success"
         assert 'loadAll' in src, "loadAll() must be called on sync success"
-        # They must be in the onDone callback, not gated on 'completed'
-        on_done_idx = src.find('onDone')
-        if on_done_idx != -1:
-            on_done_block = src[on_done_idx:on_done_idx + 200]
-            assert 'fetchLastSync' in on_done_block or 'loadAll' in on_done_block, (
-                "onDone callback in pollSyncJob must call fetchLastSync() and/or loadAll(). "
-                "Without this, the payments panel never refreshes after a successful sync."
-            )
+        # They must be inside handleSyncNow's success chain
+        sync_idx = src.find('const handleSyncNow')
+        assert sync_idx != -1, "handleSyncNow must be defined in PaymentsPanel.js"
+        sync_block = src[sync_idx:sync_idx + 1200]
+        assert 'fetchLastSync' in sync_block and 'loadAll' in sync_block, (
+            "handleSyncNow's success branch must call fetchLastSync() and loadAll(). "
+            "Without this, the payments panel never refreshes after a successful sync."
+        )
+
+    def test_sync_now_imports_transactions_then_members(self):
+        """
+        Contract: the Payments sync sequence must import Gmail transactions AND
+        new members (both Sheets → MySQL), transactions first. Also auto-runs
+        once per page load on the initial Payments view.
+        """
+        src = PAYMENTS_JS.read_text()
+        tx_idx = src.find('/api/sync/import/transactions')
+        mem_idx = src.find('/api/sync/import/members')
+        assert tx_idx != -1, "PaymentsPanel must POST /api/sync/import/transactions"
+        assert mem_idx != -1, "PaymentsPanel must POST /api/sync/import/members"
+        assert tx_idx < mem_idx, (
+            "Transactions import must run before the members import in handleSyncNow"
+        )
+        assert '__paymentsAutoSyncStarted' in src, (
+            "Initial Payments load must auto-trigger the import sequence exactly "
+            "once per page load (window.__paymentsAutoSyncStarted guard)"
+        )
 
     def test_ui_refresh_not_gated_solely_on_completed(self):
         """
