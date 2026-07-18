@@ -268,7 +268,7 @@ def _sync_worker(event_id: int, event_code: str, force_reload: bool, mmr_only: b
         logger.info(f"✅ STEP 3 complete: {total_backfilled} backfilled, {total_inserted} inserted, {teams_skipped} skipped in {step3_elapsed:.2f}s")
 
         # --- Final status ---
-        final_count = query(f"SELECT COUNT(*) as cnt FROM nyrr_event_runners WHERE nyrr_event_id = {event_id}")
+        final_count = query("SELECT COUNT(*) as cnt FROM nyrr_event_runners WHERE nyrr_event_id = %s", (event_id,))
         final_count_val = final_count[0]['cnt'] if final_count else 0
         elapsed = time.time() - start_time
         logger.info(f"✅ ALL STEPS COMPLETE in {elapsed:.2f}s")
