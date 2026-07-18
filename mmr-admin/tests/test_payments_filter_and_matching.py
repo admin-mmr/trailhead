@@ -291,7 +291,7 @@ class TestAutoguessAll:
     def test_no_unmatched_gmail_returns_zero_created(self, client, mock_query):
         """Empty gmail list → 0 created, 0 skipped, success=True."""
         self._setup_mocks(mock_query, gmail_rows=[])
-        with patch('api_payments.get_renewal_period', return_value=('2025-10-01', '2026-03-31')):
+        with patch('api_payments_actions.get_renewal_period', return_value=('2025-10-01', '2026-03-31')):
             r = _post(client, '/api/payments/autoguess-all')
         assert r.status_code == 200
         j = r.get_json()
@@ -300,7 +300,7 @@ class TestAutoguessAll:
 
     def test_renewal_period_not_configured_returns_400(self, client, mock_query):
         """If renewal period is not set in config, must return 400 (not 500)."""
-        with patch('api_payments.get_renewal_period', return_value=(None, None)):
+        with patch('api_payments_actions.get_renewal_period', return_value=(None, None)):
             r = _post(client, '/api/payments/autoguess-all')
         assert r.status_code == 400
         assert r.status_code != 500
@@ -308,8 +308,8 @@ class TestAutoguessAll:
     def test_response_includes_created_and_skipped_keys(self, client, mock_query):
         """Response must always include 'created' and 'skipped' counts (under 'details')."""
         self._setup_mocks(mock_query)
-        with patch('api_payments.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
-             patch('api_payments.execute', return_value=0):
+        with patch('api_payments_actions.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
+             patch('api_payments_actions.execute', return_value=0):
             r = _post(client, '/api/payments/autoguess-all')
         assert r.status_code in (200, 400)
         if r.status_code == 200:
@@ -332,8 +332,8 @@ class TestAutoguessAll:
 
         self._setup_mocks(mock_query, gmail_rows=gmail, member_rows=members)
 
-        with patch('api_payments.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
-             patch('api_payments.execute') as mock_exec:
+        with patch('api_payments_actions.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
+             patch('api_payments_actions.execute') as mock_exec:
             r = _post(client, '/api/payments/autoguess-all')
 
         if r.status_code == 200:
@@ -360,8 +360,8 @@ class TestAutoguessAll:
 
         self._setup_mocks(mock_query, gmail_rows=gmail, member_rows=members, sub_rows=subs)
 
-        with patch('api_payments.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
-             patch('api_payments.execute', return_value=0), \
+        with patch('api_payments_actions.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
+             patch('api_payments_actions.execute', return_value=0), \
              patch('payment_matching.execute', return_value=0):
             r = _post(client, '/api/payments/autoguess-all')
 
@@ -385,8 +385,8 @@ class TestAutoguessAll:
 
         self._setup_mocks(mock_query, gmail_rows=gmail, member_rows=members)
 
-        with patch('api_payments.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
-             patch('api_payments.execute', side_effect=Exception('DB down')):
+        with patch('api_payments_actions.get_renewal_period', return_value=('2025-10-01', '2026-03-31')), \
+             patch('api_payments_actions.execute', side_effect=Exception('DB down')):
             r = _post(client, '/api/payments/autoguess-all')
 
         assert r.status_code != 500, f"DB error must not 500 the whole route: {r.data[:200]}"
@@ -419,6 +419,8 @@ class TestConfigGet:
         assert j['key'] == 'renewal_start_date'
 
     def test_key_is_echoed_in_response(self, client, mock_query):
-        mock_query.return_value = [{'ConfigValue': 'abc'}]
+        # get_config loads the whole config table into config_cache,
+        # so the seeded row must carry ConfigKey too.
+        mock_query.return_value = [{'ConfigKey': 'MyKey', 'ConfigValue': 'abc'}]
         r = client.get('/api/config/get?key=MyKey')
         assert r.get_json()['key'] == 'MyKey'
