@@ -266,7 +266,9 @@ def bulk_confirm_single_candidates():
         params + [BULK_LIMIT]
     ) or []
 
-    admin_email = session.get('user', {}).get('email', 'Viewer')
+    # matched_by is nullable — never store a non-email placeholder
+    # (violates chk_actlog_email_valid if it reaches activity_log.Email).
+    admin_email = session.get('user', {}).get('email') or None
     matched = 0
     scanned = len(runner_rows)
 

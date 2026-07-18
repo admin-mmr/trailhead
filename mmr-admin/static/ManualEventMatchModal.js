@@ -121,6 +121,7 @@ const ManualEventMatchModal = ({ isOpen, onClose, onMatchApproved }) => {
     }
   },
     React.createElement('div', {
+      className: 'mobile-tight',
       style: {
         background: 'var(--bg)', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
         maxWidth: '90vw', maxHeight: '90vh', overflow: 'auto', padding: 24,

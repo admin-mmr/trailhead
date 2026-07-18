@@ -13,7 +13,7 @@ import json
 import traceback
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from auth import login_required
+from auth import login_required, require_role
 import db as dbmod
 from diagnostics import FUNCTIONS
 
@@ -26,6 +26,7 @@ py_exec_bp = Blueprint('py_exec', __name__, url_prefix='/api/py-exec')
 
 @py_exec_bp.route('/list', methods=['GET'])
 @login_required
+@require_role('admin')
 def list_functions():
     """Return list of available diagnostic functions."""
     functions = []
@@ -39,6 +40,7 @@ def list_functions():
 
 @py_exec_bp.route('/run/<fn_name>', methods=['POST'])
 @login_required
+@require_role('admin')
 def run_function(fn_name):
     """Execute a diagnostic function and return results."""
     execution_start = datetime.utcnow()
@@ -95,6 +97,7 @@ def run_function(fn_name):
 
 @py_exec_bp.route('/code', methods=['POST'])
 @login_required
+@require_role('admin')
 def execute_code():
     """Execute arbitrary Python code with access to db helper functions."""
     execution_start = datetime.utcnow()
@@ -187,6 +190,7 @@ def execute_code():
 
 @py_exec_bp.route('/health', methods=['GET'])
 @login_required
+@require_role('admin')
 def health_check():
     """Health check for python execution engine."""
     return jsonify({

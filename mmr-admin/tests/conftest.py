@@ -118,10 +118,29 @@ def client(app):
     return app.test_client()
 
 
+@pytest.fixture(autouse=True)
+def _clear_config_cache():
+    """config_cache memoizes the config table module-wide; without clearing it,
+    one test's seeded config rows leak into every later test in the session."""
+    try:
+        from config_cache import refresh_config
+    except ImportError:
+        yield
+        return
+    refresh_config()
+    yield
+    refresh_config()
+
+
 @pytest.fixture()
 def mock_query():
     """
-    Patch db.query in every api_* module for one test.
+    Patch db.query and every module-level `from db import query` binding.
+
+    Not just api_*.py: the canonical get_member_by_id lives in payment_helpers.py,
+    and helpers/sync modules hold their own bindings too. Any unpatched binding
+    silently falls through to the mocked connection and returns [] — routes then
+    404 with 'Member not found' even though the test seeded rows.
 
     Usage:
         def test_foo(client, mock_query):
@@ -129,19 +148,23 @@ def mock_query():
             r = client.get('/api/members/A0001/card')
             assert r.json['MemberID'] == 'A0001'
     """
-    # Each api module does `from db import query` so we must patch each binding.
-    import importlib, pkgutil, pathlib
-    mmr_admin_root = pathlib.Path(__file__).parent.parent
+    import db as db_module
 
-    targets = []
-    for f in mmr_admin_root.glob('api_*.py'):
-        mod_name = f.stem
-        try:
-            mod = importlib.import_module(mod_name)
-            if hasattr(mod, 'query'):
-                targets.append(f'{mod_name}.query')
-        except Exception:
-            pass
+    # Import the whole app BEFORE patching so every api_*/helper module exists
+    # in sys.modules with its query binding still pointing at the real db.query.
+    # A module first imported mid-test would instead capture that test's mock
+    # permanently, going stale (and unpatchable) for every later test.
+    with patch('db.get_conn', return_value=_make_mock_conn()):
+        import app  # noqa: F401
+
+    # Patch the source binding itself (covers function-local `from db import query`)
+    # plus every already-imported top-level module holding the same function object.
+    targets = ['db.query']
+    for mod_name, mod in list(sys.modules.items()):
+        if mod is None or '.' in mod_name or mod_name == 'db':
+            continue
+        if getattr(mod, 'query', None) is db_module.query:
+            targets.append(f'{mod_name}.query')
 
     mock = MagicMock(return_value=[])
     patches = [patch(t, mock) for t in targets]
