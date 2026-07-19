@@ -1,2 +1,2 @@
 #!/bin/sh
-cd mmr-webapp && npm run lint && npm run build
+cd mmr-webapp && npm run lint && npm test && npm run build
