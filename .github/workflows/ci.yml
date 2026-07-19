@@ -16,6 +16,11 @@ jobs:
     name: pytest mmr-admin (mocked DB)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Repo root on sys.path so `from basecamp.python.sync_config import ...`
+      # resolves. Locally the fallback import finds the gitignored copy made by
+      # scripts/sync-shared-modules.sh; CI checkouts have no such copy.
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v5
 
