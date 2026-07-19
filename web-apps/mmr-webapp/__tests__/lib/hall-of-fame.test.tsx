@@ -374,8 +374,9 @@ describe('category card', () => {
     render(<HallOfFamePage />)
     await waitFor(() => screen.getByText(/view hof/i))
     await act(async () => { fireEvent.click(screen.getByText(/view hof/i)) })
-    await waitFor(() => screen.getByText('00:38:45'))
-    expect(screen.getByText(/Fred Lebow 5-Mile/)).toBeInTheDocument()
+    // Time and event name are sibling text nodes in one div — match with regex
+    await waitFor(() => screen.getByText(/00:38:45/))
+    expect(screen.getAllByText(/Fred Lebow 5-Mile/).length).toBeGreaterThan(0)
   })
 })
 
