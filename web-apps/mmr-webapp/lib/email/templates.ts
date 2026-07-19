@@ -5,7 +5,8 @@
  *  - Use first name only in the greeting
  *  - Include a portal CTA footer
  *  - Welcome feedback with a reply-to prompt
- *  - Brand-consistent colours (#1F497D navy, #E86033 orange)
+ *  - Bilingual (English + Chinese) — members read both
+ *  - Brand-consistent colours (#5c35a8 purple, #E86033 orange)
  */
 
 const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://mmrunners.org'
@@ -21,7 +22,7 @@ function header(): string {
         Misty Mountain Runners
       </h1>
       <p style="color:rgba(255,255,255,0.7);margin:6px 0 0;font-size:13px;font-family:sans-serif;">
-        New York Running Community
+        岚山跑团 · New York Running Community
       </p>
     </div>
   `
@@ -113,6 +114,10 @@ export function welcomeEmailHtml(params: {
               border-radius:99px;text-decoration:none;font-weight:600;font-size:15px;">
       Go to My Portal →
     </a>
+    <p style="font-size:13px;color:#888;margin:24px 0 0;">
+      欢迎加入岚山跑团！您的会员编号为 <strong style="color:#E86033;">${memberId}</strong>，
+      会员有效期至 ${expiry}。
+    </p>
   `)
 }
 
@@ -210,6 +215,9 @@ export function renewalReminderEmailHtml(params: {
               border-radius:99px;text-decoration:none;font-weight:600;font-size:15px;">
       Renew My Membership →
     </a>
+    <p style="font-size:13px;color:#888;margin:24px 0 0;">
+      您的会员资格将于 ${expiry} 到期。请登录会员中心续费，以继续享受岚山跑团的所有会员权益。
+    </p>
   `)
 }
 
@@ -237,6 +245,7 @@ export function passwordResetEmailHtml(params: {
     <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#5c35a8;">
       Reset your password
     </h2>
+    <p style="font-size:13px;color:#888;margin:0 0 24px;">重置您的密码</p>
 
     <p style="color:#555;margin:0 0 20px;">
       Hi ${firstName}, we received a request to reset your MMR account password.

@@ -16,7 +16,10 @@ export function parseLocalDate(dateStr: string | null | undefined): Date | null 
   if (!dateStr) return null
   const m = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (!m) return null
-  return new Date(+m[1], +m[2] - 1, +m[3]) // local midnight — no UTC shift
+  const d = new Date(+m[1], +m[2] - 1, +m[3]) // local midnight — no UTC shift
+  // Reject rollover: new Date(2026, 98, 99) silently becomes a 2034 date
+  if (d.getFullYear() !== +m[1] || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[3]) return null
+  return d
 }
 
 /**
