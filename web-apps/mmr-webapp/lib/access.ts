@@ -35,7 +35,10 @@ export const ACCESS_CONFIG: AccessRule[] = [
   { prefix: '/payment-proof',      tier: 'member', note: 'Standalone proof upload — pending/expired members need this outside the active-gated /portal' },
   { prefix: '/api/members/me',     tier: 'member', note: 'Own profile — any logged-in member' },
   { prefix: '/api/members/search', tier: 'member', note: 'Member search — any logged-in member' },
+  { prefix: '/api/payments/submit', tier: 'public', note: 'Join wizard payment declaration — new members have no session yet' },
+  { prefix: '/api/payments/stripe', tier: 'public', note: 'Stripe checkout (amount from DB, anonymous join/donate) + webhook (auth = Stripe signature)' },
   { prefix: '/api/payments',       tier: 'member', note: 'Payments — pending members need this to submit proof' },
+  { prefix: '/payment/success',    tier: 'public', note: 'Stripe Checkout return page' },
 
   // ── Public ─────────────────────────────────────────────────────────────────
   { prefix: '/blog',               tier: 'public', note: 'Blog — open to everyone' },

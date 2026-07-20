@@ -6,7 +6,7 @@ import { nanoid } from 'nanoid'
 // ── Validation schema ───────────────────────────────────────────────────────
 const DonationSchema = z.object({
   amount:         z.number().positive(),
-  paymentMethod:  z.enum(['zelle', 'venmo']),
+  paymentMethod:  z.enum(['zelle', 'venmo', 'card']),
   firstName:      z.string().min(1),
   lastName:       z.string().min(1),
   email:          z.string().email(),

@@ -8,7 +8,7 @@ from typing import Optional
 import logging
 from decimal import Decimal
 from db import query, execute
-from payment_helpers import get_member_by_id, get_config, is_within_renewal_period, parse_member_id_from_memo
+from payment_helpers import get_member_by_id, get_config, is_within_renewal_period, parse_member_id_from_memo, expected_membership_amount
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -376,8 +376,8 @@ def autoguess_single_transaction(
     if not member:
         return {'created': False, 'reason': f'Member {member_id} not found'}
 
-    # Step 3: Check amount matches membership type
-    expected_amt = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
+    # Step 3: Check amount matches membership type (config-driven, V033)
+    expected_amt = expected_membership_amount(member['Type'])
     if amount != expected_amt:
         return {'created': False, 'reason': f'Amount {amount} != {expected_amt}'}
 

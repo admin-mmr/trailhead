@@ -95,7 +95,7 @@ export default function JoinPage() {
   const { lang } = useLang()
   const [step, setStep] = useState<Step>('plan')
   const [plan, setPlan] = useState<Plan>('individual')
-  const [payMethod, setPayMethod] = useState<'zelle' | 'venmo'>('zelle')
+  const [payMethod, setPayMethod] = useState<'card' | 'zelle' | 'venmo'>('card')
   const [info, setInfo] = useState<MemberInfo>({
     firstName: '', lastName: '', email: '', phone: '',
     wechatId: '', district: '', gender: '', yearBorn: '', nyrrRunnerName: '',
@@ -147,6 +147,13 @@ export default function JoinPage() {
         }
       })
       .catch(() => { /* not logged in — no-op */ })
+  }, [])
+
+  // Returning from a canceled Stripe Checkout (?canceled=1)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('canceled')) {
+      setError('Card payment was canceled — you can start again anytime. 银行卡付款已取消，您可以随时重新开始。')
+    }
   }, [])
 
   const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'runningmmr@gmail.com'
@@ -216,6 +223,7 @@ export default function JoinPage() {
     setSubmitting(true)
     setError('')
     try {
+      const isCard = payMethod === 'card'
       const res = await fetch('/api/payments/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -225,7 +233,13 @@ export default function JoinPage() {
           paymentMethod: payMethod,
           ...info,
           yearBorn: info.yearBorn ? Number(info.yearBorn) : undefined,
-          ...payForm,
+          ...(isCard
+            ? {
+                payerName:   `${info.firstName} ${info.lastName}`.trim(),
+                paymentDate: new Date().toISOString().slice(0, 10),
+                memoField:   `${memberId ?? ''} ${currentPlan.label} (Stripe)`.trim(),
+              }
+            : payForm),
         }),
       })
       const contentType = res.headers.get('content-type') ?? ''
@@ -234,7 +248,19 @@ export default function JoinPage() {
       }
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Submission failed')
-      setEventId(data.eventId)
+      if (isCard) {
+        // Card path: hand off to Stripe Checkout — webhook confirms payment
+        const co = await fetch('/api/payments/stripe/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ submissionId: data.submissionId, email: info.email }),
+        })
+        const coData = await co.json()
+        if (!co.ok || !coData.url) throw new Error(coData.error ?? 'Could not start card checkout')
+        window.location.href = coData.url
+        return
+      }
+      setEventId(data.submissionId)
       nextStep()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -252,7 +278,7 @@ export default function JoinPage() {
     try {
       const fd = new FormData()
       fd.append('proof', proofFile)
-      fd.append('eventId', eventId)
+      fd.append('submissionId', eventId)
       const res = await fetch('/api/payments/proof', { method: 'POST', body: fd })
       const ct = res.headers.get('content-type') ?? ''
       if (!ct.includes('application/json')) {
@@ -583,33 +609,56 @@ export default function JoinPage() {
                     {lang === 'zh' ? '您的会员编号：' : 'Your Member ID: '}
                     <span className="font-mono text-base">{memberId}</span>
                   </p>
-                  <p className="text-xs text-green-700 mt-1">
-                    {lang === 'zh'
-                      ? '请在付款备注中包含此编号，以便我们自动处理您的会费。'
-                      : 'Please include this ID in your payment memo so we can auto-process your membership.'}
-                  </p>
+                  {payMethod !== 'card' && (
+                    <p className="text-xs text-green-700 mt-1">
+                      {lang === 'zh'
+                        ? '请在付款备注中包含此编号，以便我们自动处理您的会费。'
+                        : 'Please include this ID in your payment memo so we can auto-process your membership.'}
+                    </p>
+                  )}
                 </div>
               )}
 
               <p className="text-sm text-gray-500 mb-6">
                 {lang === 'zh'
-                  ? `请支付 $${currentPlan.amount}，选择 Zelle 或 Venmo。`
-                  : `Please send $${currentPlan.amount} via Zelle or Venmo.`}
+                  ? `请支付 $${currentPlan.amount}，可使用银行卡（Stripe）、Zelle 或 Venmo。`
+                  : `Please pay $${currentPlan.amount} by card (Stripe), Zelle, or Venmo.`}
               </p>
 
               {/* Method toggle */}
               <div className="flex gap-3 mb-6">
-                {(['zelle', 'venmo'] as const).map(m => (
-                  <button key={m} type="button"
-                    onClick={() => setPayMethod(m)}
-                    className={`flex-1 py-2 rounded-xl border-2 font-semibold capitalize transition-colors
-                      ${payMethod === m ? 'border-[#F47B20] bg-orange-50 text-[#F47B20]' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                    {m.charAt(0).toUpperCase() + m.slice(1)}
+                {([
+                  { id: 'card',  label: lang === 'zh' ? '银行卡' : 'Card' },
+                  { id: 'zelle', label: 'Zelle' },
+                  { id: 'venmo', label: 'Venmo' },
+                ] as const).map(m => (
+                  <button key={m.id} type="button"
+                    onClick={() => setPayMethod(m.id)}
+                    className={`flex-1 py-2 rounded-xl border-2 font-semibold transition-colors
+                      ${payMethod === m.id ? 'border-[#F47B20] bg-orange-50 text-[#F47B20]' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                    {m.label}
                   </button>
                 ))}
               </div>
 
+              {/* Card: Stripe Checkout hand-off */}
+              {payMethod === 'card' && (
+                <div className="bg-gray-50 rounded-xl p-6 mb-6 text-center">
+                  <p className="text-2xl font-bold text-[#F47B20] mb-2">${currentPlan.amount}</p>
+                  <p className="text-sm text-gray-600">
+                    {lang === 'zh'
+                      ? '点击下方按钮后，您将跳转到 Stripe 安全支付页面完成付款。付款成功后会员资格将自动激活，无需上传截图。'
+                      : "You'll be redirected to Stripe's secure checkout to complete your payment. Your membership activates automatically once payment succeeds — no screenshot needed."}
+                  </p>
+                  <p className="text-xs text-amber-600 mt-3">
+                    {lang === 'zh' ? '（当前为测试模式 — 不会产生真实扣款）' : '(Test mode — no real charge will be made)'}
+                  </p>
+                </div>
+              )}
+
               {/* QR + instructions */}
+              {payMethod !== 'card' && (
+              <>
               <div className="bg-gray-50 rounded-xl p-6 mb-6 text-center">
                 <div className="w-40 h-40 bg-white border-2 border-dashed border-gray-300 rounded-xl mx-auto flex items-center justify-center overflow-hidden">
                   <Image
@@ -681,6 +730,8 @@ export default function JoinPage() {
                   </div>
                 )}
               </div>
+              </>
+              )}
 
               <div className="flex gap-4 mt-8">
                 <button type="button" onClick={prevStep}
@@ -689,7 +740,11 @@ export default function JoinPage() {
                 </button>
                 <button type="submit" disabled={submitting}
                   className="flex-1 bg-[#0A2342] text-white py-3 rounded-xl font-semibold hover:bg-[#0d2d55] transition-colors disabled:opacity-50">
-                  {submitting ? (lang === 'zh' ? '提交中…' : 'Submitting…') : (lang === 'zh' ? '提交付款信息' : 'Submit Payment Info →')}
+                  {submitting
+                    ? (lang === 'zh' ? '提交中…' : 'Submitting…')
+                    : payMethod === 'card'
+                      ? (lang === 'zh' ? '前往银行卡付款 →' : 'Continue to Card Payment →')
+                      : (lang === 'zh' ? '提交付款信息' : 'Submit Payment Info →')}
                 </button>
               </div>
             </form>

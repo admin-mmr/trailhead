@@ -16,7 +16,7 @@ export default function DonatePage() {
   const [step, setStep] = useState<Step>('amount')
   const [amount, setAmount] = useState<string>('')
   const [customAmount, setCustomAmount] = useState('')
-  const [payMethod, setPayMethod] = useState<'zelle' | 'venmo'>('zelle')
+  const [payMethod, setPayMethod] = useState<'card' | 'zelle' | 'venmo'>('card')
   const [payForm, setPayForm] = useState({
     payerName: '', paymentDate: '', memoField: '', last4: '',
     firstName: '', lastName: '', email: '', phone: '',
@@ -47,6 +47,13 @@ export default function DonatePage() {
       .catch(() => {})
   }, [])
 
+  // Returning from a canceled Stripe Checkout (?canceled=1)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('canceled')) {
+      setError('Card payment was canceled — you can start again anytime. 银行卡付款已取消，您可以随时重新开始。')
+    }
+  }, [])
+
   const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'runningmmr@gmail.com'
   const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? '@MMRunners'
   const stepIndex = STEP_ORDER.indexOf(step)
@@ -70,6 +77,7 @@ export default function DonatePage() {
     setSubmitting(true)
     setError('')
     try {
+      const isCard = payMethod === 'card'
       const res = await fetch('/api/donations/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,16 +88,28 @@ export default function DonatePage() {
           lastName: payForm.lastName,
           email: payForm.email,
           phone: payForm.phone,
-          payerName: payForm.payerName,
-          paymentDate: payForm.paymentDate,
-          memoField: payForm.memoField,
+          payerName: isCard ? `${payForm.firstName} ${payForm.lastName}`.trim() : payForm.payerName,
+          paymentDate: isCard ? new Date().toISOString().slice(0, 10) : payForm.paymentDate,
+          memoField: isCard ? `${memberId ?? ''} donation (Stripe)`.trim() : payForm.memoField,
           last4: payForm.last4,
           memberId: memberId,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Submission failed')
-      setEventId(data.eventId)
+      if (isCard) {
+        // Card path: hand off to Stripe Checkout — webhook confirms payment
+        const co = await fetch('/api/payments/stripe/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ submissionId: data.submissionId, email: payForm.email }),
+        })
+        const coData = await co.json()
+        if (!co.ok || !coData.url) throw new Error(coData.error ?? 'Could not start card checkout')
+        window.location.href = coData.url
+        return
+      }
+      setEventId(data.submissionId)
       nextStep()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -107,7 +127,7 @@ export default function DonatePage() {
     try {
       const fd = new FormData()
       fd.append('proof', proofFile)
-      fd.append('eventId', eventId)
+      fd.append('submissionId', eventId)
       const res = await fetch('/api/payments/proof', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Upload failed')
@@ -268,23 +288,44 @@ export default function DonatePage() {
               </h2>
               <p className="text-sm text-gray-500 mb-6">
                 {lang === 'zh'
-                  ? `请通过 Zelle 或 Venmo 支付 $${donateAmount}。`
-                  : `Please send $${donateAmount} via Zelle or Venmo.`}
+                  ? `请支付 $${donateAmount}，可使用银行卡（Stripe）、Zelle 或 Venmo。`
+                  : `Please pay $${donateAmount} by card (Stripe), Zelle, or Venmo.`}
               </p>
 
               {/* Method toggle */}
               <div className="flex gap-3 mb-6">
-                {(['zelle', 'venmo'] as const).map(m => (
-                  <button key={m} type="button"
-                    onClick={() => setPayMethod(m)}
-                    className={`flex-1 py-2 rounded-xl border-2 font-semibold capitalize transition-colors
-                      ${payMethod === m ? 'border-[#C8102E] bg-red-50 text-[#C8102E]' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                    {m.charAt(0).toUpperCase() + m.slice(1)}
+                {([
+                  { id: 'card',  label: lang === 'zh' ? '银行卡' : 'Card' },
+                  { id: 'zelle', label: 'Zelle' },
+                  { id: 'venmo', label: 'Venmo' },
+                ] as const).map(m => (
+                  <button key={m.id} type="button"
+                    onClick={() => setPayMethod(m.id)}
+                    className={`flex-1 py-2 rounded-xl border-2 font-semibold transition-colors
+                      ${payMethod === m.id ? 'border-[#C8102E] bg-red-50 text-[#C8102E]' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                    {m.label}
                   </button>
                 ))}
               </div>
 
+              {/* Card: Stripe Checkout hand-off */}
+              {payMethod === 'card' && (
+                <div className="bg-gray-50 rounded-xl p-6 mb-6 text-center">
+                  <p className="text-2xl font-bold text-[#C8102E] mb-2">${donateAmount}</p>
+                  <p className="text-sm text-gray-600">
+                    {lang === 'zh'
+                      ? '点击下方按钮后，您将跳转到 Stripe 安全支付页面完成捐赠，无需上传截图。'
+                      : "You'll be redirected to Stripe's secure checkout to complete your donation — no screenshot needed."}
+                  </p>
+                  <p className="text-xs text-amber-600 mt-3">
+                    {lang === 'zh' ? '（当前为测试模式 — 不会产生真实扣款）' : '(Test mode — no real charge will be made)'}
+                  </p>
+                </div>
+              )}
+
               {/* QR + instructions */}
+              {payMethod !== 'card' && (
+              <>
               <div className="bg-gray-50 rounded-xl p-6 mb-6 text-center">
                 <div className="w-40 h-40 bg-white border-2 border-dashed border-gray-300 rounded-xl mx-auto flex items-center justify-center overflow-hidden">
                   <Image
@@ -364,6 +405,8 @@ export default function DonatePage() {
                   </div>
                 )}
               </div>
+              </>
+              )}
 
               <div className="flex gap-4 mt-8">
                 <button type="button" onClick={prevStep}
@@ -373,7 +416,11 @@ export default function DonatePage() {
                 <button type="submit" disabled={submitting}
                   className="flex-1 bg-[#C8102E] text-white py-3 rounded-xl font-semibold hover:bg-[#a00d25] transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {submitting ? (lang === 'zh' ? '提交中…' : 'Submitting…') : (lang === 'zh' ? '提交捐赠信息' : 'Submit Donation Info →')}
+                  {submitting
+                    ? (lang === 'zh' ? '提交中…' : 'Submitting…')
+                    : payMethod === 'card'
+                      ? (lang === 'zh' ? '前往银行卡付款 →' : 'Continue to Card Payment →')
+                      : (lang === 'zh' ? '提交捐赠信息' : 'Submit Donation Info →')}
                 </button>
               </div>
             </form>

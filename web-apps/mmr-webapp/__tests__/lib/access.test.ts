@@ -25,6 +25,10 @@ describe('getRequiredTier — public routes', () => {
     '/api/auth/callback/google',
     '/api/auth/callback/microsoft-entra-id',
     '/api/donations/submit',
+    '/api/payments/submit',
+    '/api/payments/stripe/checkout',
+    '/api/payments/stripe/webhook',
+    '/payment/success',
     '/membership/inactive',
     '/blog/post-1',
     '/events',
@@ -39,7 +43,7 @@ describe('getRequiredTier — member routes (any login required)', () => {
     '/api/members/me',
     '/api/members/search',
     '/api/payments',
-    '/api/payments/submit',
+    '/api/payments/proof',
     '/portal/profile',
   ])('"%s" requires member access', (path) => {
     expectTier(path, 'member')

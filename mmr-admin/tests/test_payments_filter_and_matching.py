@@ -271,11 +271,12 @@ class TestAutoguessAll:
         def side_effect(sql, *args, **kwargs):
             sql_l = sql.lower()
             if 'renewal_start_date' in sql_l or 'renewal_end_date' in sql_l or 'configkey' in sql_l:
-                # Config queries — return start and end on consecutive calls
-                if not hasattr(side_effect, '_cfg_calls'):
-                    side_effect._cfg_calls = 0
-                side_effect._cfg_calls += 1
-                if side_effect._cfg_calls % 2 == 1:
+                # Config queries — key-aware (prices via V033 keys, renewal dates otherwise)
+                key = str(args[0][0]) if args and args[0] else ''
+                prices = {'IndividualPrice': '30.00', 'FamilyPrice': '50.00', 'FamilyUpgradePrice': '20.00'}
+                if key in prices:
+                    return [{'ConfigValue': prices[key]}]
+                if 'start' in key.lower():
                     return [{'ConfigValue': renewal_start}]
                 return [{'ConfigValue': renewal_end}]
             if 'gmail_transactions' in sql_l:
