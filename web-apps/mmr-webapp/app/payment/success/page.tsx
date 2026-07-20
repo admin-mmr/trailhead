@@ -22,6 +22,7 @@ export default async function PaymentSuccessPage({
   let amount: number | null = null
   let paymentType = ''
   let refId = ''
+  let livemode = true
   let loadError = false
 
   if (sessionId) {
@@ -31,6 +32,7 @@ export default async function PaymentSuccessPage({
       amount = session.amount_total != null ? session.amount_total / 100 : null
       paymentType = session.metadata?.paymentType ?? ''
       refId = session.metadata?.submissionId ?? session.client_reference_id ?? ''
+      livemode = session.livemode
     } catch {
       loadError = true
     }
@@ -72,6 +74,13 @@ export default async function PaymentSuccessPage({
               </h1>
               {amount != null && (
                 <p className="text-3xl font-bold text-[#F47B20] mb-4">${amount.toFixed(2)}</p>
+              )}
+              {!livemode && (
+                <div className="mb-4 mx-auto max-w-md px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 font-semibold">
+                  ⚠️ Test payment — simulated, no real charge was made.
+                  <br />
+                  测试付款 — 模拟操作，未产生真实扣款。
+                </div>
               )}
               <p className="text-gray-600 mb-4">
                 {isMembership ? (

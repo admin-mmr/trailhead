@@ -66,6 +66,12 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 
 **Batch Sizing:** BATCH_SIZE=300 (MySQL inserts, GAS API calls). Configurable in `sync_config.py` line 26.
 
+## STRIPE PAYMENTS (webapp) — shipped 07-20, TEST MODE
+**Flow:** `/join` + `/donate` card option → `POST /api/payments/stripe/checkout` (amount from config: `IndividualPrice`/`FamilyPrice`/`FamilyUpgradePrice`; donations from submission) → hosted Checkout → `POST /api/payments/stripe/webhook` (signature-verified) → `stripe_events` idempotency guard → `gmail_transactions` ledger row (`TransactionNumber`=payment_intent) → `sp_link_transaction` (anonymous donations: direct `payments` insert) — one DB transaction.
+**Test vs live (V035):** mode = Stripe `event.livemode`, stamped everywhere: `PaymentMethod` = `'Stripe'` (live) vs `'Stripe (TEST)'`, memo prefixed `TEST —`, `stripe_events.livemode` 1/0. Reports/reconciliation MUST filter `PaymentMethod != 'Stripe (TEST)'`. Members see amber test-mode banner (driven by `GET /api/payments/stripe/mode` ← key prefix) on join/donate/success pages — disappears automatically with live keys.
+**Fulfillment gate:** test events are acknowledged but IGNORED (`stripe_events.status='ignored_test_mode'`) unless SWA setting `STRIPE_ALLOW_TEST_FULFILLMENT=1` (pilot only — REMOVE at go-live).
+**Go-live runbook:** 1) Stripe dashboard → live mode → create webhook endpoint for `checkout.session.completed` at `<site>/api/payments/stripe/webhook` → copy live `whsec_`. 2) `az staticwebapp appsettings set --name mmr-webapp --resource-group mmr-resources --setting-names STRIPE_SECRET_KEY=sk_live_… STRIPE_WEBHOOK_SECRET=whsec_…` 3) `az staticwebapp appsettings delete --name mmr-webapp --resource-group mmr-resources --setting-names STRIPE_ALLOW_TEST_FULFILLMENT` 4) Verify `GET /api/payments/stripe/mode` returns `{"testMode":false}` and banner is gone. Local dev keys in Keychain: `MMR_STRIPE_SECRET_KEY`/`MMR_STRIPE_WEBHOOK_SECRET` (see `start-dev.sh`).
+
 ## COMMON TASKS
 **GitHub Actions:** Check `.github/workflows/` + `git status/diff/log` → identify issues → suggest fixes + commit.
 **Photo Manager:** Check `process_photos.py`/`bib_analyzer.py` → data flow (Drive → download → process → output.json → Blob) → optimize.

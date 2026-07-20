@@ -54,6 +54,7 @@ function makeEvent(overrides: Record<string, any> = {}, sessionOverrides: Record
   return {
     id: 'evt_test_001',
     type: 'checkout.session.completed',
+    livemode: true,
     data: {
       object: {
         id: 'cs_test_001',
@@ -87,6 +88,7 @@ let constructEvent: jest.Mock
 beforeEach(() => {
   jest.clearAllMocks()
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test'
+  delete process.env.STRIPE_ALLOW_TEST_FULFILLMENT
   conn = {
     execute: jest.fn().mockResolvedValue([{}]),
     query: jest.fn().mockResolvedValue([{}]),
@@ -135,13 +137,14 @@ describe('POST /api/payments/stripe/webhook — ledger pattern', () => {
 
     const executed = conn.execute.mock.calls.map(c => c[0] as string)
     expect(executed[0]).toMatch(/INSERT INTO stripe_events/)
-    expect(conn.execute.mock.calls[0][1]).toEqual(['evt_test_001', 'pi_test_001', expect.any(String)])
+    expect(conn.execute.mock.calls[0][1]).toEqual(['evt_test_001', 'pi_test_001', expect.any(String), 1])
     expect(executed[1]).toMatch(/INSERT INTO gmail_transactions/)
     const gmailParams = conn.execute.mock.calls[1][1]
     expect(gmailParams[0]).toBe('pi_test_001')       // TransactionNumber = PaymentIntent id
     expect(gmailParams[1]).toBe('Jo Runner')         // Sender
     expect(gmailParams[2]).toBe(30)                  // Amount
-    expect(gmailParams[4]).toBe('evt_test_001')      // MessageId = event id
+    expect(gmailParams[4]).toBe('Stripe')            // PaymentMethod — live, no TEST marker
+    expect(gmailParams[5]).toBe('evt_test_001')      // MessageId = event id
 
     expect(conn.query).toHaveBeenCalledWith(
       'CALL sp_link_transaction(?, ?, ?, ?, ?)',
@@ -166,6 +169,31 @@ describe('POST /api/payments/stripe/webhook — ledger pattern', () => {
     const paymentsCall = conn.execute.mock.calls.find(c => /INSERT INTO payments/.test(c[0]))
     expect(paymentsCall).toBeDefined()
     expect(paymentsCall![1]).toEqual(['pi_test_001', 'Donation', 100.5, 'SUB-20260719-BBB22'])
+    expect(conn.commit).toHaveBeenCalled()
+  })
+
+  it('test-mode event WITHOUT the pilot flag → acknowledged but never touches the ledger', async () => {
+    constructEvent.mockReturnValue(makeEvent({ livemode: false }))
+    const res = await post(makeReq())
+    expect(res.status).toBe(200)
+    expect(res.body.ignored).toBe('test_mode')
+    expect(conn.beginTransaction).not.toHaveBeenCalled()
+    expect(conn.query).not.toHaveBeenCalled()
+    // audit row records the ignored event with livemode=0
+    const audit = conn.execute.mock.calls.find(c => /INSERT INTO stripe_events/.test(c[0]))
+    expect(audit![1]).toContain('ignored_test_mode')
+    expect(audit![1][4]).toBe(0)
+  })
+
+  it('test-mode event WITH pilot flag → fulfilled, marked Stripe (TEST) with TEST memo', async () => {
+    process.env.STRIPE_ALLOW_TEST_FULFILLMENT = '1'
+    constructEvent.mockReturnValue(makeEvent({ livemode: false }))
+    const res = await post(makeReq())
+    expect(res.status).toBe(200)
+    const gmailParams = conn.execute.mock.calls[1][1]
+    expect(gmailParams[3]).toMatch(/^TEST — /)       // Memo prefixed
+    expect(gmailParams[4]).toBe('Stripe (TEST)')     // PaymentMethod marked
+    expect(conn.execute.mock.calls[0][1][3]).toBe(0) // stripe_events.livemode = 0
     expect(conn.commit).toHaveBeenCalled()
   })
 

@@ -156,6 +156,16 @@ export default function JoinPage() {
     }
   }, [])
 
+  // Card payments run in Stripe test mode until live keys are configured —
+  // members must see that clearly (banner rendered in the card box below)
+  const [stripeTestMode, setStripeTestMode] = useState(false)
+  useEffect(() => {
+    fetch('/api/payments/stripe/mode')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setStripeTestMode(!!d.testMode) })
+      .catch(() => {})
+  }, [])
+
   const zelleHandle = process.env.NEXT_PUBLIC_ZELLE_HANDLE ?? 'runningmmr@gmail.com'
   const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? '@MMRunners'
   const currentPlan = PLANS[plan]
@@ -650,9 +660,13 @@ export default function JoinPage() {
                       ? '点击下方按钮后，您将跳转到 Stripe 安全支付页面完成付款。付款成功后会员资格将自动激活，无需上传截图。'
                       : "You'll be redirected to Stripe's secure checkout to complete your payment. Your membership activates automatically once payment succeeds — no screenshot needed."}
                   </p>
-                  <p className="text-xs text-amber-600 mt-3">
-                    {lang === 'zh' ? '（当前为测试模式 — 不会产生真实扣款）' : '(Test mode — no real charge will be made)'}
-                  </p>
+                  {stripeTestMode && (
+                    <p className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-semibold">
+                      {lang === 'zh'
+                        ? '⚠️ 测试模式 — 付款为模拟操作，不会产生真实扣款，会员资格不会正式生效。'
+                        : '⚠️ Test mode — payments are simulated, your card will not be charged, and no real membership is granted.'}
+                    </p>
+                  )}
                 </div>
               )}
 

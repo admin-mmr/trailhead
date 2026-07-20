@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
     typeof session.payment_intent === 'string'
       ? session.payment_intent
       : session.payment_intent?.id ?? session.id
+  const livemode     = event.livemode === true
   const memberId     = session.metadata?.memberID || null
   const submissionId = session.metadata?.submissionID || null
   const paymentType  = session.metadata?.paymentType || 'Donation'
@@ -62,6 +63,16 @@ export async function POST(req: NextRequest) {
   const payerName    = session.customer_details?.name ?? null
   const payerEmail   = session.customer_details?.email ?? null
 
+  // ── Test-mode gate ────────────────────────────────────────────────────────
+  // Test events never touch the ledger unless explicitly allowed (pilot flag).
+  // Once live keys are in and the flag is removed, a stray test payment can't
+  // activate a membership or create payment records.
+  if (!livemode && process.env.STRIPE_ALLOW_TEST_FULFILLMENT !== '1') {
+    console.warn(`[stripe/webhook] Ignoring test-mode event ${event.id} (STRIPE_ALLOW_TEST_FULFILLMENT not set)`)
+    await recordRejectedEvent(event.id, paymentIntentId, 'ignored_test_mode', payloadHash, livemode)
+    return NextResponse.json({ received: true, ignored: 'test_mode' })
+  }
+
   // ── Amount verification (P1k: verify amount_total vs config) ─────────────
   const expectedCents = await expectedAmountCents(paymentType, submissionId)
   if (expectedCents != null && amountCents !== expectedCents) {
@@ -69,11 +80,15 @@ export async function POST(req: NextRequest) {
       `[stripe/webhook] Amount mismatch for ${event.id}: got ${amountCents}, expected ${expectedCents} (${paymentType})`
     )
     // Acknowledge (200) — a retry cannot heal a mismatch; record it for audit
-    await recordRejectedEvent(event.id, paymentIntentId, 'amount_mismatch', payloadHash)
+    await recordRejectedEvent(event.id, paymentIntentId, 'amount_mismatch', payloadHash, livemode)
     return NextResponse.json({ received: true, rejected: 'amount_mismatch' })
   }
 
-  const memo = [memberId, paymentType, 'via Stripe Checkout'].filter(Boolean).join(' ')
+  // Mode is stamped on every row so test and live money can never be confused:
+  // PaymentMethod carries it to all admin panels; the memo makes it obvious in-line.
+  const paymentMethodLabel = livemode ? 'Stripe' : 'Stripe (TEST)'
+  const memo = [livemode ? null : 'TEST —', memberId, paymentType, 'via Stripe Checkout']
+    .filter(Boolean).join(' ')
 
   const conn = await pool.getConnection()
   try {
@@ -81,9 +96,9 @@ export async function POST(req: NextRequest) {
 
     // 1. Idempotency guard — duplicate delivery hits the PK and aborts
     await conn.execute(
-      `INSERT INTO stripe_events (event_id, payment_intent_id, status, payload_hash)
-       VALUES (?, ?, 'processed', ?)`,
-      [event.id, paymentIntentId, payloadHash]
+      `INSERT INTO stripe_events (event_id, payment_intent_id, status, payload_hash, livemode)
+       VALUES (?, ?, 'processed', ?, ?)`,
+      [event.id, paymentIntentId, payloadHash, livemode ? 1 : 0]
     )
 
     // 2. Ledger row — same shape as a Gmail-parsed Zelle/Venmo transaction
@@ -91,8 +106,8 @@ export async function POST(req: NextRequest) {
       `INSERT INTO gmail_transactions
          (TransactionNumber, Timestamp, Sender, Amount, Memo, TransactionDate,
           PaymentMethod, MessageId, Subject, OriginalMemo)
-       VALUES (?, NOW(), ?, ?, ?, CURDATE(), 'Stripe', ?, 'Stripe Checkout', ?)`,
-      [paymentIntentId, payerName, amount, memo, event.id,
+       VALUES (?, NOW(), ?, ?, ?, CURDATE(), ?, ?, 'Stripe Checkout', ?)`,
+      [paymentIntentId, payerName, amount, memo, paymentMethodLabel, event.id,
        `session=${session.id}` + (payerEmail ? ` email=${payerEmail}` : '')]
     )
 
@@ -162,21 +177,23 @@ async function expectedAmountCents(
   }
 }
 
-// Audit trail for events acknowledged but not processed (e.g. amount mismatch)
+// Audit trail for events acknowledged but not processed (amount mismatch,
+// ignored test-mode event)
 async function recordRejectedEvent(
   eventId: string,
   paymentIntentId: string,
   status: string,
-  payloadHash: string
+  payloadHash: string,
+  livemode: boolean
 ): Promise<void> {
   try {
     const conn = await pool.getConnection()
     try {
       await conn.execute(
-        `INSERT INTO stripe_events (event_id, payment_intent_id, status, payload_hash)
-         VALUES (?, ?, ?, ?)
+        `INSERT INTO stripe_events (event_id, payment_intent_id, status, payload_hash, livemode)
+         VALUES (?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE status = VALUES(status)`,
-        [eventId, paymentIntentId, status, payloadHash]
+        [eventId, paymentIntentId, status, payloadHash, livemode ? 1 : 0]
       )
     } finally {
       conn.release()
