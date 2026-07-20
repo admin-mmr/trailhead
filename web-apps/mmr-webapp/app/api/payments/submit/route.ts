@@ -11,7 +11,7 @@ const SubmitSchema = z.object({
   // Membership plan
   plan: z.enum(['individual', 'family', 'family_upgrade']),
   amount: z.number().positive(),
-  paymentMethod: z.enum(['zelle', 'venmo']),
+  paymentMethod: z.enum(['zelle', 'venmo', 'card']),
 
   // Member info — no address / zip / emergency / shirt / pronouns
   firstName:      z.string().min(1),
