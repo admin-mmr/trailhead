@@ -50,8 +50,8 @@ class TestAutoMatchConnLifecycle:
         """Happy path: event exists, auto-match runs, conn is closed."""
         mock_conn = _make_conn(rowcount=3)
 
-        with patch('api_events.query', return_value=[{'id': 42}]), \
-             patch('api_events.get_conn', return_value=mock_conn) as mock_get:
+        with patch('api_events_match.query', return_value=[{'id': 42}]), \
+             patch('api_events_match.get_conn', return_value=mock_conn) as mock_get:
 
             r = events_client.post('/api/events/42/automatch')
 
@@ -64,8 +64,8 @@ class TestAutoMatchConnLifecycle:
         mock_conn = _make_conn()
         mock_conn.cursor.return_value.execute.side_effect = Exception('DB exploded')
 
-        with patch('api_events.query', return_value=[{'id': 42}]), \
-             patch('api_events.get_conn', return_value=mock_conn) as mock_get:
+        with patch('api_events_match.query', return_value=[{'id': 42}]), \
+             patch('api_events_match.get_conn', return_value=mock_conn) as mock_get:
 
             r = events_client.post('/api/events/42/automatch')
 
@@ -78,8 +78,8 @@ class TestAutoMatchConnLifecycle:
         mock_conn = _make_conn()
         mock_conn.cursor.return_value.execute.side_effect = Exception('oops')
 
-        with patch('api_events.query', return_value=[{'id': 42}]), \
-             patch('api_events.get_conn', return_value=mock_conn):
+        with patch('api_events_match.query', return_value=[{'id': 42}]), \
+             patch('api_events_match.get_conn', return_value=mock_conn):
 
             events_client.post('/api/events/42/automatch')
 
@@ -87,8 +87,8 @@ class TestAutoMatchConnLifecycle:
 
     def test_no_conn_acquired_when_event_not_found(self, events_client):
         """Early-exit (404) must not acquire a connection at all."""
-        with patch('api_events.query', return_value=[]), \
-             patch('api_events.get_conn') as mock_get:
+        with patch('api_events_match.query', return_value=[]), \
+             patch('api_events_match.get_conn') as mock_get:
 
             r = events_client.post('/api/events/99/automatch')
 
@@ -103,8 +103,8 @@ class TestAutoMatchConnLifecycle:
         conns = [_make_conn(rowcount=1) for _ in range(7)]
         conn_iter = iter(conns)
 
-        with patch('api_events.query', return_value=[{'id': 1}]), \
-             patch('api_events.get_conn', side_effect=conn_iter):
+        with patch('api_events_match.query', return_value=[{'id': 1}]), \
+             patch('api_events_match.get_conn', side_effect=conn_iter):
 
             for _ in range(7):
                 r = events_client.post('/api/events/1/automatch')
@@ -119,8 +119,8 @@ class TestAutoMatchConnLifecycle:
         """Successful match must commit before closing."""
         mock_conn = _make_conn(rowcount=2)
 
-        with patch('api_events.query', return_value=[{'id': 5}]), \
-             patch('api_events.get_conn', return_value=mock_conn):
+        with patch('api_events_match.query', return_value=[{'id': 5}]), \
+             patch('api_events_match.get_conn', return_value=mock_conn):
 
             r = events_client.post('/api/events/5/automatch')
 

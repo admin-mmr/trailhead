@@ -84,7 +84,14 @@ def run_finisher_pipeline():
         )
         logger.info("[scheduler] %d pending past events to load", len(pending))
         for ev in pending:
-            _load_one_blocking(ev["id"], ev["event_code"], start_sync, get_job_status)
+            loaded = _load_one_blocking(
+                ev["id"], ev["event_code"], start_sync, get_job_status)
+            # 2b) Auto-match finishers ↔ MMR members for events that loaded
+            # results. Mirrors the CLI weekly pipeline (run_auto_matcher) and the
+            # UI /automatch button so unattended runs are end-to-end (Tier 1+2;
+            # Tier 4 fuzzy stays a separate on-demand background job).
+            if loaded:
+                _automatch_one(ev["id"], ev["event_code"])
 
         # 3) Resolve any slug-coded event codes now that results exist.
         try:
@@ -101,7 +108,10 @@ def run_finisher_pipeline():
 
 def _load_one_blocking(event_id, event_code, start_sync, get_job_status,
                        poll_secs=10, max_wait_secs=3600):
-    """Start a single-event sync and block until it reaches a terminal state."""
+    """Start a single-event sync and block until it reaches a terminal state.
+    Returns True only if the event loaded results successfully (done/complete);
+    False on error/cancelled/timeout, so the caller can skip auto-matching an
+    event with no fresh finisher rows."""
     logger.info("[scheduler] loading %s (id=%s)", event_code, event_id)
     start_sync(event_id, event_code)
     waited = 0
@@ -111,10 +121,24 @@ def _load_one_blocking(event_id, event_code, start_sync, get_job_status,
         job = get_job_status(event_code)
         if not job:
             continue
-        if job.get("status") in _TERMINAL:
-            logger.info("[scheduler]   %s → %s", event_code, job.get("status"))
-            return
+        status = job.get("status")
+        if status in _TERMINAL:
+            logger.info("[scheduler]   %s → %s", event_code, status)
+            return status in ("done", "complete")
     logger.warning("[scheduler]   %s timed out after %ss", event_code, max_wait_secs)
+    return False
+
+
+def _automatch_one(event_id, event_code):
+    """Run Tier-1/Tier-2 auto-match for one loaded event (best-effort; a match
+    failure must not abort the whole pipeline)."""
+    try:
+        from api_events import run_event_automatch
+        res = run_event_automatch(event_id)
+        logger.info("[scheduler]   %s auto-matched %s runner(s)",
+                    event_code, res.get("matched", 0))
+    except Exception:
+        logger.exception("[scheduler]   %s auto-match failed (non-fatal)", event_code)
 
 
 # ---------------------------------------------------------------------------

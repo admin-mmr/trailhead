@@ -108,9 +108,9 @@ class TestUpgradeAndAddHappyPath:
 
         cur = _mock_cursor()
         with patch('api_members_family.query', return_value=[]) as gen_q, \
-             patch('api_members_family.db_cursor', return_value=cur), \
-             patch('api_members_family.log_activity') as mock_log, \
-             patch('api_members_family.get_admin_id', return_value='admin@mmr.org'):
+             patch('api_members_family_ops.db_cursor', return_value=cur), \
+             patch('api_members_family_ops.log_activity') as mock_log, \
+             patch('api_members_family_ops.get_admin_id', return_value='admin@mmr.org'):
             r = _post(client, {'primary_member_id': primary_id, 'new_member_id': second_id})
 
         mock_query.side_effect = None

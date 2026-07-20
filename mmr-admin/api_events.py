@@ -179,184 +179,6 @@ def api_event_runners(event_id):
 
 
 # ---------------------------------------------------------------------------
-# Auto-match helpers
-# ---------------------------------------------------------------------------
-
-def _backfill_member_name_and_year(cursor, event_id: int, match_method: str) -> None:
-    """After a Tier match, push runner_name → NYRRRunnerName and infer YearBornGuess.
-
-    Called identically after Tier 1, 2, and 3 — extracts the repeated UPDATE block.
-    Only fills fields that are currently NULL/empty so we never overwrite known data.
-    """
-    cursor.execute("""
-        UPDATE members m
-        INNER JOIN nyrr_event_runners er ON m.MemberID = er.mmr_member_id
-        SET m.NYRRRunnerName = er.runner_name,
-            m.YearBornGuess = CASE WHEN m.YearBornGuess IS NULL THEN CAST(YEAR(CURDATE()) AS SIGNED) - er.age ELSE m.YearBornGuess END,
-            m.UpdatedAt = NOW()
-        WHERE er.match_method = %s
-          AND er.nyrr_event_id = %s
-          AND (m.NYRRRunnerName IS NULL OR m.NYRRRunnerName = '')
-    """, (match_method, event_id))
-
-
-# ---------------------------------------------------------------------------
-# Auto-match
-# ---------------------------------------------------------------------------
-
-@events_bp.route('/api/events/<int:event_id>/automatch', methods=['POST'])
-@login_required
-@require_role('admin')
-def api_run_automatch(event_id):
-    """
-    Re-run Tier-1 + Tier-2 auto-match on an already-loaded event.
-    Only updates currently unmatched rows.
-    """
-    rows = query("SELECT id FROM nyrr_events WHERE id = %s", [event_id])
-    if not rows:
-        return json_response({'ok': False, 'error': 'Event not found'}, 404)
-
-    conn = None
-    try:
-        conn = get_conn()
-        cursor = conn.cursor()
-
-        # NOTE on backfill: we deliberately do NOT call
-        # _backfill_member_name_and_year() after auto tiers. Auto matches are not
-        # human-confirmed, and writing the runner's name into members.NYRRRunnerName
-        # caused a corruption cascade (a wrong match poisons NYRRRunnerName, which
-        # then makes Tier-1 auto_name "confidently" re-create the bad match).
-        # Backfill now happens ONLY on the manual confirm path (api_runners match).
-
-        # Per-event collision guard: a runner name that maps to MORE THAN ONE
-        # distinct nyrr_runner_id within this event is ambiguous — we cannot know
-        # which finisher is the member, so we skip it and leave it for the queue.
-
-        # Tier 1: Match by NYRRRunnerName (skip runner-name collisions)
-        cursor.execute("""
-            UPDATE nyrr_event_runners er
-            INNER JOIN members m
-                ON LOWER(TRIM(er.runner_name)) = LOWER(TRIM(m.NYRRRunnerName))
-            LEFT JOIN (
-                SELECT LOWER(TRIM(runner_name)) AS nm
-                FROM nyrr_event_runners
-                WHERE nyrr_event_id = %s
-                GROUP BY LOWER(TRIM(runner_name))
-                HAVING COUNT(DISTINCT nyrr_runner_id) > 1
-            ) collide ON collide.nm = LOWER(TRIM(er.runner_name))
-            SET er.mmr_member_id = m.MemberID,
-                er.match_method = 'auto_name',
-                er.matched_by = 'Viewer',
-                er.matched_at = NOW()
-            WHERE er.mmr_member_id IS NULL
-              AND m.NYRRRunnerName IS NOT NULL
-              AND m.NYRRRunnerName != ''
-              AND er.nyrr_event_id = %s
-              AND collide.nm IS NULL
-        """, (event_id, event_id))
-        t1_matched = cursor.rowcount
-
-        # Tier 2: Match by first + last name when exactly one MEMBER matches AND
-        # the name is not shared by multiple distinct runners in this event.
-        # With age/gender validation (if member has YearBorn or YearBornGuess)
-        cursor.execute("""
-            UPDATE nyrr_event_runners er
-            INNER JOIN (
-                SELECT LOWER(TRIM(FirstName)) AS fn, LOWER(TRIM(LastName)) AS ln,
-                       MAX(MemberID) AS MemberID
-                FROM members
-                WHERE FirstName IS NOT NULL AND FirstName != ''
-                  AND LastName IS NOT NULL AND LastName != ''
-                GROUP BY LOWER(TRIM(FirstName)), LOWER(TRIM(LastName))
-                HAVING COUNT(*) = 1
-            ) uniq ON LOWER(TRIM(er.first_name)) = uniq.fn
-                  AND LOWER(TRIM(er.last_name)) = uniq.ln
-            INNER JOIN members m ON uniq.MemberID = m.MemberID
-            LEFT JOIN (
-                SELECT LOWER(TRIM(first_name)) AS fn, LOWER(TRIM(last_name)) AS ln
-                FROM nyrr_event_runners
-                WHERE nyrr_event_id = %s
-                GROUP BY LOWER(TRIM(first_name)), LOWER(TRIM(last_name))
-                HAVING COUNT(DISTINCT nyrr_runner_id) > 1
-            ) collide ON collide.fn = LOWER(TRIM(er.first_name))
-                     AND collide.ln = LOWER(TRIM(er.last_name))
-            SET er.mmr_member_id = uniq.MemberID,
-                er.match_method = 'auto_firstlast',
-                er.matched_by = 'Viewer',
-                er.matched_at = NOW()
-            WHERE er.mmr_member_id IS NULL
-              AND er.first_name IS NOT NULL AND er.first_name != ''
-              AND er.last_name IS NOT NULL AND er.last_name != ''
-              AND er.nyrr_event_id = %s
-              AND collide.fn IS NULL
-              -- Age/gender validation: only if member has YearBorn or YearBornGuess
-              AND (
-                -- If member has YearBorn set, validate runner age matches
-                (m.YearBorn IS NOT NULL AND ABS(CAST(YEAR(CURDATE()) AS SIGNED) - m.YearBorn - er.age) <= 1)
-                -- OR if member has YearBornGuess, validate runner age matches
-                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(CAST(YEAR(CURDATE()) AS SIGNED) - m.YearBornGuess - er.age) <= 1)
-                -- OR if member has no birth year, skip validation
-                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NULL)
-              )
-              -- Optional: also check gender if both have gender data
-              -- NYRR uses M/W/X; DB stores Male/Female/Other — normalize before compare
-              AND (
-                er.gender IS NULL
-                OR m.Gender IS NULL
-                OR CASE er.gender
-                   WHEN 'M' THEN 'Male'
-                   WHEN 'W' THEN 'Female'
-                   WHEN 'X' THEN 'Other'
-                   ELSE er.gender
-                END = m.Gender
-              )
-        """, (event_id, event_id))
-        t2_matched = cursor.rowcount
-
-        # Tier 3 (partial / single-name match) is intentionally NOT auto-committed.
-        # Matching on first-name OR last-name alone produced wrong matches (e.g.
-        # "Jinyuan Qiao" → member "Bin Qiao") for a membership with many shared
-        # surnames. Single-name candidates now surface in the Match Queue
-        # (GET /api/nyrr/match-queue) for a human to confirm.
-        t3_matched = 0
-
-        # Tier 4 (fuzzy) is NOT run here — it's a background job to avoid OOM on
-        # large events (25k runners × 1.5k members ≈ 37M comparisons).
-        # Use POST /api/events/<id>/fuzzy-match to start it asynchronously.
-
-        matched = t1_matched + t2_matched
-
-        # Refresh matched count on the event
-        cursor.execute("""
-            UPDATE nyrr_events
-            SET mmr_matched_count = (
-                SELECT COUNT(*) FROM nyrr_event_runners
-                WHERE nyrr_event_id = %s AND mmr_member_id IS NOT NULL
-            )
-            WHERE id = %s
-        """, (event_id, event_id))
-
-        conn.commit()
-        cursor.close()
-
-        parts = []
-        if t1_matched: parts.append(f'{t1_matched} by NYRR name')
-        if t2_matched: parts.append(f'{t2_matched} by first/last name')
-        if t3_matched: parts.append(f'{t3_matched} by partial name')
-        detail = f' ({", ".join(parts)})' if parts else ''
-        return json_response({'ok': True, 'matched': matched,
-                               'message': f'Auto-matched {matched} runner(s){detail}. '
-                                          f'Run POST /api/events/{event_id}/fuzzy-match for Tier-4 fuzzy match.'})
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        return json_response({'ok': False, 'error': str(e)[:300]}, 500)
-    finally:
-        if conn:
-            conn.close()
-
-
-# ---------------------------------------------------------------------------
 # Stats
 # ---------------------------------------------------------------------------
 
@@ -411,3 +233,12 @@ def api_stats_years():
 # Discover events from NYRR API
 # ---------------------------------------------------------------------------
 
+
+
+# ---------------------------------------------------------------------------
+# Auto-match (extracted to api_events_match.py to keep this file < 400 LOC).
+# run_event_automatch is re-exported so `from api_events import ...` still works.
+# ---------------------------------------------------------------------------
+from api_events_match import run_event_automatch, register_match_routes  # noqa: E402
+
+register_match_routes(events_bp)

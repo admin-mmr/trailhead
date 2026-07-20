@@ -87,11 +87,11 @@ End-to-end the NYRR pipeline has four pieces. Source of truth for shared code is
 | Mode | Function | What it does |
 |---|---|---|
 | `--mode daily --batch-size N` | `run_daily_pipeline` | Discover today's events + sync N pending events. Also runs reconcile Step 2.5 (past-date only). |
-| `--mode weekly` | `run_weekly_pipeline` | Same as daily but no batch cap; reconcile includes upcoming events. Cron: Tuesdays 2:00 AM UTC (`.github/workflows/sync-nyrr-weekly.yml`). |
+| `--mode weekly` | `run_weekly_pipeline` | Same as daily but no batch cap; reconcile includes upcoming events. **Also runs member↔finisher auto-matching** (`run_auto_matcher`, line ~262). |
 | `--mode single --event-code <CODE>` | `run_single_event` | Reprocess one event end-to-end. |
 | `--mode reconcile [--include-upcoming] [--dry-run]` | `run_reconcile_only` | Slug→canonical reconciliation only (no finisher fetch). |
 
-Cron status note: CLAUDE.md → ACTION PLAN P0 #1 flags that the weekly cron is currently manual-only. Re-enable in `sync-nyrr-weekly.yml` when ready.
+**This CLI is now the manual/local path only.** Unattended automation moved to the in-app scheduler (`mmr-admin/nyrr_scheduler.py`) — see [§ Automated pipeline](#automated-pipeline-unattended) below. The old `.github/workflows/sync-nyrr-weekly.yml` was deleted. **Key difference:** the CLI weekly pipeline auto-matches members; the in-app scheduler does **not** (matching gap — see runbook).
 
 ### 2.2 Background worker — `mmr-admin/sync_worker.py` + `sync_worker_fetch.py` + `sync_worker_backfill.py`
 
@@ -159,9 +159,67 @@ Each tier also writes `members.NYRRRunnerName` and `members.YearBornGuess` if mi
 
 ## 4. Maintenance playbook
 
-### Daily / weekly
-- **Tuesdays 2:00 AM UTC** — `sync-nyrr-weekly.yml` cron runs `--mode weekly`. Re-enable cron if disabled (CLAUDE.md P0 #1).
-- Glance at `NYRR Count Reconciliation` panel after each sync. Anything `Pending` or with `Coverage < 90%` in red is worth probing.
+<a id="automated-pipeline-unattended"></a>
+### Automated pipeline (unattended) — the fully-automated runbook
+
+**Where it runs & cost.** Automation runs *inside* the Azure App Service `mmr-nyrr-viewer`
+via `mmr-admin/nyrr_scheduler.py` (APScheduler background thread), **not** GitHub Actions.
+Gated by env `ENABLE_NYRR_SCHEDULER=1` (set on prod 2026-07-18). **Marginal cost = $0** — it
+uses already-paid App Service compute. (GitHub Actions minutes are also free on this *public*
+repo, but the DB is Azure MySQL, typically reachable only from Azure — which is why automation
+lives in-app rather than in a GitHub cron.)
+
+**Two scheduled jobs** (crons overridable via `NYRR_DISCOVERY_CRON` / `NYRR_FINISHER_CRON`):
+
+| Job | Default cron (UTC) | Function | What it does |
+|---|---|---|---|
+| Discovery | `0 6 1 * *` (1st of month, 06:00) | `run_discovery` → `discover_current_events()` | Pulls new/upcoming races from NYRR `events/search` into `nyrr_events`. |
+| Finisher pipeline | `0 2 * * 2` (Tue 02:00) | `run_finisher_pipeline` | 1) promote upcoming events past their date → loadable; 2) sequentially load finisher results for every `Pending` past event (reuses `sync_worker.start_sync`, blocks per-event); 3) reconcile slug-coded event codes. |
+
+**What is / isn't automated** (the "fully automated" checklist):
+
+| Capability | Automated? | By what |
+|---|---|---|
+| Discover upcoming/new event info | ✅ | Discovery job (monthly) |
+| Fetch runner/finisher results | ✅ | Finisher pipeline (weekly) |
+| Slug → canonical `event_code` reconcile | ✅ | Finisher pipeline step 3 |
+| **Match finishers ↔ MMR members** (Tier 1+2) | ✅ | Finisher pipeline step 2b — `_automatch_one` → `api_events.run_event_automatch` after each event loads (added 2026-07-19). Tier-4 fuzzy stays on-demand (`POST /api/events/<id>/fuzzy-match`). |
+
+**Lead-time caveat on upcoming events.** `events/search` only lists a race once NYRR posts
+it *toward results* — not months ahead. The Haku widget / nyrr.org calendar sit behind Queue-it
+bot protection that 403s server-to-server requests, so they can't be a discovery source. Net:
+upcoming-event lead time is short (days/weeks, not months). This is a NYRR-side limit, not a bug.
+
+**Verify the scheduler is alive & working** (`adm-logs` streams Azure logs):
+```bash
+adm-logs | grep -i '\[scheduler\]'
+# Healthy startup line:
+#   [scheduler] started — discovery '0 6 1 * *', finisher '0 2 * * 2'
+# Per-run lines to expect: "discovery done: …", "N pending past events to load",
+#   "<CODE> → done", "reconcile: …", "finisher pipeline done".
+adm-status         # App Service must be Running, or nothing fires
+```
+If you see `[scheduler] disabled` → `ENABLE_NYRR_SCHEDULER` isn't set on the App Service.
+If you see `another worker owns the scheduler; skipping` on all workers → normal (only one
+gunicorn worker runs it). If the App Service scales to multiple **instances**, add a DB lease
+(see docstring) — the file lock only guards workers within one instance.
+
+**Manually trigger the weekly pipeline** (don't wait for Tuesday) — run the CLI, which does the
+same discover + fetch + reconcile + match end-to-end:
+```bash
+mmr
+python3 basecamp/ops/sync_nyrr_events.py --mode weekly     # discover + fetch + reconcile + MATCH
+```
+
+**Matching is now automated end-to-end** (2026-07-19). `run_finisher_pipeline` calls
+`_automatch_one` after each event loads (`api_events.run_event_automatch`, Tier 1+2). Expect log
+lines like `<CODE> auto-matched N runner(s)`. Only **Tier-4 fuzzy** stays on-demand (large-event
+OOM guard): kick it from the UI or `POST /api/events/<id>/fuzzy-match` when the Match Queue shows
+unresolved single-name candidates.
+
+### Post-run glance
+- Check the `NYRR Count Reconciliation` panel after each sync. Anything `Pending` or with
+  `Coverage < 90%` (red) is worth probing (recovery flows below).
 
 ### Local re-sync of a problem event
 ```bash
