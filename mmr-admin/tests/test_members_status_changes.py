@@ -198,9 +198,9 @@ class TestRevertStatusParamOrder:
 
     @pytest.fixture(autouse=True)
     def _patches(self):
-        with patch('api_members_status.execute') as mock_exec, \
-             patch('api_members_status.log_activity'), \
-             patch('api_members_status.get_admin_id', return_value='admin@mmrunners.org'):
+        with patch('api_members_overrides.execute') as mock_exec, \
+             patch('api_members_overrides.log_activity'), \
+             patch('api_members_overrides.get_admin_id', return_value='admin@mmrunners.org'):
             self.mock_exec = mock_exec
             yield
 
@@ -385,8 +385,8 @@ class TestRevertOverride:
 
     @pytest.fixture(autouse=True)
     def _patches(self):
-        with patch('api_members_status.log_activity') as mock_log, \
-             patch('api_members_status.get_admin_id', return_value='admin@mmrunners.org'):
+        with patch('api_members_overrides.log_activity') as mock_log, \
+             patch('api_members_overrides.get_admin_id', return_value='admin@mmrunners.org'):
             self.mock_log = mock_log
             yield
 
@@ -689,8 +689,8 @@ class TestRevertNullStatusRegression:
         it plus a warning about exporting to Sheets in the response.
         Without the export, Sheets sync will overwrite the reverted status.
         """
-        with patch('api_members_status.log_activity'), \
-             patch('api_members_status.get_admin_id', return_value='admin@mmrunners.org'):
+        with patch('api_members_overrides.log_activity'), \
+             patch('api_members_overrides.get_admin_id', return_value='admin@mmrunners.org'):
             mock_query.return_value = [{
                 'reverted_override_id':  13,
                 'members_restored':      171,
@@ -716,8 +716,8 @@ class TestRevertNullStatusRegression:
 
     def test_audit_error_absent_on_clean_revert(self, client, mock_query):
         """audit_error must not appear in the response when the SP succeeds cleanly."""
-        with patch('api_members_status.log_activity'), \
-             patch('api_members_status.get_admin_id', return_value='admin@mmrunners.org'):
+        with patch('api_members_overrides.log_activity'), \
+             patch('api_members_overrides.get_admin_id', return_value='admin@mmrunners.org'):
             mock_query.return_value = [{
                 'reverted_override_id':  13,
                 'members_restored':      171,
@@ -737,8 +737,8 @@ class TestRevertNullStatusRegression:
         the SP returns members_restored=0. Endpoint must surface this honestly
         rather than reporting false success.
         """
-        with patch('api_members_status.log_activity'), \
-             patch('api_members_status.get_admin_id', return_value='admin@mmrunners.org'):
+        with patch('api_members_overrides.log_activity'), \
+             patch('api_members_overrides.get_admin_id', return_value='admin@mmrunners.org'):
             mock_query.return_value = [{
                 'reverted_override_id':  13,
                 'members_restored':      0,   # SP found no non-NULL Status snapshots

@@ -4,56 +4,25 @@ Google Sheets Diagnostic Functions for MMR Admin
 Provides diagnostic functions to read and update data in Google Sheets.
 Uses the GAS webhook to communicate with Google Apps Script.
 This is a leaf module — it only imports db and standard library.
+
+Read helpers live here; write/compare helpers live in api_sheets_write.py and
+the GAS webhook transport in api_sheets_gas.py. Both are re-exported below so
+existing `from api_sheets_diags import ...` call sites keep working.
 """
 
 from __future__ import annotations
 
 import traceback
 from datetime import datetime
-from typing import Dict, List, Any
-import db as dbmod
-from config_cache import get_config
 
-
-def _call_gas_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Call the Google Apps Script webhook to fetch/push Sheets data.
-
-    Args:
-        payload: {action: str, ...}
-
-    Returns:
-        Response data or empty dict on error
-    """
-    try:
-        import requests
-
-        webhook_url = get_config('SheetsWebhookUrl', '').strip()
-        if not webhook_url:
-            raise ValueError("SheetsWebhookUrl not configured in Config table")
-
-        max_retries = 3
-        timeout = 60
-
-        for attempt in range(max_retries):
-            try:
-                resp = requests.post(webhook_url, json=payload, timeout=timeout)
-                if resp.status_code != 200:
-                    raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
-
-                body = resp.json()
-                if not body.get('ok'):
-                    raise Exception(f"GAS error: {body.get('error', 'unknown')}")
-
-                return body.get('data', {})
-            except requests.exceptions.Timeout:
-                if attempt < max_retries - 1:
-                    continue
-                raise
-
-        return {}
-    except Exception as e:
-        raise
+from api_sheets_gas import _call_gas_webhook
+# Re-exported for backward compatibility (see diagnostics.py).
+from api_sheets_write import (
+    update_sheets_members,
+    update_sheets_payments,
+    update_sheets_events,
+    compare_sheets_vs_db,
+)
 
 
 def get_sheets_members(limit: int = 50):
@@ -207,222 +176,6 @@ def get_sheets_transactions(limit: int = 50):
             'error_type': type(e).__name__,
             'debug': debug,
             'function': 'get_sheets_transactions',
-            'traceback': traceback.format_exc(),
-            'executed_at': datetime.utcnow().isoformat(),
-        }
-
-
-def update_sheets_members(rows: List[Dict[str, Any]]):
-    """
-    Update members in Google Sheets.
-
-    Args:
-        rows: List of member dicts with MemberID and fields to update
-
-    Returns:
-        Result with count of updated rows
-    """
-    debug = {'queries': []}
-    try:
-        if not rows:
-            return {
-                'status': 'warning',
-                'function': 'update_sheets_members',
-                'message': 'No rows provided',
-                'debug': debug,
-                'executed_at': datetime.utcnow().isoformat(),
-            }
-
-        data = _call_gas_webhook({'action': 'update_members', 'rows': rows})
-
-        updated_count = data.get('updated', 0) if isinstance(data, dict) else 0
-        debug['queries'].append(f"✓ Updated {updated_count} member rows in Google Sheets")
-
-        return {
-            'status': 'ok',
-            'function': 'update_sheets_members',
-            'rows_sent': len(rows),
-            'rows_updated': updated_count,
-            'debug': debug,
-            'executed_at': datetime.utcnow().isoformat(),
-        }
-    except Exception as e:
-        return {
-            'status': 'error',
-            'error': str(e),
-            'error_type': type(e).__name__,
-            'debug': debug,
-            'function': 'update_sheets_members',
-            'traceback': traceback.format_exc(),
-            'executed_at': datetime.utcnow().isoformat(),
-        }
-
-
-def update_sheets_payments(rows: List[Dict[str, Any]]):
-    """
-    Update payments in Google Sheets.
-
-    Args:
-        rows: List of payment dicts with PaymentID and fields to update
-
-    Returns:
-        Result with count of updated rows
-    """
-    debug = {'queries': []}
-    try:
-        if not rows:
-            return {
-                'status': 'warning',
-                'function': 'update_sheets_payments',
-                'message': 'No rows provided',
-                'debug': debug,
-                'executed_at': datetime.utcnow().isoformat(),
-            }
-
-        data = _call_gas_webhook({'action': 'update_payments', 'rows': rows})
-
-        updated_count = data.get('updated', 0) if isinstance(data, dict) else 0
-        debug['queries'].append(f"✓ Updated {updated_count} payment rows in Google Sheets")
-
-        return {
-            'status': 'ok',
-            'function': 'update_sheets_payments',
-            'rows_sent': len(rows),
-            'rows_updated': updated_count,
-            'debug': debug,
-            'executed_at': datetime.utcnow().isoformat(),
-        }
-    except Exception as e:
-        return {
-            'status': 'error',
-            'error': str(e),
-            'error_type': type(e).__name__,
-            'debug': debug,
-            'function': 'update_sheets_payments',
-            'traceback': traceback.format_exc(),
-            'executed_at': datetime.utcnow().isoformat(),
-        }
-
-
-def update_sheets_events(rows: List[Dict[str, Any]]):
-    """
-    Update events in Google Sheets.
-
-    Args:
-        rows: List of event dicts with EventID and fields to update
-
-    Returns:
-        Result with count of updated rows
-    """
-    debug = {'queries': []}
-    try:
-        if not rows:
-            return {
-                'status': 'warning',
-                'function': 'update_sheets_events',
-                'message': 'No rows provided',
-                'debug': debug,
-                'executed_at': datetime.utcnow().isoformat(),
-            }
-
-        data = _call_gas_webhook({'action': 'update_events', 'rows': rows})
-
-        updated_count = data.get('updated', 0) if isinstance(data, dict) else 0
-        debug['queries'].append(f"✓ Updated {updated_count} event rows in Google Sheets")
-
-        return {
-            'status': 'ok',
-            'function': 'update_sheets_events',
-            'rows_sent': len(rows),
-            'rows_updated': updated_count,
-            'debug': debug,
-            'executed_at': datetime.utcnow().isoformat(),
-        }
-    except Exception as e:
-        return {
-            'status': 'error',
-            'error': str(e),
-            'error_type': type(e).__name__,
-            'debug': debug,
-            'function': 'update_sheets_events',
-            'traceback': traceback.format_exc(),
-            'executed_at': datetime.utcnow().isoformat(),
-        }
-
-
-def compare_sheets_vs_db():
-    """
-    Compare Google Sheets data against MySQL database for all major tables.
-    Useful for spotting sync discrepancies.
-    """
-    debug = {'comparisons': [], 'summary': {}}
-    try:
-        # 1. Compare members
-        sheets_members = _call_gas_webhook({'action': 'get_members'})
-        sheets_members = sheets_members if isinstance(sheets_members, list) else []
-
-        db_members_count = dbmod.query("SELECT COUNT(*) as cnt FROM members")
-        db_members_count = db_members_count[0]['cnt'] if db_members_count else 0
-
-        debug['comparisons'].append({
-            'table': 'members',
-            'sheets_count': len(sheets_members),
-            'db_count': db_members_count,
-            'status': '✓' if len(sheets_members) == db_members_count else '⚠',
-        })
-
-        # 2. Compare payments
-        sheets_payments = _call_gas_webhook({'action': 'get_payments'})
-        sheets_payments = sheets_payments if isinstance(sheets_payments, list) else []
-
-        db_payments_count = dbmod.query("SELECT COUNT(*) as cnt FROM payments")
-        db_payments_count = db_payments_count[0]['cnt'] if db_payments_count else 0
-
-        debug['comparisons'].append({
-            'table': 'payments',
-            'sheets_count': len(sheets_payments),
-            'db_count': db_payments_count,
-            'status': '✓' if len(sheets_payments) == db_payments_count else '⚠',
-        })
-
-        # 3. Compare events
-        sheets_events = _call_gas_webhook({'action': 'get_events'})
-        sheets_events = sheets_events if isinstance(sheets_events, list) else []
-
-        db_events_count = dbmod.query("SELECT COUNT(*) as cnt FROM webapp_events")
-        db_events_count = db_events_count[0]['cnt'] if db_events_count else 0
-
-        debug['comparisons'].append({
-            'table': 'webapp_events',
-            'sheets_count': len(sheets_events),
-            'db_count': db_events_count,
-            'status': '✓' if len(sheets_events) == db_events_count else '⚠',
-        })
-
-        # Summary
-        all_synced = all(c['status'] == '✓' for c in debug['comparisons'])
-        debug['summary']['overall_status'] = '✓ SYNCED' if all_synced else '⚠ OUT OF SYNC'
-        debug['summary']['recommendation'] = (
-            'All sheets are in sync with database.' if all_synced
-            else 'Some discrepancies detected. Check individual tables.'
-        )
-
-        return {
-            'status': 'ok',
-            'function': 'compare_sheets_vs_db',
-            'comparisons': debug['comparisons'],
-            'summary': debug['summary'],
-            'debug': debug,
-            'executed_at': datetime.utcnow().isoformat(),
-        }
-    except Exception as e:
-        debug['summary']['error'] = str(e)
-        return {
-            'status': 'error',
-            'error': str(e),
-            'error_type': type(e).__name__,
-            'debug': debug,
-            'function': 'compare_sheets_vs_db',
             'traceback': traceback.format_exc(),
             'executed_at': datetime.utcnow().isoformat(),
         }

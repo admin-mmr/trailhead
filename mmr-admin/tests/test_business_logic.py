@@ -543,8 +543,8 @@ class TestRevertStatus:
         )
         with client.session_transaction() as sess:
             sess['user'] = {'email': 'admin@mmrunners.org', 'role': 'admin'}
-        with patch('api_members_status.execute') as mock_exec, \
-             patch('api_members_status.log_activity'):
+        with patch('api_members_overrides.execute') as mock_exec, \
+             patch('api_members_overrides.log_activity'):
             r = self._post(client, 'A0001', {'override_id': 1, 'note': 'reverting'})
         assert r.status_code == 200
         assert 'sp_admin_update_member_status' in str(mock_exec.call_args_list)
