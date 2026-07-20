@@ -107,6 +107,25 @@ else
   echo "⚠️  MMR_GOOGLE_CREDS_PATH not in Keychain — Google APIs may not work locally"
 fi
 
+# ── 3.5 Stripe keys (optional — card payments need them) ────
+SKEY=$(security find-generic-password -s "MMR_STRIPE_SECRET_KEY" -w 2>/dev/null || true)
+if [[ -n "$SKEY" ]]; then
+  export STRIPE_SECRET_KEY="$SKEY"
+  echo "✓  STRIPE_SECRET_KEY set from Keychain (${SKEY:0:8}…)"
+else
+  echo "⚠️  MMR_STRIPE_SECRET_KEY not in Keychain — Stripe checkout disabled locally"
+fi
+
+WHSEC=$(security find-generic-password -s "MMR_STRIPE_WEBHOOK_SECRET" -w 2>/dev/null || true)
+if [[ -n "$WHSEC" ]]; then
+  export STRIPE_WEBHOOK_SECRET="$WHSEC"
+  echo "✓  STRIPE_WEBHOOK_SECRET set from Keychain"
+else
+  echo "⚠️  MMR_STRIPE_WEBHOOK_SECRET not in Keychain — webhook will 500."
+  echo "    Get it via: stripe listen --forward-to localhost:3000/api/payments/stripe/webhook"
+  echo "    then: security add-generic-password -U -a \"\$USER\" -s MMR_STRIPE_WEBHOOK_SECRET -w 'whsec_…'"
+fi
+
 # ── 4. Start dev server ──────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
