@@ -697,3 +697,4 @@ function buildReminderCountMap(reminderType: string, windowDays: number): Record
 (globalThis as any).getOutboundEmailLog         = getOutboundEmailLog;
 (globalThis as any).buildLastReminderMap        = buildLastReminderMap;
 (globalThis as any).buildReminderCountMap       = buildReminderCountMap;
+(globalThis as any).toISODateString             = toISODateString;

@@ -36,7 +36,7 @@ function makeMainRow(overrides: Record<number, any> = {}): any[] {
   row[5] = 'Alice';
   row[6] = 'Smith';
   row[7] = 'Individual';
-  row[21] = new Date().toISOString(); // LAST_LOGIN
+  row[19] = new Date().toISOString(); // LAST_LOGIN
   Object.entries(overrides).forEach(([k, v]) => { row[Number(k)] = v; });
   return row;
 }
@@ -127,7 +127,7 @@ describe('updateMemberProfile', () => {
     const mainRows = __getSheet(MAIN);
     expect(mainRows[1][5]).toBe('Alicia');
     expect(mainRows[1][6]).toBe('Smithson');
-    expect(mainRows[1][20]).toBe('5551234567');
+    expect(mainRows[1][18]).toBe('5551234567');
     expect(mainRows[1][11]).toBe('North');
   });
 

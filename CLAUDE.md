@@ -69,7 +69,7 @@ Run: `npm run build 2>&1 | tail -n 50`. Announce attempt → Show raw error (not
 ## COMMON TASKS
 **GitHub Actions:** Check `.github/workflows/` + `git status/diff/log` → identify issues → suggest fixes + commit.
 **Photo Manager:** Check `process_photos.py`/`bib_analyzer.py` → data flow (Drive → download → process → output.json → Blob) → optimize.
-**Database:** `db/schema_snapshot.sql` = source of truth. **Migrations MUST use `MIGRATION_V*.sql` format** (GitHub Actions auto-runs on push to main). Rename any `MIGRATION_*.sql` files that don't match pattern. Use `mysql-mmr` alias. Schema export via `/api/export-schema` endpoint. **CRITICAL:** Each migration MUST END with self-registration in schema_migrations table: `INSERT INTO schema_migrations (version, description, executed_at) VALUES ('V###', 'description', NOW()) ON DUPLICATE KEY UPDATE executed_at=NOW();` (ensures audit trail + prevents re-runs). **MIGRATION NUMBERING HARD RULE:** Migration files are deleted after deploy, so the filesystem is NOT reliable. Before creating any migration file, query the DB: `mysql-mmr -e "SELECT version FROM schema_migrations ORDER BY id DESC LIMIT 5;"` — this is the only source of truth. New file MUST be `max + 1`. Never rely on CLAUDE.md action-plan numbers or `ls db/MIGRATION_*.sql` — both go stale.
+**Database:** `db/schema_snapshot.sql` = source of truth. **Migrations MUST use `MIGRATION_V*.sql` format** (GitHub Actions auto-runs on push to main). Rename any `MIGRATION_*.sql` files that don't match pattern. Use `mysql-mmr` alias. Schema export via `/api/export-schema` endpoint. **CRITICAL:** Each migration MUST END with self-registration in schema_migrations table: `INSERT INTO schema_migrations (version, description, executed_at) VALUES ('V###', 'description', NOW()) ON DUPLICATE KEY UPDATE executed_at=NOW();` (ensures audit trail + prevents re-runs). **MIGRATION NUMBERING HARD RULE:** Migration files are deleted after deploy, so the filesystem is NOT reliable. Before creating any migration file, query the DB: `mysql-mmr -e "SELECT version FROM schema_migrations ORDER BY executed_at DESC LIMIT 5;"` — this is the only source of truth. New file MUST be `max + 1`. Never rely on CLAUDE.md action-plan numbers or `ls db/MIGRATION_*.sql` — both go stale.
 **Web App:** `web-apps/mmr-webapp/` (Next.js) → review TS types, API routes, UI, NextAuth, i18n.
 
 ## DATABASE SCHEMA & VALIDATION
@@ -103,12 +103,36 @@ SELECT Severity, COUNT(*) FROM error_context WHERE DetectedAt > NOW() - INTERVAL
 Sequenced backlog. P0=operational (this week), P1=features remaining, P2=code health.
 Shipped since May plan (all on main): P1a staleness gate, P1b duplicate detection, P1c match queue + Tier-4 fuzzy, P1e mmr-only backfill (V029 `load_mode`, `run_backfill_mmr_only`), P1f HOF backend (`api_hof.py`), P1g HOF admin tab (`hof-panel.html`). Also: security audit (auth gaps/SQLi/secrets, `test_auth_matrix.py`), Payments Gmail auto-import on load, in-app NYRR scheduler (`nyrr_scheduler.py` replaces deleted `sync-nyrr-weekly.yml` workflow), pytest suite repaired (1348 pass / 0 fail).
 
-**P0 — Operational**
-1. Flip `ENABLE_NYRR_SCHEDULER=1` on Azure webapp `mmr-nyrr-viewer` (scheduler is a no-op until then): `az webapp config appsettings set --name mmr-nyrr-viewer --resource-group mmr-resources --settings ENABLE_NYRR_SCHEDULER=1`. Verify via `adm-logs` → look for `[scheduler] started — discovery ...`.
-2. Browser smoke-test Payments tab auto-import (committed 07-13, never browser-tested): load tab → auto-runs import transactions → import members once per page load; staleness banner clears after sync.
-3. Recreate repo-root `.venv` (the `mmr` alias expects it): `python3 -m venv .venv && source .venv/bin/activate && pip install -r mmr-admin/requirements.txt -r basecamp/requirements.txt`.
-4. Stray root docs still pending decision: `PUBLIC_SITE_PLAN.md`, `MONOREPO.md`, `WeChat_Member_Matching_Agent_Prompt.md` — fold into CLAUDE.md or delete.
-5. Confirm `MIGRATION_V031` applied (migration files are deleted post-deploy; only the DB knows): `mysql-mmr -e "SELECT version FROM schema_migrations ORDER BY id DESC LIMIT 5;"`.
+**P0 — Operational** (ALL DONE 07-18)
+1. ~~Scheduler flag~~ DONE 07-18: `ENABLE_NYRR_SCHEDULER=1` set on `mmr-nyrr-viewer`; logs confirm `[scheduler] started — discovery '0 6 1 * *', finisher '0 2 * * 2'` (discovery: 1st of month 06:00 UTC; finishers: Tue 02:00 UTC).
+2. ~~Payments auto-import browser test~~ DONE 07-18: verified live on prod — auto-runs once per load, banner clears.
+3. ~~Repo-root `.venv`~~ DONE 07-18: recreated; `mmr` alias works again.
+4. ~~Stray root docs~~ RESOLVED 07-18: all three kept as sanctioned standing docs (see Docs discipline).
+5. ~~Verify V031~~ DONE 07-18: confirmed via Data Query — V031 applied 2026-05-28; current latest migration is **V032** (nyrr_event_series FK). Next migration = V033.
+
+**P1i — CI test gate (~1 day) — approved 07-18, top priority after P0**
+74+ test files exist (pytest 1348 + jest webapp 8 + jest gas 18) but NO CI runs any suite; only `test_imports.py` gates pushes.
+- New `.github/workflows/ci.yml` on push/PR: (a) `pytest mmr-admin/tests` (mocked, no DB needed — conftest stubs mysql.connector), (b) `npm test` in `web-apps/mmr-webapp`, (c) `npm test` in `web-apps/gas/membership`.
+- Re-enable push trigger on `azure-static-web-apps-orange-tree-0d70d110f.yml` (path-filter `web-apps/mmr-webapp/**`), with jest + build gating the deploy job (user approved).
+- Re-enable push/PR triggers on `db-sql-lint.yml` (currently dispatch-only).
+- Add `npm test` to `web-apps/.husky/pre-commit` (runs lint+build today, no tests).
+- Follow-up: pytest-cov + jest coverage thresholds (start low, ratchet).
+
+**P1j — Tests where money & members live (~2-3 days)**
+- Webapp API route tests (all 41 `app/api/**/route.ts` handlers untested): `payments/submit`, `donations/submit`, `members/enroll`, `members/register`, auth reset flows — contract tests with mocked mysql2 pool.
+- Shared `withApiHandler` wrapper mapping thrown `err.status` → 401/403: ~12 photo/bib routes have no try/catch, so `requireActiveMember()` throws surface as 500s. One wrapper + mechanical adoption + test.
+- Flask: dedicated tests for `api_payments_{actions,listings,lookups,debug}` (autoguess criteria matrix, manual-approve orphan patching).
+- ESLint over `mmr-admin/static/` (33 JS files, zero lint/test infra) wired into CI; unit tests deferred until P2 splits.
+
+**P1k — Stripe membership payments (~4-5 days) — approved 07-18**
+All Stripe code lives in the Next.js webapp (owns `/join`, direct MySQL; Flask has no public-endpoint infra). Flask admin unchanged — Stripe payments surface in existing panels automatically. Key insight: every payments insert is validated against a `gmail_transactions` row (`sp_link_transaction` + `trg_payments_auto_fill`), and `trg_payments_sync_membership_only` handles the full activation cascade — so Stripe writes a ledger row and reuses the proc.
+1. Migration (query `schema_migrations` for next number first — hard rule): `stripe_events` idempotency table (`event_id` PK, `payment_intent_id`, `status`, `payload_hash`, `processed_at`) + config keys `IndividualPrice=30`, `FamilyPrice=50`, `FamilyUpgradePrice=20`. Self-registering INSERT at end.
+2. Pricing consolidation: `payment_matching.py:~380` + `api_payments_debug.py:~93` hardcode $30/$50 — point both at config table (fallback to literals); webapp reads same keys server-side.
+3. `POST /api/payments/stripe/checkout` — Stripe Checkout Session (price from config, `metadata: {memberID, submissionID, plan}`); "Pay by card" option in `/join` step 3 (Zelle/Venmo unchanged). Server recomputes amount.
+4. `POST /api/payments/stripe/webhook` — raw-body signature verify; `checkout.session.completed` → idempotency check vs `stripe_events` → verify `amount_total` vs config → insert `gmail_transactions` row (`TransactionNumber`=PaymentIntent id, `PaymentMethod='Stripe'`, `MessageId`=event id) → `CALL sp_link_transaction(...)`. Triggers approve submission + activate member/family.
+5. UX: success returns to `/join` done-step polling `/api/members/me` for `status='active'`; cancel returns to payment step with Zelle fallback.
+6. Env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (Keychain local, Azure SWA settings prod).
+7. Tests: signature rejection, duplicate-event idempotency, amount-mismatch rejection, checkout amount derivation; one testcontainers integration test (synthetic Stripe ledger row + `sp_link_transaction` activates pending member). `stripe listen` for local manual verify.
 
 **P1h — Hall of Fame public page (~4h) — NOT shipped**
 - New `web-apps/mmr-webapp/src/app/hall-of-fame/page.tsx` (App Router, no auth).
@@ -230,7 +254,7 @@ Run this mental checklist — catches the class of bugs that appeared in the pol
 **Response caps:** Simple ≤10 lines. Code change ≤30 lines. Architecture ≤60 lines (ask before more). Never >80 lines without user asking.
 **Tool discipline:** Max 1 file read per cycle (state WHY/WHAT first). Don't re-read unless edited. Chain shell commands: `cd && cat && grep` = 1 call.
 **Output discipline:** No preamble/recap/unsolicited suggestions. Show ONLY changed lines. The edit tool shows your changes.
-**Docs discipline:** HARD RULE — Do NOT create standalone .md files. All documentation goes into CLAUDE.md (permanent notes) or _context.md (session notes). One-off analyses → inline (no .md). Never create: REFACTOR_SUMMARY.md, INTEGRATION_GUIDE.md, ROUTES_REFERENCE.md, etc. Consolidate instead. Examples: ❌ Create 3 .md docs ✅ Add 1-2 sections to CLAUDE.md + entry in _context.md.
+**Docs discipline:** Sanctioned standing docs (maintained, tracked): `MONOREPO.md` (human onboarding/architecture), `NYRR_OPS.md` (NYRR data policy), `PUBLIC_SITE_PLAN.md` (active public-site/Stripe plan, partially shipped), `WeChat_Member_Matching_Agent_Prompt.md` (runbook for root `wechat_member_matcher.py`). HARD RULE — Do NOT create any OTHER standalone .md files. All documentation goes into CLAUDE.md (permanent notes) or _context.md (session notes). One-off analyses → inline (no .md). Never create: REFACTOR_SUMMARY.md, INTEGRATION_GUIDE.md, ROUTES_REFERENCE.md, etc. Consolidate instead. Examples: ❌ Create 3 .md docs ✅ Add 1-2 sections to CLAUDE.md + entry in _context.md.
 **Context updates:** 3 lines max (`### MM-DD HH:MM UTC — title` + `Changed: X. Status: Y. Next: Z.`). Insert at top. No re-reads; use str_replace. Trim to 3 sessions; move excess to `_context_archive.md`.
 **Efficiency:** Don't read files you don't need. Batch edits. Use grep/glob, not bash find. Cache knowledge. Never cat large files; use `head`/`sed`/`grep`. Error message first before source code. Diff-first edits. Chain shell commands. Always `python3`/`pip3`.
 

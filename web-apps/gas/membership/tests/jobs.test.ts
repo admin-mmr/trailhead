@@ -50,7 +50,7 @@ function makeMainRow(overrides: Record<number, any> = {}): any[] {
   row[5] = 'Alice';
   row[6] = 'Smith';
   row[7] = 'Individual';
-  row[15] = new Date().toISOString(); // LAST_UPDATED
+  row[13] = new Date().toISOString(); // LAST_UPDATED
   Object.entries(overrides).forEach(([k, v]) => { row[Number(k)] = v; });
   return row;
 }
@@ -174,13 +174,13 @@ describe('expireInactiveMemberships', () => {
     pastDate.setFullYear(pastDate.getFullYear() - 2);
     __seedSheet(MAIN, [
       new Array(24).fill(''),
-      makeMainRow({ 1: 'active', 3: pastDate.toISOString(), 15: oldTime })
+      makeMainRow({ 1: 'active', 3: pastDate.toISOString(), 13: oldTime })
     ]);
 
     expireInactiveMemberships();
 
     const mainRows = __getSheet(MAIN);
-    const updatedTime = mainRows[1][15];
+    const updatedTime = mainRows[1][13];
     expect(updatedTime).not.toEqual(oldTime);
     expect(updatedTime).toMatch(/\d{4}-\d{2}-\d{2}T/); // ISO date format
   });
@@ -382,12 +382,14 @@ describe('autoMatchUnmatchedPayments', () => {
 
   it('skips row whose transaction date is outside the collection window', () => {
     const y = new Date().getFullYear();
-    // Window = Jan–Mar only
-    seedConfigWithWindow(`${y}-01-01`, `${y}-03-31`);
+    // Window must include today or the job early-exits before per-row checks;
+    // the out-of-window case is a transaction dated before the window opens.
+    const { start, end } = thisYearWindow();
+    seedConfigWithWindow(start, end);
     __seedSheet(MAIN, [new Array(26).fill(''), makeMemberRow('A0001', 'inactive', '')]);
 
-    // Transaction date in December (outside window)
-    __seedSheet('Active', [new Array(13).fill(''), makeGmailRow(30, 'A0001', `${y}-12-15`)]);
+    // Transaction date in the previous year (outside window)
+    __seedSheet('Active', [new Array(13).fill(''), makeGmailRow(30, 'A0001', `${y - 1}-12-15`)]);
 
     const stats = autoMatchUnmatchedPayments();
     expect(stats.matched).toBe(0);

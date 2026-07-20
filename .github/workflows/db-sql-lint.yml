@@ -1,7 +1,13 @@
 name: DB - 🔍 SQL Procedure Lint
 
 on:
-  workflow_dispatch:  # disabled — re-enable by restoring push/pull_request triggers
+  push:
+    branches: [main]
+    paths: ['db/**']
+  pull_request:
+    branches: [main]
+    paths: ['db/**']
+  workflow_dispatch:
 
 jobs:
   sql-lint:

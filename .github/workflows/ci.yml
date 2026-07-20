@@ -1,0 +1,108 @@
+name: CI - Test Suites
+
+# Runs every test suite in the monorepo on push/PR to main.
+# All suites are self-contained: pytest mocks mysql.connector via conftest,
+# jest suites need no external services.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pytest-mmr-admin:
+    name: pytest mmr-admin (mocked DB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Repo root on sys.path so `from basecamp.python.sync_config import ...`
+      # resolves. Locally the fallback import finds the gitignored copy made by
+      # scripts/sync-shared-modules.sh; CI checkouts have no such copy.
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: mmr-admin/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r mmr-admin/requirements.txt
+
+      - name: Import parity check
+        working-directory: mmr-admin
+        run: python3 test_imports.py
+
+      - name: Run unit suite
+        working-directory: mmr-admin
+        run: python3 -m pytest tests -q
+
+  jest-webapp:
+    name: jest mmr-webapp
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web-apps/mmr-webapp
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web-apps/mmr-webapp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  eslint-admin-static:
+    name: eslint mmr-admin/static
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mmr-admin
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mmr-admin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint static components
+        run: npx eslint static/
+
+  jest-gas-membership:
+    name: jest gas/membership
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web-apps/gas/membership
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web-apps/gas/membership/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test

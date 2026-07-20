@@ -93,8 +93,11 @@ jest.mock('jose', () => ({
 }))
 
 // ── Import middleware after mocks ────────────────────────────────────────────
+// Must be require(), not import: an ES import is hoisted above the const
+// mockNextResponse definition, so the jest.mock factory would hit its TDZ.
 
-import { middleware } from '@/middleware'
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { middleware } = require('@/middleware') as typeof import('@/middleware')
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

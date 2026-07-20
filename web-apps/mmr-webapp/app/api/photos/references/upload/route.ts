@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveMember } from '@/lib/auth/session'
 import { addReferencePhoto } from '@/lib/db/photos'
 import { BlobServiceClient } from '@azure/storage-blob'
+import { withApiHandler } from '@/lib/api-handler'
 
 const AZURE_CONNECTION_STR = process.env.AZURE_STORAGE_CONNECTION_STRING ?? ''
 const CONTAINER            = 'media'
@@ -9,7 +10,7 @@ const CONTAINER            = 'media'
 // POST /api/photos/references/upload
 // Multipart body: file (image), photoTakenAt? (ISO string)
 // Uploads the image to Azure Blob, adds an entry in member_reference_photos (source=direct_upload).
-export async function POST(req: NextRequest) {
+export const POST = withApiHandler(async (req: NextRequest) => {
   const session = await requireActiveMember()
 
   const formData = await req.formData()
@@ -49,4 +50,4 @@ export async function POST(req: NextRequest) {
   })
 
   return NextResponse.json({ ok: true, data: { refId, blobUrl } })
-}
+})
