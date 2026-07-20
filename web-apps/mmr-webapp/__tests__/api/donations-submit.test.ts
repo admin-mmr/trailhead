@@ -82,6 +82,12 @@ describe('POST /api/donations/submit — happy path', () => {
     expect(conn.release).toHaveBeenCalled()
   })
 
+  it('accepts explicit memberId: null from anonymous donors (regression: 400 on prod)', async () => {
+    const res = await post(makeReq({ ...validBody, memberId: null }))
+    expect(res.status).toBe(201)
+    expect(conn.execute.mock.calls[0][1][1]).toBeNull()
+  })
+
   it('links MemberID when donor is a logged-in member', async () => {
     await post(makeReq({ ...validBody, memberId: 'MMR-2026-0042', memoField: 'GoTeam', last4: '1234' }))
     const params = conn.execute.mock.calls[0][1]

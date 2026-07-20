@@ -15,7 +15,7 @@ const DonationSchema = z.object({
   paymentDate:    z.string().min(1),
   memoField:      z.string().optional(),
   last4:          z.string().max(4).optional(),
-  memberId:       z.string().optional(),  // pre-filled if donor is a logged-in member
+  memberId:       z.string().nullish(),   // pre-filled if donor is a logged-in member; null for anonymous
 })
 
 // ── POST /api/donations/submit ─────────────────────────────────────────────
