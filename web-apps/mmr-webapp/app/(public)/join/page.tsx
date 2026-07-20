@@ -250,7 +250,7 @@ export default function JoinPage() {
       if (!res.ok) throw new Error(data.error ?? 'Submission failed')
       if (isCard) {
         // Card path: hand off to Stripe Checkout — webhook confirms payment
-        const co = await fetch('/api/checkout', {
+        const co = await fetch('/api/payments/stripe/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ submissionId: data.submissionId, email: info.email }),

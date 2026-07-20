@@ -50,6 +50,15 @@ def get_renewal_period():
     return start, end
 
 
+def expected_membership_amount(member_type: str) -> Decimal:
+    """Membership price by member type, from config (FamilyPrice/IndividualPrice,
+    seeded by MIGRATION_V033) with hardcoded fallbacks. Shared by autoguess
+    matching, debug tracing, and the Stripe webhook's amount verification."""
+    if member_type == 'Family':
+        return Decimal(get_config('FamilyPrice') or '50.00')
+    return Decimal(get_config('IndividualPrice') or '30.00')
+
+
 def parse_member_id_from_memo(memo: str) -> Optional[str]:
     """Extract memberID from memo (e.g., 'A0001', 'Member: A0001')."""
     if not memo:

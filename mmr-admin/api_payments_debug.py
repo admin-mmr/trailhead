@@ -21,6 +21,7 @@ from payment_helpers import (
     get_renewal_period,
     parse_member_id_from_memo,
     is_within_renewal_period,
+    expected_membership_amount,
 )
 from payment_matching import (
     fuzzy_match_transaction_to_member,
@@ -90,7 +91,7 @@ def api_debug_autoguess(transaction_number: str):
 
     # Step 3: amount vs member type
     amount = Decimal(str(tx['Amount'])) if tx.get('Amount') else None
-    expected = Decimal('50.00') if member['Type'] == 'Family' else Decimal('30.00')
+    expected = expected_membership_amount(member['Type'])
     step('amount_match', amount == expected,
          f'Got ${amount}, expected ${expected} for {member["Type"]} member')
     if amount != expected:

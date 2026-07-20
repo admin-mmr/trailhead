@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { RowDataPacket } from 'mysql2'
 import { pool } from '@/lib/db/connection'
 import { getStripe } from '@/lib/stripe'
+import { getMembershipPrice } from '@/lib/db/config'
 
 // ── Validation schema ───────────────────────────────────────────────────────
 const CheckoutSchema = z.object({
@@ -10,9 +11,11 @@ const CheckoutSchema = z.object({
   email:        z.string().email().optional(),
 })
 
-// ── POST /api/checkout ──────────────────────────────────────────────────────
+// ── POST /api/payments/stripe/checkout ──────────────────────────────────────
 // Creates a Stripe Checkout Session for an existing pending submission.
-// The amount is read from the submissions row — never from the client.
+// Membership amounts are recomputed server-side from the config table
+// (IndividualPrice / FamilyPrice / FamilyUpgradePrice); donation amounts
+// come from the submissions row. Never from the client.
 export async function POST(req: NextRequest) {
   try {
     const parsed = CheckoutSchema.safeParse(await req.json())
@@ -40,15 +43,21 @@ export async function POST(req: NextRequest) {
     if (sub.Status !== 'pending') {
       return NextResponse.json({ error: `Submission is ${sub.Status}, not payable` }, { status: 409 })
     }
-    const amount = Number(sub.Amount)
+
+    const isDonation  = sub.SubmissionType === 'donation'
+    const paymentType = sub.PaymentIntent ?? (isDonation ? 'Donation' : 'Membership')
+
+    // Server-side amount derivation (P1k): config price for memberships,
+    // submissions.Amount for variable-amount donations.
+    const amount = isDonation
+      ? Number(sub.Amount)
+      : (await getMembershipPrice(paymentType)) ?? Number(sub.Amount)
     if (!Number.isFinite(amount) || amount <= 0) {
       return NextResponse.json({ error: 'Submission has no valid amount' }, { status: 400 })
     }
 
-    const paymentType =
-      sub.PaymentIntent ?? (sub.SubmissionType === 'donation' ? 'Donation' : 'Membership')
     const origin = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin
-    const cancelPath = sub.SubmissionType === 'donation' ? '/donate' : '/join'
+    const cancelPath = isDonation ? '/donate' : '/join'
 
     const session = await getStripe().checkout.sessions.create({
       mode: 'payment',
@@ -63,8 +72,9 @@ export async function POST(req: NextRequest) {
       customer_email:      email,
       client_reference_id: submissionId,
       metadata: {
-        submissionId,
-        memberId:    sub.MemberID ?? '',
+        submissionID: submissionId,
+        memberID:     sub.MemberID ?? '',
+        plan:         sub.SubmissionType ?? '',
         paymentType,
       },
       success_url: `${origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -73,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: session.url })
   } catch (err) {
-    console.error('[checkout] Error:', err)
+    console.error('[stripe/checkout] Error:', err)
     return NextResponse.json({ error: 'Could not start checkout. Please try again later.' }, { status: 500 })
   }
 }

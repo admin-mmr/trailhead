@@ -36,9 +36,8 @@ export const ACCESS_CONFIG: AccessRule[] = [
   { prefix: '/api/members/me',     tier: 'member', note: 'Own profile — any logged-in member' },
   { prefix: '/api/members/search', tier: 'member', note: 'Member search — any logged-in member' },
   { prefix: '/api/payments/submit', tier: 'public', note: 'Join wizard payment declaration — new members have no session yet' },
+  { prefix: '/api/payments/stripe', tier: 'public', note: 'Stripe checkout (amount from DB, anonymous join/donate) + webhook (auth = Stripe signature)' },
   { prefix: '/api/payments',       tier: 'member', note: 'Payments — pending members need this to submit proof' },
-  { prefix: '/api/checkout',       tier: 'public', note: 'Stripe Checkout session creation — amount read from DB, needed by anonymous join/donate' },
-  { prefix: '/api/stripe',         tier: 'public', note: 'Stripe webhook — authenticated via Stripe signature, not session' },
   { prefix: '/payment/success',    tier: 'public', note: 'Stripe Checkout return page' },
 
   // ── Public ─────────────────────────────────────────────────────────────────
