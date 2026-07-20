@@ -63,6 +63,28 @@ jobs:
       - name: Run tests
         run: npm test
 
+  eslint-admin-static:
+    name: eslint mmr-admin/static
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mmr-admin
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mmr-admin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint static components
+        run: npx eslint static/
+
   jest-gas-membership:
     name: jest gas/membership
     runs-on: ubuntu-latest
