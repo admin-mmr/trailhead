@@ -1,27 +1,10 @@
 /**
  * District Member Table Component
- * Renders table with member rows, checkboxes, sorting, and filtering
+ * Renders table with member rows, checkboxes, sorting, and filtering.
+ * Sub-components: window.DistrictMemberTableToolbar (DistrictMemberTableToolbar.js),
+ *   window.DistrictMemberTableRow (DistrictMemberTableRow.js).
+ * Helpers: window.DistrictTableHelpers (DistrictMemberTableHelpers.js).
  */
-
-// Highlight matching text within a string. Returns a React element or plain string.
-const highlightMatch = (text, query) => {
-  if (!query || !text || text === '—') return text;
-  const str = String(text);
-  const idx = str.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return str;
-  return React.createElement(React.Fragment, null,
-    str.substring(0, idx),
-    React.createElement('mark', {
-      style: {
-        background: 'rgba(255, 193, 7, 0.45)',
-        borderRadius: '2px',
-        padding: '0 1px',
-        color: 'inherit',
-      }
-    }, str.substring(idx, idx + query.length)),
-    str.substring(idx + query.length)
-  );
-};
 
 const DistrictMemberTable = ({
   members,
@@ -39,6 +22,7 @@ const DistrictMemberTable = ({
   exportLoading,
   globalSearch,
 }) => {
+  const { getColumnLabel, getCellValue } = window.DistrictTableHelpers;
   const tableRef = React.useRef(null);
   const topScrollRef = React.useRef(null);
   const [tableScrollWidth, setTableScrollWidth] = React.useState(0);
@@ -63,62 +47,6 @@ const DistrictMemberTable = ({
   }, [selectedColumns, members]);
 
   const dummyWidth = tableScrollWidth || 2000;
-  const formatDate = (dateStr, dateOnly = false) => {
-    if (!dateStr) return '—';
-    // Append T00:00:00 to date-only strings so JS parses as local time, not UTC midnight
-    const normalized = dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
-      ? dateStr + 'T00:00:00'
-      : dateStr;
-    const date = new Date(normalized);
-    const options = {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    };
-    if (!dateOnly) {
-      options.hour = '2-digit';
-      options.minute = '2-digit';
-    }
-    return date.toLocaleDateString('en-US', options);
-  };
-
-  const availableColumns = [
-    { key: 'District', label: 'District' },
-    { key: 'MemberID', label: 'Member ID' },
-    { key: 'FirstName', label: 'First Name' },
-    { key: 'LastName', label: 'Last Name' },
-    { key: 'Name', label: 'Full Name' },
-    { key: 'Expiration', label: 'Expiration' },
-    { key: 'Gender', label: 'Gender' },
-    { key: 'WeChatID', label: 'WeChat ID' },
-    { key: 'Email', label: 'Email' },
-    { key: 'Type', label: 'Type' },
-    { key: 'FamilyID', label: 'Family ID' },
-    { key: 'PaymentDate', label: 'Payment Date' },
-    { key: 'MembershipFeePaid', label: 'Membership Fee Paid' },
-    { key: 'PaymentTransaction', label: 'Payment Transaction' },
-    { key: 'Status', label: 'Status' },
-    { key: 'LastModified', label: 'Last Modified' },
-  ];
-
-  const getColumnLabel = (key) => {
-    const col = availableColumns.find(c => c.key === key);
-    return col ? col.label : key;
-  };
-
-  const getCellValue = (member, key) => {
-    if (key === 'Name') {
-      return `${member.FirstName || ''} ${member.LastName || ''}`.trim();
-    }
-    const value = member[key];
-    if (key === 'Expiration' || key === 'PaymentDate') {
-      return formatDate(value, true);
-    }
-    if (key === 'LastModified') {
-      return formatDate(value, false);
-    }
-    return value || '—';
-  };
 
   const getFilteredMembers = () => {
     if (Object.keys(columnFilters).length === 0) {
@@ -153,62 +81,14 @@ const DistrictMemberTable = ({
       }}
     >
       {/* Table Toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '16px',
-          background: 'var(--surface)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ fontSize: '13px', color: 'var(--text2)' }}>
-          <input
-            type="checkbox"
-            checked={selectedMembers.size === filteredMembers.length && filteredMembers.length > 0}
-            onChange={onSelectAll}
-            style={{ marginRight: '8px', cursor: 'pointer' }}
-          />
-          {selectedMembers.size} of {filteredMembers.length} visible selected
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={onExportSelected}
-            disabled={selectedMembers.size === 0 || exportLoading}
-            style={{
-              padding: '8px 16px',
-              background: selectedMembers.size > 0 ? 'var(--accent)' : 'var(--surface)',
-              color: selectedMembers.size > 0 ? '#fff' : 'var(--text2)',
-              border: `1px solid ${selectedMembers.size > 0 ? 'var(--accent)' : 'var(--border)'}`,
-              borderRadius: 'var(--radius)',
-              cursor: selectedMembers.size > 0 ? 'pointer' : 'not-allowed',
-              fontSize: '13px',
-              fontWeight: '500',
-            }}
-          >
-            {exportLoading ? 'Exporting...' : '↓ Export Selected'}
-          </button>
-
-          <button
-            onClick={onExportAll}
-            disabled={exportLoading}
-            style={{
-              padding: '8px 16px',
-              background: 'transparent',
-              color: 'var(--accent)',
-              border: '1px solid var(--accent)',
-              borderRadius: 'var(--radius)',
-              cursor: exportLoading ? 'not-allowed' : 'pointer',
-              fontSize: '13px',
-              fontWeight: '500',
-            }}
-          >
-            {exportLoading ? 'Exporting...' : '↓ Export All in District'}
-          </button>
-        </div>
-      </div>
+      {React.createElement(window.DistrictMemberTableToolbar, {
+        selectedMembers,
+        filteredMembers,
+        onSelectAll,
+        onExportSelected,
+        onExportAll,
+        exportLoading,
+      })}
 
       {/* Top scrollbar (synchronized with table) */}
       <div
@@ -327,88 +207,14 @@ const DistrictMemberTable = ({
           </thead>
 
           <tbody>
-            {filteredMembers.map((member) => (
-              <tr
-                key={member.MemberID}
-                style={{
-                  borderBottom: '1px solid var(--border)',
-                  background: selectedMembers.has(member.MemberID) ? 'rgba(var(--accent-rgb), 0.05)' : 'transparent',
-                  transition: 'background 0.15s',
-                }}
-              >
-                <td
-                  style={{
-                    padding: '12px 16px',
-                    textAlign: 'center',
-                    width: '40px',
-                    minWidth: '40px',
-                    position: 'sticky',
-                    left: 0,
-                    background: selectedMembers.has(member.MemberID)
-                      ? 'rgba(var(--accent-rgb), 0.05)'
-                      : 'transparent',
-                    zIndex: 1,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedMembers.has(member.MemberID)}
-                    onChange={() => onSelectMember(member.MemberID)}
-                    style={{ cursor: 'pointer' }}
-                  />
-                </td>
-                {selectedColumns.map((colKey) => {
-                  const rawValue = getCellValue(member, colKey);
-                  // Columns where we apply global-search highlighting
-                  const highlightCols = new Set(['MemberID', 'Name', 'FirstName', 'LastName', 'Email', 'WeChatID', 'District']);
-                  const shouldHighlight = globalSearch && highlightCols.has(colKey);
-                  return (
-                    <td
-                      key={`${member.MemberID}-${colKey}`}
-                      style={{
-                        padding: '12px 16px',
-                        color: colKey === 'MemberID' ? 'var(--accent)' : 'var(--text)',
-                        fontSize: colKey === 'MemberID' ? '12px' : '13px',
-                        fontFamily: colKey === 'MemberID' ? 'monospace' : 'inherit',
-                        wordBreak: colKey === 'Email' ? 'break-all' : 'normal',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {colKey === 'Status' ? (
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            textTransform: 'uppercase',
-                            background:
-                              member.Status === 'active'
-                                ? 'rgba(34, 197, 94, 0.1)'
-                                : member.Status === 'pending'
-                                  ? 'rgba(234, 179, 8, 0.1)'
-                                  : 'rgba(107, 114, 128, 0.1)',
-                            color:
-                              member.Status === 'active'
-                                ? '#22c55e'
-                                : member.Status === 'pending'
-                                  ? '#eab308'
-                                  : '#6b7280',
-                          }}
-                        >
-                          {member.Status}
-                        </span>
-                      ) : shouldHighlight ? (
-                        highlightMatch(rawValue, globalSearch)
-                      ) : (
-                        rawValue
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {filteredMembers.map((member) => React.createElement(window.DistrictMemberTableRow, {
+              key: member.MemberID,
+              member,
+              selectedColumns,
+              isSelected: selectedMembers.has(member.MemberID),
+              onSelectMember,
+              globalSearch,
+            }))}
           </tbody>
         </table>
       </div>
