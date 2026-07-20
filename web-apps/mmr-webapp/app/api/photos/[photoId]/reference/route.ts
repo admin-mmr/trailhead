@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveMember } from '@/lib/auth/session'
 import { addReferencePhoto } from '@/lib/db/photos'
 import pool from '@/lib/db/connection'
+import { withApiHandler } from '@/lib/api-handler'
 
 // POST /api/photos/[photoId]/reference
 // Body: { detectionId: number }
 // Crops the face bbox from the photo, uploads to Blob, stores in member_reference_photos.
-export async function POST(
+export const POST = withApiHandler(async (
   req: NextRequest,
   { params }: { params: { photoId: string } }
-) {
+) => {
   const session = await requireActiveMember()
   const { detectionId } = await req.json()
 
@@ -41,4 +42,4 @@ export async function POST(
     source:      'event_crop',
   })
   return NextResponse.json({ ok: true, data: { refId } })
-}
+})

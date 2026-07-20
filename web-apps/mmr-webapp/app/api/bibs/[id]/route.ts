@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveMember } from '@/lib/auth/session'
 import pool from '@/lib/db/connection'
+import { withApiHandler } from '@/lib/api-handler'
 
 // DELETE /api/bibs/[id]
 // Removes a bib assignment (only member_self entries owned by the caller).
-export async function DELETE(
+export const DELETE = withApiHandler(async (
   _req: NextRequest,
   { params }: { params: { id: string } }
-) {
+) => {
   const session = await requireActiveMember()
   const bibId   = Number(params.id)
 
@@ -28,4 +29,4 @@ export async function DELETE(
     )
 
   return NextResponse.json({ ok: true })
-}
+})
