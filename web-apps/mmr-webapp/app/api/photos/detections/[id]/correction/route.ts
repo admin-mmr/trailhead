@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveMember } from '@/lib/auth/session'
 import { submitCorrection } from '@/lib/db/photos'
+import { withApiHandler } from '@/lib/api-handler'
 
 // POST /api/photos/detections/[id]/correction
 // Body: { correctionType: 'wrong_person'|'correct_person'|'missing_person',
 //         suggestedMemberId?: string, note?: string }
-export async function POST(
+export const POST = withApiHandler(async (
   req: NextRequest,
   { params }: { params: { id: string } }
-) {
+) => {
   const session = await requireActiveMember()
   const body    = await req.json()
   const { correctionType, suggestedMemberId, note } = body
@@ -25,4 +26,4 @@ export async function POST(
     note
   )
   return NextResponse.json({ ok: true })
-}
+})

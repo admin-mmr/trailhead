@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveMember } from '@/lib/auth/session'
 import { removeReferencePhoto } from '@/lib/db/photos'
+import { withApiHandler } from '@/lib/api-handler'
 
 // DELETE /api/photos/references/[id]
 // Soft-deactivates a reference photo owned by the authenticated member.
-export async function DELETE(
+export const DELETE = withApiHandler(async (
   _req: NextRequest,
   { params }: { params: { id: string } }
-) {
+) => {
   const session = await requireActiveMember()
   const refId   = Number(params.id)
 
@@ -16,4 +17,4 @@ export async function DELETE(
 
   await removeReferencePhoto(session.memberId, refId)
   return NextResponse.json({ ok: true })
-}
+})

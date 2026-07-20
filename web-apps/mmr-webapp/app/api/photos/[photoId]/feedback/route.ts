@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveMember } from '@/lib/auth/session'
 import { upsertFeedback } from '@/lib/db/photos'
+import { withApiHandler } from '@/lib/api-handler'
 
 // POST /api/photos/[photoId]/feedback
 // Body: { rating?: number (1-5), story?: string }
-export async function POST(
+export const POST = withApiHandler(async (
   req: NextRequest,
   { params }: { params: { photoId: string } }
-) {
+) => {
   const session = await requireActiveMember()
   const body    = await req.json()
 
@@ -19,4 +20,4 @@ export async function POST(
 
   await upsertFeedback(session.memberId, params.photoId, rating, story)
   return NextResponse.json({ ok: true })
-}
+})

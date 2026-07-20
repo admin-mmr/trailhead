@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireActiveMember } from '@/lib/auth/session'
 import { getMemberBibAssignments, upsertBibAssignment } from '@/lib/db/photos'
+import { withApiHandler } from '@/lib/api-handler'
 
 // GET /api/bibs
 // Returns the authenticated member's bib assignments across all events.
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const session = await requireActiveMember()
   const bibs    = await getMemberBibAssignments(session.memberId)
   return NextResponse.json({ ok: true, data: bibs })
-}
+})
 
 // POST /api/bibs
 // Body: { eventId: string, bibNumber: string }
 // Member self-assigns a bib number for an event.
-export async function POST(req: NextRequest) {
+export const POST = withApiHandler(async (req: NextRequest) => {
   const session = await requireActiveMember()
   const body    = await req.json()
 
@@ -27,4 +28,4 @@ export async function POST(req: NextRequest) {
 
   await upsertBibAssignment(session.memberId, eventId, cleanBib, 'member_self')
   return NextResponse.json({ ok: true })
-}
+})
