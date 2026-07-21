@@ -119,7 +119,7 @@ Shipped since May plan (all on main): P1a staleness gate, P1b duplicate detectio
 **P1i — CI test gate — ✅ DONE (shipped across PRs #9–#13 + coverage ratchet)**
 - `.github/workflows/ci.yml` runs on push/PR: pytest `mmr-admin/tests` (+ import parity), jest `web-apps/mmr-webapp`, jest `web-apps/gas/membership`, eslint `mmr-admin/static/`. Green.
 - SWA deploy (`azure-static-web-apps-orange-tree-…yml`) push-triggered w/ `web-apps/mmr-webapp/**` path filter, gated by jest+typecheck test_job. `db-sql-lint.yml` push/PR on `db/**`. `web-apps/.husky/pre-commit` runs `lint && npm test && build`.
-- Coverage ratchet: pytest `--cov-fail-under=48` (baseline ~52%, synced basecamp copies omitted via `mmr-admin/.coveragerc`); jest `coverageThreshold` in `jest.config.ts` (stmts/lines 30, branches 75, funcs 43 — baseline 33/79/47). CI runs `pytest --cov` and `npm test -- --coverage`. **Raise floors as coverage improves.** GAS jest coverage threshold still open.
+- Coverage ratchet: pytest `--cov-fail-under=48` (baseline ~52%, synced basecamp copies omitted via `mmr-admin/.coveragerc`); jest `coverageThreshold` in `jest.config.ts` (stmts/lines 30, branches 75, funcs 43 — baseline 33/79/47). CI runs `pytest --cov` and `npm test -- --coverage`. GAS: `collectCoverage`+`coverageThreshold` in `web-apps/gas/membership/jest.config.js` (stmts/funcs/lines 35, branches 25; baseline 39/39/39/29) — enforced via the existing `npm test` CI step, no workflow edit. **Raise all floors as coverage improves.**
 
 **P1j — Tests where money & members live (~2-3 days)**
 - Webapp API route tests (all 41 `app/api/**/route.ts` handlers untested): `payments/submit`, `donations/submit`, `members/enroll`, `members/register`, auth reset flows — contract tests with mocked mysql2 pool.
