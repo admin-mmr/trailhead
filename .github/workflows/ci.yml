@@ -37,9 +37,12 @@ jobs:
         working-directory: mmr-admin
         run: python3 test_imports.py
 
-      - name: Run unit suite
+      - name: Run unit suite (with coverage floor)
         working-directory: mmr-admin
-        run: python3 -m pytest tests -q
+        # --cov-fail-under floor set just below the current source baseline
+        # (~52%, synced basecamp copies omitted — see mmr-admin/.coveragerc).
+        # Ratchet up as coverage improves.
+        run: python3 -m pytest tests -q --cov=. --cov-report=term-missing --cov-fail-under=48
 
   jest-webapp:
     name: jest mmr-webapp
@@ -60,8 +63,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests (with coverage floor)
+        # coverageThreshold in jest.config.ts fails the build if lib/ or
+        # app/api/ coverage drops below the ratchet floor.
+        run: npm test -- --coverage
 
   eslint-admin-static:
     name: eslint mmr-admin/static

@@ -21,6 +21,17 @@ const config: Config = {
     '!**/*.d.ts',
     '!**/node_modules/**',
   ],
+  // Ratchet floor — set just below the current baseline (lines/stmts ~33%,
+  // branches ~79%, funcs ~47%) so coverage can only go up. Raise these as
+  // tests are added; CI (npm test -- --coverage) fails if any drops below.
+  coverageThreshold: {
+    global: {
+      statements: 30,
+      branches: 75,
+      functions: 43,
+      lines: 30,
+    },
+  },
 }
 
 export default createJestConfig(config)
