@@ -151,7 +151,7 @@ All prior mmr-admin offenders split (07-20): every `mmr-admin/*.py` now ≤389 a
 |---|---|---|---|
 | `app/(public)/join/page.tsx` | ~~870~~ 117 | 300 | ✅ split 07-20 → `join/_components/` (useJoinFlow + step components) |
 | `app/(public)/donate/page.tsx` | ~~532~~ 97 | 300 | ✅ split 07-20 → `donate/_components/` (useDonateFlow + step components) |
-| `lib/email/templates.ts` | 505 | 300 | open |
+| `lib/email/templates.ts` | ~~505~~ 28 | 300 | ✅ split 07-21 → `_layout.ts` (wrap+constants) + `templates/{membership,payments,auth}.ts`; `templates.ts` now a barrel (zero caller churn) |
 | `app/(public)/faq/page.tsx` | 471 | 300 | open |
 | `lib/db/photos.ts` | 456 | 300 | open |
 | `components/photos/PhotoDetailOverlay.tsx` | 353 | 300 | open |
