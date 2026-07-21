@@ -150,7 +150,7 @@ All prior mmr-admin offenders split (07-20): every `mmr-admin/*.py` now ≤389 a
 | File | LOC | Limit | Status |
 |---|---|---|---|
 | `app/(public)/join/page.tsx` | ~~870~~ 117 | 300 | ✅ split 07-20 → `join/_components/` (useJoinFlow + step components) |
-| `app/(public)/donate/page.tsx` | 532 | 300 | open (same step pattern as join; reuse approach) |
+| `app/(public)/donate/page.tsx` | ~~532~~ 97 | 300 | ✅ split 07-20 → `donate/_components/` (useDonateFlow + step components) |
 | `lib/email/templates.ts` | 505 | 300 | open |
 | `app/(public)/faq/page.tsx` | 471 | 300 | open |
 | `lib/db/photos.ts` | 456 | 300 | open |
