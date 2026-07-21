@@ -20,6 +20,7 @@ Covers every endpoint in Section 3 of nyrr-backend-migration-plan.docx:
 Layout (CLAUDE.md hard rule: keep each file <400 LOC):
   nyrr_api_models.py     — dataclasses + NyrrApiError
   nyrr_api_endpoints.py  — endpoint methods (mixin requires _post / _paginate)
+  nyrr_api_throttle.py   — process-wide request throttle + rate-limit telemetry
   nyrr_api.py (this)     — HTTP helpers + the bound NyrrApiClient class
 """
 
@@ -28,7 +29,6 @@ from __future__ import annotations
 import logging
 import os
 import random
-import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -51,6 +51,14 @@ from nyrr_api_models import (  # noqa: F401  (intentional re-export)
     NyrrTeamAwardRunner,
 )
 from nyrr_api_endpoints import _NyrrEndpointsMixin
+# Process-wide throttle + rate-limit telemetry (see nyrr_api_throttle). Imported
+# here so `from nyrr_api import get_throttle_stats` keeps working (api_sync.py).
+from nyrr_api_throttle import (  # noqa: F401  (get_throttle_stats re-exported)
+    RETRYABLE_STATUS,
+    get_throttle_stats,
+    stat_bump,
+    throttle_wait,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,52 +82,10 @@ DEFAULT_MIN_REQUEST_INTERVAL = float(os.environ.get("NYRR_MIN_REQUEST_INTERVAL",
 DEFAULT_MAX_RETRIES = int(os.environ.get("NYRR_MAX_RETRIES", "5"))
 DEFAULT_BACKOFF_BASE = float(os.environ.get("NYRR_BACKOFF_BASE", "2.0"))   # seconds
 DEFAULT_BACKOFF_MAX = float(os.environ.get("NYRR_BACKOFF_MAX", "60.0"))    # seconds
-RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
-# Process-wide throttle state. A single lock + timestamp shared by every
-# NyrrApiClient instance and every thread, so all NYRR traffic is serialized to
-# at most one request per DEFAULT_MIN_REQUEST_INTERVAL regardless of how many
-# loaders/probes are running.
-_THROTTLE_LOCK = threading.Lock()
-_LAST_REQUEST_TS = 0.0
-
-# Process-wide rate-limit telemetry, read by the admin Sync Activity rail via
-# get_throttle_stats(). Mutated only under _THROTTLE_LOCK. `in_backoff` counts
-# requests currently sleeping on a retry — >0 means we're actively being
-# rate-limited right now.
-_STATS = {
-    "total_requests":  0,
-    "total_retries":   0,
-    "total_429":       0,
-    "last_429_at":     None,   # epoch seconds (time.time())
-    "last_request_at": None,   # epoch seconds
-    "in_backoff":      0,
-}
-
-
-def _stat_bump(**deltas) -> None:
-    """Apply integer deltas / value sets to _STATS under the lock."""
-    with _THROTTLE_LOCK:
-        for k, v in deltas.items():
-            if k in ("last_429_at", "last_request_at"):
-                _STATS[k] = v
-            else:
-                _STATS[k] += v
-
-
-def get_throttle_stats() -> Dict[str, Any]:
-    """Snapshot of process-wide NYRR rate-limit telemetry for the activity rail.
-
-    Adds derived fields: ``last_429_age_sec`` (None if never) and ``health``
-    ('backing_off' if currently retrying or a 429 hit in the last 30s, else
-    'healthy')."""
-    with _THROTTLE_LOCK:
-        s = dict(_STATS)
-    now = time.time()
-    age = (now - s["last_429_at"]) if s["last_429_at"] else None
-    s["last_429_age_sec"] = round(age, 1) if age is not None else None
-    s["health"] = "backing_off" if (s["in_backoff"] > 0 or (age is not None and age < 30)) else "healthy"
-    return s
+# RETRYABLE_STATUS, the process-wide throttle lock/state, stat_bump() and
+# get_throttle_stats() live in nyrr_api_throttle (imported above). This client
+# just delegates to throttle_wait() / stat_bump().
 
 
 # ---------------------------------------------------------------------------
@@ -174,18 +140,10 @@ class NyrrApiClient(_NyrrEndpointsMixin):
     # ------------------------------------------------------------------
 
     def _throttle(self) -> None:
-        """Block until at least ``min_interval`` has elapsed since the last NYRR
-        request made by ANY client/thread in this process. Holding the lock
-        across the sleep is intentional: it serializes all NYRR traffic, so a
-        probe storm or two concurrent loaders can never burst the API."""
-        global _LAST_REQUEST_TS
-        with _THROTTLE_LOCK:
-            wait = self.min_interval - (time.monotonic() - _LAST_REQUEST_TS)
-            if wait > 0:
-                time.sleep(wait)
-            _LAST_REQUEST_TS = time.monotonic()
-            _STATS["total_requests"]  += 1
-            _STATS["last_request_at"]  = time.time()
+        """Serialize this request behind the process-wide NYRR throttle (see
+        nyrr_api_throttle.throttle_wait — a single lock/timestamp shared by all
+        clients/threads so a probe storm can never burst the API)."""
+        throttle_wait(self.min_interval)
 
     def _retry_delay(self, attempt: int, retry_after: Optional[str]) -> float:
         """Seconds to wait before retry ``attempt`` (0-based). Honors the
@@ -220,9 +178,9 @@ class NyrrApiClient(_NyrrEndpointsMixin):
                 delay = self._retry_delay(attempt, None)
                 logger.warning("[api] %s network error (%s) — retry %d/%d in %.1fs",
                                path, exc, attempt + 1, self.max_retries, delay)
-                _stat_bump(total_retries=1, in_backoff=1)
+                stat_bump(total_retries=1, in_backoff=1)
                 time.sleep(delay)
-                _stat_bump(in_backoff=-1)
+                stat_bump(in_backoff=-1)
                 attempt += 1
                 continue
 
@@ -230,10 +188,10 @@ class NyrrApiClient(_NyrrEndpointsMixin):
                 delay = self._retry_delay(attempt, resp.headers.get("Retry-After"))
                 logger.warning("[api] %s -> HTTP %d — retry %d/%d in %.1fs",
                                path, resp.status_code, attempt + 1, self.max_retries, delay)
-                _stat_bump(total_retries=1, in_backoff=1,
+                stat_bump(total_retries=1, in_backoff=1,
                            **({"total_429": 1, "last_429_at": time.time()} if resp.status_code == 429 else {}))
                 time.sleep(delay)
-                _stat_bump(in_backoff=-1)
+                stat_bump(in_backoff=-1)
                 attempt += 1
                 continue
 
