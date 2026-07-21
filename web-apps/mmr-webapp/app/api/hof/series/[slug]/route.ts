@@ -73,7 +73,18 @@ export async function GET(
     const { slug } = params
 
     const [seriesRows] = (await db.execute(
-      'SELECT id, name, slug, distance_km, notes FROM nyrr_event_series WHERE slug = ?',
+      `SELECT
+         s.id,
+         s.name,
+         s.slug,
+         s.distance_km,
+         s.notes,
+         COUNT(e.id)                            AS event_count,
+         SUM(e.processing_status = 'Completed') AS events_completed
+       FROM nyrr_event_series s
+       LEFT JOIN nyrr_events e ON e.series_id = s.id
+       WHERE s.slug = ?
+       GROUP BY s.id, s.name, s.slug, s.distance_km, s.notes`,
       [slug],
     )) as [any[], any]
 
