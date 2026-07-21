@@ -137,28 +137,27 @@ All Stripe code lives in the Next.js webapp (owns `/join`, direct MySQL; Flask h
 6. Env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (Keychain local, Azure SWA settings prod).
 7. Tests: signature rejection, duplicate-event idempotency, amount-mismatch rejection, checkout amount derivation; one testcontainers integration test (synthetic Stripe ledger row + `sp_link_transaction` activates pending member). `stripe listen` for local manual verify.
 
-**P1h — Hall of Fame public page (~4h) — NOT shipped**
-- New `web-apps/mmr-webapp/src/app/hall-of-fame/page.tsx` (App Router, no auth).
-- Fetches `/api/hof/series` on load; series card → expand to 8-category HOF table.
-- i18n: English + Chinese for all category labels (男子/女子, Open/40+/50+/60+).
-- Add to site nav. Mobile-responsive. Backend + CORS already live (`api_hof.py`).
+**P1h — Hall of Fame public page — ✅ SHIPPED (07-20)**
+- Page `app/(public)/hall-of-fame/page.tsx` (App Router, no auth); navbar link (`nav.hof`, EN/中文); same-origin Next.js routes `app/api/hof/series/route.ts` + `app/api/hof/series/[slug]/route.ts` (direct MySQL, mirror Flask `api_hof.py`).
+- Product call (0fc2e8f): shows record holder per category only (top-1), API still returns full 3-person podium if 2nd/3rd wanted back.
+- 07-20 fix (4796b47): detail route now selects `events_completed` (was undefined in "Across N race editions").
 
 **P1d — NYRR phases 3-5 (optional) — NOT shipped**
 Member backfill report (members never matched), race-history in member tooltip, annual MMR finishes summary. Defer until match-queue usage shows signal.
 
 **P2 — Code health (background)**
-May-plan offenders were split (Members.js 78, api_payments.py 46). Current worst (hard-rule limits: py 400, JS 300):
-| File | LOC | Limit |
-|---|---|---|
-| `mmr-admin/sync_worker.py` | 506 | 400 |
-| `static/PaymentsPanel.js` | 506 | 300 |
-| `mmr-admin/api_members_status.py` | 501 | 400 |
-| `static/DistrictMemberFilters.js` | 473 | 300 |
-| `mmr-admin/api_hof.py` | 473 | 400 |
-| `mmr-admin/sync_worker_fetch.py` | 473 | 400 |
-| `static/DistrictMembersPanel.js` | 441 | 300 |
-| `static/DistrictMemberTable.js` | 433 | 300 |
-(+6 more py files 402–459 LOC; rerun `find mmr-admin -name '*.py' -not -path '*/tests/*' -exec wc -l {} +` before picking one.)
+All prior mmr-admin offenders split (07-20): every `mmr-admin/*.py` now ≤389 and every `static/*.js` now ≤300 — mmr-admin is CLEAN vs hard-rule (py 400, JS 300). Remaining offenders are all in the Next.js webapp (TS/React limit 300):
+| File | LOC | Limit | Status |
+|---|---|---|---|
+| `app/(public)/join/page.tsx` | ~~870~~ 117 | 300 | ✅ split 07-20 → `join/_components/` (useJoinFlow + step components) |
+| `app/(public)/donate/page.tsx` | 532 | 300 | open (same step pattern as join; reuse approach) |
+| `lib/email/templates.ts` | 505 | 300 | open |
+| `app/(public)/faq/page.tsx` | 471 | 300 | open |
+| `lib/db/photos.ts` | 456 | 300 | open |
+| `components/photos/PhotoDetailOverlay.tsx` | 353 | 300 | open |
+| `app/(member)/portal/photos/references/page.tsx` | 318 | 300 | open |
+| `app/login/page.tsx` | 312 | 300 | open |
+(rerun `find web-apps/mmr-webapp \( -name '*.ts' -o -name '*.tsx' \) -not -path '*/node_modules/*' -not -path '*/.next/*' -exec wc -l {} + | sort -rn` before picking; excludes `__tests__`.)
 
 **P3 — Open questions**
 NYRR backfill depth (recommend 2024+). Add `validate_schema.py` to CI? Include NYRR registrants in match queue? Member-merge tool (deferred — FK risk; revisit if dupes accumulate).
