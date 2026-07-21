@@ -116,13 +116,10 @@ Shipped since May plan (all on main): P1a staleness gate, P1b duplicate detectio
 4. ~~Stray root docs~~ RESOLVED 07-18: all three kept as sanctioned standing docs (see Docs discipline).
 5. ~~Verify V031~~ DONE 07-18: confirmed via Data Query — V031 applied 2026-05-28; current latest migration is **V032** (nyrr_event_series FK). Next migration = V033.
 
-**P1i — CI test gate (~1 day) — approved 07-18, top priority after P0**
-74+ test files exist (pytest 1348 + jest webapp 8 + jest gas 18) but NO CI runs any suite; only `test_imports.py` gates pushes.
-- New `.github/workflows/ci.yml` on push/PR: (a) `pytest mmr-admin/tests` (mocked, no DB needed — conftest stubs mysql.connector), (b) `npm test` in `web-apps/mmr-webapp`, (c) `npm test` in `web-apps/gas/membership`.
-- Re-enable push trigger on `azure-static-web-apps-orange-tree-0d70d110f.yml` (path-filter `web-apps/mmr-webapp/**`), with jest + build gating the deploy job (user approved).
-- Re-enable push/PR triggers on `db-sql-lint.yml` (currently dispatch-only).
-- Add `npm test` to `web-apps/.husky/pre-commit` (runs lint+build today, no tests).
-- Follow-up: pytest-cov + jest coverage thresholds (start low, ratchet).
+**P1i — CI test gate — ✅ DONE (shipped across PRs #9–#13 + coverage ratchet)**
+- `.github/workflows/ci.yml` runs on push/PR: pytest `mmr-admin/tests` (+ import parity), jest `web-apps/mmr-webapp`, jest `web-apps/gas/membership`, eslint `mmr-admin/static/`. Green.
+- SWA deploy (`azure-static-web-apps-orange-tree-…yml`) push-triggered w/ `web-apps/mmr-webapp/**` path filter, gated by jest+typecheck test_job. `db-sql-lint.yml` push/PR on `db/**`. `web-apps/.husky/pre-commit` runs `lint && npm test && build`.
+- Coverage ratchet: pytest `--cov-fail-under=48` (baseline ~52%, synced basecamp copies omitted via `mmr-admin/.coveragerc`); jest `coverageThreshold` in `jest.config.ts` (stmts/lines 30, branches 75, funcs 43 — baseline 33/79/47). CI runs `pytest --cov` and `npm test -- --coverage`. **Raise floors as coverage improves.** GAS jest coverage threshold still open.
 
 **P1j — Tests where money & members live (~2-3 days)**
 - Webapp API route tests (all 41 `app/api/**/route.ts` handlers untested): `payments/submit`, `donations/submit`, `members/enroll`, `members/register`, auth reset flows — contract tests with mocked mysql2 pool.

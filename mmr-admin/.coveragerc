@@ -1,0 +1,18 @@
+[run]
+# Coverage of mmr-admin source only — exclude the test suite itself and
+# one-off scripts so the CI floor reflects real source coverage.
+omit =
+    tests/*
+    test_imports.py
+    conftest.py
+    # Shared-module copies synced from basecamp/python/ (gitignored, absent in
+    # CI checkouts where they resolve as basecamp.python.*). Omit so local and
+    # CI measure the same source set; their source of truth is covered upstream.
+    nyrr_api.py
+    sync_engine.py
+    sync_config.py
+
+[report]
+exclude_also =
+    if __name__ == .__main__.:
+    raise NotImplementedError

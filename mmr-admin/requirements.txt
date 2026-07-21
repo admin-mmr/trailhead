@@ -10,3 +10,4 @@ rapidfuzz>=3.0
 apscheduler>=3.10
 # testing
 pytest>=8.0
+pytest-cov>=5.0
