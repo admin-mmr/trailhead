@@ -2,10 +2,11 @@
  * Contract tests for GET /api/members/search?q=&limit=
  *
  * Guarded by requireSession() (any authenticated member — not admin-only).
- * The route is NOT wrapped in withApiHandler / try-catch, so both the auth
- * guard throwing and searchMembers() rejecting propagate as rejected
- * promises. Queries shorter than 2 chars short-circuit to an empty list
- * without hitting the DB; limit defaults to 10 and is capped at 30.
+ * The route is wrapped in withApiHandler, so the auth guard's status-carrying
+ * throw becomes a 401 and an unexpected failure (e.g. searchMembers rejecting)
+ * becomes a 500 instead of an unhandled rejection. Queries shorter than 2 chars
+ * short-circuit to an empty list without hitting the DB; limit defaults to 10
+ * and is capped at 30.
  * Mocks the session guard and the searchMembers helper (@/lib/db/photos).
  */
 
@@ -58,9 +59,11 @@ beforeEach(() => {
 })
 
 describe('GET /api/members/search', () => {
-  it('rejects (unauthorized) when there is no session, before searching', async () => {
-    mockRequireSession.mockRejectedValue(new Error('Unauthorized'))
-    await expect(get(makeReq('q=amy'))).rejects.toThrow('Unauthorized')
+  it('returns 401 when there is no session, before searching', async () => {
+    mockRequireSession.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
+    const res = await get(makeReq('q=amy'))
+    expect(res.status).toBe(401)
+    expect(res.body).toEqual({ ok: false, error: 'Unauthorized' })
     expect(mockSearch).not.toHaveBeenCalled()
   })
 
@@ -94,8 +97,10 @@ describe('GET /api/members/search', () => {
     expect(mockSearch).toHaveBeenLastCalledWith('amy', 30)
   })
 
-  it('propagates a DB error (route is unwrapped)', async () => {
+  it('maps a DB error to 500 without leaking the message', async () => {
     mockSearch.mockRejectedValue(new Error('mysql down'))
-    await expect(get(makeReq('q=amy'))).rejects.toThrow('mysql down')
+    const res = await get(makeReq('q=amy'))
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ ok: false, error: 'Internal server error' })
   })
 })

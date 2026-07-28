@@ -1,8 +1,9 @@
 /**
  * Contract tests for POST /api/nyrr/match
  *
- * Admin-only, transactional (db.getConnection()). The connection is acquired
- * BEFORE the auth check, so release() must fire on every early return.
+ * Admin-only (requireAdmin, mapped by withApiHandler), transactional. The
+ * connection is acquired AFTER auth + validation, so early returns never take
+ * one out of the pool; once acquired it is released in a finally.
  * Confirms a manual match, backfills same-name runners, recomputes counts.
  */
 
@@ -63,28 +64,28 @@ beforeEach(() => {
 })
 
 describe('POST /api/nyrr/match — auth', () => {
-  it('no session → 401, connection released', async () => {
-    mockRequireSession.mockRejectedValue(new Error('Unauthorized'))
+  it('no session → 401, no connection acquired', async () => {
+    mockRequireSession.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
     const res = await post(makeReq({ runnerId: 1, memberId: 'A0001' }))
     expect(res.status).toBe(401)
-    expect(conn.release).toHaveBeenCalled()
+    expect(mockGetConnection).not.toHaveBeenCalled()
     expect(conn.beginTransaction).not.toHaveBeenCalled()
   })
 
-  it('non-admin → 403, connection released', async () => {
+  it('non-admin → 403, no connection acquired', async () => {
     mockIsAdmin.mockResolvedValue(false)
     const res = await post(makeReq({ runnerId: 1, memberId: 'A0001' }))
     expect(res.status).toBe(403)
-    expect(conn.release).toHaveBeenCalled()
+    expect(mockGetConnection).not.toHaveBeenCalled()
   })
 })
 
 describe('POST /api/nyrr/match — validation', () => {
-  it('missing runnerId/memberId → 400, connection released', async () => {
+  it('missing runnerId/memberId → 400, no connection acquired', async () => {
     const res = await post(makeReq({ runnerId: 1 }))
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/required/)
-    expect(conn.release).toHaveBeenCalled()
+    expect(mockGetConnection).not.toHaveBeenCalled()
     expect(conn.beginTransaction).not.toHaveBeenCalled()
   })
 })
