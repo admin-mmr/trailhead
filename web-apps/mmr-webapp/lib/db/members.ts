@@ -153,11 +153,19 @@ export async function createNewMember(params: {
   try {
     await conn.beginTransaction()
 
-    const [[{ next_id }]] = await conn.execute<any[]>(
-      `CALL generate_member_id(@next_id); SELECT @next_id AS next_id`
-    ) as any
+    // Two round-trips on the same pooled connection: mysql2 cannot send a
+    // multi-statement through execute() (prepared statements), and the pool
+    // does not enable multipleStatements. @next_id survives between calls
+    // because both run on this one connection.
+    await conn.query(`CALL generate_member_id(@next_id)`)
+    const [idRows] = await conn.query<any[]>(`SELECT @next_id AS next_id`)
 
-    const memberId = `MMR-${joinYear}-${String(next_id).padStart(4, '0')}`
+    // The procedure already returns the canonical ID (CONCAT('A', LPAD(n,4,'0'))
+    // → 'A0667'). Do not re-format it: generate_member_id derives the next
+    // number via SUBSTRING(MemberID, 2), so any other shape breaks ID
+    // generation for every later member.
+    const memberId = idRows[0]?.next_id as string | undefined
+    if (!memberId) throw new Error('generate_member_id did not return a MemberID')
 
     await conn.execute(
       `INSERT INTO members
