@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import type { SessionUser } from '@/types'
+import { httpError } from '@/lib/http-error'
 
 const SECRET  = new TextEncoder().encode(process.env.JWT_SECRET!)
 const COOKIE  = 'mmr_session'
@@ -28,7 +29,7 @@ export async function getSession(): Promise<SessionUser | null> {
 
 export async function requireSession(): Promise<SessionUser> {
   const session = await getSession()
-  if (!session) throw new Error('Unauthorized')
+  if (!session) throw httpError(401, 'Unauthorized')
   return session
 }
 
@@ -40,17 +41,8 @@ export async function requireSession(): Promise<SessionUser> {
  * Throws an error with code 403 if the member exists but isn't active.
  */
 export async function requireActiveMember(): Promise<SessionUser> {
-  const session = await getSession()
-  if (!session) {
-    const err: any = new Error('Unauthorized')
-    err.status = 401
-    throw err
-  }
-  if (session.status !== 'active') {
-    const err: any = new Error('Active membership required')
-    err.status = 403
-    throw err
-  }
+  const session = await requireSession()
+  if (session.status !== 'active') throw httpError(403, 'Active membership required')
   return session
 }
 

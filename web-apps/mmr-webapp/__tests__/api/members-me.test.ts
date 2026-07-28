@@ -60,7 +60,7 @@ describe('GET /api/members/me', () => {
   })
 
   it('returns 401 when there is no session (guard throws)', async () => {
-    mockRequireSession.mockRejectedValue(new Error('Unauthorized'))
+    mockRequireSession.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
     const res = await get()
     expect(res.status).toBe(401)
     expect(res.body).toEqual({ ok: false, error: 'Unauthorized' })
@@ -95,7 +95,7 @@ describe('PATCH /api/members/me', () => {
   })
 
   it('returns 401 when unauthenticated', async () => {
-    mockRequireSession.mockRejectedValue(new Error('Unauthorized'))
+    mockRequireSession.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
     const res = await patch(makeReq({ firstName: 'X' }))
     expect(res.status).toBe(401)
     expect(res.body).toEqual({ ok: false, error: 'Unauthorized' })
