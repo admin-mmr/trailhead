@@ -83,12 +83,24 @@ _SECTIONS = [
 ]
 
 
+def _tsv_value(v):
+    """Escape one field the way the mysql CLI does in batch mode.
+
+    Routine/trigger bodies are multi-line; without this every body sprayed raw
+    newlines into the TSV and the export no longer matched (or diffed against)
+    the committed db/schema_snapshot.sql.
+    """
+    if v is None:
+        return 'NULL'
+    return str(v).replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n')
+
+
 def _tsv(cursor):
     """Format cursor results as TSV matching mysql CLI output (NULL → 'NULL')."""
     cols = [d[0] for d in cursor.description]
     lines = ['\t'.join(cols)]
     for row in cursor.fetchall():
-        lines.append('\t'.join('NULL' if v is None else str(v) for v in row))
+        lines.append('\t'.join(_tsv_value(v) for v in row))
     return '\n'.join(lines)
 
 

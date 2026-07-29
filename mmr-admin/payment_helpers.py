@@ -10,6 +10,21 @@ from typing import Optional
 from db import query
 
 
+# Stripe test-mode payments are stamped with this PaymentMethod (see MIGRATION_V035).
+# Reports and reconciliation must never count them as real money.
+TEST_PAYMENT_METHOD = 'Stripe (TEST)'
+
+
+def exclude_test_payments(alias: str = 'p') -> str:
+    """SQL fragment excluding Stripe test-mode rows from a payments/gmail_transactions
+    query. NULL PaymentMethod is kept (legacy rows predate the column being populated).
+
+        WHERE ... AND {exclude_test_payments('p')}
+    """
+    col = f'{alias}.PaymentMethod' if alias else 'PaymentMethod'
+    return f"({col} IS NULL OR {col} <> '{TEST_PAYMENT_METHOD}')"
+
+
 def get_member_by_id(member_id: str) -> Optional[dict]:
     """Fetch member record by MemberID.
 
