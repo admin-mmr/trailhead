@@ -23,6 +23,8 @@ const patchSchema = z.object({
   gender:         z.string().optional(),
   yearBorn:       z.number().int().min(1900).max(new Date().getFullYear()).optional(),
   nyrrRunnerName: z.string().optional(),
+  // Roster privacy opt-out (V037). false = counted on event rosters but not named.
+  showRsvpPublicly: z.boolean().optional(),
 })
 
 export async function PATCH(req: NextRequest) {

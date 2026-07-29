@@ -142,10 +142,36 @@ export const translations = {
   'cal.noEventsHint':   { en: 'NYRR publishes its calendar about eight weeks ahead, so later months fill in closer to race day.',
                           zh: 'NYRR 通常只提前约八周公布赛程，之后的月份会在临近比赛时陆续更新。' },
   'cal.lastKnown':      { en: 'Latest race we know about:', zh: '目前已知的最后一场赛事：' },
-  'cal.rsvpSoon':       { en: 'RSVP is coming soon.', zh: '报名功能即将上线。' },
   'cal.loadFailed':     { en: 'Could not load the calendar.', zh: '无法加载日历。' },
   'cal.retry':          { en: 'Try again',          zh: '重试' },
   'cal.details':        { en: 'Race details',       zh: '赛事详情' },
+
+  // ─── RSVP + roster (P1L session 3) ────────────────────────────
+  'rsvp.imRunning':     { en: "I'm running",        zh: '我要参赛' },
+  'rsvp.imVolunteering':{ en: "I'm volunteering",   zh: '我要做志愿者' },
+  'rsvp.interested':    { en: 'Interested',         zh: '感兴趣' },
+  'rsvp.notGoing':      { en: 'Not going',          zh: '不参加' },
+  'rsvp.clear':         { en: 'Clear my response',  zh: '清除我的回复' },
+  'rsvp.saving':        { en: 'Saving…',            zh: '保存中…' },
+  'rsvp.failed':        { en: 'Could not save your response.', zh: '无法保存你的回复。' },
+  'rsvp.pastRace':      { en: 'This race has already happened.', zh: '这场比赛已经结束。' },
+  'rsvp.notePlaceholder': { en: 'Optional note — pace group, volunteer shift…',
+                            zh: '可选备注 — 配速组、志愿者班次…' },
+  'rsvp.whosGoing':     { en: "Who's going",        zh: '谁会参加' },
+  'rsvp.showRoster':    { en: "See who's going",    zh: '查看参加人员' },
+  'rsvp.hideRoster':    { en: 'Hide',               zh: '收起' },
+  'rsvp.nobodyYet':     { en: 'Nobody has responded yet — be first.', zh: '还没有人回复 — 来当第一个吧。' },
+  'rsvp.hiddenOne':     { en: '1 member is counted but chose not to be listed.',
+                          zh: '有 1 位会员已计入但选择不公开姓名。' },
+  'rsvp.hiddenMany':    { en: 'members are counted but chose not to be listed.',
+                          zh: '位会员已计入但选择不公开姓名。' },
+  'rsvp.rosterFailed':  { en: 'Could not load the roster.', zh: '无法加载参加人员。' },
+
+  // ─── Roster privacy (profile) ─────────────────────────────────
+  'privacy.heading':    { en: 'Roster Privacy',     zh: '名单隐私' },
+  'privacy.showMe':     { en: 'Show my name on event rosters', zh: '在赛事名单中显示我的姓名' },
+  'privacy.explain':    { en: 'When on, teammates can see that you\'re running or volunteering. When off, you still count toward the totals but your name is not listed.',
+                          zh: '开启后，队友可以看到你参赛或做志愿者。关闭后，你仍计入总数，但不显示姓名。' },
 
   // ─── Common ───────────────────────────────────────────────────
   'common.loading':    { en: 'Loading…',         zh: '加载中…' },

@@ -21,6 +21,12 @@ export interface Member {
    * (or Age-1 for events earlier in the calendar year).
    */
   yearBorn?: number
+  /**
+   * Whether this member is listed by name on shared event RSVP rosters (V037).
+   * Opting out keeps them in the counts but removes their name — see
+   * getEventRoster() in lib/db/events.ts. Defaults to true.
+   */
+  showRsvpPublicly?: boolean
   joinYear?: number
   membershipType: MembershipType
   status: MemberStatus

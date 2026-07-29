@@ -108,4 +108,29 @@ describe('PATCH /api/members/me', () => {
     expect(res.body.error).toBe('Update failed')
     expect(mockUpdateProfile).not.toHaveBeenCalled()
   })
+
+  // ── Roster privacy opt-out (V037 / P1L session 3) ──────────────────────────
+
+  it('accepts the roster privacy opt-out as a boolean', async () => {
+    mockUpdateProfile.mockResolvedValue(undefined)
+    const res = await patch(makeReq({ showRsvpPublicly: false }))
+    expect(res.status).toBe(200)
+    expect(mockUpdateProfile).toHaveBeenCalledWith('A0001', { showRsvpPublicly: false })
+  })
+
+  it('accepts opting back in', async () => {
+    mockUpdateProfile.mockResolvedValue(undefined)
+    await patch(makeReq({ showRsvpPublicly: true }))
+    expect(mockUpdateProfile).toHaveBeenCalledWith('A0001', { showRsvpPublicly: true })
+  })
+
+  it('rejects a non-boolean opt-out rather than coercing it', async () => {
+    // "false" and 0 are the classic ways a privacy flag silently inverts.
+    for (const bad of ['false', 0, 'no', null]) {
+      mockUpdateProfile.mockClear()
+      const res = await patch(makeReq({ showRsvpPublicly: bad }))
+      expect(res.status).toBe(500)
+      expect(mockUpdateProfile).not.toHaveBeenCalled()
+    }
+  })
 })
