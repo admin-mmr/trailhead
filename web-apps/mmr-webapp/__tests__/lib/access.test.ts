@@ -58,8 +58,18 @@ describe('getRequiredTier — active-member-only routes', () => {
     '/api/photos',
     '/api/bibs',
     '/api/admin',
+    '/api/events',
+    '/api/events/calendar',
   ])('"%s" requires an active membership', (path) => {
     expectTier(path, 'active')
+  })
+
+  it('does not confuse the public "/events" rule with "/api/events"', () => {
+    // Prefix matching is literal: '/api/events' does not start with '/events',
+    // so without its own rule the member calendar API would fall through to the
+    // public default and hand out RSVP data to anyone.
+    expectTier('/events', 'public')
+    expectTier('/api/events/calendar', 'active')
   })
 })
 

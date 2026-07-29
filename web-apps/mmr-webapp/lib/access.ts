@@ -30,6 +30,10 @@ export const ACCESS_CONFIG: AccessRule[] = [
   { prefix: '/portal',             tier: 'active', note: 'Member portal — active membership required' },
   { prefix: '/api/photos',         tier: 'active', note: 'Photo service — active members only' },
   { prefix: '/api/bibs',           tier: 'active', note: 'Bib management — active members only' },
+  // NB: the public '/events' rule below does NOT cover this — prefix matching is
+  // literal, so '/api/events' would fall through to the 'public' default and
+  // expose member RSVP data. Keep this rule.
+  { prefix: '/api/events',         tier: 'active', note: 'Member event calendar + RSVP — active members only' },
 
   // ── Any logged-in member ───────────────────────────────────────────────────
   { prefix: '/payment-proof',      tier: 'member', note: 'Standalone proof upload — pending/expired members need this outside the active-gated /portal' },

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Trophy, User, Image
+  LayoutDashboard, Trophy, User, Image, CalendarDays
 } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import type { SessionUser } from '@/types'
@@ -11,6 +11,7 @@ import { clsx } from 'clsx'
 
 const NAV = [
   { href: '/portal',          icon: LayoutDashboard, en: 'Dashboard',    zh: '概览', disabled: false },
+  { href: '/portal/events',   icon: CalendarDays,    en: 'Race Calendar', zh: '赛事日历', disabled: false },
   { href: '/portal/nyrr',     icon: Trophy,          en: 'NYRR Results', zh: '比赛成绩', disabled: true },
   { href: '/portal/photos',   icon: Image,           en: 'Photos',       zh: '照片', disabled: true },
   { href: '/portal/profile',  icon: User,            en: 'Profile',      zh: '个人信息', disabled: false },
