@@ -38,6 +38,9 @@ function rowToMember(row: any): Member {
     gender:         row.Gender        ?? undefined,
     nyrrRunnerName: row.NYRRRunnerName ?? undefined,
     yearBorn:       row.YearBorn  != null ? Number(row.YearBorn)  : undefined,
+    // Roster privacy (V037). Absent column → true, matching the DB default, so
+    // a member is listed unless they have actively opted out.
+    showRsvpPublicly: row.ShowRsvpPublicly == null ? true : Number(row.ShowRsvpPublicly) === 1,
     joinYear:       row.JoinYear  != null ? Number(row.JoinYear)  : undefined,
     // Normalize to lowercase so code like `status === 'active'` works regardless
     // of how the value is cased in the DB (Google Sheets sync stores 'Active').
@@ -219,7 +222,7 @@ export async function updateMemberProfile(
   memberId: string,
   updates: Partial<Pick<Member,
     'firstName' | 'lastName' | 'phone' | 'wechatId' | 'district' |
-    'gender' | 'nyrrRunnerName' | 'yearBorn'
+    'gender' | 'nyrrRunnerName' | 'yearBorn' | 'showRsvpPublicly'
   >>
 ): Promise<void> {
   const db     = getDb()
@@ -234,6 +237,8 @@ export async function updateMemberProfile(
   if (updates.gender         !== undefined) { fields.push('Gender = ?');         values.push(updates.gender) }
   if (updates.nyrrRunnerName !== undefined) { fields.push('NYRRRunnerName = ?'); values.push(updates.nyrrRunnerName) }
   if (updates.yearBorn       !== undefined) { fields.push('YearBorn = ?');       values.push(updates.yearBorn ?? null) }
+  // tinyint(1) NOT NULL — send 1/0, never a JS boolean or null.
+  if (updates.showRsvpPublicly !== undefined) { fields.push('ShowRsvpPublicly = ?'); values.push(updates.showRsvpPublicly ? 1 : 0) }
 
   if (!fields.length) return
   values.push(memberId)

@@ -1,9 +1,8 @@
 'use client'
 
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import type { CalendarEvent } from '@/lib/db/events'
-import { monthGridDays, monthLabel, myIntentClass } from './eventMeta'
+import { monthGridDays, myIntentClass } from './eventMeta'
 
 const WEEKDAYS = {
   en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
@@ -11,23 +10,23 @@ const WEEKDAYS = {
 }
 
 /**
- * Desktop month grid. Renders one anchor month; days with races show a chip per
- * race, tinted by the caller's own RSVP so their own commitments stand out.
+ * Desktop month grid — a glance view. Days with races show a chip per race,
+ * tinted by the caller's own RSVP so their own commitments stand out.
+ *
+ * Month navigation deliberately lives in the parent, not here: this grid is
+ * hidden below `lg`, and nav nested inside it would be unreachable on mobile.
+ * RSVP happens in the card list, which the parent renders alongside.
  */
 export default function MonthGrid({
   monthKey: anchor,
   events,
   today,
-  onPrev,
-  onNext,
 }: {
   monthKey: string
   events: CalendarEvent[]
   today: string
-  onPrev: () => void
-  onNext: () => void
 }) {
-  const { lang, T } = useLang()
+  const { lang } = useLang()
 
   // Bucket the month's events by date once, rather than filtering per cell.
   const byDate = new Map<string, CalendarEvent[]>()
@@ -39,28 +38,6 @@ export default function MonthGrid({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <button
-          type="button"
-          onClick={onPrev}
-          aria-label={T('cal.prevMonth')}
-          className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-brand-navy transition-colors"
-        >
-          <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-        </button>
-
-        <h2 className="text-lg font-semibold text-[#0A2342]">{monthLabel(anchor, lang)}</h2>
-
-        <button
-          type="button"
-          onClick={onNext}
-          aria-label={T('cal.nextMonth')}
-          className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-brand-navy transition-colors"
-        >
-          <ChevronRight className="w-5 h-5" aria-hidden="true" />
-        </button>
-      </div>
-
       <div className="grid grid-cols-7 gap-px bg-gray-100 rounded-2xl overflow-hidden border border-gray-100">
         {(lang === 'zh' ? WEEKDAYS.zh : WEEKDAYS.en).map(day => (
           <div key={day} className="bg-gray-50 py-2 text-center text-xs font-semibold text-gray-500">

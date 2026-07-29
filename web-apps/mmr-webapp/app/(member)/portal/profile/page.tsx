@@ -22,6 +22,10 @@ export default function ProfilePage() {
     district: '', gender: '', yearBorn: '', nyrrRunnerName: '',
   })
 
+  // Roster privacy (V037). Separate from `form` because it's a boolean, not a
+  // text input, and PATCH expects a real boolean rather than a string.
+  const [showRsvpPublicly, setShowRsvpPublicly] = useState(true)
+
   // Load existing profile data on mount
   useEffect(() => {
     fetch('/api/members/me')
@@ -45,6 +49,8 @@ export default function ProfilePage() {
           yearBorn:       data.yearBorn != null ? String(data.yearBorn) : '',
           nyrrRunnerName: data.nyrrRunnerName  ?? '',
         })
+        // Undefined (older payloads) means "not opted out" — match the DB default.
+        setShowRsvpPublicly(data.showRsvpPublicly !== false)
       })
       .finally(() => setFetching(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -54,9 +60,10 @@ export default function ProfilePage() {
     e.preventDefault()
     setLoading(true)
     try {
-      const payload: Record<string, string | number | undefined> = { ...form }
+      const payload: Record<string, string | number | boolean | undefined> = { ...form }
       if (form.yearBorn) payload.yearBorn = Number(form.yearBorn)
       else delete payload.yearBorn
+      payload.showRsvpPublicly = showRsvpPublicly
 
       const res  = await fetch('/api/members/me', {
         method: 'PATCH',
@@ -170,6 +177,31 @@ export default function ProfilePage() {
             <option value="Non-binary">{lang === 'zh' ? '非二元' : 'Non-binary'}</option>
             <option value="Prefer not to say">{lang === 'zh' ? '不透露' : 'Prefer not to say'}</option>
           </select>
+        </div>
+
+        {/* ── Roster privacy ── */}
+        <div className="pt-4 border-t border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            {lang === 'zh' ? '名单隐私' : 'Roster Privacy'}
+          </h3>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showRsvpPublicly}
+              onChange={e => setShowRsvpPublicly(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-navy focus:ring-brand-navy"
+            />
+            <span>
+              <span className="block text-sm font-medium text-gray-700">
+                {lang === 'zh' ? '在赛事名单中显示我的姓名' : 'Show my name on event rosters'}
+              </span>
+              <span className="block text-xs text-gray-400 mt-0.5">
+                {lang === 'zh'
+                  ? '开启后，队友可以看到你参赛或做志愿者。关闭后，你仍计入总数，但不显示姓名。'
+                  : "When on, teammates can see that you're running or volunteering. When off, you still count toward the totals but your name is not listed."}
+              </span>
+            </span>
+          </label>
         </div>
 
         <button

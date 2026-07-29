@@ -1,14 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, List, AlertCircle } from 'lucide-react'
+import { CalendarDays, List, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import { formatLongDate } from '@/lib/date'
 import { addMonths, todayNY } from '@/lib/events-range'
-import type { CalendarEvent } from '@/lib/db/events'
+import type { CalendarEvent, RsvpIntent } from '@/lib/db/events'
 import EventList from './_components/EventList'
 import MonthGrid from './_components/MonthGrid'
-import { monthKey } from './_components/eventMeta'
+import { monthKey, monthLabel } from './_components/eventMeta'
 
 interface CalendarPayload {
   from: string
@@ -70,6 +70,36 @@ export default function EventsCalendarClient() {
 
   const shiftMonth = (delta: number) => setAnchor(monthKey(addMonths(`${anchor}-01`, delta)))
 
+  /**
+   * Apply an RSVP change locally instead of refetching the window: the server
+   * has already committed it, and adjusting the affected counter keeps the
+   * numbers honest without a round-trip that would also reset scroll position.
+   */
+  const handleRsvpChange = (
+    eventId: number,
+    next: { intent: RsvpIntent | null; note: string | null }
+  ) => {
+    setPayload(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        events: prev.events.map(event => {
+          if (event.id !== eventId) return event
+          const delta = (from: RsvpIntent | null, key: RsvpIntent) =>
+            (next.intent === key ? 1 : 0) - (from === key ? 1 : 0)
+          return {
+            ...event,
+            myIntent: next.intent,
+            myNote: next.note,
+            runningCount: event.runningCount + delta(event.myIntent, 'running'),
+            volunteeringCount: event.volunteeringCount + delta(event.myIntent, 'volunteering'),
+            interestedCount: event.interestedCount + delta(event.myIntent, 'interested'),
+          }
+        }),
+      }
+    })
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       <header className="mb-6">
@@ -108,35 +138,50 @@ export default function EventsCalendarClient() {
         </div>
       )}
 
-      {!loading && !failed && (
+      {!loading && !failed && view === 'month' && (
         <>
-          {/* Month grid is desktop-only; the list is the mobile primary view. */}
-          <div className={view === 'month' ? 'hidden lg:block' : 'hidden'}>
-            <MonthGrid
-              monthKey={anchor}
-              events={monthEvents}
-              today={today}
-              onPrev={() => shiftMonth(-1)}
-              onNext={() => shiftMonth(1)}
-            />
+          {/* Month nav sits here, not in MonthGrid — the grid is hidden below lg,
+              and nav nested inside it would be unreachable on mobile. */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              type="button"
+              onClick={() => shiftMonth(-1)}
+              aria-label={T('cal.prevMonth')}
+              className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-brand-navy transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+            </button>
+            <h2 className="text-lg font-semibold text-[#0A2342]">{monthLabel(anchor, lang)}</h2>
+            <button
+              type="button"
+              onClick={() => shiftMonth(1)}
+              aria-label={T('cal.nextMonth')}
+              className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-brand-navy transition-colors"
+            >
+              <ChevronRight className="w-5 h-5" aria-hidden="true" />
+            </button>
           </div>
 
-          <div className={view === 'month' ? 'lg:hidden' : ''}>
-            {events.length > 0 ? (
-              <EventList events={events} today={today} />
-            ) : (
-              <EmptyState latestKnownEventDate={payload?.latestKnownEventDate ?? null} locale={locale} />
-            )}
+          <div className="hidden lg:block mb-6">
+            <MonthGrid monthKey={anchor} events={monthEvents} today={today} />
           </div>
 
-          {view === 'month' && monthEvents.length === 0 && (
-            <div className="hidden lg:block mt-4">
-              <EmptyState latestKnownEventDate={payload?.latestKnownEventDate ?? null} locale={locale} />
-            </div>
+          {/* The card list is where RSVP lives, so it renders in month view too —
+              otherwise a desktop member looking at the grid could not respond. */}
+          {monthEvents.length > 0 ? (
+            <EventList events={monthEvents} today={today} onRsvpChange={handleRsvpChange} />
+          ) : (
+            <EmptyState latestKnownEventDate={payload?.latestKnownEventDate ?? null} locale={locale} />
           )}
-
-          <p className="text-xs text-gray-400 mt-6 text-center">{T('cal.rsvpSoon')}</p>
         </>
+      )}
+
+      {!loading && !failed && view === 'list' && (
+        events.length > 0 ? (
+          <EventList events={events} today={today} onRsvpChange={handleRsvpChange} />
+        ) : (
+          <EmptyState latestKnownEventDate={payload?.latestKnownEventDate ?? null} locale={locale} />
+        )
       )}
     </div>
   )

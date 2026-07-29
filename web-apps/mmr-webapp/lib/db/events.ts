@@ -136,3 +136,138 @@ export async function getLatestKnownEventDate(): Promise<string | null> {
   const latest = rows[0]?.latest
   return latest ? String(latest) : null
 }
+
+// ─── RSVP ────────────────────────────────────────────────────────────────────
+
+export const RSVP_INTENTS: readonly RsvpIntent[] = [
+  'running',
+  'volunteering',
+  'interested',
+  'not_going',
+]
+
+/** Event date ('YYYY-MM-DD') for an id, or null when the event doesn't exist. */
+export async function getEventDate(eventId: number): Promise<string | null> {
+  const [rows] = await db.execute<RowDataPacket[]>(
+    `SELECT DATE_FORMAT(event_date, '%Y-%m-%d') AS event_date FROM nyrr_events WHERE id = ?`,
+    [eventId]
+  )
+  if (!rows.length) return null
+  return rows[0].event_date ? String(rows[0].event_date) : null
+}
+
+/**
+ * Record or change a member's RSVP. Idempotent by construction: the V037
+ * UNIQUE (nyrr_event_id, MemberID) turns a repeat into an UPDATE, so a
+ * double-tapped button can't create two rows.
+ *
+ * The new values are passed twice rather than using VALUES()/row aliases in the
+ * UPDATE clause — VALUES() is deprecated as of MySQL 8.0.20 and the alias form
+ * needs 8.0.19+, so explicit parameters keep this portable.
+ */
+export async function upsertRsvp(
+  eventId: number,
+  memberId: string,
+  intent: RsvpIntent,
+  note: string | null
+): Promise<void> {
+  await db.execute(
+    `INSERT INTO nyrr_event_rsvps (nyrr_event_id, MemberID, intent, note)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE intent = ?, note = ?`,
+    [eventId, memberId, intent, note, intent, note]
+  )
+}
+
+/** Clear a member's RSVP. Returns false when there was nothing to clear. */
+export async function deleteRsvp(eventId: number, memberId: string): Promise<boolean> {
+  const [result] = await db.execute(
+    `DELETE FROM nyrr_event_rsvps WHERE nyrr_event_id = ? AND MemberID = ?`,
+    [eventId, memberId]
+  )
+  return (result as { affectedRows?: number }).affectedRows! > 0
+}
+
+export interface RosterEntry {
+  memberId: string
+  name: string
+  note: string | null
+}
+
+export interface EventRoster {
+  running: RosterEntry[]
+  volunteering: RosterEntry[]
+  interested: RosterEntry[]
+  /** Totals over ALL RSVPs, including members who opted out of being named. */
+  counts: { running: number; volunteering: number; interested: number; notGoing: number }
+  /** How many responders are counted but not listed, per the privacy opt-out. */
+  hiddenCount: number
+}
+
+interface RosterRow extends RowDataPacket {
+  MemberID: string
+  intent: RsvpIntent
+  note: string | null
+  FirstName: string | null
+  LastName: string | null
+  ShowRsvpPublicly: number
+}
+
+/**
+ * Who is going, grouped by intent.
+ *
+ * Privacy contract (V037 `members.ShowRsvpPublicly`, default 1): a member who
+ * opts out is still COUNTED but never NAMED. The opt-out is applied here, in the
+ * data layer, so no caller can accidentally leak a name by forgetting to filter.
+ *
+ * 'not_going' is counted but never listed — a decision not to attend isn't
+ * something the club needs to publish next to someone's name.
+ */
+export async function getEventRoster(eventId: number): Promise<EventRoster> {
+  const [rows] = await db.execute<RosterRow[]>(
+    `SELECT r.MemberID, r.intent, r.note, m.FirstName, m.LastName, m.ShowRsvpPublicly
+     FROM nyrr_event_rsvps r
+     JOIN members m ON m.MemberID = r.MemberID
+     WHERE r.nyrr_event_id = ?
+     ORDER BY m.FirstName ASC, m.LastName ASC`,
+    [eventId]
+  )
+
+  const roster: EventRoster = {
+    running: [],
+    volunteering: [],
+    interested: [],
+    counts: { running: 0, volunteering: 0, interested: 0, notGoing: 0 },
+    hiddenCount: 0,
+  }
+
+  for (const row of rows) {
+    if (row.intent === 'not_going') {
+      roster.counts.notGoing += 1
+      continue
+    }
+
+    const bucket =
+      row.intent === 'running' ? 'running'
+      : row.intent === 'volunteering' ? 'volunteering'
+      : 'interested'
+
+    roster.counts[bucket] += 1
+
+    if (row.ShowRsvpPublicly !== 1) {
+      roster.hiddenCount += 1
+      continue
+    }
+
+    const name = [row.FirstName, row.LastName].filter(Boolean).join(' ').trim()
+    roster[bucket].push({
+      memberId: row.MemberID,
+      // Never fall back to the email address — that would defeat the point of a
+      // roster that only publishes display names.
+      name: name || row.MemberID,
+      note: row.note,
+    })
+  }
+
+  return roster
+}
