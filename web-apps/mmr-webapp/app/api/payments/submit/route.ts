@@ -17,7 +17,13 @@ const SubmitSchema = z.object({
   firstName:      z.string().min(1),
   lastName:       z.string().min(1),
   email:          z.string().email(),
-  phone:          z.string().min(7),
+  // Optional, matching the "(optional)" label in InfoStep and the same rule in
+  // /api/members/enroll. Requiring it here rejected the submission *after* the
+  // member row and MemberID were already created, with no field-level error.
+  phone:          z.preprocess(
+    (v) => (v === '' || v === null || v === undefined) ? undefined : v,
+    z.string().min(7, 'Phone number must be at least 7 digits').optional(),
+  ),
   wechatId:       z.string().optional(),
   district:       z.string().optional(),
   gender:         z.string().optional(),
