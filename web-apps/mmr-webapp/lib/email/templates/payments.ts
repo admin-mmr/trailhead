@@ -6,6 +6,7 @@
  */
 
 import { FEEDBACK, PORTAL, wrap } from '../_layout'
+import { formatLongDate } from '../../date'
 
 // ── Payment application received ─────────────────────────────────────────────
 
@@ -64,6 +65,93 @@ export function applicationReceivedEmailHtml(params: {
       Upload Payment Screenshot →
     </a>
   `)
+}
+
+// ── Payment confirmation / receipt ───────────────────────────────────────────
+// Sent by the Stripe webhook once a payment is recorded. Doubles as the receipt
+// for renewals and donations; brand-new members get welcomeEmailHtml instead
+// (it carries the same receipt block plus the onboarding CTA).
+
+export function paymentConfirmationEmailHtml(params: {
+  firstName:     string
+  amount:        number
+  paymentMethod: string
+  referenceId:   string
+  description:   string   // e.g. 'Individual Membership' or 'Donation'
+  paidOn:        string   // ISO date or human date
+  expiresAt?:    string   // memberships only
+  testMode?:     boolean
+}): string {
+  const { firstName, amount, paymentMethod, referenceId, description, paidOn, expiresAt, testMode } = params
+  const isDonation = description.toLowerCase().includes('donation')
+
+  return wrap(firstName, `
+    ${testMode ? testBanner() : ''}
+    <h2 style="color:#5c35a8;margin:0 0 8px;">
+      ${isDonation ? `Thank you, ${firstName}!` : `Payment received, ${firstName}!`}
+    </h2>
+    <p style="color:#555;margin:0 0 24px;">
+      ${isDonation
+        ? 'Your donation to Misty Mountain Runners has been received. Thank you for supporting our running community.'
+        : `We've received your payment and your <strong>${description}</strong> is up to date.`}
+    </p>
+
+    ${receiptBlock({ description, amount, paymentMethod, paidOn, referenceId, expiresAt })}
+
+    <p style="font-size:13px;color:#888;margin:0;">
+      ${isDonation
+        ? '感谢您对岚山跑团的捐赠！这是您的收据，请妥善保存。'
+        : '我们已收到您的付款，这是您的收据，请妥善保存。'}
+      Reference #: <strong style="font-family:monospace;">${referenceId}</strong>
+    </p>
+  `)
+}
+
+// Shared receipt table — used by the confirmation email and the welcome email
+export function receiptBlock(params: {
+  description:   string
+  amount:        number
+  paymentMethod: string
+  paidOn:        string
+  referenceId:   string
+  expiresAt?:    string
+}): string {
+  const { description, amount, paymentMethod, paidOn, referenceId, expiresAt } = params
+  // formatLongDate keeps date-only values on their stored calendar day —
+  // new Date('2027-03-31') is UTC midnight, which renders as March 30 anywhere
+  // west of Greenwich.
+  const fmt = (d: string) => formatLongDate(d) || d
+  const row = (label: string, value: string, opts: { mono?: boolean; strong?: boolean } = {}) => `
+    <tr>
+      <td style="font-size:13px;color:#9b8ec4;padding:8px 0;">${label}</td>
+      <td style="font-size:14px;color:#333;text-align:right;padding:8px 0;
+                 ${opts.mono ? 'font-family:monospace;' : ''}
+                 ${opts.strong ? 'font-weight:600;' : ''}">${value}</td>
+    </tr>`
+
+  return `
+    <div style="background:#f8f6ff;border:1px solid #e9e3ff;border-radius:12px;padding:20px;margin-bottom:24px;">
+      <table style="width:100%;border-collapse:collapse;font-family:sans-serif;">
+        ${row('Paid for', description, { strong: true })}
+        ${row('Amount', `$${amount.toFixed(2)}`, { strong: true })}
+        ${row('Paid on', fmt(paidOn))}
+        ${row('Method', paymentMethod)}
+        ${expiresAt ? row('Membership valid until', fmt(expiresAt), { strong: true }) : ''}
+        ${row('Reference #', referenceId, { mono: true, strong: true })}
+      </table>
+    </div>
+  `
+}
+
+export function testBanner(): string {
+  return `
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;
+                margin-bottom:20px;font-size:13px;color:#92400e;font-family:sans-serif;">
+      ⚠️ <strong>Test payment</strong> — this was a simulated transaction. No money was charged and
+      no real membership was granted.<br>
+      测试付款 — 模拟交易，未产生真实扣款，也不构成真实会员资格。
+    </div>
+  `
 }
 
 // ── Payment rejected ──────────────────────────────────────────────────────────
@@ -137,9 +225,7 @@ export function paymentExpiredEmailHtml(params: {
   expiresAt:   string
 }): string {
   const { firstName, referenceId, expiresAt } = params
-  const expiry = new Date(expiresAt).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const expiry = formatLongDate(expiresAt)
   return wrap(firstName, `
     <h2 style="color:#c62828;margin:0 0 8px;">⏰ Payment submission expired</h2>
     <p style="color:#555;margin:0 0 24px;">
@@ -181,9 +267,7 @@ export function autoMatchConfirmationEmailHtml(params: {
   amount:        number
 }): string {
   const { firstName, memberId, paymentIntent, expiresAt, amount } = params
-  const expiry = new Date(expiresAt).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const expiry = formatLongDate(expiresAt)
   return wrap(firstName, `
     <h2 style="color:#5c35a8;margin:0 0 8px;">✅ Payment matched & membership updated</h2>
     <p style="color:#555;margin:0 0 24px;">

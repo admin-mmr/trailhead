@@ -5,6 +5,7 @@ import type { RowDataPacket } from 'mysql2'
 import { pool } from '@/lib/db/connection'
 import { getStripe } from '@/lib/stripe'
 import { getMembershipPrice, MEMBERSHIP_PRICING } from '@/lib/db/config'
+import { sendFulfillmentEmail } from '@/lib/payments/fulfillment-email'
 
 // ── POST /api/payments/stripe/webhook ───────────────────────────────────────
 // Unauthenticated by design — requests are verified via the Stripe signature.
@@ -142,6 +143,20 @@ export async function POST(req: NextRequest) {
   } finally {
     conn.release()
   }
+
+  // 4. Confirmation email — after the commit, so the member row already shows
+  // the trigger cascade (active + expiration). Never throws; a mail failure
+  // must not make us return non-2xx and have Stripe retry a banked payment.
+  await sendFulfillmentEmail({
+    memberId,
+    paymentType,
+    amount,
+    referenceId:   paymentIntentId,
+    paymentMethod: paymentMethodLabel,
+    payerEmail,
+    payerName,
+    livemode,
+  })
 
   return NextResponse.json({ received: true })
 }

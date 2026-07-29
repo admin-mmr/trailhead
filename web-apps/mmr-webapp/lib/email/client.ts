@@ -6,6 +6,7 @@
 import {
   welcomeEmailHtml,
   applicationReceivedEmailHtml,
+  paymentConfirmationEmailHtml,
   renewalReminderEmailHtml,
   paymentRejectedEmailHtml,
   paymentExpiredEmailHtml,
@@ -77,15 +78,51 @@ export async function sendMemberWelcomeEmail(params: {
   memberId:   string
   expiresAt:  string
   planLabel?: string
+  // Stripe fulfillment extras — see welcomeEmailHtml
+  payment?: {
+    amount:        number
+    paymentMethod: string
+    referenceId:   string
+    paidOn:        string
+  }
+  setPasswordUrl?: string
+  testMode?:       boolean
 }): Promise<void> {
   const planLabel = params.planLabel ?? 'Individual Membership'
   await sendEmail({
     to:         params.to,
     cc:         'admin@mmrunners.org',
-    subject:    `Welcome to Misty Mountain Runners! 🎉 Your Member ID: ${params.memberId}`,
+    subject:    `${params.testMode ? '[TEST] ' : ''}Welcome to Misty Mountain Runners! 🎉 Your Member ID: ${params.memberId}`,
     html:       welcomeEmailHtml({ ...params, planLabel }),
     emailType:  'welcome',
     memberId:   params.memberId,
+  })
+}
+
+// ── Payment confirmation / receipt ───────────────────────────────────────────
+
+export async function sendPaymentConfirmationEmail(params: {
+  to:            string
+  firstName:     string
+  amount:        number
+  paymentMethod: string
+  referenceId:   string
+  description:   string
+  paidOn:        string
+  expiresAt?:    string
+  memberId?:     string
+  testMode?:     boolean
+}): Promise<void> {
+  const isDonation = params.description.toLowerCase().includes('donation')
+  await sendEmail({
+    to:        params.to,
+    cc:        'admin@mmrunners.org',
+    subject:   `${params.testMode ? '[TEST] ' : ''}${isDonation
+      ? 'Thank you for your donation to Misty Mountain Runners'
+      : `MMR payment received — $${params.amount.toFixed(2)}`}`,
+    html:      paymentConfirmationEmailHtml(params),
+    emailType: isDonation ? 'donation_receipt' : 'payment_confirmation',
+    memberId:  params.memberId,
   })
 }
 

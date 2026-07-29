@@ -1,6 +1,6 @@
 'use client'
 
-import { useState }   from 'react'
+import { useEffect, useState } from 'react'
 import { Mountain, Mail, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react'
 
 export default function ForgotPasswordPage() {
@@ -8,6 +8,14 @@ export default function ForgotPasswordPage() {
   const [loading,   setLoading]   = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error,     setError]     = useState('')
+
+  // The welcome email's "set my password" link arrives as ?email=… so a brand-new
+  // member (who has no password yet) only has to press the button. Read from
+  // location rather than useSearchParams to avoid a Suspense/CSR bailout.
+  useEffect(() => {
+    const prefill = new URLSearchParams(window.location.search).get('email')
+    if (prefill) setEmail(prefill)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

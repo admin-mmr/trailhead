@@ -20,6 +20,7 @@ export {
 
 export {
   applicationReceivedEmailHtml,
+  paymentConfirmationEmailHtml,
   paymentRejectedEmailHtml,
   paymentExpiredEmailHtml,
   autoMatchConfirmationEmailHtml,

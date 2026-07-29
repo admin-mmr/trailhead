@@ -24,6 +24,7 @@ jest.mock('@/lib/db/connection', () => ({
   getDb: jest.fn(),
 }))
 jest.mock('@/lib/stripe', () => ({ getStripe: jest.fn() }))
+jest.mock('@/lib/payments/fulfillment-email', () => ({ sendFulfillmentEmail: jest.fn() }))
 jest.mock('@/lib/db/config', () => ({
   getMembershipPrice: jest.fn(),
   MEMBERSHIP_PRICING: {
@@ -37,11 +38,13 @@ import { POST } from '@/app/api/payments/stripe/webhook/route'
 import { pool } from '@/lib/db/connection'
 import { getStripe } from '@/lib/stripe'
 import { getMembershipPrice } from '@/lib/db/config'
+import { sendFulfillmentEmail } from '@/lib/payments/fulfillment-email'
 
 const post = POST as unknown as (req: unknown) => Promise<{ status: number; body: any }>
 const mockGetConnection = pool.getConnection as jest.Mock
 const mockGetStripe = getStripe as jest.Mock
 const mockGetMembershipPrice = getMembershipPrice as jest.Mock
+const mockSendFulfillmentEmail = sendFulfillmentEmail as jest.Mock
 
 function makeReq(headers: Record<string, string> = { 'stripe-signature': 'sig_ok' }) {
   return {
@@ -264,5 +267,70 @@ describe('POST /api/payments/stripe/webhook — amount verification', () => {
     const res = await post(makeReq())
     expect(res.status).toBe(200)
     expect(conn.commit).toHaveBeenCalled()
+  })
+})
+
+// ── Confirmation email ────────────────────────────────────────────────────────
+
+describe('POST /api/payments/stripe/webhook — confirmation email', () => {
+  it('sends the fulfillment email after the commit, with the ledger reference', async () => {
+    const res = await post(makeReq())
+
+    expect(res.status).toBe(200)
+    expect(mockSendFulfillmentEmail).toHaveBeenCalledTimes(1)
+    expect(mockSendFulfillmentEmail).toHaveBeenCalledWith({
+      memberId:      'MMR-2026-0042',
+      paymentType:   'Individual Membership',
+      amount:        30,
+      referenceId:   'pi_test_001',
+      paymentMethod: 'Stripe',
+      payerEmail:    'jo@example.com',
+      payerName:     'Jo Runner',
+      livemode:      true,
+    })
+    // ordering: the email must not go out before the DB commit
+    expect(conn.commit.mock.invocationCallOrder[0])
+      .toBeLessThan(mockSendFulfillmentEmail.mock.invocationCallOrder[0])
+  })
+
+  it('labels test-mode payments so the email can say so', async () => {
+    process.env.STRIPE_ALLOW_TEST_FULFILLMENT = '1'
+    constructEvent.mockReturnValue(makeEvent({ livemode: false }))
+
+    await post(makeReq())
+
+    expect(mockSendFulfillmentEmail.mock.calls[0][0]).toMatchObject({
+      livemode: false,
+      paymentMethod: 'Stripe (TEST)',
+    })
+  })
+
+  it('sends nothing when a test event is ignored', async () => {
+    constructEvent.mockReturnValue(makeEvent({ livemode: false }))
+    const res = await post(makeReq())
+    expect(res.body.ignored).toBe('test_mode')
+    expect(mockSendFulfillmentEmail).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing on an amount mismatch', async () => {
+    constructEvent.mockReturnValue(makeEvent({}, { amount_total: 9900 }))
+    await post(makeReq())
+    expect(mockSendFulfillmentEmail).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing on a duplicate delivery — the first delivery already emailed', async () => {
+    conn.execute.mockRejectedValue(Object.assign(new Error('dup'), { code: 'ER_DUP_ENTRY' }))
+    const res = await post(makeReq())
+    expect(res.body.duplicate).toBe(true)
+    expect(mockSendFulfillmentEmail).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing when the transaction rolls back', async () => {
+    conn.execute
+      .mockResolvedValueOnce([{}])
+      .mockRejectedValueOnce(new Error('connect ETIMEDOUT'))
+    const res = await post(makeReq())
+    expect(res.status).toBe(500)
+    expect(mockSendFulfillmentEmail).not.toHaveBeenCalled()
   })
 })
