@@ -106,6 +106,10 @@ describe('POST /api/auth/forgot-password — happy path', () => {
       emailType: 'password_reset',
     }))
 
+    // …and to nobody else. This mail carries a live reset-token link, so it must
+    // not be CC'd to the club's shared admin inbox.
+    expect(mockSendEmail.mock.calls[0][0].cc).toBeUndefined()
+
     // The raw token in the reset URL must hash to the stored hash
     const { resetUrl } = mockTemplate.mock.calls[0][0]
     const rawToken = new URL(resetUrl).searchParams.get('token')!

@@ -15,6 +15,12 @@ import {
   passwordResetEmailHtml,
 } from './templates'
 
+/**
+ * The address that gets a copy of member-facing membership and payment mail, so
+ * the club has a record of what was sent. Opt-in per call — see sendEmail.
+ */
+export const ADMIN_CC = 'admin@mmrunners.org'
+
 interface SendEmailParams {
   to: string
   subject: string
@@ -50,7 +56,11 @@ export async function sendEmail({
     subject,
     html_content: html,
     text_content: text || undefined,
-    cc: cc ? (Array.isArray(cc) ? cc.join(',') : cc) : 'admin@mmrunners.org',
+    // CC is opt-in. It used to fall back to ADMIN_CC for every email, which put
+    // password-reset mail — a live, unexpired token link — in the admin inbox,
+    // and sent the admin a duplicate of every admin-list notification. Callers
+    // that want the club copy pass it explicitly; the helpers below all do.
+    cc: cc ? (Array.isArray(cc) ? cc.join(',') : cc) : undefined,
     email_type: emailType,
     member_id: memberId,
   }
@@ -91,7 +101,7 @@ export async function sendMemberWelcomeEmail(params: {
   const planLabel = params.planLabel ?? 'Individual Membership'
   await sendEmail({
     to:         params.to,
-    cc:         'admin@mmrunners.org',
+    cc:         ADMIN_CC,
     subject:    `${params.testMode ? '[TEST] ' : ''}Welcome to Misty Mountain Runners! 🎉 Your Member ID: ${params.memberId}`,
     html:       welcomeEmailHtml({ ...params, planLabel }),
     emailType:  'welcome',
@@ -116,7 +126,7 @@ export async function sendPaymentConfirmationEmail(params: {
   const isDonation = params.description.toLowerCase().includes('donation')
   await sendEmail({
     to:        params.to,
-    cc:        'admin@mmrunners.org',
+    cc:        ADMIN_CC,
     subject:   `${params.testMode ? '[TEST] ' : ''}${isDonation
       ? 'Thank you for your donation to Misty Mountain Runners'
       : `MMR payment received — $${params.amount.toFixed(2)}`}`,
@@ -138,7 +148,7 @@ export async function sendApplicationReceivedEmail(params: {
 }): Promise<void> {
   await sendEmail({
     to:        params.to,
-    cc:        'admin@mmrunners.org',
+    cc:        ADMIN_CC,
     subject:   `MMR Membership Application Received — Ref ${params.referenceId}`,
     html:      applicationReceivedEmailHtml(params),
     emailType: 'application_received',
@@ -157,7 +167,7 @@ export async function sendPaymentRejectedEmail(params: {
 }): Promise<void> {
   await sendEmail({
     to:        params.to,
-    cc:        'admin@mmrunners.org',
+    cc:        ADMIN_CC,
     subject:   `MMR Payment Could Not Be Verified — Ref ${params.referenceId}`,
     html:      paymentRejectedEmailHtml(params),
     emailType: 'payment_rejected',
@@ -174,7 +184,7 @@ export async function sendPaymentExpiredEmail(params: {
 }): Promise<void> {
   await sendEmail({
     to:        params.to,
-    cc:        'admin@mmrunners.org',
+    cc:        ADMIN_CC,
     subject:   `⏰ Your MMR payment submission has expired — Ref ${params.referenceId}`,
     html:      paymentExpiredEmailHtml(params),
     emailType: 'payment_expired',
@@ -192,7 +202,7 @@ export async function sendExpirationRepairedEmail(params: {
 }): Promise<void> {
   await sendEmail({
     to:        params.to,
-    cc:        'admin@mmrunners.org',
+    cc:        ADMIN_CC,
     subject:   `Your MMR membership record has been updated`,
     html:      expirationRepairedEmailHtml(params),
     emailType: 'expiration_repaired',
@@ -212,7 +222,7 @@ export async function sendAutoMatchConfirmationEmail(params: {
 }): Promise<void> {
   await sendEmail({
     to:        params.to,
-    cc:        'admin@mmrunners.org',
+    cc:        ADMIN_CC,
     subject:   `✅ Your MMR payment has been matched — Membership activated`,
     html:      autoMatchConfirmationEmailHtml(params),
     emailType: 'auto_match_confirmation',
