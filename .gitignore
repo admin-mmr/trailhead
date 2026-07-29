@@ -81,4 +81,13 @@ mmr-admin/VERSION
 
 # Legacy schema/migration folders (db/ is the source of truth)
 /basecamp/schemas/
-/basecamp/migrations/.claude/worktrees/
+/basecamp/migrations/
+
+# Local git worktrees
+.claude/worktrees/
+
+# Coverage artifacts (CI and the documented `pytest --cov` run both create these)
+.coverage
+.coverage.*
+htmlcov/
+

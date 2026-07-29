@@ -36,9 +36,17 @@ import logging
 import threading
 logger = logging.getLogger(__name__)
 
-# Schedules (overridable via env). Defaults: 1st of month 06:00 UTC discovery;
+# Schedules (overridable via env). Defaults: Mondays 06:00 UTC discovery;
 # Tuesdays 02:00 UTC finisher pipeline (matches the old GitHub cron).
-DISCOVERY_CRON = os.environ.get("NYRR_DISCOVERY_CRON", "0 6 1 * *")
+#
+# Discovery went monthly → weekly on 07-29 (P1L): NYRR only publishes its
+# calendar ~8 weeks out, so a monthly scan meant a newly-published race could
+# stay invisible to the member portal calendar for up to a month. Verified:
+# the 07-06 discovery found nothing past 2026-08-26, leaving Sept/Oct empty.
+# Discovery is cheap (one API sweep, UPSERT by event_code) so weekly is safe.
+# NOTE: an NYRR_DISCOVERY_CRON app setting on mmr-nyrr-viewer would override
+# this default — check Azure config if the cadence doesn't change after deploy.
+DISCOVERY_CRON = os.environ.get("NYRR_DISCOVERY_CRON", "0 6 * * 1")
 FINISHER_CRON = os.environ.get("NYRR_FINISHER_CRON", "0 2 * * 2")
 
 # Per-event completion states reported by sync_worker.get_job_status().
