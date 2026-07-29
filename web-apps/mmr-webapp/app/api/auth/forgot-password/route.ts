@@ -43,6 +43,8 @@ export async function POST(req: NextRequest) {
     const appUrl   = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
     const resetUrl = `${appUrl}/auth/reset-password?token=${rawToken}`
 
+    // No cc — deliberately. This email carries a live reset-token link, so the
+    // club's admin copy (see ADMIN_CC) must never be added here.
     await sendEmail({
       to:        email,
       subject:   'Reset your MMR password',
