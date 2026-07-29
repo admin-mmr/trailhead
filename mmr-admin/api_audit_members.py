@@ -18,6 +18,7 @@ from auth import login_required, require_role
 from db import query
 from helpers import json_response, handle_api_errors
 from api_audit import _serialize_for_json
+from payment_helpers import exclude_test_payments
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,9 @@ def api_expiration_drift():
     flag_only   = request.args.get('flag_only', '0') == '1'
 
     # ── Individual: Type='Individual', no FamilyID, no payments ──────────
-    individual_sql = """
+    # Stripe test-mode payments are excluded so a test charge can't make a member
+    # look "paid" and drop them out of the never-matched report.
+    individual_sql = f"""
         SELECT
             m.MemberID                               AS member_id,
             CONCAT(m.FirstName, ' ', m.LastName)     AS member_name,
@@ -126,6 +129,7 @@ def api_expiration_drift():
             END                                      AS flag
         FROM members m
         LEFT JOIN payments p ON p.MemberID = m.MemberID
+                            AND {exclude_test_payments('p')}
         LEFT JOIN (
             SELECT ml.MemberID, ml.Expiration
             FROM member_log ml
@@ -141,7 +145,7 @@ def api_expiration_drift():
     """
 
     # ── Family: entire family has zero payments ───────────────────────────
-    family_sql = """
+    family_sql = f"""
         SELECT
             m.MemberID                               AS member_id,
             CONCAT(m.FirstName, ' ', m.LastName)     AS member_name,
@@ -189,6 +193,7 @@ def api_expiration_drift():
               FROM members fam
               INNER JOIN payments fp ON fp.MemberID = fam.MemberID
               WHERE fam.FamilyID IS NOT NULL AND fam.FamilyID != ''
+                AND {exclude_test_payments('fp')}
           )
         ORDER BY flag DESC, m.FamilyID, m.MemberID
     """

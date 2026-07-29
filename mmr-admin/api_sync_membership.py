@@ -23,6 +23,7 @@ from flask import request
 from auth import login_required
 from db import query, get_conn
 from helpers import json_response
+from payment_helpers import exclude_test_payments
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,9 @@ def register_membership_sync_routes(sync_bp):
             member_id_filter = request_data.get('memberID')
 
             # Build query for payments with membership type
-            payments_sql = """
+            # (Stripe test-mode payments are excluded — they must never stamp
+            #  real MembershipFeePaid/PaymentDate/PaymentTransaction values.)
+            payments_sql = f"""
                 SELECT
                   p.MemberID,
                   p.Amount,
@@ -73,6 +76,7 @@ def register_membership_sync_routes(sync_bp):
                 WHERE p.PaymentType IN ('Individual Membership', 'Family Membership')
                   AND p.MemberID IS NOT NULL
                   AND p.PaymentDate IS NOT NULL
+                  AND {exclude_test_payments('p')}
             """
             params = []
 
