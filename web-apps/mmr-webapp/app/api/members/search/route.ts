@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireSession } from '@/lib/auth/session'
+import { withApiHandler } from '@/lib/api-handler'
 import { searchMembers } from '@/lib/db/photos'
 
 // GET /api/members/search?q=<query>&limit=<n>
 // Searches active members by MemberID, FirstName, or LastName.
 // Used by friend-lookup and detection tag suggestions.
-export async function GET(req: NextRequest) {
+export const GET = withApiHandler(async (req: NextRequest) => {
   await requireSession()
 
   const { searchParams } = new URL(req.url)
@@ -17,4 +18,4 @@ export async function GET(req: NextRequest) {
 
   const members = await searchMembers(q, limit)
   return NextResponse.json({ ok: true, data: members })
-}
+})

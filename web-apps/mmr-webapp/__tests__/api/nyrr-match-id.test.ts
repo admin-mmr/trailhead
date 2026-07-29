@@ -3,7 +3,8 @@
  *
  * Admin-only, transactional. Plain params { id }. Unlinks a match, optionally
  * clears the member NYRRRunnerName (?clearName=true), recomputes event count.
- * parseInt(id) → 400 if NaN; missing runner → 404. release() on every path.
+ * parseInt(id) → 400 if NaN; missing runner → 404. The connection is acquired
+ * after auth + validation and released in a finally.
  */
 
 jest.mock('next/server', () => ({
@@ -65,26 +66,26 @@ beforeEach(() => {
 })
 
 describe('DELETE /api/nyrr/match/[id] — auth & validation', () => {
-  it('no session → 401, connection released', async () => {
-    mockRequireSession.mockRejectedValue(new Error('Unauthorized'))
+  it('no session → 401, no connection acquired', async () => {
+    mockRequireSession.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
     const res = await del(makeReq(), ctx('11'))
     expect(res.status).toBe(401)
-    expect(conn.release).toHaveBeenCalled()
+    expect(mockGetConnection).not.toHaveBeenCalled()
     expect(conn.beginTransaction).not.toHaveBeenCalled()
   })
 
-  it('non-admin → 403, connection released', async () => {
+  it('non-admin → 403, no connection acquired', async () => {
     mockIsAdmin.mockResolvedValue(false)
     const res = await del(makeReq(), ctx('11'))
     expect(res.status).toBe(403)
-    expect(conn.release).toHaveBeenCalled()
+    expect(mockGetConnection).not.toHaveBeenCalled()
   })
 
-  it('non-numeric id → 400, connection released', async () => {
+  it('non-numeric id → 400, no connection acquired', async () => {
     const res = await del(makeReq(), ctx('nope'))
     expect(res.status).toBe(400)
     expect(res.body.error).toBe('Invalid runner ID')
-    expect(conn.release).toHaveBeenCalled()
+    expect(mockGetConnection).not.toHaveBeenCalled()
     expect(conn.beginTransaction).not.toHaveBeenCalled()
   })
 })

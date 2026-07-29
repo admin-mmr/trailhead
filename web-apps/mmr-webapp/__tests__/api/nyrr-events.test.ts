@@ -50,7 +50,7 @@ beforeEach(() => {
 
 describe('GET /api/nyrr/events — auth', () => {
   it('no session → 401, DB untouched', async () => {
-    mockRequireSession.mockRejectedValue(new Error('Unauthorized'))
+    mockRequireSession.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
     const res = await get(makeReq())
     expect(res.status).toBe(401)
     expect(res.body.error).toBe('Unauthorized')
