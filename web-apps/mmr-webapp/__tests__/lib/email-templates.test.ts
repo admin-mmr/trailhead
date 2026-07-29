@@ -7,6 +7,7 @@
 
 import {
   welcomeEmailHtml,
+  paymentConfirmationEmailHtml,
   applicationReceivedEmailHtml,
   renewalReminderEmailHtml,
   membershipActivatedEmailHtml,
@@ -151,6 +152,101 @@ describe('renewalReminderEmailHtml', () => {
   it('includes the renewal CTA link', () => {
     const html = renewalReminderEmailHtml(base)
     expect(html).toContain('/join')
+  })
+})
+
+// ── welcomeEmailHtml: Stripe fulfillment extras ──────────────────────────────
+
+describe('welcomeEmailHtml — receipt, set-password CTA, test banner', () => {
+  const base = {
+    firstName: 'Cathy',
+    memberId: 'A0667',
+    expiresAt: '2027-03-31T00:00:00.000Z',
+    planLabel: 'Individual Membership',
+  }
+  const payment = {
+    amount: 30,
+    paymentMethod: 'Stripe (TEST)',
+    referenceId: 'pi_3TvAbCdEf',
+    paidOn: '2026-07-29',
+  }
+
+  it('renders the payment receipt when a payment is supplied', () => {
+    const html = welcomeEmailHtml({ ...base, payment })
+    expect(html).toContain('$30.00')
+    expect(html).toContain('Stripe (TEST)')
+    expect(html).toContain('pi_3TvAbCdEf')
+    expect(html).toContain('July 29, 2026')
+    expect(html).toContain('Individual Membership — payment received')
+  })
+
+  it('omits the receipt entirely when no payment is supplied', () => {
+    const html = welcomeEmailHtml(base)
+    expect(html).not.toContain('Paid for')
+    expect(html).not.toContain('Reference #')
+  })
+
+  it('renders the set-password CTA pointing at the given URL', () => {
+    const url = 'https://mmrunners.org/auth/forgot-password?email=jo%40example.com'
+    const html = welcomeEmailHtml({ ...base, setPasswordUrl: url })
+    expect(html).toContain('Set My Password')
+    expect(html).toContain(`href="${url}"`)
+    expect(html).toContain('请点击下方按钮设置密码后登录')
+  })
+
+  it('omits the CTA for members who can already sign in', () => {
+    expect(welcomeEmailHtml(base)).not.toContain('Set My Password')
+  })
+
+  it('shows the test-mode banner only in test mode', () => {
+    expect(welcomeEmailHtml({ ...base, testMode: true })).toContain('Test payment')
+    expect(welcomeEmailHtml({ ...base, testMode: true })).toContain('未产生真实扣款')
+    expect(welcomeEmailHtml(base)).not.toContain('Test payment')
+  })
+
+  it('keeps the shared bilingual layout', () => {
+    expectBilingualLayout(welcomeEmailHtml({ ...base, payment, setPasswordUrl: 'https://x/y', testMode: true }))
+  })
+})
+
+// ── paymentConfirmationEmailHtml ─────────────────────────────────────────────
+
+describe('paymentConfirmationEmailHtml', () => {
+  const base = {
+    firstName: 'Cathy',
+    amount: 30,
+    paymentMethod: 'Stripe',
+    referenceId: 'pi_3TvAbCdEf',
+    description: 'Individual Membership',
+    paidOn: '2026-07-29',
+  }
+
+  it('reads as a receipt for a membership renewal, including the new expiration', () => {
+    const html = paymentConfirmationEmailHtml({ ...base, expiresAt: '2027-03-31' })
+    expect(html).toContain('Payment received, Cathy!')
+    expect(html).toContain('$30.00')
+    expect(html).toContain('March 31, 2027')
+    expect(html).toContain('Membership valid until')
+    expectBilingualLayout(html)
+  })
+
+  it('switches to donation wording and drops the expiration row', () => {
+    const html = paymentConfirmationEmailHtml({ ...base, description: 'Donation', amount: 10 })
+    expect(html).toContain('Thank you, Cathy!')
+    expect(html).toContain('$10.00')
+    expect(html).toContain('感谢您对岚山跑团的捐赠')
+    expect(html).not.toContain('Membership valid until')
+  })
+
+  it('passes a non-date paidOn through unchanged rather than rendering Invalid Date', () => {
+    const html = paymentConfirmationEmailHtml({ ...base, paidOn: 'today' })
+    expect(html).toContain('today')
+    expect(html).not.toContain('Invalid Date')
+  })
+
+  it('shows the test banner in test mode', () => {
+    expect(paymentConfirmationEmailHtml({ ...base, testMode: true })).toContain('Test payment')
+    expect(paymentConfirmationEmailHtml(base)).not.toContain('Test payment')
   })
 })
 

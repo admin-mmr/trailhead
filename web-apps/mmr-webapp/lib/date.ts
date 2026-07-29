@@ -55,6 +55,34 @@ export function daysUntilExpiryNY(expiresAt: string | null | undefined): number 
 // ─── Display formatting ───────────────────────────────────────────────────────
 
 /**
+ * Long-form display date ("March 31, 2027") for server-rendered output such as
+ * email templates.
+ *
+ * Date-only values are formatted in the server's own zone after parseLocalDate,
+ * so the rendered date always matches the stored calendar date — no timeZone
+ * option, because pairing a local-midnight Date with an explicit zone
+ * reintroduces the off-by-one this is here to prevent. Datetime values are
+ * shown in New York, where the members are.
+ */
+export function formatLongDate(
+  dateString: string | null | undefined,
+  locale: string = 'en-US'
+): string {
+  if (!dateString) return ''
+  const opts: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' }
+  const trimmed = String(dateString).trim()
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const d = parseLocalDate(trimmed)
+    return d ? d.toLocaleDateString(locale, opts) : trimmed
+  }
+
+  const d = new Date(trimmed)
+  if (isNaN(d.getTime())) return trimmed
+  return d.toLocaleDateString(locale, { ...opts, timeZone: 'America/New_York' })
+}
+
+/**
  * Format any date/datetime string for display in the given locale and timezone.
  *
  * For YYYY-MM-DD strings (date-only), parses as local calendar midnight so the

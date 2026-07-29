@@ -6,6 +6,8 @@
  */
 
 import { APP_URL, PORTAL, wrap } from '../_layout'
+import { receiptBlock, testBanner } from './payments'
+import { formatLongDate } from '../../date'
 
 // ── Welcome (membership activated) ───────────────────────────────────────────
 
@@ -14,12 +16,22 @@ export function welcomeEmailHtml(params: {
   memberId:   string
   expiresAt:  string
   planLabel:  string
+  // Optional extras used by the Stripe fulfillment path: a receipt for the
+  // payment that activated the membership, a first-time password link, and the
+  // test-mode banner so pilot emails can never be mistaken for real ones.
+  payment?: {
+    amount:        number
+    paymentMethod: string
+    referenceId:   string
+    paidOn:        string
+  }
+  setPasswordUrl?: string
+  testMode?:       boolean
 }): string {
-  const { firstName, memberId, expiresAt, planLabel } = params
-  const expiry = new Date(expiresAt).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const { firstName, memberId, expiresAt, planLabel, payment, setPasswordUrl, testMode } = params
+  const expiry = formatLongDate(expiresAt)
   return wrap(firstName, `
+    ${testMode ? testBanner() : ''}
     <h2 style="color:#5c35a8;margin:0 0 8px;">Welcome, ${firstName}! 🎉</h2>
     <p style="color:#555;margin:0 0 24px;">
       Your <strong>${planLabel}</strong> membership is now active. We're so glad you're part of
@@ -45,6 +57,30 @@ export function welcomeEmailHtml(params: {
         </tr>
       </table>
     </div>
+
+    ${payment ? receiptBlock({
+      description:   `${planLabel} — payment received`,
+      amount:        payment.amount,
+      paymentMethod: payment.paymentMethod,
+      paidOn:        payment.paidOn,
+      referenceId:   payment.referenceId,
+    }) : ''}
+
+    ${setPasswordUrl ? `
+    <div style="background:#f0f7ff;border:1px solid #cfe4ff;border-radius:12px;padding:20px;margin-bottom:24px;">
+      <p style="color:#333;margin:0 0 12px;font-weight:600;">One more step: set your password</p>
+      <p style="color:#555;margin:0 0 16px;font-size:14px;">
+        Your account doesn't have a password yet. Set one to sign in and see your membership details,
+        or sign in with the Google or Microsoft account that uses this email address.<br>
+        您的账号还没有设置密码，请点击下方按钮设置密码后登录。
+      </p>
+      <a href="${setPasswordUrl}"
+         style="display:inline-block;background:#0d6efd;color:#ffffff;padding:12px 28px;
+                border-radius:99px;text-decoration:none;font-weight:600;font-size:15px;">
+        Set My Password →
+      </a>
+    </div>
+    ` : ''}
 
     <p style="color:#555;margin:0 0 16px;">
       Visit your member portal to explore race results, upcoming events, club photos, and more.
@@ -82,9 +118,7 @@ export function renewalReminderEmailHtml(params: {
   daysLeft:    number
 }): string {
   const { firstName, memberId, expiresAt, daysLeft } = params
-  const expiry = new Date(expiresAt).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const expiry = formatLongDate(expiresAt)
   const urgency = daysLeft <= 7 ? 'Urgent: ' : daysLeft <= 30 ? 'Action needed: ' : ''
   return wrap(firstName, `
     <h2 style="color:#5c35a8;margin:0 0 8px;">${urgency}Your membership expires soon</h2>
@@ -123,9 +157,7 @@ export function expirationRepairedEmailHtml(params: {
   planLabel:   string
 }): string {
   const { firstName, memberId, expiresAt, planLabel } = params
-  const expiry = new Date(expiresAt).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const expiry = formatLongDate(expiresAt)
   return wrap(firstName, `
     <h2 style="color:#5c35a8;margin:0 0 8px;">✓ Membership record updated</h2>
     <p style="color:#555;margin:0 0 24px;">
