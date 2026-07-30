@@ -12,11 +12,18 @@
  *     "set my password" link, because /join never sets one
  *   - renewal / upgrade → payment confirmation with the new expiration
  *   - donation (member or anonymous) → donation receipt
+ *
+ * Plus, for a membership payment that covers a family, every OTHER member of
+ * that family gets a notice with the shared new expiration and the covered
+ * roster (lib/notifications/family.ts). Without it a spouse or child has no way
+ * to know their membership was renewed — the payments trigger extends their row
+ * silently.
  */
 
 import type { RowDataPacket } from 'mysql2'
 import { pool } from '@/lib/db/connection'
 import { sendMemberWelcomeEmail, sendPaymentConfirmationEmail } from '@/lib/email/client'
+import { notifyFamilyRenewal } from '@/lib/notifications/family'
 import { MEMBERSHIP_PRICING } from '@/lib/db/config'
 import { APP_URL } from '@/lib/email/_layout'
 
@@ -78,21 +85,35 @@ export async function sendFulfillmentEmail(input: FulfillmentEmailInput): Promis
         setPasswordUrl: setPasswordUrl(to),
         testMode,
       })
-      return
+    } else {
+      await sendPaymentConfirmationEmail({
+        to,
+        firstName,
+        amount:        input.amount,
+        paymentMethod: input.paymentMethod,
+        referenceId:   input.referenceId,
+        description:   input.paymentType,
+        paidOn,
+        expiresAt:     isMembership ? expiresAt ?? undefined : undefined,
+        memberId:      input.memberId ?? undefined,
+        testMode,
+      })
     }
 
-    await sendPaymentConfirmationEmail({
-      to,
-      firstName,
-      amount:        input.amount,
-      paymentMethod: input.paymentMethod,
-      referenceId:   input.referenceId,
-      description:   input.paymentType,
-      paidOn,
-      expiresAt:     isMembership ? expiresAt ?? undefined : undefined,
-      memberId:      input.memberId ?? undefined,
-      testMode,
-    })
+    // The payer now has a receipt. Anyone else the payment covers has heard
+    // nothing at all — the trigger silently extended their expiration too. Tell
+    // the rest of the household, skipping the payer to avoid a near-duplicate.
+    // Keyed on the PaymentIntent so a Stripe webhook retry cannot re-send.
+    if (isMembership && input.memberId && expiresAt) {
+      await notifyFamilyRenewal({
+        payerMemberId: input.memberId,
+        expiresAt,
+        planLabel:     input.paymentType,
+        dedupeSuffix:  input.referenceId,
+        testMode,
+        skipPayer:     true,
+      })
+    }
   } catch (err) {
     // Deliberately swallowed — see the file header.
     console.error(`[fulfillment-email] Failed for ${input.referenceId}:`, err)

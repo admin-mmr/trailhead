@@ -20,6 +20,7 @@ from activity_logger import log_activity
 from api_members import get_admin_id, get_member_by_id, get_family_members
 
 from api_members_family import members_family_bp, generate_family_id
+from webapp_notify import notify_family_updated
 
 logger = logging.getLogger(__name__)
 
@@ -145,10 +146,21 @@ def api_upgrade_and_add():
     updated_primary = get_member_by_id(primary_id)
     family_members = get_family_members(family_id)
 
+    # Both members are new to this family — the primary was an Individual until a
+    # moment ago — so both are flagged as added. Fires after the commit and never
+    # raises; see webapp_notify.
+    notify_result = notify_family_updated(
+        family_id=family_id,
+        added_member_ids=[primary_id, new_member_id],
+        dedupe_suffix=f'upgrade-{family_id}-{now:%Y%m%d}',
+    )
+
     return json_response({'ok': True, 'data': {
         'family_id': family_id,
         'primary_member': updated_primary,
         'members': family_members,
+        'notified': notify_result.get('ok', False),
+        'notify_error': notify_result.get('error'),
         'message': (
             f'{primary_id} upgraded to Family and assigned FamilyID {family_id}; '
             f'{new_member_id} added to family.'

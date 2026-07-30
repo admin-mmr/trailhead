@@ -1,5 +1,5 @@
 -- ============================================================
--- MIGRATION_V038.sql — Community poll service (first use case: website design vote)
+-- MIGRATION_V039.sql — Community poll service (first use case: website design vote)
 --
 -- A general, reusable poll feature. Members vote without logging in: they
 -- identify with MemberID + last name, which is validated against `members`.
@@ -153,5 +153,5 @@ WHERE p.slug = 'website-design-2026';
 
 -- ── 6. Self-registration (audit trail + prevents re-runs) ───────────────────
 INSERT INTO schema_migrations (version, description, executed_at)
-VALUES ('V038', 'Community poll service: polls, poll_options, poll_ballots, poll_ballot_choices + website-design-2026 seed', NOW())
+VALUES ('V039', 'Community poll service: polls, poll_options, poll_ballots, poll_ballot_choices + website-design-2026 seed', NOW())
 ON DUPLICATE KEY UPDATE executed_at = NOW();
