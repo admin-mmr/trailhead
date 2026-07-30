@@ -61,6 +61,11 @@ export const ACCESS_CONFIG: AccessRule[] = [
   { prefix: '/auth/reset-password',   tier: 'public', note: 'Reset-password page — unauthenticated users only' },
   { prefix: '/auth/setup-password',   tier: 'public', note: 'First-time password setup for existing members' },
   { prefix: '/auth/complete',         tier: 'public', note: 'NextAuth→mmr_session bridge — called after OAuth/Credentials sign-in' },
+  // Community polls are deliberately login-free: the voter identifies with
+  // MemberID + last name inside the route, which is why these are 'public'
+  // even though only members can actually cast a ballot.
+  { prefix: '/poll',                  tier: 'public', note: 'Community poll — vote + results, no login' },
+  { prefix: '/api/poll',              tier: 'public', note: 'Poll API — voter is identified by MemberID + last name in the handler' },
 ]
 
 /**
