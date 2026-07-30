@@ -13,7 +13,12 @@ appengine-generated/
 
 node_modules/
 test-photos/
+# Race-result data dumps. This is a blanket directory rule, so it also swallowed
+# App Router source at app/**/results/ — a /poll/[slug]/results page vanished
+# from a commit with no warning. Keep webapp source re-included.
 results/
+!web-apps/mmr-webapp/app/**/results/
+!web-apps/mmr-webapp/app/**/results/**
 azurite-data/
 azurite-debug.log
 mmr-admin/nyrr_api.py
