@@ -1,0 +1,108 @@
+name: Members - ✉️ Weekly Renewal Reminders
+
+# Azure Static Web Apps has no scheduler, so the cron lives here and calls the
+# webapp. The endpoint is idempotent — every send is claimed in notification_log
+# first — so a re-run, a manual dispatch, or an overlapping trigger cannot email
+# a member the same reminder twice.
+#
+# Cadence is defined in code, not here: lib/membership/renewal-stages.ts holds
+# the five day-bands. This workflow only decides HOW OFTEN we look (weekly).
+#
+# Tuesdays 15:00 UTC = 11:00 America/New_York in summer, 10:00 in winter.
+# Deliberately a weekday mid-morning: club mail read on a Tuesday gets acted on,
+# and it keeps sends clear of the Tuesday 02:00 UTC NYRR finisher pipeline.
+#
+# Setup (one time):
+#   1. generate a secret:  openssl rand -base64 48
+#   2. GitHub → Settings → Secrets and variables → Actions → new repository
+#      secret JOB_SECRET (and MMR_APP_URL if the site ever moves)
+#   3. az staticwebapp appsettings set --name mmr-webapp \
+#        --resource-group mmr-resources --setting-names JOB_SECRET=<same value>
+#      ⚠️ paste the ACTUAL value — a literal placeholder here has bitten this
+#      repo twice before with Stripe keys, and it fails silently (401) until
+#      someone reads the job log.
+#   4. verify with a dry run: Actions → this workflow → Run workflow → dryRun
+
+on:
+  schedule:
+    - cron: '0 15 * * 2'
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: 'Count what would be sent without sending anything'
+        type: boolean
+        default: false
+      limit:
+        description: 'Max emails this run (blank = config.RenewalReminderMaxPerRun)'
+        type: string
+        default: ''
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    name: Send due renewal reminders
+    timeout-minutes: 15
+
+    steps:
+      - name: Build request body
+        id: body
+        env:
+          DRY_RUN: ${{ inputs.dryRun }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          BODY='{}'
+          if [ "${DRY_RUN}" = "true" ]; then
+            BODY='{"dryRun":true}'
+          fi
+          if [ -n "${LIMIT}" ]; then
+            # jq keeps this valid JSON whichever inputs are present.
+            BODY=$(echo "${BODY}" | jq -c --argjson limit "${LIMIT}" '. + {limit: $limit}')
+          fi
+          echo "json=${BODY}" >> "$GITHUB_OUTPUT"
+          echo "Request body: ${BODY}"
+
+      - name: Trigger renewal reminder job
+        env:
+          APP_URL: ${{ secrets.MMR_APP_URL || 'https://www.mmrunners.org' }}
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          BODY: ${{ steps.body.outputs.json }}
+        run: |
+          if [ -z "${JOB_SECRET}" ]; then
+            echo "::error::JOB_SECRET repository secret is not set — see the header of this workflow file."
+            exit 1
+          fi
+
+          # -sS keeps curl quiet but still prints transport errors; the HTTP code
+          # is captured separately because a non-2xx body is what tells us why.
+          HTTP_CODE=$(curl -sS -o /tmp/response.json -w '%{http_code}' \
+            --max-time 600 \
+            -X POST "${APP_URL}/api/jobs/renewal-reminders" \
+            -H "Authorization: Bearer ${JOB_SECRET}" \
+            -H 'Content-Type: application/json' \
+            -d "${BODY}")
+
+          echo "HTTP ${HTTP_CODE}"
+          cat /tmp/response.json | jq . || cat /tmp/response.json
+
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "::error::Reminder job returned HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+
+          # A run can succeed at the HTTP level while every individual send
+          # failed (GAS webhook down, quota exhausted). Surface that as a
+          # warning so it shows up in the Actions summary instead of only in
+          # notification_log.
+          FAILED=$(jq -r '.data.failed // 0' /tmp/response.json)
+          SENT=$(jq -r '.data.sent // 0' /tmp/response.json)
+          CAPPED=$(jq -r '.data.cappedAt // "null"' /tmp/response.json)
+          echo "### Renewal reminders: ${SENT} sent, ${FAILED} failed" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.data.byStage | to_entries[] | "- \(.key): \(.value)"' /tmp/response.json \
+            >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+          if [ "${FAILED}" != "0" ]; then
+            echo "::warning::${FAILED} reminder(s) failed to send — check notification_log for status='failed'"
+          fi
+          if [ "${CAPPED}" != "null" ]; then
+            echo "::notice::Run hit the per-run cap (${CAPPED}); the remainder goes out next week."
+          fi

@@ -22,6 +22,7 @@ from db import execute, query, db_cursor
 from helpers import json_response, handle_api_errors
 from activity_logger import log_activity
 from api_members import get_admin_id, get_member_by_id, get_family_members
+from webapp_notify import notify_family_updated
 
 logger = logging.getLogger(__name__)
 
@@ -238,9 +239,20 @@ def api_add_member_to_family():
     updated_member = get_member_by_id(new_member_id)
     family_members = get_family_members(primary['FamilyID'])
 
+    # Tell the whole household who is now covered. Fires AFTER the commit and
+    # never raises, so a mail problem cannot undo a completed regrouping — the
+    # notify result is reported alongside the success instead.
+    notify_result = notify_family_updated(
+        family_id=primary['FamilyID'],
+        added_member_ids=[new_member_id],
+        dedupe_suffix=f'add-{new_member_id}-to-{primary["FamilyID"]}-{now:%Y%m%d}',
+    )
+
     return json_response({'ok': True, 'data': {
         'updated_member': updated_member,
         'members': family_members,
+        'notified': notify_result.get('ok', False),
+        'notify_error': notify_result.get('error'),
         'message': f'{new_member_id} added to family {primary["FamilyID"]}'
     }})
 

@@ -48,6 +48,15 @@ export const ACCESS_CONFIG: AccessRule[] = [
   { prefix: '/api/payments',       tier: 'member', note: 'Payments — pending members need this to submit proof' },
   { prefix: '/payment/success',    tier: 'public', note: 'Stripe Checkout return page' },
 
+  // ── Machine callers (bearer JOB_SECRET, checked in the route handler) ──────
+  // These MUST be 'public' at the edge. A session tier here would 307 the caller
+  // to /login, and a GitHub Actions cron or the Flask admin has no session to
+  // present — the redirect would look like a success (200 HTML) while sending
+  // nothing. Authorization is lib/jobs/auth.ts, which denies when JOB_SECRET is
+  // unset, so an unconfigured deploy is closed rather than open.
+  { prefix: '/api/jobs',           tier: 'public', note: 'Scheduled jobs — bearer JOB_SECRET, not a session' },
+  { prefix: '/api/notifications',  tier: 'public', note: 'Internal notification hooks called by mmr-admin — bearer JOB_SECRET' },
+
   // ── Public ─────────────────────────────────────────────────────────────────
   { prefix: '/blog',               tier: 'public', note: 'Blog — open to everyone' },
   { prefix: '/events',             tier: 'public', note: 'Events — open to everyone' },
