@@ -1,152 +1,20 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { signIn }                 from 'next-auth/react'
-import { Mail, Lock, Eye, EyeOff, Loader2, LogOut } from 'lucide-react'
-import { useLang }                from '@/lib/i18n/context'
+import { Suspense } from 'react'
+import { useLoginFlow } from './_components/useLoginFlow'
+import { GoodbyeBanner } from './_components/GoodbyeBanner'
+import { SocialSignIn, WebViewWarning } from './_components/SocialSignIn'
+import { CredentialsForm } from './_components/CredentialsForm'
 
-// ── Provider icon SVGs (inline, no extra deps) ────────────────────────────────
-
-function GoogleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-    </svg>
-  )
-}
-
-function MicrosoftIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-      <path fill="#f25022" d="M1 1h10v10H1z"/>
-      <path fill="#00a4ef" d="M13 1h10v10H13z"/>
-      <path fill="#7fba00" d="M1 13h10v10H1z"/>
-      <path fill="#ffb900" d="M13 13h10v10H13z"/>
-    </svg>
-  )
-}
-
-// ── OAuth provider config ──────────────────────────────────────────────────────
-
-const PROVIDERS = [
-  { id: 'google',              label: 'Google',    Icon: GoogleIcon,    bg: 'bg-white border border-gray-200 hover:bg-gray-50', text: 'text-gray-700' },
-  { id: 'microsoft-entra-id',  label: 'Microsoft', Icon: MicrosoftIcon, bg: 'bg-white border border-gray-200 hover:bg-gray-50', text: 'text-gray-700' },
-] as const
-
-// ── Goodbye banner ──────────────────────────────────────────────────────────────
-
-function GoodbyeBanner({ lang }: { lang: string }) {
-  const [visible, setVisible] = useState(true)
-
-  useEffect(() => {
-    const timer = setTimeout(() => setVisible(false), 8000)
-    return () => clearTimeout(timer)
-  }, [])
-
-  if (!visible) return null
-
-  return (
-    <div className="absolute top-0 left-0 right-0 z-10 animate-fade-in">
-      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-4 text-center shadow-lg">
-        <div className="flex items-center justify-center gap-2 mb-1">
-          <LogOut className="h-4 w-4" />
-          <span className="font-semibold">
-            {lang === 'zh' ? '感谢您的使用！' : 'Thank you and see you again!'}
-          </span>
-        </div>
-        <p className="text-white/80 text-sm">
-          {lang === 'zh'
-            ? '您已成功退出登录。期待下次再见！'
-            : 'You have been signed out successfully. We look forward to seeing you again!'}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-// ── Login form ────────────────────────────────────────────────────────────────
-
+// Member login. All state, effects and sign-in handlers live in useLoginFlow();
+// this component just wires them to the views.
 function LoginContent() {
-  const { lang }  = useLang()
-  const router    = useRouter()
-  const params    = useSearchParams()
-  const returnTo  = params.get('from') ?? '/portal'
-  const urlError  = params.get('error')
-  const isGoodbye = params.get('goodbye') === '1'
-
-  const [email,       setEmail]       = useState('')
-  const [password,    setPassword]    = useState('')
-  const [showPass,    setShowPass]    = useState(false)
-  const [loading,     setLoading]     = useState(false)
-  const [oauthLoading,setOauthLoading]= useState<string | null>(null)
-  const [isWebView,   setIsWebView]   = useState(false)
-
-  useEffect(() => {
-    const ua = navigator.userAgent
-    const webview =
-      /FBAN|FBAV|Instagram|Twitter|Line|KAKAOTALK/.test(ua) ||
-      (ua.includes('Android') && /; wv\)/.test(ua)) ||
-      (/iPhone|iPad/.test(ua) && !/Safari/.test(ua))
-    setIsWebView(webview)
-  }, [])
-  const [error,       setError]       = useState(() => {
-    if (!urlError) return ''
-    if (urlError === 'CredentialsSignin')
-      return lang === 'zh' ? '邮箱或密码错误。' : 'Incorrect email or password.'
-    if (urlError === 'oauth_failed')
-      return lang === 'zh'
-        ? '社交登录未能获取您的邮箱，请使用邮箱密码登录，或联系管理员。'
-        : 'Sign-in did not return an email address. Please use email/password login or contact the admin.'
-    if (urlError === 'Configuration')
-      return lang === 'zh'
-        ? '登录服务配置错误，请联系管理员。'
-        : 'Login service is not configured correctly. Please contact the admin.'
-    return lang === 'zh' ? '登录失败，请重试。' : 'Sign-in failed. Please try again.'
-  })
-
-  // ── Email + password sign-in ───────────────────────────────────────────────
-  async function handleCredentials(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    try {
-      const result = await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      })
-      console.log('[login] signIn("credentials") result:', result)
-      if (result?.error) {
-        console.log('[login] credentials error:', result.error)
-        setError(lang === 'zh' ? '邮箱或密码错误。' : 'Incorrect email or password.')
-      } else {
-        const target = `/auth/complete?from=${encodeURIComponent(returnTo)}`
-        console.log('[login] credentials OK — pushing to:', target)
-        router.push(target)
-      }
-    } catch (err) {
-      console.error('[login] signIn threw:', err)
-      setError(lang === 'zh' ? '出错了，请重试。' : 'Something went wrong. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // ── OAuth sign-in ─────────────────────────────────────────────────────────
-  async function handleOAuth(providerId: string) {
-    setOauthLoading(providerId)
-    await signIn(providerId, { callbackUrl: '/auth/complete' })
-    setOauthLoading(null)
-  }
+  const f = useLoginFlow()
+  const { lang } = f
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-brand-navy to-brand-navy-dark flex items-center justify-center p-4 relative">
-      {/* Goodbye banner */}
-      {isGoodbye && <GoodbyeBanner lang={lang} />}
+      {f.isGoodbye && <GoodbyeBanner lang={lang} />}
 
       {/* Background orbs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -168,40 +36,17 @@ function LoginContent() {
         {/* Card */}
         <div className="bg-white rounded-3xl shadow-2xl p-8 animate-fade-in space-y-6">
 
-          {/* ── WebView warning ───────────────────────────────────────────── */}
-          {isWebView && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
-              <p className="font-semibold">
-                ⚠️ {lang === 'zh' ? '请在浏览器中打开' : 'Open in a browser'}
-              </p>
-              <p className="mt-1 text-xs text-amber-700">
-                {lang === 'zh'
-                  ? 'Google / Microsoft 登录在应用内浏览器中不可用。请复制链接，在 Chrome 或 Safari 中打开后再登录。'
-                  : 'Google / Microsoft sign-in is blocked in in-app browsers (Gmail, Instagram, etc.). Copy this link and open it in Chrome or Safari.'}
-              </p>
-            </div>
-          )}
+          {f.isWebView && <WebViewWarning lang={lang} />}
 
-          {/* ── Social login ──────────────────────────────────────────────── */}
-          <div className="space-y-2.5">
-            {PROVIDERS.map(({ id, label, Icon, bg, text }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => handleOAuth(id)}
-                disabled={!!oauthLoading}
-                className={`w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl font-medium text-sm transition-colors ${bg} ${text} disabled:opacity-60`}
-              >
-                {oauthLoading === id
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <Icon />
-                }
-                {lang === 'zh' ? `使用 ${label} 登录` : `Continue with ${label}`}
-              </button>
-            ))}
-          </div>
+          <SocialSignIn
+            lang={lang}
+            oauthLoading={f.oauthLoading}
+            oauthStalled={f.oauthStalled}
+            onSignIn={f.handleOAuth}
+            onDismiss={f.dismissStall}
+          />
 
-          {/* ── Divider ───────────────────────────────────────────────────── */}
+          {/* Divider */}
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200" />
@@ -213,81 +58,18 @@ function LoginContent() {
             </div>
           </div>
 
-          {/* ── Email + password form ──────────────────────────────────────── */}
-          <form onSubmit={handleCredentials} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                {lang === 'zh' ? '邮箱' : 'Email'}
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder={lang === 'zh' ? '您的邮箱地址' : 'you@example.com'}
-                  className="input-field pl-10"
-                  required
-                  autoComplete="email"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                {lang === 'zh' ? '密码' : 'Password'}
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="input-field pl-10 pr-10"
-                  required
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(v => !v)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  tabIndex={-1}
-                  aria-label={showPass ? 'Hide password' : 'Show password'}
-                >
-                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <p className="text-red-500 text-sm bg-red-50 rounded-lg px-3 py-2">{error}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full flex items-center justify-center gap-2"
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {lang === 'zh' ? '登录' : 'Sign in'}
-            </button>
-
-            <div className="text-center space-y-1">
-              <a
-                href="/auth/forgot-password"
-                className="block text-xs text-brand-orange hover:underline"
-              >
-                {lang === 'zh' ? '忘记密码？' : 'Forgot password?'}
-              </a>
-              <a
-                href="/auth/setup-password"
-                className="block text-xs text-gray-400 hover:text-brand-navy transition-colors"
-              >
-                {lang === 'zh' ? '首次登录？点此设置密码 →' : 'First time here? Set up your portal password →'}
-              </a>
-            </div>
-          </form>
+          <CredentialsForm
+            lang={lang}
+            email={f.email}
+            setEmail={f.setEmail}
+            password={f.password}
+            setPassword={f.setPassword}
+            showPass={f.showPass}
+            setShowPass={f.setShowPass}
+            loading={f.loading}
+            error={f.error}
+            onSubmit={f.handleCredentials}
+          />
 
           <p className="text-center text-xs text-gray-400">
             {lang === 'zh'
