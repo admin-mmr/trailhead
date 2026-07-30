@@ -37,6 +37,10 @@ export const ACCESS_CONFIG: AccessRule[] = [
 
   // ── Any logged-in member ───────────────────────────────────────────────────
   { prefix: '/payment-proof',      tier: 'member', note: 'Standalone proof upload — pending/expired members need this outside the active-gated /portal' },
+  // MUST stay above '/api/members/me' — first prefix match wins, so the looser
+  // 'member' rule below would otherwise swallow these and let expired members
+  // read results and claim runner rows.
+  { prefix: '/api/members/me/nyrr', tier: 'active', note: 'NYRR results + self-service result linking — active members only' },
   { prefix: '/api/members/me',     tier: 'member', note: 'Own profile — any logged-in member' },
   { prefix: '/api/members/search', tier: 'member', note: 'Member search — any logged-in member' },
   { prefix: '/api/payments/submit', tier: 'public', note: 'Join wizard payment declaration — new members have no session yet' },
