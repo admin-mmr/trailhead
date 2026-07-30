@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Option B — Momentum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,600;0,700;0,800;0,900;1,800;1,900&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* ── Option B tokens ─────────────────────────────────────── */
+  --night:#0B0809;      /* base */
+  --night-2:#151011;    /* raised surface */
+  --night-3:#211819;    /* card */
+  --stroke:#2E2224;
+  --crimson:#E11D3A;    /* electric crimson — 4.6:1 on night */
+  --crimson-2:#FF3B54;
+  --gold:#F5C451;
+  --white:#FFFFFF;
+  --mute:#A79C9E;       /* 6.1:1 on night */
+  --r:4px; --r-md:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--night);color:var(--white);font:400 16px/1.6 Inter,'Noto Sans SC',system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+h1,h2,h3,.dsp{font-family:Archivo,'Noto Sans SC',sans-serif;font-weight:900;text-transform:uppercase;letter-spacing:-.03em;line-height:.92}
+a{text-decoration:none;color:inherit}
+.wrap{max-width:1220px;margin:0 auto;padding:0 32px}
+.kicker{font:700 11px/1 Inter,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:var(--crimson)}
+
+/* ── Nav ─────────────────────────────────────────────────── */
+.nav{position:sticky;top:0;z-index:60;background:rgba(11,8,9,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--stroke)}
+.nav .wrap{height:74px;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:13px}
+.brand img{width:38px;height:38px;border-radius:var(--r);object-fit:cover}
+.bn{font:900 17px/1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:-.02em}
+.bs{font:600 9.5px/1.5 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--mute)}
+.nav-links{display:flex;align-items:center;gap:32px;font:700 12.5px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase}
+.nav-links a{color:var(--mute)}
+.nav-links a:hover{color:var(--white)}
+.btn{display:inline-flex;align-items:center;gap:10px;font:800 13px/1 Inter,sans-serif;letter-spacing:.09em;text-transform:uppercase;padding:14px 24px;border-radius:var(--r);transition:.16s ease}
+.btn-primary{background:var(--crimson);color:#fff}
+.btn-primary:hover{background:var(--crimson-2)}
+.btn-out{border:1.5px solid rgba(255,255,255,.28);color:#fff}
+.btn-out:hover{border-color:#fff;background:rgba(255,255,255,.07)}
+.btn-gold{background:var(--gold);color:#20180A}
+.btn-gold:hover{background:#FFD979}
+.btn-lg{padding:18px 32px;font-size:14px}
+
+/* ── Hero ────────────────────────────────────────────────── */
+.hero{position:relative;padding:96px 0 0;overflow:hidden}
+.hero-bg{position:absolute;inset:0;background:url('/images/mmr-banner.jpg') center/cover;opacity:.20;filter:grayscale(.35) contrast(1.15)}
+.hero-veil{position:absolute;inset:0;background:linear-gradient(105deg,var(--night) 24%,rgba(11,8,9,.72) 52%,rgba(225,29,58,.30) 100%)}
+.slash{position:absolute;top:-140px;right:-180px;width:640px;height:1000px;background:linear-gradient(180deg,rgba(225,29,58,.9),rgba(225,29,58,0));transform:rotate(18deg);opacity:.16;pointer-events:none}
+.hero .wrap{position:relative;z-index:2}
+.hero h1{font-size:clamp(60px,10.2vw,148px);text-shadow:0 4px 40px rgba(0,0,0,.5)}
+.hero h1 .out{color:transparent;-webkit-text-stroke:2.5px rgba(245,196,81,.62)}
+.hero h1 .red{color:var(--crimson)}
+.hero-sub{margin-top:30px;font-size:19px;color:rgba(255,255,255,.80);max-width:50ch;line-height:1.6}
+.hero-cta{display:flex;gap:13px;margin-top:40px;flex-wrap:wrap}
+.hero-pad{padding-bottom:88px}
+
+/* ── Ticker ──────────────────────────────────────────────── */
+.ticker{position:relative;z-index:3;border-top:1px solid var(--stroke);border-bottom:1px solid var(--stroke);background:var(--night-2);overflow:hidden}
+.ticker-track{display:flex;gap:56px;padding:17px 0;white-space:nowrap;font:800 13px/1 Inter,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--mute)}
+.ticker-track b{color:var(--gold);font-weight:800}
+.ticker-track span{display:inline-flex;gap:14px;align-items:center}
+
+/* ── Stats ───────────────────────────────────────────────── */
+.stats{background:var(--night-2);padding:0}
+.stats .wrap{display:grid;grid-template-columns:repeat(4,1fr)}
+.stat{padding:52px 30px;border-right:1px solid var(--stroke)}
+.stat:last-child{border-right:0}
+.stat .n{font:900 clamp(44px,4.6vw,64px)/.9 Archivo,sans-serif;letter-spacing:-.045em;color:var(--white)}
+.stat .n em{font-style:normal;color:var(--crimson)}
+.stat .l{margin-top:12px;font:700 11.5px/1.4 Inter,sans-serif;letter-spacing:.15em;text-transform:uppercase;color:var(--mute)}
+
+/* ── Sections ────────────────────────────────────────────── */
+.sec{padding:110px 0}
+.sec-head{max-width:660px;margin-bottom:56px}
+.sec-head h2{font-size:clamp(38px,5vw,68px);margin-top:16px}
+.sec-head h2 em{font-style:italic;color:var(--crimson);font-weight:900}
+.sec-head p{margin-top:20px;font-size:17.5px;color:var(--mute);max-width:52ch}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.card{background:var(--night-3);border:1px solid var(--stroke);border-radius:var(--r-md);padding:34px;position:relative;overflow:hidden;transition:.2s ease}
+.card::before{content:'';position:absolute;left:0;top:0;width:100%;height:3px;background:var(--crimson);transform:scaleX(0);transform-origin:left;transition:.25s ease}
+.card:hover::before{transform:scaleX(1)}
+.card:hover{border-color:#463436;transform:translateY(-3px)}
+.card .num{font:900 13px/1 Archivo,sans-serif;color:var(--crimson);letter-spacing:.1em;margin-bottom:26px;display:block}
+.card h3{font-size:23px;margin-bottom:12px;line-height:1.05}
+.card p{font-size:15px;color:var(--mute);line-height:1.65}
+
+/* ── Split feature ───────────────────────────────────────── */
+.split{background:var(--night-2);border-top:1px solid var(--stroke);border-bottom:1px solid var(--stroke)}
+.split .wrap{display:grid;grid-template-columns:1fr 1fr;gap:0;align-items:stretch;padding:0}
+.split-copy{padding:96px 56px 96px 32px}
+.split-art{position:relative;min-height:520px;border-left:1px solid var(--stroke);background:url('/images/mmr-flag.jpg') center/cover}
+.split-art::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,var(--night-2),rgba(21,16,17,.25) 45%,transparent)}
+.pace-row{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--stroke)}
+.pace-row:first-of-type{border-top:1px solid var(--stroke)}
+.pace-row .g{font:900 17px/1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:-.015em}
+.pace-row .v{font:700 12px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
+
+/* ── CTA ─────────────────────────────────────────────────── */
+.cta{position:relative;padding:120px 0;background:linear-gradient(120deg,#8E0C22 0%,var(--crimson) 58%,#FF4A61 100%);overflow:hidden;text-align:center}
+.cta::before{content:'';position:absolute;inset:0;background:url('/images/mmr-banner.jpg') center/cover;opacity:.13;mix-blend-mode:overlay}
+.cta .wrap{position:relative;z-index:1}
+.cta h2{font-size:clamp(42px,6.4vw,92px);color:#fff;text-shadow:0 4px 30px rgba(0,0,0,.28)}
+.cta p{margin:24px auto 0;font-size:18.5px;color:rgba(255,255,255,.86);max-width:44ch}
+.cta .pills{display:flex;gap:10px;justify-content:center;margin-top:30px;flex-wrap:wrap}
+.pill{border:1.5px solid rgba(255,255,255,.4);border-radius:999px;padding:9px 18px;font:700 12.5px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase}
+
+/* ── Footer ──────────────────────────────────────────────── */
+footer{background:var(--night);border-top:1px solid var(--stroke);padding:64px 0 40px}
+.foot{display:grid;grid-template-columns:2fr 1fr 1fr;gap:48px}
+.foot p{font-size:14.5px;color:var(--mute);max-width:40ch;margin-top:16px;line-height:1.7}
+.foot h4{font:800 11px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#fff;margin-bottom:18px}
+.foot li{list-style:none;font-size:14.5px;color:var(--mute);margin-bottom:11px}
+.legal{margin-top:48px;padding-top:28px;border-top:1px solid var(--stroke);font:500 12.5px/1 Inter,sans-serif;letter-spacing:.05em;color:var(--mute);display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <img src="/images/mmr-logo.png" alt="MMR 岚 mark">
+      <span><span class="bn">Misty Mountain</span><br><span class="bs">Runners · 岚山跑团</span></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#">Runs</a><a href="#">Races</a><a href="#">Hall of Fame</a><a href="#">Donate</a>
+      <a class="btn btn-primary" href="#">Join</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-veil"></div>
+  <div class="slash"></div>
+  <div class="wrap hero-pad">
+    <p class="kicker">NYRR Official Club Team · New York City</p>
+    <h1 style="margin-top:22px">
+      Run<br>
+      <span class="red">Together.</span><br>
+      <span class="out">Go Further.</span>
+    </h1>
+    <p class="hero-sub">Three group runs a week. A scoring NYRR race team. 480 runners who will wait for you at the top of the hill — in English and 中文.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary btn-lg" href="#">Join the team →</a>
+      <a class="btn btn-out btn-lg" href="#">Member login</a>
+    </div>
+  </div>
+</section>
+
+<div class="ticker">
+  <div class="wrap">
+    <div class="ticker-track">
+      <span>NYC Half <b>MAR 15</b></span>
+      <span>Brooklyn Half <b>MAY 16</b></span>
+      <span>Mini 10K <b>JUN 13</b></span>
+      <span>Bronx 10 Mile <b>SEP 27</b></span>
+      <span>Staten Island Half <b>OCT 11</b></span>
+      <span>NYC Marathon <b>NOV 01</b></span>
+      <span>Team standings <b>LIVE</b></span>
+    </div>
+  </div>
+</div>
+
+<section class="stats">
+  <div class="wrap">
+    <div class="stat"><div class="n">480<em>+</em></div><div class="l">Active members</div></div>
+    <div class="stat"><div class="n">156</div><div class="l">Races run in 2026</div></div>
+    <div class="stat"><div class="n">3,700<em>+</em></div><div class="l">Results tracked</div></div>
+    <div class="stat"><div class="n">11</div><div class="l">Years running</div></div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kicker">Member benefits</p>
+      <h2>Show up. <em>We handle</em> the rest.</h2>
+      <p>Membership keeps group runs free, the race team registered, and the volunteer table stocked.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <span class="num">01</span>
+        <h3>NYRR team<br>eligibility</h3>
+        <p>Score for MMR in NYRR races and appear in team standings. Your results sync into the member portal automatically — no spreadsheets.</p>
+      </div>
+      <div class="card">
+        <span class="num">02</span>
+        <h3>Race photos,<br>found for you</h3>
+        <p>Bib and face recognition sweeps every club shoot and drops your photos straight into your gallery.</p>
+      </div>
+      <div class="card">
+        <span class="num">03</span>
+        <h3>Bilingual<br>by default</h3>
+        <p>Every announcement, every route brief, every form — English and 中文, side by side.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="split">
+  <div class="wrap">
+    <div class="split-copy">
+      <p class="kicker">Weekly schedule</p>
+      <h2 style="font-size:46px;margin-top:16px">Five pace<br>groups.<br>No cuts.</h2>
+      <p style="margin-top:20px;font-size:16.5px;color:var(--mute);max-width:40ch">Group runs are free and open — no sign-up. Find your group at the meeting point and go.</p>
+      <div style="margin-top:34px">
+        <div class="pace-row"><span class="g">Tue · Track night</span><span class="v">6:30 PM</span></div>
+        <div class="pace-row"><span class="g">Thu · Bridge tempo</span><span class="v">7:00 PM</span></div>
+        <div class="pace-row"><span class="g">Sat · Long run</span><span class="v">7:00 AM</span></div>
+        <div class="pace-row"><span class="g">Sun · Recovery</span><span class="v">8:30 AM</span></div>
+      </div>
+      <a class="btn btn-out" style="margin-top:34px" href="#">Full calendar</a>
+    </div>
+    <div class="split-art"></div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap">
+    <h2>Your first mile<br>starts here.</h2>
+    <p>Join online in two minutes. Membership runs a full year from approval.</p>
+    <div class="pills">
+      <span class="pill">Individual $30</span>
+      <span class="pill">Family $50</span>
+      <span class="pill">501(c)(3) nonprofit</span>
+    </div>
+    <div style="margin-top:36px"><a class="btn btn-gold btn-lg" href="#">Become a member →</a></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a class="brand" href="#"><img src="/images/mmr-logo.png" alt="MMR 岚 mark"><span class="bn">Misty Mountain Runners</span></a>
+        <p>New York's Chinese-American running community. NYRR official club team and a registered 501(c)(3) nonprofit.</p>
+      </div>
+      <div><h4>Club</h4><ul><li>Group runs</li><li>Race calendar</li><li>Hall of Fame</li><li>Volunteer</li></ul></div>
+      <div><h4>Members</h4><ul><li>Member portal</li><li>Race photos</li><li>My results</li><li>Renew</li></ul></div>
+    </div>
+    <div class="legal"><span>© 2026 Misty Mountain Runners · 岚山跑团</span><span>admin@mmrunners.org</span></div>
+  </div>
+</footer>
+
+</body>
+</html>

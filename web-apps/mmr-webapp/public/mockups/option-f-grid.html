@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Option F — Grid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ── Option F · Grid — utilitarian, hairline grid, mono labels (Bandit / Black Roses lineage) ── */
+:root{
+  --black:#0A0A0A;
+  --black-2:#121212;
+  --white:#F4F4F2;
+  --grid:#2A2A2A;       /* the hairline that divides everything */
+  --grid-lt:#D8D8D4;
+  --crimson:#E01F38;
+  --gold:#E8B84B;
+  --mute:#9C9C98;       /* 6.4:1 on black */
+  --mute-2:#6A6A66;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--black);color:var(--white);
+  font:400 15px/1.6 'IBM Plex Mono','Noto Sans SC',ui-monospace,monospace;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+h1,h2,h3,.dsp{font-family:Archivo,'Noto Sans SC',sans-serif;font-weight:900;text-transform:uppercase;
+  letter-spacing:-.035em;line-height:.9}
+a{text-decoration:none;color:inherit}
+.wrap{max-width:1320px;margin:0 auto;padding:0 0}
+.pad{padding:0 26px}
+.mono{font:500 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase}
+.zh{font-family:'Noto Sans SC','IBM Plex Mono',sans-serif}
+
+/* ── Marquee announcement bar ── */
+.bar{background:var(--crimson);color:#fff;overflow:hidden;border-bottom:1px solid var(--black)}
+.bar-track{display:flex;gap:52px;padding:8px 0;white-space:nowrap}
+.bar-track span{font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.16em;text-transform:uppercase}
+
+/* ── Nav — mono, hairline dividers, bilingual stacked ── */
+.nav{position:sticky;top:0;z-index:60;background:rgba(10,10,10,.94);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--grid)}
+.nav .row{display:flex;align-items:stretch;height:70px}
+.nav .cell{display:flex;align-items:center;padding:0 20px;border-right:1px solid var(--grid)}
+.nav .cell:first-child{border-left:1px solid var(--grid)}
+.brand{display:flex;align-items:center;gap:11px}
+.brand img{width:30px;height:30px;object-fit:cover}
+.brand .bn{font:900 15px/1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:-.02em}
+.brand .bz{font:400 9.5px/1.4 'Noto Sans SC',sans-serif;letter-spacing:.2em;color:var(--mute)}
+.lk{display:flex;flex-direction:column;gap:2px;justify-content:center}
+.lk .en{font:600 10.5px/1.2 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--white)}
+.lk .zh{font:400 9.5px/1.2 'Noto Sans SC',sans-serif;letter-spacing:.14em;color:var(--mute)}
+.lk:hover .en{color:var(--crimson)}
+.spacer{flex:1;border-right:1px solid var(--grid)}
+.nav .join{background:var(--crimson);color:#fff}
+.nav .join:hover{background:#FF3A50}
+
+.btn{display:inline-flex;align-items:center;gap:9px;padding:15px 24px;transition:.15s;
+  font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.15em;text-transform:uppercase}
+.btn-solid{background:var(--crimson);color:#fff}
+.btn-solid:hover{background:#FF3A50}
+.btn-line{border:1px solid var(--white);color:var(--white)}
+.btn-line:hover{background:var(--white);color:var(--black)}
+.btn-line-dk{border:1px solid var(--grid-lt);color:var(--black)}
+.btn-line-dk:hover{background:var(--black);color:var(--white);border-color:var(--black)}
+
+/* ── Hero — full-bleed grayscale photo, type bleeding to the edges ── */
+.hero{position:relative;border-bottom:1px solid var(--grid)}
+.hero-img{position:absolute;inset:0;background:url('/images/mmr-banner.jpg') center/cover;
+  filter:grayscale(1) contrast(1.3) brightness(.42)}
+.hero-vig{position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,10,10,.94) 0%,rgba(10,10,10,.55) 62%,rgba(10,10,10,.8) 100%)}
+/* the visible construction grid */
+.hero-lines{position:absolute;inset:0;display:grid;grid-template-columns:repeat(6,1fr);pointer-events:none}
+.hero-lines i{border-right:1px solid rgba(244,244,242,.07)}
+.hero-lines i:last-child{border-right:0}
+.hero-in{position:relative;z-index:2;padding:74px 26px 0}
+.meta{display:flex;gap:26px;flex-wrap:wrap;color:var(--mute)}
+.meta b{color:var(--gold);font-weight:600}
+.hero h1{font-size:clamp(66px,11.5vw,168px);margin:26px 0 0;letter-spacing:-.05em}
+.hero h1 .l2{color:var(--crimson)}
+.hero .zh-big{font:700 clamp(24px,3.4vw,46px)/1.2 'Noto Sans SC',sans-serif;letter-spacing:.14em;
+  color:var(--white);margin-top:10px}
+.hero p{margin-top:26px;font-size:15px;color:var(--mute);max-width:52ch;line-height:1.75}
+.hero-cta{display:flex;gap:0;margin-top:36px;border:1px solid var(--grid);width:fit-content}
+.hero-cta a{border-right:1px solid var(--grid)}
+.hero-cta a:last-child{border-right:0}
+.hero-foot{margin-top:64px;border-top:1px solid var(--grid);display:grid;grid-template-columns:repeat(4,1fr)}
+.hf{padding:20px 22px;border-right:1px solid var(--grid)}
+.hf:first-child{padding-left:0}
+.hf:last-child{border-right:0}
+.hf .v{font:900 30px/1 Archivo,sans-serif;letter-spacing:-.045em}
+.hf .v em{font-style:normal;color:var(--crimson)}
+.hf .k{margin-top:7px;font:500 9.5px/1.4 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+.hf .kz{font:400 10px/1.4 'Noto Sans SC',sans-serif;color:var(--mute-2);letter-spacing:.1em}
+
+/* ── Section headers — a mono label bar ── */
+.shead{display:flex;align-items:baseline;gap:16px;padding:16px 26px;border-bottom:1px solid var(--grid);
+  background:var(--black-2)}
+.shead .idx{color:var(--crimson)}
+.shead .t{color:var(--white)}
+.shead .z{color:var(--mute)}
+
+/* ── Benefits — three cells divided by hairlines ── */
+.cells{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--grid)}
+.cell3{padding:40px 26px 46px;border-right:1px solid var(--grid);position:relative}
+.cell3:last-child{border-right:0}
+.cell3 .n{font:600 10.5px/1 'IBM Plex Mono',monospace;color:var(--crimson);letter-spacing:.14em}
+.cell3 h3{font-size:27px;margin:20px 0 6px}
+.cell3 .z{font:400 12px/1.5 'Noto Sans SC',sans-serif;color:var(--gold);letter-spacing:.1em}
+.cell3 p{margin-top:14px;font-size:14px;color:var(--mute);line-height:1.72}
+
+/* ── Fixtures — a data table, mono ── */
+.fx-tbl{border-bottom:1px solid var(--grid)}
+.fx{display:grid;grid-template-columns:110px 1fr 200px 130px;align-items:center;border-bottom:1px solid var(--grid)}
+.fx:last-child{border-bottom:0}
+.fx > *{padding:18px 20px;border-right:1px solid var(--grid)}
+.fx > *:last-child{border-right:0}
+.fx:hover{background:var(--black-2)}
+.fx .dt{color:var(--gold);font:600 11px/1 'IBM Plex Mono',monospace;letter-spacing:.13em}
+.fx .nm{font:900 17px/1.1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:-.02em}
+.fx .nm .z{display:block;font:400 11px/1.5 'Noto Sans SC',sans-serif;color:var(--mute);
+  letter-spacing:.1em;text-transform:none;margin-top:4px}
+.fx .lo{font:400 12px/1.4 'IBM Plex Mono',monospace;color:var(--mute)}
+.fx .rs{font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--crimson)}
+
+/* ── Weekly runs on an inverted (white) panel — the print negative ── */
+.neg{background:var(--white);color:var(--black);border-bottom:1px solid var(--grid)}
+.neg .shead{background:#E9E9E5;border-bottom:1px solid var(--grid-lt)}
+.neg .shead .t{color:var(--black)}
+.neg .shead .z{color:var(--mute-2)}
+.neg-grid{display:grid;grid-template-columns:1fr 1fr}
+.neg-l{padding:46px 26px;border-right:1px solid var(--grid-lt)}
+.neg-l h2{font-size:clamp(32px,4.4vw,58px);color:var(--black)}
+.neg-l .z{font:700 15px/1.5 'Noto Sans SC',sans-serif;color:var(--mute-2);letter-spacing:.14em;margin-top:12px}
+.neg-l p{margin-top:16px;font-size:14px;color:#4A4A46;line-height:1.72;max-width:38ch}
+.rn{display:grid;grid-template-columns:70px 1fr auto;align-items:center;border-bottom:1px solid var(--grid-lt)}
+.rn:last-child{border-bottom:0}
+.rn > *{padding:19px 20px}
+.rn .d{font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.14em;color:var(--crimson);
+  border-right:1px solid var(--grid-lt)}
+.rn .n{font:900 16px/1.1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:-.02em}
+.rn .n small{display:block;font:400 11.5px/1.5 'IBM Plex Mono',monospace;color:var(--mute-2);
+  text-transform:none;letter-spacing:0;margin-top:4px}
+.rn .t{font:600 13px/1 'IBM Plex Mono',monospace;border-left:1px solid var(--grid-lt);white-space:nowrap}
+
+/* ── CTA — a bordered coupon ── */
+.cta{padding:78px 26px;border-bottom:1px solid var(--grid);text-align:center}
+.cta h2{font-size:clamp(40px,6.6vw,104px);letter-spacing:-.05em}
+.cta h2 .o{color:transparent;-webkit-text-stroke:2px var(--gold)}
+.cta .z{font:700 clamp(18px,2.4vw,30px)/1.3 'Noto Sans SC',sans-serif;letter-spacing:.16em;margin-top:12px}
+.cta p{margin:22px auto 0;font-size:14px;color:var(--mute);max-width:46ch;line-height:1.75}
+.tiers{display:flex;justify-content:center;margin-top:32px;border:1px solid var(--grid);width:fit-content;margin-left:auto;margin-right:auto}
+.tier{padding:20px 32px;border-right:1px solid var(--grid)}
+.tier:last-child{border-right:0}
+.tier b{display:block;font:900 26px/1 Archivo,sans-serif;letter-spacing:-.04em}
+.tier span{font:500 9.5px/1.4 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+
+/* ── Footer ── */
+footer{padding:0}
+.fgrid{display:grid;grid-template-columns:2fr 1fr 1fr;border-bottom:1px solid var(--grid)}
+.fgrid > div{padding:40px 26px;border-right:1px solid var(--grid)}
+.fgrid > div:last-child{border-right:0}
+.fgrid p{font-size:13px;color:var(--mute);max-width:36ch;margin-top:14px;line-height:1.75}
+.fgrid h4{font:600 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--white);margin-bottom:16px}
+.fgrid li{list-style:none;font-size:13px;color:var(--mute);margin-bottom:10px}
+.fgrid li .z{color:var(--mute-2);letter-spacing:.08em}
+.legal{display:flex;justify-content:space-between;padding:18px 26px;
+  font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.13em;text-transform:uppercase;color:var(--mute-2)}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="bar-track">
+    <span>Group runs are free · 团跑免费</span><span>All paces welcome · 欢迎所有配速</span>
+    <span>NYRR official club team</span><span>501(c)(3) nonprofit</span>
+    <span>Next run: Sat 7:00 AM</span><span>Group runs are free · 团跑免费</span>
+    <span>All paces welcome · 欢迎所有配速</span>
+  </div>
+</div>
+
+<header class="nav">
+  <div class="row">
+    <div class="cell">
+      <a class="brand" href="#"><img src="/images/mmr-logo.png" alt="MMR 岚 mark">
+        <span><span class="bn">Misty Mountain</span><br><span class="bz">岚山跑团</span></span></a>
+    </div>
+    <div class="cell"><a class="lk" href="#"><span class="en">Runs</span><span class="zh">团跑</span></a></div>
+    <div class="cell"><a class="lk" href="#"><span class="en">Races</span><span class="zh">比赛</span></a></div>
+    <div class="cell"><a class="lk" href="#"><span class="en">Records</span><span class="zh">名人堂</span></a></div>
+    <div class="cell"><a class="lk" href="#"><span class="en">Donate</span><span class="zh">捐赠</span></a></div>
+    <div class="spacer"></div>
+    <div class="cell"><a class="lk" href="#"><span class="en">Log in</span><span class="zh">登录</span></a></div>
+    <div class="cell join"><a class="lk" href="#"><span class="en" style="color:#fff">Join</span><span class="zh" style="color:rgba(255,255,255,.72)">加入</span></a></div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-img"></div>
+  <div class="hero-vig"></div>
+  <div class="hero-lines"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="hero-in">
+    <div class="meta mono">
+      <span>40.7128° N / 73.9060° W</span><span>EST. <b>2015</b></span>
+      <span>MEMBERS <b>480</b></span><span>NYRR CLUB TEAM</span>
+    </div>
+    <h1>No cuts.<br><span class="l2">No excuses.</span></h1>
+    <div class="zh-big">不设门槛 · 一起奔跑</div>
+    <p>Three group runs a week across five boroughs. Five pace groups, from six-minute miles to twelve.
+      Turn up, find your group, go.</p>
+    <div class="hero-cta">
+      <a class="btn btn-solid" href="#">Join the club 加入</a>
+      <a class="btn btn-line" href="#">This week →</a>
+    </div>
+    <div class="hero-foot">
+      <div class="hf"><div class="v">480<em>+</em></div><div class="k">Active members</div><div class="kz">活跃会员</div></div>
+      <div class="hf"><div class="v">156</div><div class="k">Races 2026</div><div class="kz">年度比赛</div></div>
+      <div class="hf"><div class="v">3,700<em>+</em></div><div class="k">Results filed</div><div class="kz">成绩记录</div></div>
+      <div class="hf"><div class="v">11</div><div class="k">Years</div><div class="kz">年历史</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="shead mono"><span class="idx">01</span><span class="t">Member benefits</span><span class="z zh">会员权益</span></div>
+<section class="cells">
+  <div class="cell3">
+    <span class="n">01 / 03</span>
+    <h3>Team<br>eligibility</h3>
+    <span class="z">NYRR 队伍资格</span>
+    <p>Score for MMR in NYRR races and stand in the team results. Every finish is matched to your name and
+      filed in your portal automatically.</p>
+  </div>
+  <div class="cell3">
+    <span class="n">02 / 03</span>
+    <h3>Photos,<br>found</h3>
+    <span class="z">比赛照片自动识别</span>
+    <p>Bib and face recognition reads every club shoot and files your frames in your own gallery. No scrolling
+      the archive.</p>
+  </div>
+  <div class="cell3">
+    <span class="n">03 / 03</span>
+    <h3>Two<br>languages</h3>
+    <span class="z">中英双语社区</span>
+    <p>Route briefs, notices and forms in English and 中文 together — not a translation bolted onto the side.</p>
+  </div>
+</section>
+
+<div class="shead mono"><span class="idx">02</span><span class="t">Fixtures</span><span class="z zh">即将到来</span></div>
+<section class="fx-tbl">
+  <div class="fx"><span class="dt">2026.08.05</span><span class="nm">Team Championships 5M<span class="z">团队锦标赛 5 英里</span></span><span class="lo">Central Park</span><span class="rs">RSVP →</span></div>
+  <div class="fx"><span class="dt">2026.08.26</span><span class="nm">Bronx 10 Mile<span class="z">布朗克斯 10 英里</span></span><span class="lo">Grand Concourse</span><span class="rs">RSVP →</span></div>
+  <div class="fx"><span class="dt">2026.09.27</span><span class="nm">Staten Island Half<span class="z">史泰登岛半程马拉松</span></span><span class="lo">Staten Island</span><span class="rs">RSVP →</span></div>
+  <div class="fx"><span class="dt">2026.11.01</span><span class="nm">TCS New York City Marathon<span class="z">纽约马拉松</span></span><span class="lo">All five boroughs</span><span class="rs">RSVP →</span></div>
+</section>
+
+<section class="neg">
+  <div class="shead mono"><span class="idx" style="color:var(--crimson)">03</span><span class="t">Weekly schedule</span><span class="z zh">每周团跑</span></div>
+  <div class="neg-grid">
+    <div class="neg-l">
+      <h2>Free.<br>Every<br>week.</h2>
+      <div class="z">免费 · 无需报名</div>
+      <p>No sign-up and no fee for group runs. Bring water, find your pace group at the meeting point, and go.</p>
+      <div style="margin-top:30px"><a class="btn btn-line-dk" href="#">Full calendar 赛历 →</a></div>
+    </div>
+    <div>
+      <div class="rn"><span class="d">TUE</span><span class="n">Track night<small>Icahn Stadium · intervals</small></span><span class="t">6:30 PM</span></div>
+      <div class="rn"><span class="d">THU</span><span class="n">Bridge tempo<small>Brooklyn Bridge loop · 5–7 mi</small></span><span class="t">7:00 PM</span></div>
+      <div class="rn"><span class="d">SAT</span><span class="n">Long run<small>Central Park · 5 pace groups</small></span><span class="t">7:00 AM</span></div>
+      <div class="rn"><span class="d">SUN</span><span class="n">Recovery + dim sum<small>Flushing Meadows · easy 4 mi</small></span><span class="t">8:30 AM</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <h2>Start<br><span class="o">Here.</span></h2>
+  <div class="z">加入岚山跑团</div>
+  <p>Two minutes to join online. Membership runs a full year from the day it is approved.</p>
+  <div class="tiers">
+    <div class="tier"><b>$30</b><span>Individual 个人</span></div>
+    <div class="tier"><b>$50</b><span>Family 家庭</span></div>
+    <div class="tier"><b>$20</b><span>Upgrade 升级</span></div>
+  </div>
+  <div style="margin-top:32px"><a class="btn btn-solid" href="#">Become a member 立即加入</a></div>
+</section>
+
+<footer>
+  <div class="fgrid">
+    <div>
+      <a class="brand" href="#"><img src="/images/mmr-logo.png" alt="MMR 岚 mark">
+        <span><span class="bn">Misty Mountain Runners</span><br><span class="bz">岚山跑团</span></span></a>
+      <p>New York's Chinese-American running community. NYRR official club team and a registered
+        501(c)(3) nonprofit.</p>
+    </div>
+    <div><h4>Club</h4><ul>
+      <li>Group runs <span class="z">团跑</span></li>
+      <li>Race calendar <span class="z">赛历</span></li>
+      <li>Records <span class="z">名人堂</span></li>
+      <li>Volunteer <span class="z">志愿者</span></li>
+    </ul></div>
+    <div><h4>Members</h4><ul>
+      <li>Portal <span class="z">会员中心</span></li>
+      <li>Race photos <span class="z">比赛照片</span></li>
+      <li>My results <span class="z">我的成绩</span></li>
+      <li>Renew <span class="z">续费</span></li>
+    </ul></div>
+  </div>
+  <div class="legal"><span>© 2026 Misty Mountain Runners · 岚山跑团</span><span>admin@mmrunners.org</span></div>
+</footer>
+
+</body>
+</html>
