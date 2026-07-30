@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Option C — Lantern</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* ── Option C tokens ─────────────────────────────────────── */
+  --blush:#FFF6F1;      /* warm canvas top */
+  --blush-2:#FDEAE0;    /* canvas bottom */
+  --surface:#FFFFFF;
+  --ink:#31161A;        /* warm plum-brown text */
+  --ink-soft:#7A5B5F;   /* 4.9:1 on blush */
+  --line:#F0D9CE;
+  --crimson:#C8102E;
+  --crimson-deep:#8C0E20;
+  --gold:#9C7526;       /* AA-safe gold for text (4.9:1) */
+  --gold-foil:#D4A843;  /* decorative only */
+  --gold-tint:#FBF0D8;
+  --r:14px; --r-lg:22px; --r-xl:30px;
+  --shadow-soft:0 2px 4px rgba(140,14,32,.04), 0 18px 40px -16px rgba(140,14,32,.16);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--blush);color:var(--ink);font:400 16px/1.65 Inter,'Noto Sans SC',system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+h1,h2,h3,.dsp{font-family:Sora,'Noto Sans SC',sans-serif;font-weight:700;letter-spacing:-.03em;line-height:1.08}
+.zh{font-family:'Noto Sans SC',Sora,sans-serif;font-weight:700;letter-spacing:.02em}
+a{text-decoration:none;color:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding:0 32px}
+.eyebrow{font:600 11px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
+
+/* ── Nav ─────────────────────────────────────────────────── */
+.nav{position:sticky;top:0;z-index:60;background:rgba(255,246,241,.86);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav .wrap{height:76px;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:14px}
+.brand img{width:40px;height:40px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 1.5px var(--gold-foil), 0 0 0 4px rgba(212,168,67,.16)}
+.bn{font:700 15.5px/1.15 Sora,sans-serif;letter-spacing:-.015em;display:block}
+.bs{font:500 11px/1.4 'Noto Sans SC',sans-serif;letter-spacing:.24em;color:var(--ink-soft)}
+.nav-links{display:flex;align-items:center;gap:32px;font:500 14.5px/1 Inter,sans-serif}
+.nav-links a:hover{color:var(--crimson)}
+.btn{display:inline-flex;align-items:center;gap:9px;font:600 14.5px/1 Inter,sans-serif;padding:13px 24px;border-radius:999px;transition:.18s ease}
+.btn-primary{background:var(--crimson);color:#fff;box-shadow:0 4px 14px -4px rgba(200,16,46,.5)}
+.btn-primary:hover{background:var(--crimson-deep)}
+.btn-soft{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.btn-soft:hover{border-color:var(--gold-foil)}
+.btn-lg{padding:16px 30px;font-size:15.5px}
+
+/* ── Hero ────────────────────────────────────────────────── */
+.hero{position:relative;padding:92px 0 100px;overflow:hidden;background:linear-gradient(168deg,var(--blush) 0%,var(--blush-2) 100%)}
+/* the 岚 mark as an oversized watermark — the brand asset, used as graphic */
+/* circular mask + multiply so the mark's red plate blends into the canvas
+   instead of reading as a stray pale rectangle */
+.watermark{position:absolute;right:-120px;top:-110px;width:600px;height:600px;border-radius:50%;
+  background:url('/images/mmr-logo.png') center/cover no-repeat;opacity:.16;mix-blend-mode:multiply;
+  -webkit-mask-image:radial-gradient(circle,#000 52%,transparent 74%);
+  mask-image:radial-gradient(circle,#000 52%,transparent 74%);pointer-events:none}
+.glow{position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none}
+.glow-1{width:420px;height:420px;left:-120px;top:60px;background:rgba(212,168,67,.22)}
+.glow-2{width:380px;height:380px;right:180px;bottom:-140px;background:rgba(200,16,46,.10)}
+.hero .wrap{position:relative;z-index:2}
+.hero-grid{display:grid;grid-template-columns:1.02fr .98fr;gap:64px;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:9px;background:var(--gold-tint);border:1px solid rgba(212,168,67,.42);color:var(--gold);border-radius:999px;padding:8px 16px;font:600 12.5px/1 Inter,sans-serif;letter-spacing:.04em}
+/* bilingual lockup — Chinese lead, English as tracked subtitle */
+.lockup{margin-top:26px}
+.lockup .zh-big{font-family:'Noto Sans SC',sans-serif;font-weight:900;font-size:clamp(52px,7vw,86px);line-height:1.02;letter-spacing:.03em;color:var(--crimson-deep)}
+.lockup .en-big{display:block;margin-top:14px;font:700 clamp(24px,2.9vw,38px)/1.1 Sora,sans-serif;letter-spacing:.02em;color:var(--ink)}
+.hairline{display:flex;align-items:center;gap:14px;margin:30px 0 26px}
+.hairline i{flex:0 0 60px;height:2px;background:linear-gradient(90deg,var(--gold-foil),rgba(212,168,67,0));border-radius:2px}
+.hairline span{font:600 12px/1 Inter,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+.hero p.lede{font-size:18.5px;color:var(--ink-soft);max-width:44ch;line-height:1.7}
+.hero-cta{display:flex;gap:12px;margin-top:34px;flex-wrap:wrap}
+.hero-art{position:relative}
+.hero-art .frame{border-radius:var(--r-xl);overflow:hidden;box-shadow:var(--shadow-soft);border:1px solid rgba(212,168,67,.3)}
+.hero-art .frame img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block}
+.float{position:absolute;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px 19px;box-shadow:var(--shadow-soft)}
+.float-1{left:-30px;bottom:56px}
+.float-2{right:-22px;top:44px}
+.float .t{font:700 14px/1.3 Sora,sans-serif;letter-spacing:-.01em}
+.float .s{font:400 12.5px/1.4 Inter,sans-serif;color:var(--ink-soft);margin-top:3px}
+.avatars{display:flex;align-items:center;gap:-8px;margin-top:0}
+.avatars i{width:30px;height:30px;border-radius:50%;border:2px solid #fff;margin-left:-9px;display:inline-block;font-style:normal}
+.avatars i:first-child{margin-left:0}
+
+/* ── Stats ───────────────────────────────────────────────── */
+.stats{padding:0 0 0}
+.stats .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:-46px;position:relative;z-index:3}
+.statcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:26px 24px;box-shadow:var(--shadow-soft);text-align:center}
+.statcard .n{font:800 36px/1 Sora,sans-serif;letter-spacing:-.04em;color:var(--crimson)}
+.statcard .l{margin-top:7px;font:500 13px/1.4 Inter,sans-serif;color:var(--ink-soft)}
+
+/* ── Sections ────────────────────────────────────────────── */
+.sec{padding:96px 0}
+.sec-head{text-align:center;max-width:640px;margin:0 auto 54px}
+.sec-head h2{font-size:clamp(30px,3.6vw,46px);margin-top:14px}
+.sec-head h2 .zh-in{font-family:'Noto Sans SC',sans-serif;color:var(--crimson);font-weight:900}
+.sec-head p{margin-top:16px;font-size:17.5px;color:var(--ink-soft)}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:34px;transition:.22s ease;position:relative;overflow:hidden}
+.card:hover{box-shadow:var(--shadow-soft);transform:translateY(-3px);border-color:rgba(212,168,67,.45)}
+.card .ic{width:50px;height:50px;border-radius:16px;background:linear-gradient(145deg,var(--gold-tint),#FFF9EC);border:1px solid rgba(212,168,67,.32);display:flex;align-items:center;justify-content:center;font-size:21px;color:var(--gold);margin-bottom:22px}
+.card h3{font-size:20px;margin-bottom:10px}
+.card h3 small{display:block;font:500 12.5px/1.4 'Noto Sans SC',sans-serif;color:var(--ink-soft);letter-spacing:.06em;margin-top:5px}
+.card p{font-size:15px;color:var(--ink-soft);line-height:1.68}
+
+/* ── Schedule ────────────────────────────────────────────── */
+.sched{padding:92px 0;background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.sched .wrap{display:grid;grid-template-columns:.85fr 1.15fr;gap:60px;align-items:start}
+.run{display:grid;grid-template-columns:64px 1fr auto;gap:20px;align-items:center;background:var(--blush);border:1px solid var(--line);border-radius:var(--r);padding:18px 22px;margin-bottom:12px;transition:.2s}
+.run:hover{border-color:var(--gold-foil);background:#FFFBF7}
+.run .day{font:700 12.5px/1 Inter,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--crimson)}
+.run .t{font:600 16.5px/1.3 Sora,sans-serif;letter-spacing:-.012em}
+.run .w{font:400 13.5px/1.4 Inter,sans-serif;color:var(--ink-soft);margin-top:3px}
+.run .time{font:600 13.5px/1 Inter,sans-serif;color:var(--ink-soft);white-space:nowrap}
+
+/* ── CTA ─────────────────────────────────────────────────── */
+.cta{padding:100px 0}
+.cta-box{position:relative;overflow:hidden;border-radius:var(--r-xl);padding:70px 60px;background:linear-gradient(140deg,var(--crimson-deep) 0%,var(--crimson) 62%,#D9385A 100%);color:#fff;text-align:center;box-shadow:0 24px 60px -22px rgba(140,14,32,.6)}
+.cta-box::before{content:'';position:absolute;left:50%;top:-160px;transform:translateX(-50%);width:520px;height:520px;background:url('/images/mmr-logo.png') center/contain no-repeat;opacity:.11;pointer-events:none}
+.cta-box .wrap-in{position:relative;z-index:1}
+.cta-box h2{font-size:clamp(30px,4.2vw,52px);color:#fff}
+.cta-box h2 .zh-in{font-family:'Noto Sans SC',sans-serif;font-weight:900}
+.cta-box p{margin:18px auto 0;font-size:17.5px;color:rgba(255,255,255,.82);max-width:46ch}
+.tiers{display:flex;gap:12px;justify-content:center;margin-top:32px;flex-wrap:wrap}
+.tier{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.26);border-radius:var(--r);padding:16px 26px;backdrop-filter:blur(6px)}
+.tier b{display:block;font:800 24px/1 Sora,sans-serif;letter-spacing:-.03em}
+.tier span{font:500 12.5px/1 Inter,sans-serif;color:rgba(255,255,255,.78);letter-spacing:.05em}
+.btn-gold{background:#F0CB70;color:#3A2A06}
+.btn-gold:hover{background:#F8DE9B}
+
+/* ── Footer ──────────────────────────────────────────────── */
+footer{background:#2A1216;padding:64px 0 40px;color:rgba(255,255,255,.76)}
+.foot{display:grid;grid-template-columns:2fr 1fr 1fr;gap:48px}
+.foot .bn{color:#F0CB70}
+.foot .bs{color:rgba(255,255,255,.5)}
+.foot p{font-size:14.5px;max-width:40ch;margin-top:16px;line-height:1.7}
+.foot h4{font:600 11.5px/1 Inter,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#fff;margin-bottom:17px}
+.foot li{list-style:none;font-size:14.5px;margin-bottom:11px}
+.legal{margin-top:46px;padding-top:26px;border-top:1px solid rgba(255,255,255,.13);font-size:13px;color:rgba(255,255,255,.52);display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <img src="/images/mmr-logo.png" alt="MMR 岚 mark">
+      <span><span class="bn">Misty Mountain Runners</span><span class="bs">岚山跑团</span></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#">Group Runs</a><a href="#">Races</a><a href="#">Hall of Fame</a><a href="#">Donate</a>
+      <a class="btn btn-primary" href="#">Join the club</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="watermark"></div>
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+  <div class="wrap hero-grid">
+    <div>
+      <span class="badge">◆ 有家 · 有爱 · 一起奔跑</span>
+      <div class="lockup">
+        <span class="zh-big">岚山跑团</span>
+        <span class="en-big">Misty Mountain Runners</span>
+      </div>
+      <div class="hairline"><i></i><span>NYRR Official Club Team · Est. 2015</span></div>
+      <p class="lede">Weekly group runs across all five boroughs, a scoring NYRR race team, and a community that runs — and eats — together.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary btn-lg" href="#">Join the club →</a>
+        <a class="btn btn-soft btn-lg" href="#">Member login</a>
+      </div>
+    </div>
+    <div class="hero-art">
+      <div class="frame"><img src="/images/mmr-flag.jpg" alt="MMR club flag"></div>
+      <div class="float float-1">
+        <div class="t">Saturday long run</div>
+        <div class="s">7:00 AM · Central Park · 5 pace groups</div>
+      </div>
+      <div class="float float-2">
+        <div class="t">32 members going</div>
+        <div class="avatars" style="margin-top:8px">
+          <i style="background:#C8102E"></i><i style="background:#D4A843"></i><i style="background:#8C0E20"></i><i style="background:#E08A5B"></i><i style="background:#7A5B5F"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="stats">
+  <div class="wrap">
+    <div class="statcard"><div class="n">480+</div><div class="l">Active members</div></div>
+    <div class="statcard"><div class="n">156</div><div class="l">Races in 2026</div></div>
+    <div class="statcard"><div class="n">11</div><div class="l">Years running</div></div>
+    <div class="statcard"><div class="n">501(c)(3)</div><div class="l">Nonprofit club</div></div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Member benefits</p>
+      <h2>Why members <span class="zh-in">加入</span> and stay.</h2>
+      <p>Dues keep group runs free, the race team registered, and the volunteer table stocked.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <div class="ic">◈</div>
+        <h3>NYRR team eligibility<small>NYRR 队伍资格</small></h3>
+        <p>Score for MMR in NYRR races and show up in team standings. Results sync into your portal automatically.</p>
+      </div>
+      <div class="card">
+        <div class="ic">◎</div>
+        <h3>Race photos, found for you<small>比赛照片自动识别</small></h3>
+        <p>Bib and face recognition sweeps every club shoot, so your photos land in your gallery without the scrolling.</p>
+      </div>
+      <div class="card">
+        <div class="ic">◐</div>
+        <h3>Bilingual by default<small>中英双语社区</small></h3>
+        <p>Every route brief, announcement, and form in both English and 中文 — no one gets left out of the group chat.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sched">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">This week</p>
+      <h2 style="font-size:36px;margin-top:14px">Show up.<br>That's the whole<br>requirement.</h2>
+      <p style="margin-top:18px;font-size:16.5px;color:var(--ink-soft);max-width:36ch">Group runs are free and open to everyone — no sign-up needed. Find your pace group at the meeting point.</p>
+      <a class="btn btn-soft" style="margin-top:26px" href="#">Full calendar →</a>
+    </div>
+    <div>
+      <div class="run"><div class="day">Tue</div><div><div class="t">Track night</div><div class="w">Icahn Stadium · intervals, all paces</div></div><div class="time">6:30 PM</div></div>
+      <div class="run"><div class="day">Thu</div><div><div class="t">Bridge tempo</div><div class="w">Brooklyn Bridge loop · 5–7 mi</div></div><div class="time">7:00 PM</div></div>
+      <div class="run"><div class="day">Sat</div><div><div class="t">Long run</div><div class="w">Central Park · 8–18 mi, 5 pace groups</div></div><div class="time">7:00 AM</div></div>
+      <div class="run"><div class="day">Sun</div><div><div class="t">Recovery + dim sum</div><div class="w">Flushing Meadows · easy 4 mi</div></div><div class="time">8:30 AM</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap">
+    <div class="cta-box">
+      <div class="wrap-in">
+        <h2><span class="zh-in">加入岚山跑团</span></h2>
+        <p>Join online in about two minutes. Membership runs a full year from the day it's approved.</p>
+        <div class="tiers">
+          <div class="tier"><b>$30</b><span>Individual / 个人</span></div>
+          <div class="tier"><b>$50</b><span>Family / 家庭</span></div>
+          <div class="tier"><b>$20</b><span>Family upgrade</span></div>
+        </div>
+        <div style="margin-top:34px"><a class="btn btn-gold btn-lg" href="#">Become a member →</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a class="brand" href="#">
+          <img src="/images/mmr-logo.png" alt="MMR 岚 mark">
+          <span><span class="bn">Misty Mountain Runners</span><span class="bs">岚山跑团</span></span>
+        </a>
+        <p>New York's Chinese-American running community. NYRR official club team and a registered 501(c)(3) nonprofit.</p>
+      </div>
+      <div><h4>Club</h4><ul><li>Group runs</li><li>Race calendar</li><li>Hall of Fame</li><li>Volunteer</li></ul></div>
+      <div><h4>Members</h4><ul><li>Member portal</li><li>Race photos</li><li>My results</li><li>Renew</li></ul></div>
+    </div>
+    <div class="legal"><span>© 2026 Misty Mountain Runners · 岚山跑团</span><span>admin@mmrunners.org</span></div>
+  </div>
+</footer>
+
+</body>
+</html>
