@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Trophy, ArrowRight, AlertCircle, Clock, Upload } from 'lucide-react'
+import { Trophy, ArrowRight, AlertCircle, Clock, Upload, Camera, CalendarDays, ExternalLink } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import { formatLocaleDate, daysUntilExpiryNY } from '@/lib/date'
 import type { Member } from '@/types'
@@ -19,9 +19,11 @@ interface PendingEvent {
 interface Props {
   member: Member | null
   payments: any[]
+  /** External race-photo gallery (config-driven, already scheme-validated). */
+  galleryUrl?: string | null
 }
 
-export default function DashboardClient({ member, payments }: Props) {
+export default function DashboardClient({ member, payments, galleryUrl }: Props) {
   const { lang } = useLang()
   const [pendingEvents, setPendingEvents] = useState<PendingEvent[]>([])
   const [loadingPending, setLoadingPending] = useState(false)
@@ -184,6 +186,45 @@ export default function DashboardClient({ member, payments }: Props) {
 
       {/* Quick links */}
       <div className="grid sm:grid-cols-2 gap-4">
+        <Link href="/portal/events" className="card p-5 flex items-center gap-4 hover:border-brand-orange/30 border-2 border-transparent transition-colors">
+          <div className="w-12 h-12 bg-brand-navy/10 rounded-xl flex items-center justify-center">
+            <CalendarDays className="h-6 w-6 text-brand-navy" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">
+              {lang === 'zh' ? '赛事日历' : 'Race Calendar'}
+            </p>
+            <p className="text-gray-500 text-sm">
+              {lang === 'zh' ? '报名参赛或做志愿者' : "RSVP as runner or volunteer"}
+            </p>
+          </div>
+          <ArrowRight className="h-4 w-4 text-gray-400 ml-auto" />
+        </Link>
+
+        {/* External gallery — an <a>, not a Link. The href comes from
+            admin-editable config and is scheme-validated on the server. */}
+        {galleryUrl && (
+          <a
+            href={galleryUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="card p-5 flex items-center gap-4 hover:border-brand-orange/30 border-2 border-transparent transition-colors"
+          >
+            <div className="w-12 h-12 bg-brand-orange/10 rounded-xl flex items-center justify-center">
+              <Camera className="h-6 w-6 text-brand-orange" />
+            </div>
+            <div>
+              <p className="font-semibold text-gray-900">
+                {lang === 'zh' ? '赛事照片' : 'Race Photos'}
+              </p>
+              <p className="text-gray-500 text-sm">
+                {lang === 'zh' ? '浏览跑团照片库' : 'Browse the club photo gallery'}
+              </p>
+            </div>
+            <ExternalLink className="h-4 w-4 text-gray-400 ml-auto" />
+          </a>
+        )}
+
         <Link href="/portal/nyrr" className="card p-5 flex items-center gap-4 hover:border-brand-orange/30 border-2 border-transparent transition-colors">
           <div className="w-12 h-12 bg-brand-orange/10 rounded-xl flex items-center justify-center">
             <Trophy className="h-6 w-6 text-brand-orange" />

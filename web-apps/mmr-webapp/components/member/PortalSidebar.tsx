@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Trophy, User, Image, CalendarDays
+  LayoutDashboard, Trophy, User, Image, CalendarDays, Camera, ExternalLink
 } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
 import type { SessionUser } from '@/types'
@@ -12,12 +12,19 @@ import { clsx } from 'clsx'
 const NAV = [
   { href: '/portal',          icon: LayoutDashboard, en: 'Dashboard',    zh: '概览', disabled: false },
   { href: '/portal/events',   icon: CalendarDays,    en: 'Race Calendar', zh: '赛事日历', disabled: false },
-  { href: '/portal/nyrr',     icon: Trophy,          en: 'NYRR Results', zh: '比赛成绩', disabled: true },
+  { href: '/portal/nyrr',     icon: Trophy,          en: 'NYRR Results', zh: '比赛成绩', disabled: false },
   { href: '/portal/photos',   icon: Image,           en: 'Photos',       zh: '照片', disabled: true },
   { href: '/portal/profile',  icon: User,            en: 'Profile',      zh: '个人信息', disabled: false },
 ]
 
-export default function PortalSidebar({ session }: { session: SessionUser }) {
+export default function PortalSidebar({
+  session,
+  galleryUrl,
+}: {
+  session: SessionUser
+  /** External race-photo gallery (config-driven, already scheme-validated). */
+  galleryUrl?: string | null
+}) {
   const pathname = usePathname()
   const { lang }  = useLang()
 
@@ -86,6 +93,22 @@ export default function PortalSidebar({ session }: { session: SessionUser }) {
             </Link>
           )
         })}
+
+        {/* Race photos live on an external gallery, so this is an <a>, not a
+            Link. The URL is admin-editable config — the server validates the
+            scheme before it ever reaches this href. */}
+        {galleryUrl && (
+          <a
+            href={galleryUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-brand-navy transition-colors"
+          >
+            <Camera className="h-4 w-4 flex-shrink-0" />
+            {lang === 'zh' ? '赛事照片' : 'Race Photos'}
+            <ExternalLink className="h-3 w-3 flex-shrink-0 ml-auto text-gray-400" />
+          </a>
+        )}
       </nav>
     </aside>
   )

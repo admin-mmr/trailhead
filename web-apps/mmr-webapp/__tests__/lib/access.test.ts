@@ -64,6 +64,16 @@ describe('getRequiredTier — active-member-only routes', () => {
     expectTier(path, 'active')
   })
 
+  it('gates the NYRR result routes above the looser /api/members/me rule', () => {
+    // First prefix match wins. If '/api/members/me/nyrr…' fell through to the
+    // 'member' rule, an expired member could read results and claim runner rows.
+    expectTier('/api/members/me/nyrr-results', 'active')
+    expectTier('/api/members/me/nyrr-link', 'active')
+    expectTier('/api/members/me/nyrr-link/confirm', 'active')
+    // …while the plain profile route stays reachable for expired members.
+    expectTier('/api/members/me', 'member')
+  })
+
   it('does not confuse the public "/events" rule with "/api/events"', () => {
     // Prefix matching is literal: '/api/events' does not start with '/events',
     // so without its own rule the member calendar API would fall through to the
