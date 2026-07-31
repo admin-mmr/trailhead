@@ -4,10 +4,11 @@
 // NextAuth redirects here (via callbackUrl) after any
 // successful sign-in. This route:
 //   1. Reads the NextAuth session (email, provider, sub)
-//   2. Looks up or creates the member in our DB
+//   2. Looks the member up by email — never creates one
 //   3. Persists the OAuth sub ID (google_sub, etc.)
 //   4. Creates our custom mmr_session JWT cookie
-//   5. Redirects to /portal (or /join for brand-new members)
+//   5. Redirects to ?from= (validated) or /portal, or to
+//      /login?error=oauth_no_member when the address matches no member
 //
 // This keeps all existing middleware, getSession(), and API
 // routes completely unchanged.
@@ -21,15 +22,53 @@
 import { NextResponse }                           from 'next/server'
 import { cookies }                                from 'next/headers'
 import { auth }                                   from '@/auth'
-import { findMemberByEmail, createNewMember,
+import { findMemberByEmail,
          updateMemberOAuthSub }                   from '@/lib/db/members'
 import { createSession, setSessionCookie }        from '@/lib/auth/session'
 import { isExpiredNY }                            from '@/lib/date'
+import { isSafeSitePath }                         from '@/lib/safe-url'
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
+// Where a member lands when they didn't ask for anywhere in particular.
+// There is no longer a '/join' branch: this route only ever signs in an
+// EXISTING member (see the lookup below), and the portal itself sends
+// inactive/pending members onward via middleware.
+const DEFAULT_DESTINATION = '/portal'
+
+// Sending someone back to a sign-in page after signing in is a loop, not a
+// destination. `/join` is excluded too — a member who just authenticated has
+// no business on the signup form.
+const NOT_A_DESTINATION = ['/login', '/auth/', '/join']
+
+/**
+ * The post-login destination, from `?from=` when it is safe to use.
+ *
+ * ⚠️ `from` is attacker-controllable — it arrives in a URL anyone can craft and
+ * mail around, so an unchecked redirect here is a classic open redirect (and a
+ * convincing one, since the hop happens straight after a real login). It must
+ * stay a same-origin PATH: `isSafeSitePath` rejects absolute URLs,
+ * protocol-relative `//evil.com` and `/\evil.com`, and control characters that
+ * browsers strip before dispatch.
+ */
+function resolveDestination(req: { url?: string }): string {
+  if (!req.url) return DEFAULT_DESTINATION
+
+  let requested: string | null = null
+  try {
+    requested = new URL(req.url).searchParams.get('from')
+  } catch {
+    return DEFAULT_DESTINATION
+  }
+
+  if (!isSafeSitePath(requested)) return DEFAULT_DESTINATION
+  if (NOT_A_DESTINATION.some(prefix => requested.startsWith(prefix))) return DEFAULT_DESTINATION
+  return requested
+}
+
 export const GET = auth(async function handler(req) {
   const nextAuthSession = req.auth
+  const destination     = resolveDestination(req)
 
   console.log('[auth/complete] req.auth:', nextAuthSession
     ? `email=${nextAuthSession.user?.email} provider=${(nextAuthSession as any).provider}`
@@ -44,25 +83,24 @@ export const GET = auth(async function handler(req) {
   const provider          = (nextAuthSession as any).provider          as string | undefined
   const providerAccountId = (nextAuthSession as any).providerAccountId as string | undefined
 
-  // ── Look up or create member by email ──────────────────────────────────────
-  let member = await findMemberByEmail(email)
-  const isNew = !member
-  console.log('[auth/complete] DB lookup:', member ? `found memberId=${member.memberId} status=${member.status}` : 'not found — will create')
+  // ── Look up the member by email ────────────────────────────────────────────
+  //
+  // This route NEVER creates a member. It used to: an unrecognised OAuth email
+  // minted a fresh 'pending' row and sent the person to /join. That silently
+  // forked existing members onto a second MemberID whenever the address on
+  // their Google/Microsoft account differed from the one on file — and 130+
+  // active members are on yahoo/hotmail/aol/msn, so a mismatch is the norm,
+  // not the edge case. Signing in is not signing up; membership is created by
+  // /join and by the admin panel, and both collect data (phone, district,
+  // membership type, payment) that a social profile cannot supply.
+  const member = await findMemberByEmail(email)
+  console.log('[auth/complete] DB lookup:', member ? `found memberId=${member.memberId} status=${member.status}` : 'no member for this address')
 
   if (!member) {
-    // Split the OAuth display name (e.g. "Jane Doe") into firstName / lastName
-    const displayName  = nextAuthSession.user.name ?? ''
-    const spaceIdx     = displayName.indexOf(' ')
-    const firstName    = spaceIdx > -1 ? displayName.slice(0, spaceIdx) : displayName || undefined
-    const lastName     = spaceIdx > -1 ? displayName.slice(spaceIdx + 1) : undefined
-
-    member = await createNewMember({
-      email,
-      firstName,
-      lastName,
-      membershipType: 'individual',
-    })
-    console.log('[auth/complete] created new member, memberId:', member.memberId)
+    // Deliberately no email in the query string — it would land in browser
+    // history and edge logs. The login page explains the mismatch generically.
+    console.log('[auth/complete] ⛔ no member matches the signed-in address — redirecting to /login?error=oauth_no_member')
+    return NextResponse.redirect(new URL('/login?error=oauth_no_member', BASE_URL))
   }
 
   // ── Persist the OAuth sub so future logins skip DB lookup ─────────────────
@@ -104,14 +142,12 @@ export const GET = auth(async function handler(req) {
   } catch (err) {
     console.error('[auth/complete] ❌ cookies().set() failed:', err)
     // Fallback: set cookie on the response object directly
-    const destination = isNew ? '/join' : '/portal'
     const res = NextResponse.redirect(new URL(destination, BASE_URL))
     res.cookies.set(setSessionCookie(token))
     console.log('[auth/complete] → fallback: cookie set on NextResponse, redirecting to:', destination)
     return res
   }
 
-  const destination = isNew ? '/join' : '/portal'
   console.log('[auth/complete] → redirecting to:', destination)
   return NextResponse.redirect(new URL(destination, BASE_URL))
 })

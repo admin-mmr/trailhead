@@ -227,7 +227,8 @@ All prior mmr-admin offenders split (07-20): every `mmr-admin/*.py` now ≤389 a
 | `lib/db/photos.ts` | 456 | 300 | open |
 | `components/photos/PhotoDetailOverlay.tsx` | 353 | 300 | open |
 | `app/(member)/portal/photos/references/page.tsx` | 318 | 300 | open |
-| `app/login/page.tsx` | 312 | 300 | open |
+| `app/login/page.tsx` | ~~370~~ 94 | 300 | ✅ split 07-30 → `login/_components/` (useLoginFlow + SocialSignIn/CredentialsForm/GoodbyeBanner + `messages.ts` error copy, largest file 120) |
+| `lib/email/templates/payments.ts` | 317 | 300 | open (grew past the limit after the 07-21 templates split) |
 (rerun `find web-apps/mmr-webapp \( -name '*.ts' -o -name '*.tsx' \) -not -path '*/node_modules/*' -not -path '*/.next/*' -exec wc -l {} + | sort -rn` before picking; excludes `__tests__`.)
 
 **P3 — Open questions**
