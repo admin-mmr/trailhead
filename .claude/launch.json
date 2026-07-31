@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mmr-webapp",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["web-apps/mmr-webapp/start-dev.sh"],
+      "port": 3000
+    }
+  ]
+}
