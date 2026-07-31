@@ -43,6 +43,12 @@ export function useLoginFlow() {
 
   const stallTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  // Both sign-in paths hand off to the same bridge, and BOTH carry the page the
+  // member was originally trying to reach — the OAuth path used to drop it and
+  // strand everyone on /portal. The route re-validates `from` before redirecting
+  // (see resolveDestination); this is convenience, not a trust boundary.
+  const completeUrl = `/auth/complete?from=${encodeURIComponent(returnTo)}`
+
   useEffect(() => {
     setIsWebView(isWebViewBrowser())
     return () => clearTimeout(stallTimer.current)
@@ -60,9 +66,8 @@ export function useLoginFlow() {
         console.log('[login] credentials error:', result.error)
         setError(credentialsFailedMessage(lang))
       } else {
-        const target = `/auth/complete?from=${encodeURIComponent(returnTo)}`
-        console.log('[login] credentials OK — pushing to:', target)
-        router.push(target)
+        console.log('[login] credentials OK — pushing to:', completeUrl)
+        router.push(completeUrl)
       }
     } catch (err) {
       console.error('[login] signIn threw:', err)
@@ -94,7 +99,7 @@ export function useLoginFlow() {
     stallTimer.current = setTimeout(() => setOauthStalled(true), OAUTH_STALL_MS)
 
     try {
-      await signIn(providerId, { callbackUrl: '/auth/complete' })
+      await signIn(providerId, { callbackUrl: completeUrl })
     } catch (err) {
       console.error('[login] OAuth signIn threw:', err)
       clearTimeout(stallTimer.current)

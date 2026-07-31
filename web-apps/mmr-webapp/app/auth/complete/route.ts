@@ -7,8 +7,8 @@
 //   2. Looks the member up by email — never creates one
 //   3. Persists the OAuth sub ID (google_sub, etc.)
 //   4. Creates our custom mmr_session JWT cookie
-//   5. Redirects to /portal, or to /login?error=oauth_no_member
-//      when the signed-in address matches no member
+//   5. Redirects to ?from= (validated) or /portal, or to
+//      /login?error=oauth_no_member when the address matches no member
 //
 // This keeps all existing middleware, getSession(), and API
 // routes completely unchanged.
@@ -26,16 +26,49 @@ import { findMemberByEmail,
          updateMemberOAuthSub }                   from '@/lib/db/members'
 import { createSession, setSessionCookie }        from '@/lib/auth/session'
 import { isExpiredNY }                            from '@/lib/date'
+import { isSafeSitePath }                         from '@/lib/safe-url'
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-// Every successful sign-in lands here. There is no longer a '/join' branch:
-// this route only ever signs in an EXISTING member (see the lookup below), and
-// the portal itself sends inactive/pending members onward via middleware.
-const DESTINATION = '/portal'
+// Where a member lands when they didn't ask for anywhere in particular.
+// There is no longer a '/join' branch: this route only ever signs in an
+// EXISTING member (see the lookup below), and the portal itself sends
+// inactive/pending members onward via middleware.
+const DEFAULT_DESTINATION = '/portal'
+
+// Sending someone back to a sign-in page after signing in is a loop, not a
+// destination. `/join` is excluded too — a member who just authenticated has
+// no business on the signup form.
+const NOT_A_DESTINATION = ['/login', '/auth/', '/join']
+
+/**
+ * The post-login destination, from `?from=` when it is safe to use.
+ *
+ * ⚠️ `from` is attacker-controllable — it arrives in a URL anyone can craft and
+ * mail around, so an unchecked redirect here is a classic open redirect (and a
+ * convincing one, since the hop happens straight after a real login). It must
+ * stay a same-origin PATH: `isSafeSitePath` rejects absolute URLs,
+ * protocol-relative `//evil.com` and `/\evil.com`, and control characters that
+ * browsers strip before dispatch.
+ */
+function resolveDestination(req: { url?: string }): string {
+  if (!req.url) return DEFAULT_DESTINATION
+
+  let requested: string | null = null
+  try {
+    requested = new URL(req.url).searchParams.get('from')
+  } catch {
+    return DEFAULT_DESTINATION
+  }
+
+  if (!isSafeSitePath(requested)) return DEFAULT_DESTINATION
+  if (NOT_A_DESTINATION.some(prefix => requested.startsWith(prefix))) return DEFAULT_DESTINATION
+  return requested
+}
 
 export const GET = auth(async function handler(req) {
   const nextAuthSession = req.auth
+  const destination     = resolveDestination(req)
 
   console.log('[auth/complete] req.auth:', nextAuthSession
     ? `email=${nextAuthSession.user?.email} provider=${(nextAuthSession as any).provider}`
@@ -109,12 +142,12 @@ export const GET = auth(async function handler(req) {
   } catch (err) {
     console.error('[auth/complete] ❌ cookies().set() failed:', err)
     // Fallback: set cookie on the response object directly
-    const res = NextResponse.redirect(new URL(DESTINATION, BASE_URL))
+    const res = NextResponse.redirect(new URL(destination, BASE_URL))
     res.cookies.set(setSessionCookie(token))
-    console.log('[auth/complete] → fallback: cookie set on NextResponse, redirecting to:', DESTINATION)
+    console.log('[auth/complete] → fallback: cookie set on NextResponse, redirecting to:', destination)
     return res
   }
 
-  console.log('[auth/complete] → redirecting to:', DESTINATION)
-  return NextResponse.redirect(new URL(DESTINATION, BASE_URL))
+  console.log('[auth/complete] → redirecting to:', destination)
+  return NextResponse.redirect(new URL(destination, BASE_URL))
 })

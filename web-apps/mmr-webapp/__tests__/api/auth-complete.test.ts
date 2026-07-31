@@ -65,6 +65,12 @@ const req = (email: string | null, provider = 'google', providerAccountId = 'sub
 
 const call = GET as unknown as (req: unknown) => Promise<{ location: string }>
 
+// Mirrors the route's own BASE_URL, resolved from env at module load exactly as
+// it is there — so these tests never depend on which host that turns out to be.
+const BASE_ORIGIN = new URL(
+  process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
+).origin
+
 beforeEach(() => {
   jest.clearAllMocks()
   jest.spyOn(console, 'log').mockImplementation(() => {})
@@ -145,6 +151,56 @@ describe('/auth/complete — member on file', () => {
 
     expect(new URL(res.location).pathname).toBe('/portal')
     expect(mockSess).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending' }))
+  })
+})
+
+describe('/auth/complete — ?from= destination', () => {
+  // `from` arrives in a URL anyone can craft and mail around, and the hop
+  // happens straight after a real login, so an unchecked value here is a
+  // convincing open redirect.
+  const withFrom = (from: string) => ({
+    ...req('member@example.com'),
+    url: `${BASE_ORIGIN}/auth/complete?from=${encodeURIComponent(from)}`,
+  })
+
+  beforeEach(() => mockFind.mockResolvedValue(activeMember))
+
+  it('honours a same-origin path', async () => {
+    const res = await call(withFrom('/portal/events'))
+    expect(new URL(res.location).pathname).toBe('/portal/events')
+  })
+
+  it('keeps a query string on the requested path', async () => {
+    const res = await call(withFrom('/portal/photos?album=7'))
+    const url = new URL(res.location)
+    expect(url.pathname + url.search).toBe('/portal/photos?album=7')
+  })
+
+  it.each([
+    ['absolute URL',      'https://evil.com/steal'],
+    ['protocol-relative', '//evil.com'],
+    ['backslash form',    '/\\evil.com'],
+    ['scheme',            'javascript:alert(1)'],
+    ['relative path',     'portal/events'],
+  ])('ignores an off-site %s and falls back to /portal', async (_label, from) => {
+    const res = await call(withFrom(from))
+    const url = new URL(res.location)
+    expect(url.origin).toBe(BASE_ORIGIN)
+    expect(url.pathname).toBe('/portal')
+    expect(res.location).not.toContain('evil.com')
+  })
+
+  it.each(['/login', '/auth/complete', '/join'])(
+    'refuses %s as a destination — that is a loop, not a landing page',
+    async from => {
+      const res = await call(withFrom(from))
+      expect(new URL(res.location).pathname).toBe('/portal')
+    },
+  )
+
+  it('falls back when the request carries no url at all', async () => {
+    const res = await call(req('member@example.com'))
+    expect(new URL(res.location).pathname).toBe('/portal')
   })
 })
 
