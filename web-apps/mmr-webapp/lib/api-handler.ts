@@ -15,11 +15,26 @@
 // ============================================================
 
 import { NextResponse } from 'next/server'
+import { trackException } from '@/lib/telemetry'
 
 /** Error shape thrown by session guards: `err.status` set to an HTTP code. */
 interface HttpError {
   status?: unknown
   message?: unknown
+}
+
+/**
+ * Pathname of a request URL, or 'unknown'.
+ * Never the full URL — query strings can carry member identifiers, and
+ * telemetry is retained far longer than a request log.
+ */
+function safePath(url: unknown): string {
+  if (typeof url !== 'string') return 'unknown'
+  try {
+    return new URL(url).pathname
+  } catch {
+    return 'unknown'
+  }
 }
 
 function isClientHttpStatus(status: unknown): status is number {
@@ -43,6 +58,17 @@ export function withApiHandler<Args extends unknown[]>(
         return NextResponse.json({ ok: false, error }, { status })
       }
       console.error('[api-handler] unhandled error:', err)
+      // Report to Application Insights as well as the console. console.error
+      // alone is invisible on Azure SWA, which is why the 07-30 login
+      // investigation had no server logs to read. Deliberately not awaited:
+      // the 500 should not wait on telemetry, and trackException never throws.
+      const req = args[0] as { method?: string; url?: string } | undefined
+      void trackException(err, {
+        source: 'api-handler',
+        method: typeof req?.method === 'string' ? req.method : 'unknown',
+        // pathname only — a full URL can carry query-string parameters
+        path: safePath(req?.url),
+      })
       return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })
     }
   }
