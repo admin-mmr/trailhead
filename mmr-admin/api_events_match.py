@@ -45,9 +45,24 @@ def run_event_automatch(event_id):
     HTTP route below). Only updates currently unmatched rows. Raises on DB error
     (caller handles); returns ok=False only for "event not found".
     """
-    rows = query("SELECT id FROM nyrr_events WHERE id = %s", [event_id])
+    rows = query(
+        "SELECT id, COALESCE(event_year, YEAR(event_date)) AS event_year "
+        "FROM nyrr_events WHERE id = %s",
+        [event_id]
+    )
     if not rows:
         return {'ok': False, 'error': 'Event not found', 'matched': 0}
+
+    # Age validation below compares against the year the race was RUN, not the
+    # current year: nyrr_event_runners.age is the runner's age at race time. The
+    # UPDATE is scoped to this one event, so the year is a constant and can be
+    # passed as a parameter rather than joining nyrr_events into the UPDATE.
+    #
+    # If the event has neither event_year nor event_date this stays None; the
+    # comparison then yields NULL, the age branch is false, and a member with a
+    # birth year simply isn't auto-matched. That is the conservative outcome —
+    # the row is left for the human match queue.
+    event_year = rows[0].get('event_year')
 
     conn = None
     try:
@@ -122,12 +137,22 @@ def run_event_automatch(event_id):
               AND er.last_name IS NOT NULL AND er.last_name != ''
               AND er.nyrr_event_id = %s
               AND collide.fn IS NULL
-              -- Age/gender validation: only if member has YearBorn or YearBornGuess
+              -- Age/gender validation: only if member has YearBorn or YearBornGuess.
+              -- The year here is the EVENT year, passed in as a parameter — er.age
+              -- is the runner's age on race day, so comparing it against
+              -- YEAR(CURDATE()) was off by however long ago the race was (~8 years
+              -- for a 2018 event), which both rejected correct matches and waved
+              -- through wrong ones. See P1m in CLAUDE.md.
+              --
+              -- NOTE: when er.age IS NULL (registered-only rows) the comparison is
+              -- NULL and the branch is false, so a member with a birth year is not
+              -- auto-matched. That is deliberate: no corroborating evidence means
+              -- the row goes to the human queue rather than being guessed at.
               AND (
                 -- If member has YearBorn set, validate runner age matches
-                (m.YearBorn IS NOT NULL AND ABS(CAST(YEAR(CURDATE()) AS SIGNED) - m.YearBorn - er.age) <= 1)
+                (m.YearBorn IS NOT NULL AND ABS(CAST(%s AS SIGNED) - m.YearBorn - er.age) <= 1)
                 -- OR if member has YearBornGuess, validate runner age matches
-                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(CAST(YEAR(CURDATE()) AS SIGNED) - m.YearBornGuess - er.age) <= 1)
+                OR (m.YearBorn IS NULL AND m.YearBornGuess IS NOT NULL AND ABS(CAST(%s AS SIGNED) - m.YearBornGuess - er.age) <= 1)
                 -- OR if member has no birth year, skip validation
                 OR (m.YearBorn IS NULL AND m.YearBornGuess IS NULL)
               )
@@ -143,7 +168,7 @@ def run_event_automatch(event_id):
                    ELSE er.gender
                 END = m.Gender
               )
-        """, (event_id, event_id))
+        """, (event_id, event_id, event_year, event_year))
         t2_matched = cursor.rowcount
 
         # Tier 3 (partial / single-name match) is intentionally NOT auto-committed.
