@@ -38,17 +38,28 @@ export default function HomeHero({ activeMembers }: { activeMembers: number | nu
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1.02fr_0.98fr] lg:gap-16">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full border border-lantern-gold-foil/40 bg-lantern-gold-tint px-4 py-2 text-xs font-semibold tracking-wide text-lantern-gold">
-            ◆ 有家 · 有爱 · 一起奔跑
+            ◆ {say(lang, bi('Family · Support · Pursuit · Community', '有家 · 有爱 · 一起奔跑'))}
           </span>
 
-          {/* Bilingual lockup — Chinese leads, English as the tracked subtitle. */}
+          {/*
+            The club name in the reader's language only.
+
+            This originally showed 岚山跑团 large with "Misty Mountain Runners"
+            beneath it in BOTH modes — the lockup that defined Option C. It was
+            pulled back because an English reader should get an English page.
+            To restore the bilingual lockup, render both spans again instead of
+            branching on `lang`.
+          */}
           <h1 className="mt-6">
-            <span className="block font-zh font-black leading-[1.02] tracking-[0.03em] text-brand-crimson-dark [font-size:clamp(3.25rem,7vw,5.375rem)]">
-              岚山跑团
-            </span>
-            <span className="mt-3 block font-lantern font-bold leading-[1.1] tracking-[0.02em] text-lantern-ink [font-size:clamp(1.5rem,2.9vw,2.375rem)]">
-              Misty Mountain Runners
-            </span>
+            {lang === 'zh' ? (
+              <span className="block font-zh font-black leading-[1.02] tracking-[0.03em] text-brand-crimson-dark [font-size:clamp(3.25rem,7vw,5.375rem)]">
+                岚山跑团
+              </span>
+            ) : (
+              <span className="block font-lantern font-extrabold leading-[1.04] tracking-[-0.03em] text-brand-crimson-dark [font-size:clamp(2.75rem,5.6vw,4.25rem)]">
+                Misty Mountain Runners
+              </span>
+            )}
           </h1>
 
           <div className="my-7 flex items-center gap-3.5">

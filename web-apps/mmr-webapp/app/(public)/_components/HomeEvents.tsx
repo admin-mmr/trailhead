@@ -59,13 +59,10 @@ export default function HomeEvents({
         </div>
 
         <div>
-          <div className="mb-5 flex items-baseline gap-2.5">
+          <div className="mb-5">
             <b className="font-lantern text-lg font-bold text-lantern-ink">
               {say(lang, bi('Latest Events', '最新活动'))}
             </b>
-            <span className="font-zh text-xs text-lantern-ink-soft" aria-hidden="true">
-              {lang === 'zh' ? 'Latest Events' : '最新活动'}
-            </span>
           </div>
 
           {events.length === 0 ? (

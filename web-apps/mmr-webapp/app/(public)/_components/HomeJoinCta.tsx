@@ -42,7 +42,9 @@ export default function HomeJoinCta({ pricing }: { pricing: Pricing }) {
         />
 
         <div className="relative">
-          <h2 className="font-zh text-3xl font-black text-white sm:text-4xl lg:text-5xl">加入岚山跑团</h2>
+          <h2 className={`text-3xl font-black text-white sm:text-4xl lg:text-5xl ${lang === 'zh' ? 'font-zh' : 'font-lantern tracking-tight'}`}>
+            {say(lang, bi('Join Misty Mountain Runners', '加入岚山跑团'))}
+          </h2>
           <p className="mx-auto mt-4 max-w-[46ch] text-base leading-relaxed text-white/80 sm:text-lg">
             {say(lang, bi(
               "Join online in about two minutes. Membership runs a full year from the day it's approved.",
@@ -60,7 +62,7 @@ export default function HomeJoinCta({ pricing }: { pricing: Pricing }) {
                   ${tier.amount}
                 </b>
                 <span className="text-xs font-medium text-white/75">
-                  {tier.label.en} / {tier.label.zh}
+                  {say(lang, tier.label)}
                 </span>
               </div>
             ))}

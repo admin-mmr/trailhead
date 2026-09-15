@@ -55,13 +55,10 @@ export default function HomeExplore() {
   return (
     <section className="bg-lantern-blush px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-10 flex items-baseline gap-3">
+        <div className="mb-10">
           <h2 className="font-lantern text-3xl font-bold tracking-tight text-lantern-ink sm:text-4xl">
-            Explore <span className="font-zh font-black text-brand-crimson">岚山</span>
+            {say(lang, bi('Explore the club', '探索岚山'))}
           </h2>
-          <span className="font-zh text-sm text-lantern-ink-soft" aria-hidden="true">
-            探索岚山
-          </span>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -96,13 +93,10 @@ export default function HomeExplore() {
                 className="absolute inset-0 bg-gradient-to-t from-lantern-deep/80 via-lantern-deep/10 to-transparent"
               />
 
-              <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 p-5">
+              <div className="absolute inset-x-0 bottom-0 p-5">
                 <b className="font-lantern text-base font-bold text-white drop-shadow">
-                  {lang === 'zh' ? tile.label.zh : tile.label.en}
+                  {say(lang, tile.label)}
                 </b>
-                <span className="font-zh text-xs text-white/70" aria-hidden="true">
-                  {lang === 'zh' ? tile.label.en : tile.label.zh}
-                </span>
               </div>
             </Link>
           ))}
