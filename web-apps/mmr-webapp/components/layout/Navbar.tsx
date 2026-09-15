@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Menu, X, Heart } from 'lucide-react'
 import { useLang } from '@/lib/i18n/context'
+import NavLabel from './NavLabel'
 import { clsx } from 'clsx'
 import type { SessionUser } from '@/types'
 
@@ -124,11 +125,9 @@ export default function Navbar({
               >
                 {lang === 'zh' ? '岚山跑团' : 'Misty Mountain Runners'}
               </span>
-              {lang === 'en' && (
-                <span className="text-white/60 text-[0.62rem] tracking-widest uppercase">
-                  MMRunners · 岚山
-                </span>
-              )}
+              <span className="text-white/60 text-[0.62rem] tracking-widest uppercase">
+                {lang === 'zh' ? 'Misty Mountain Runners' : 'MMRunners · 岚山'}
+              </span>
             </div>
           </Link>
         </div>
@@ -154,11 +153,11 @@ export default function Navbar({
                       (pathname === resolvedHref || pathname === href)
                         ? 'text-brand-gold'
                         : 'text-white/80 hover:text-brand-gold-light',
-                      href === '/donate' && 'flex items-center gap-1'
+                      'flex items-center gap-1.5'
                     )}
                   >
-                    {href === '/donate' && <Heart className="h-3.5 w-3.5" />}
-                    {T(keyEn)}
+                    {href === '/donate' && <Heart className="h-3.5 w-3.5 flex-shrink-0" />}
+                    <NavLabel keyEn={keyEn} active={pathname === resolvedHref || pathname === href} />
                   </Link>
                 )
               })}
@@ -248,8 +247,8 @@ export default function Navbar({
                     (pathname === resolvedHref || pathname === href) ? 'text-brand-gold' : 'text-white/80'
                   )}
                 >
-                  {href === '/donate' && <Heart className="h-3.5 w-3.5" />}
-                  {T(keyEn)}
+                  {href === '/donate' && <Heart className="h-3.5 w-3.5 flex-shrink-0" />}
+                  <NavLabel keyEn={keyEn} active={pathname === resolvedHref || pathname === href} />
                 </Link>
               )
             })}
