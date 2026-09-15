@@ -217,3 +217,16 @@ export type TranslationKey = keyof typeof translations
 export function t(key: TranslationKey, lang: Lang): string {
   return translations[key][lang]
 }
+
+/**
+ * Both languages for one key, for the bilingual inline nav.
+ *
+ * Peer club newbeerunning.org shows "Home 主页" stacked inline rather than
+ * hiding one language behind a toggle — so a member who reads either language
+ * never has to find a control before they can read the menu. The language
+ * toggle still exists and still controls body copy; the nav just stops
+ * depending on it.
+ */
+export function pair(key: TranslationKey): { en: string; zh: string } {
+  return translations[key]
+}
