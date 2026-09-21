@@ -83,12 +83,12 @@ export const PLANS: Record<Plan, PlanInfo> = {
   },
 }
 
-export const STEPS: { id: Step; label: string; icon: React.ReactNode }[] = [
-  { id: 'plan', label: 'Plan', icon: <ClipboardList className="w-4 h-4" /> },
-  { id: 'info', label: 'Info', icon: <User className="w-4 h-4" /> },
-  { id: 'payment', label: 'Pay', icon: <CreditCard className="w-4 h-4" /> },
-  { id: 'proof', label: 'Proof', icon: <Upload className="w-4 h-4" /> },
-  { id: 'done', label: 'Done', icon: <CheckCircle className="w-4 h-4" /> },
+export const STEPS: { id: Step; label: string; labelZh: string; icon: React.ReactNode }[] = [
+  { id: 'plan',    label: 'Plan',  labelZh: '方案', icon: <ClipboardList className="w-4 h-4" /> },
+  { id: 'info',    label: 'Info',  labelZh: '资料', icon: <User className="w-4 h-4" /> },
+  { id: 'payment', label: 'Pay',   labelZh: '付款', icon: <CreditCard className="w-4 h-4" /> },
+  { id: 'proof',   label: 'Proof', labelZh: '凭证', icon: <Upload className="w-4 h-4" /> },
+  { id: 'done',    label: 'Done',  labelZh: '完成', icon: <CheckCircle className="w-4 h-4" /> },
 ]
 
 export const STEP_ORDER: Step[] = ['plan', 'info', 'payment', 'proof', 'done']

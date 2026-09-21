@@ -126,7 +126,7 @@ export default function Navbar({
                 {lang === 'zh' ? '岚山跑团' : 'Misty Mountain Runners'}
               </span>
               <span className="text-white/60 text-[0.62rem] tracking-widest uppercase">
-                {lang === 'zh' ? 'Misty Mountain Runners' : 'MMRunners · 岚山'}
+                {lang === 'zh' ? '纽约 · 2015 年创立' : 'MMRunners · Est. 2015'}
               </span>
             </div>
           </Link>
@@ -157,7 +157,7 @@ export default function Navbar({
                     )}
                   >
                     {href === '/donate' && <Heart className="h-3.5 w-3.5 flex-shrink-0" />}
-                    <NavLabel keyEn={keyEn} active={pathname === resolvedHref || pathname === href} />
+                    <NavLabel keyEn={keyEn} />
                   </Link>
                 )
               })}
@@ -248,7 +248,7 @@ export default function Navbar({
                   )}
                 >
                   {href === '/donate' && <Heart className="h-3.5 w-3.5 flex-shrink-0" />}
-                  <NavLabel keyEn={keyEn} active={pathname === resolvedHref || pathname === href} />
+                  <NavLabel keyEn={keyEn} />
                 </Link>
               )
             })}

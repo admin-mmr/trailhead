@@ -31,7 +31,7 @@ const BENEFITS: { icon: string; title: Bi; body: Bi }[] = [
     icon: '◐',
     title: bi('Bilingual by default', '中英双语社区'),
     body: bi(
-      'Every route brief, announcement, and form in both English and 中文 — no one gets left out of the group chat.',
+      'Every route brief, announcement, and form in both English and Chinese — no one gets left out of the group chat.',
       '每一条路线说明、通知和表单都提供中英双语——不让任何人被群聊落下。',
     ),
   },
@@ -48,9 +48,7 @@ export default function HomeBenefits() {
             {say(lang, bi('Member benefits', '会员权益'))}
           </p>
           <h2 className="mt-3.5 font-lantern text-3xl font-bold leading-[1.08] tracking-tight text-lantern-ink sm:text-4xl">
-            {say(lang, bi('Why members ', '为什么会员'))}
-            <span className="font-zh font-black text-brand-crimson">加入</span>
-            {say(lang, bi(' and stay.', '并留下来。'))}
+            {say(lang, bi('Why members join and stay.', '为什么会员加入并留下来。'))}
           </h2>
           <p className="mt-4 text-base leading-relaxed text-lantern-ink-soft sm:text-lg">
             {say(lang, bi(
@@ -73,10 +71,7 @@ export default function HomeBenefits() {
                 {b.icon}
               </div>
               <h3 className="font-lantern text-lg font-bold text-lantern-ink">
-                {lang === 'zh' ? b.title.zh : b.title.en}
-                <small className="mt-1.5 block font-zh text-xs font-medium tracking-wide text-lantern-ink-soft">
-                  {lang === 'zh' ? b.title.en : b.title.zh}
-                </small>
+                {say(lang, b.title)}
               </h3>
               <p className="mt-3 text-sm leading-relaxed text-lantern-ink-soft">{say(lang, b.body)}</p>
             </div>

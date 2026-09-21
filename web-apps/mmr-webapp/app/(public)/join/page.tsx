@@ -16,31 +16,33 @@ export default function JoinPage() {
   const { lang, step, existingMember, isRenewing, error } = f
 
   return (
-    <main className="min-h-screen bg-gray-50 py-12">
+    <main className="min-h-screen bg-gradient-to-b from-lantern-blush to-lantern-blush-2 py-12">
       <div className="max-w-2xl mx-auto px-4">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#0A2342]">
+          {/* Bilingual lockup, matching the home page: the Chinese title is
+              always present rather than swapped out by the toggle. */}
+          <h1 className="font-lantern text-3xl font-bold tracking-tight text-lantern-ink">
             {isRenewing
               ? (lang === 'zh' ? '续费会员' : 'Renew Your Membership')
-              : (lang === 'zh' ? '加入我们' : 'Join Misty Mountain Runners')}
+              : (lang === 'zh' ? '加入岚山跑团' : 'Join Misty Mountain Runners')}
           </h1>
-          <p className="text-gray-500 mt-2">
+          <p className="mt-3 text-lantern-ink-soft">
             {lang === 'zh' ? '成为我们社区的一员' : 'Become part of our running community'}
           </p>
         </div>
 
         {/* Renewing-as banner */}
         {isRenewing && existingMember && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#0A2342] flex items-center justify-center text-white font-bold flex-shrink-0">
+          <div className="mb-6 p-4 bg-lantern-gold-tint border border-lantern-gold-foil/40 rounded-2xl flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-brand-crimson flex items-center justify-center text-white font-bold flex-shrink-0">
               {([existingMember.firstName, existingMember.lastName].filter(Boolean).join(' ') || existingMember.email)[0].toUpperCase()}
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#0A2342]">
+              <p className="text-sm font-semibold text-lantern-ink">
                 {lang === 'zh' ? '续费身份：' : 'Renewing as:'}{' '}
                 {[existingMember.firstName, existingMember.lastName].filter(Boolean).join(' ') || existingMember.email}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-lantern-ink-soft">
                 {lang === 'zh' ? '会员编号：' : 'Member ID: '}{existingMember.memberId}
                 {' · '}{existingMember.email}
               </p>
@@ -48,8 +50,8 @@ export default function JoinPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-          <ProgressBar step={step} stepIndex={f.stepIndex} />
+        <div className="bg-white rounded-[22px] border border-lantern-line p-6 sm:p-8 shadow-[0_18px_40px_-16px_rgba(140,14,32,0.16)]">
+          <ProgressBar lang={lang} step={step} stepIndex={f.stepIndex} />
 
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">

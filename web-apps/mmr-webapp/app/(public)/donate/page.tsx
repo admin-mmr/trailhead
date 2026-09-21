@@ -16,24 +16,27 @@ export default function DonatePage() {
   const { lang, step, error } = f
 
   return (
-    <main className="min-h-screen bg-gray-50 py-12">
+    <main className="min-h-screen bg-gradient-to-b from-lantern-blush to-lantern-blush-2 py-12">
       <div className="max-w-2xl mx-auto px-4">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-[#C8102E] rounded-2xl mb-4">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 bg-brand-crimson shadow-lg shadow-brand-crimson/30">
             <Heart className="h-7 w-7 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-[#0A2342]">
+          {/* Bilingual lockup, matching the home page and the join flow. */}
+          <h1 className="font-lantern text-3xl font-bold tracking-tight text-lantern-ink">
             {lang === 'zh' ? '支持岚山跑团' : 'Support Misty Mountain Runners'}
           </h1>
-          <p className="text-gray-500 mt-2">
+          <p className="mt-3 text-lantern-ink-soft">
             {lang === 'zh'
               ? '您的捐赠帮助我们组织更多跑步活动和社区项目。'
               : 'Your donation helps us organize more runs and community programs.'}
           </p>
-          <p className="text-xs text-gray-400 mt-1">501(c)(3) nonprofit</p>
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-lantern-gold-foil/40 bg-lantern-gold-tint px-3 py-1 text-[0.7rem] font-semibold text-lantern-gold">
+            501(c)(3) {lang === 'zh' ? '非营利组织' : 'nonprofit'}
+          </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+        <div className="bg-white rounded-[22px] border border-lantern-line p-6 sm:p-8 shadow-[0_18px_40px_-16px_rgba(140,14,32,0.16)]">
           <ProgressBar lang={lang} step={step} stepIndex={f.stepIndex} />
 
           {error && (
