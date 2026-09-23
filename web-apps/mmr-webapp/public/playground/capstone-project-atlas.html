@@ -1,0 +1,674 @@
+<!doctype html><html><head><meta charset=utf8><meta name="robots" content="noindex"><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Capstone Project Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Serif:wght@500;600&display=swap">
+<style>
+:root{
+  --ground:#F2F4F3; --surface:#FFFFFF; --ink:#15201C; --muted:#56635E; --line:#D6DDDA; --soft:#E8EDEB;
+  --accent:#1F5E4E; --ph:#7A5A08; --phbg:#F6EDD3;
+  --tracy:#2D5B89; --shilong:#1F6B55; --nan:#7B3D6F;
+  --good:#1F6B55; --warn:#9A6A00; --bad:#A23B2C;
+  --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0F1513; --surface:#161E1B; --ink:#E2E9E6; --muted:#98A5A0; --line:#2A3531; --soft:#1D2723;
+    --accent:#72C3A7; --ph:#E8C25F; --phbg:#3A3218;
+    --tracy:#8DB5DE; --shilong:#72C3A7; --nan:#D6A0CA;
+    --good:#72C3A7; --warn:#E8C25F; --bad:#F08C7A;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0F1513; --surface:#161E1B; --ink:#E2E9E6; --muted:#98A5A0; --line:#2A3531; --soft:#1D2723;
+  --accent:#72C3A7; --ph:#E8C25F; --phbg:#3A3218;
+  --tracy:#8DB5DE; --shilong:#72C3A7; --nan:#D6A0CA;
+  --good:#72C3A7; --warn:#E8C25F; --bad:#F08C7A;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:0 64px}
+.wrap{max-width:1120px;margin:0 auto}
+h1,h2,h3{font-family:var(--serif);font-weight:600;text-wrap:balance;line-height:1.2;margin:0}
+h1{font-size:clamp(28px,4vw,40px);letter-spacing:-.01em}
+h2{font-size:24px}
+h3{font-size:18px}
+p{margin:0}
+a{color:var(--accent)}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header.top{padding-block:40px 24px;display:grid;gap:14px;border-bottom:1px solid var(--line)}
+header.top .lede{max-width:72ch;color:var(--muted);font-size:16px}
+.facts{display:flex;flex-wrap:wrap;gap:10px 28px;margin-top:6px}
+.facts div{display:grid;gap:2px}
+.facts b{font-family:var(--mono);font-weight:500;font-size:13px}
+.facts span{font-size:12.5px;color:var(--muted)}
+nav.jump{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--ground);border-bottom:1px solid var(--line);display:flex;gap:4px;overflow-x:auto;padding-block:8px;scrollbar-width:thin}
+nav.jump a{font-size:13px;text-decoration:none;color:var(--ink);padding:6px 10px;border-radius:4px;white-space:nowrap}
+nav.jump a:hover,nav.jump a:focus-visible{background:var(--soft);outline:none}
+section.block{padding-block:40px 8px;display:grid;gap:18px}
+.sechead{display:grid;gap:6px}
+.sechead p{color:var(--muted);max-width:75ch}
+.note{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px;font-size:14px}
+.note strong{font-weight:600}
+.warn{border-left:3px solid var(--warn)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;gap:10px;align-content:start}
+.panel h4{margin:0;font-size:14px;font-weight:600}
+ul.tight{margin:0;padding-left:18px;display:grid;gap:6px}
+ul.tight li{padding-left:2px}
+.ph{background:var(--phbg);color:var(--ph);font-family:var(--mono);font-size:.88em;padding:0 3px;border-radius:3px;white-space:nowrap}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:8px 10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{font-weight:600;font-size:12.5px;background:var(--soft)}
+tr:last-child td{border-bottom:0}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.lead{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:1px 6px;border-radius:3px;border:1px solid currentColor}
+.l-tracy{color:var(--tracy)} .l-shilong{color:var(--shilong)} .l-nan{color:var(--nan)}
+.pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;border:1px solid var(--line);white-space:nowrap}
+.r-low{color:var(--good);border-color:var(--good)} .r-med{color:var(--warn);border-color:var(--warn)} .r-high{color:var(--bad);border-color:var(--bad)}
+/* heatmap */
+.heat td.s{text-align:center;font-family:var(--mono);font-weight:500;min-width:44px}
+.heat th.p{text-align:center;cursor:pointer;min-width:52px}
+.heat th.p:hover{text-decoration:underline}
+.heat td.role{white-space:nowrap}
+.s1{background:transparent;color:var(--muted)}
+.s2{background:color-mix(in oklab,var(--accent) 12%,var(--surface))}
+.s3{background:color-mix(in oklab,var(--accent) 28%,var(--surface))}
+.s4{background:color-mix(in oklab,var(--accent) 48%,var(--surface))}
+.s5{background:color-mix(in oklab,var(--accent) 72%,var(--surface));color:var(--surface)}
+.s0{color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12.5px;color:var(--muted);align-items:center}
+.legend i{display:inline-block;width:16px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:4px;border:1px solid var(--line)}
+/* project chooser */
+.chooser{display:grid;gap:10px}
+.chipgroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chipgroup .who{font-family:var(--mono);font-size:11.5px;width:70px;color:var(--muted)}
+.chip{font:inherit;font-size:13px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:6px 10px;cursor:pointer;text-align:left}
+.chip:hover{border-color:var(--ink)}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.proj{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:clamp(16px,3vw,28px);display:grid;gap:26px}
+.projhead{display:grid;gap:8px}
+.projhead .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--muted);align-items:center}
+.q{display:grid;gap:12px;padding-top:20px;border-top:1px solid var(--line)}
+.q > h3{display:flex;gap:10px;align-items:baseline}
+.q > h3 .qn{font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:500;min-width:26px}
+.datatbl td:first-child{width:32%;font-weight:500}
+.phase{display:grid;gap:8px}
+.phase .when{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.deliv{font-size:13px;color:var(--muted)}
+.deliv b{color:var(--ink);font-weight:600}
+.star li{line-height:1.5}
+.story{display:grid;gap:6px}
+.story dl{margin:0;display:grid;grid-template-columns:28px 1fr;gap:4px 8px;font-size:14px}
+.story dt{font-family:var(--mono);font-weight:500;color:var(--accent)}
+.story dd{margin:0}
+.fitbars{display:grid;gap:5px}
+.fitrow{display:grid;grid-template-columns:minmax(150px,240px) 1fr 24px;gap:10px;align-items:center;font-size:13px}
+.bar{height:10px;background:var(--soft);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.fitrow .num{text-align:right}
+.years{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.years .panel h4{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.timeline{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.timeline .panel .when{font-family:var(--mono);font-size:12px;color:var(--accent)}
+footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);display:grid;gap:6px}
+@media (max-width:560px){ .fitrow{grid-template-columns:1fr 60px 20px} .datatbl td:first-child{width:auto} }
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+html{scroll-behavior:smooth}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">Capstone Corps · Fall 2026 project slate · analysed 22 Sep 2026</div>
+  <h1>Capstone Project Atlas</h1>
+  <p class="lede">Nine proposed finance capstones, all read against the same nine questions: what data they need, what a team of 2–4 undergraduates can realistically ship by 15 December, what it's worth on a resume and in an interview, which internships it helps with, and how much each project's work carries over to the others.</p>
+  <div class="facts">
+    <div><b>Phase 1</b><span>Sep 29 – Dec 15, 2026 · ~11 weeks</span></div>
+    <div><b>Phase 2</b><span>Winter break · ~Dec 18 – Jan 20</span></div>
+    <div><b>Phase 3</b><span>Summer 2027 · 8–10 weeks</span></div>
+    <div><b>Team</b><span>2–4 students · 5–6 hrs/wk each in term</span></div>
+  </div>
+</header>
+
+<nav class="jump" aria-label="Sections">
+  <a href="#overview">Summary</a>
+  <a href="#data">1 · Data</a>
+  <a href="#calendar">2 · Phasing</a>
+  <a href="#projects">Project detail (1–9)</a>
+  <a href="#fit">6 · Fit matrix</a>
+  <a href="#years">7 · By recruiting year</a>
+  <a href="#benefits">8 · Benefits</a>
+  <a href="#leverage">9 · Leverage</a>
+</nav>
+
+<section class="block" id="overview">
+  <div class="sechead">
+    <div class="eyebrow">Summary</div>
+    <h2>The slate at a glance</h2>
+    <p>Difficulty and deadline risk refer to Phase 1 only. “Public-only” means the whole phase can run on free data. That matters because Capstone Corps year one runs on public information only.</p>
+  </div>
+  <div class="tbl"><table id="summaryTbl"></table></div>
+  <div class="grid2">
+    <div class="note"><strong>Three projects are safest for a first cohort:</strong> Tracy 2 (compute and WACC), Shilong 1 (short interest) and Nan 3 (liquidity indicator). They run entirely on free data, have a clear baseline, and a spreadsheet- or notebook-sized Phase 1.</div>
+    <div class="note warn"><strong>Three need a data plan before kickoff:</strong> Shilong 2 (consensus earnings needs I/B/E/S), Nan 1 (intraday rates data needs a Bloomberg terminal or tick data) and Nan 2 (private-market benchmark history). Each has a free fallback, described in its detail section, that still hits Dec 15.</div>
+  </div>
+</section>
+
+<section class="block" id="data">
+  <div class="sechead">
+    <div class="eyebrow">Question 1 · across all projects</div>
+    <h2>Public data vs. what a professor can request</h2>
+    <p>Each project's own data table is in its detail section. These rules apply to all nine.</p>
+  </div>
+  <div class="grid3">
+    <div class="panel"><h4>Free and public, usable by anyone</h4>
+      <ul class="tight small">
+        <li><b>SEC EDGAR</b>: every 10-K, 10-Q and 8-K, plus the XBRL financial data APIs and the quarterly structured 13F data sets. Free; the SEC asks for a User-Agent header and at most 10 requests a second.</li>
+        <li><b>FINRA</b>: equity short interest twice a month, plus daily short-sale volume. <em>Exchange-listed stocks are covered only from June 2021;</em> earlier files are OTC-only.</li>
+        <li><b>FRED, BLS, BEA, Census, EIA, Treasury</b>: macro, prices, productivity, construction, power. All have free APIs.</li>
+        <li><b>Kenneth French library, Damodaran datasets, Jay Ritter IPO data, Loughran–McDonald dictionary</b>: free academic staples.</li>
+        <li><b>Yahoo Finance / Stooq</b> prices: unofficial and subject to survivorship bias, but acceptable for coursework.</li>
+      </ul></div>
+    <div class="panel"><h4>Requestable through a professor (academic licence)</h4>
+      <ul class="tight small">
+        <li><b>WRDS</b> (most research universities subscribe): CRSP, Compustat including its short-interest file, I/B/E/S, Thomson 13F, Enhanced TRACE, Mergent FISD, Capital IQ transcripts, and depending on the school's subscriptions, Markit CDS and securities finance, RavenPack, TAQ, OptionMetrics. Faculty can usually sponsor student or class accounts.</li>
+        <li><b>Bloomberg terminals</b> in the business-school lab: futures, OAS, CDS, private-market indices.</li>
+        <li><b>Library databases</b>: PitchBook, Preqin, Capital IQ, LSEG Workspace. Coverage varies by campus.</li>
+        <li><b>Burgiss / MSCI private capital data</b> through the Private Capital Research Institute, for affiliated academic researchers.</li>
+      </ul></div>
+    <div class="panel warn"><h4>The licence catch for Capstone Corps</h4>
+      <p class="small">Academic licences (WRDS, Bloomberg, library databases) are for non-commercial teaching and research. Raw licensed data <b>cannot be handed to a sponsoring firm</b> or posted publicly. Charts and statistics are usually fine to publish; the underlying rows are not. Run public-data versions of every project whenever a sponsor, a fee or a public portfolio piece is involved, and treat licensed data as a professor-supervised academic extension only. Check each school's terms.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="calendar">
+  <div class="sechead">
+    <div class="eyebrow">Question 2 · across all projects</div>
+    <h2>What “done by December 15” really means</h2>
+    <p>Finals take up most of the second week of December on most campuses. Lock the content by <b>Friday 4 December</b> and use the last ten days for polish and the presentation. Project-specific phase plans are in each detail section.</p>
+  </div>
+  <div class="timeline">
+    <div class="panel"><span class="when">Wk 1–2 · to Oct 9</span><h4>Scope and data access</h4><p class="small">Fix the universe and the question, then file data requests (WRDS, terminal time) <b>in week 1</b>, because access can take 2–4 weeks. Start any snapshotting early (e.g. GPU prices).</p></div>
+    <div class="panel"><span class="when">Wk 3–6 · to Nov 6</span><h4>Data build</h4><p class="small">Clean, merge and document the data. Plan for this to eat half the semester, and ship a data dictionary with it. Fall break and prelims fall here.</p></div>
+    <div class="panel"><span class="when">Wk 7–9 · to Nov 25</span><h4>Baseline, then model</h4><p class="small">Baseline first, the sophisticated model second, and an honest evaluation. Thanksgiving week is roughly half a week of work.</p></div>
+    <div class="panel"><span class="when">Wk 10–11 · to Dec 15</span><h4>Write, present</h4><p class="small">Content lock Dec 4. Deliverables: an 8–10 page memo, a 10-slide deck, and a reproducible notebook or workbook.</p></div>
+  </div>
+  <div class="grid3">
+    <div class="panel"><h4>Team roles (2–4 people)</h4><ul class="tight small"><li><b>Data lead</b>: pipeline, merges, point-in-time dates</li><li><b>Modeller</b>: baseline, model, evaluation</li><li><b>Analyst-writer</b>: business framing, memo, deck</li><li><b>PM</b>, the 4th person or rotating: calendar, sponsor contact, QA</li></ul><p class="small muted">With 2 people, one covers data plus modelling and the other analysis plus writing.</p></div>
+    <div class="panel"><h4>Phase 2: winter break</h4><p class="small">About four real working weeks once the holidays are out, at 10–15 hours a week. Phase 2 should <b>deepen</b> Phase 1: a stronger model, a strategy or scenario layer, and robustness checks. It should not add a new dataset unless access is already confirmed. Deliver by about Jan 20, before spring classes begin.</p></div>
+    <div class="panel"><h4>Phase 3: Summer 2027</h4><p class="small">Scale up: a bigger universe, longer history, licensed data, or a live tool. It can run part-time next to an internship (8–10 hours a week), or full-time for students with no summer seat, in which case it <b>is</b> their summer experience. End it with a practitioner review, so the resume line carries a named reviewer.</p></div>
+  </div>
+</section>
+
+<section class="block" id="projects">
+  <div class="sechead">
+    <div class="eyebrow">Questions 1–9 · per project</div>
+    <h2>Project detail</h2>
+    <p>Pick a project. Everything in <span class="ph">[brackets]</span> is a placeholder for the team's real result. Never submit a bracketed number unchanged: interviewers ask how you got every figure.</p>
+  </div>
+  <div class="chooser" id="chooser"></div>
+  <article class="proj" id="proj" aria-live="polite"></article>
+</section>
+
+<section class="block" id="fit">
+  <div class="sechead">
+    <div class="eyebrow">Question 6 · all projects</div>
+    <h2>Fit to finance internship role types</h2>
+    <p>Scores run from 1 to 5. <b>5</b>: the project is the role's daily work in miniature. <b>3</b>: the skills transfer, but the student has to frame them. <b>1</b>: little signal for this role. Click a column header to open that project.</p>
+  </div>
+  <div class="legend"><span><i class="s1"></i>1</span><span><i class="s2"></i>2</span><span><i class="s3"></i>3</span><span><i class="s4"></i>4</span><span><i class="s5"></i>5</span></div>
+  <div class="tbl"><table class="heat" id="heat"></table></div>
+</section>
+
+<section class="block" id="years">
+  <div class="sechead">
+    <div class="eyebrow">Question 7 · all projects</div>
+    <h2>How the capstone helps, year by year and sector by sector</h2>
+    <p>The capstone does a different job each year. After freshman year it's proof you can do real work. After sophomore year it's the thing that sets you apart when nobody in the pool has experience. After junior year it's a source of technical depth and market views for the superday.</p>
+  </div>
+  <div class="years">
+    <div class="panel"><h4>After freshman year</h4><p class="small">Few formal programmes take first-years; most are insight days, discovery programmes, research-assistant roles, boutiques, family offices and startups. A finished Phase 1 plus Phase 2 is often the <b>only substantive line</b> on a first-year's resume. The ask is a conversation, not an offer.</p></div>
+    <div class="panel"><h4>After sophomore year</h4><p class="small">Sophomore-specific programmes, insurers, asset managers, and smaller banks that state no class year. Screeners compare you to peers with no experience either, so a <b>named project with a named reviewer</b> is the tiebreaker. Phase 3 is also a talking point in fall interviews.</p></div>
+    <div class="panel"><h4>After junior year (the conversion seat)</h4><p class="small">Bank analyst programmes, the buy side, the Fed. The capstone supplies <b>technical depth plus a market view</b> for superday questions like “pitch me an idea” or “what's moving rates”. Banking applications for this summer are read in the December–January <em>of sophomore year</em>, so Phase 1 is exactly what's on the resume then.</p></div>
+  </div>
+  <div class="tbl"><table id="sectorTbl"></table></div>
+  <div class="note small"><strong>Timing for current sophomores (class of 2029):</strong> Phase 1 lands on Dec 15, 2026, just as junior-summer (2028) investment-banking recruiting opens. Phase 2 finishes before spring interviews for Summer 2027 sophomore programmes. Phase 3 wraps before asset-management and insurance recruiting for Summer 2028 peaks in August–September 2027. <strong>For current freshmen (class of 2030)</strong>, Phase 3 <em>is</em> a credible Summer 2027 experience in its own right.</div>
+</section>
+
+<section class="block" id="benefits">
+  <div class="sechead">
+    <div class="eyebrow">Question 8 · all projects</div>
+    <h2>Why participate, and why excel</h2>
+    <p>Project-specific benefits are in each detail section. These apply to every project.</p>
+  </div>
+  <div class="grid3">
+    <div class="panel"><h4>A track record, not an interest</h4><p class="small">“Member of the investment club” signals interest. “Built X, found Y, presented to Z” signals the ability to do the work, and that's what an early-career screen is actually trying to find out.</p></div>
+    <div class="panel"><h4>Work you can show</h4><p class="small">Built from public data, the memo, deck and code can go in a portfolio or GitHub repo and be handed to an interviewer. Most club and internship work is confidential.</p></div>
+    <div class="panel"><h4>Interview stories supplied</h4><p class="small">Every phase produces a technical walkthrough plus behavioural stories about a mistake, a judgment call, a teammate conflict and a null result. Those are the four prompts students struggle with most.</p></div>
+    <div class="panel"><h4>Practitioner access</h4><p class="small">Excelling is what turns a reviewer into a reference, a referral or an introduction. A mediocre project gets a polite thanks. The spread between the two is large.</p></div>
+    <div class="panel"><h4>A signal of direction</h4><p class="small">Choosing credit, macro, quant or private markets early gives a resume a clear direction, and recruiters reward a coherent story over a scatter of activities.</p></div>
+    <div class="panel"><h4>Skills that compound</h4><p class="small">Python, EDGAR, event studies, valuation, LLM validation: each phase's skills carry into the next capstone and the next job, as the leverage matrix shows.</p></div>
+  </div>
+</section>
+
+<section class="block" id="leverage">
+  <div class="sechead">
+    <div class="eyebrow">Question 9 · all projects</div>
+    <h2>How much each capstone's work carries over to the others</h2>
+    <p>0 = nothing reusable; 1 = shared skills or background; 2 = shared data or code; 3 = one project's output is a direct input to the other. The last column sums each row: that project's reach across the programme.</p>
+  </div>
+  <div class="tbl"><table class="heat" id="lev"></table></div>
+  <div class="grid3">
+    <div class="panel"><h4>Shilong 3 is the hub</h4><p class="small">Its LLM extraction toolkit reads lease footnotes for Tracy 1, AI-capex commentary for Tracy 2, AI-adoption language for Tracy 3, earnings tone for Shilong 2 and posts for Nan 1. Run it first or alongside, and treat the toolkit as shared programme infrastructure.</p></div>
+    <div class="panel"><h4>Three natural pairs</h4><p class="small"><b>Tracy 1 → Tracy 2</b>: the lease-adjusted debt is the cost-of-debt input. <b>Shilong 1 → Shilong 2</b>: short-interest data becomes the short-crowding measure. <b>Nan 3 → Nan 2</b>: the liquidity indicator conditions the rebalancing. Staffing pairs in sequence (fall, then summer) builds continuity.</p></div>
+    <div class="panel"><h4>Four shared pipelines</h4><p class="small">Build these once, as programme assets: an <b>EDGAR pipeline</b> (T1, T2, S2, S3), a <b>macro / FRED pipeline</b> (T3, N1, N2, N3), a <b>backtest harness</b> (S1, S2, S3, N2) and the <b>LLM extraction toolkit</b> (S3, T1, T3, N1). That cuts every later cohort's data phase from weeks to days.</p></div>
+  </div>
+</section>
+
+<footer>
+  <span>Data-source status checked 22 Sep 2026: FINRA exchange-listed short interest begins June 2021; SEC Rule 13f-2 / Form SHO compliance postponed to January 2028. The Nan 1 reference paper (SSRN 7436080) blocks automated access and could not be reviewed here.</span>
+  <span>Fit scores and leverage ratings are analytical judgments to guide project choice, not survey results. All resume bullet figures are placeholders.</span>
+</footer>
+</div>
+
+<script>
+const ROLES=[
+ ["IB","Investment banking (M&A / coverage)"],["CM","Capital markets (DCM, ECM, lev fin)"],["STR","S&T: rates / macro"],["STC","S&T: credit"],["STE","S&T: equities / prime"],["ER","Equity research"],["CR","Credit / fixed-income research"],["AM","Asset management (long-only, multi-asset)"],["QR","Quant research / systematic"],["HF","Hedge fund (fundamental or macro)"],["PE","Private equity / growth"],["PC","Private credit / direct lending"],["RM","Risk management"],["EC","Economics / strategy / central bank"],["CF","Corporate finance / FP&A / treasury"],["INS","Insurance investments & ALM"],["FT","Fintech / financial data science"],["AL","Allocator (endowment, pension, OCIO)"]
+];
+const ORDER=["t1","t2","t3","s1","s2","s3","n1","n2","n3"];
+const LEV={
+ t1:[null,3,1,0,1,3,1,2,1], t2:[3,null,2,0,0,2,1,0,1], t3:[1,2,null,0,0,2,2,0,1],
+ s1:[0,0,0,null,3,2,0,0,0], s2:[1,0,0,3,null,2,0,0,0], s3:[3,2,2,2,2,null,2,0,1],
+ n1:[1,1,2,0,0,2,null,0,1], n2:[2,0,0,0,0,0,0,null,3], n3:[1,1,1,0,0,1,1,3,null]
+};
+const P={
+t1:{code:"T1",lead:"Tracy",short:"AI infra debt",title:"AI Infrastructure Debt and Credit Risk Mispricing",area:"Fixed income / credit markets",diff:"3 / 5",pub:"Yes (Phases 1–2)",risk:["low","Low–medium"],
+ fit:[3,4,2,5,1,3,5,4,2,4,2,4,5,2,3,5,1,3],
+ data:{pub:[
+  ["10-K / 10-Q footnotes (EDGAR)","Lease liabilities under ASC 842, “leases signed but not yet commenced”, purchase obligations, guarantees, and joint-venture / VIE disclosures. The hidden leverage is written up in these footnotes; it isn't on the balance sheet."],
+  ["SEC XBRL company-facts API","Machine-readable reported debt, lease liabilities, interest expense and EBITDA inputs. Free, no API key."],
+  ["Bond offering documents","424B2 prospectuses and 144A announcements: coupons, maturities and covenants, including the data-center SPV/JV bonds (e.g. the 2025 Meta–Blue Owl Hyperion structure)."],
+  ["FINRA TRACE bond lookup","Recent trade prices and yields for individual corporate bonds, 144A included. Free one bond at a time; bulk history isn't free."],
+  ["FRED","Treasury curve, Moody's Aaa/Baa yields (long free history), and ICE BofA OAS by rating. Check how much history FRED shows for the ICE series; licensing limits it."],
+  ["Damodaran datasets","The interest-coverage → synthetic rating → default spread table. It's the fastest defensible way to turn “adjusted leverage” into an “implied spread”."],
+  ["Equity prices (yfinance)","Equity value and volatility for a Merton distance-to-default."]],
+ acad:[
+  ["WRDS Enhanced TRACE + Mergent FISD","Full bond-level transaction history and bond characteristics, for spread panels."],
+  ["Markit CDS (WRDS) or Bloomberg","CDS spreads for the few names with liquid contracts (Oracle trades actively; most hyperscalers barely do)."],
+  ["Bloomberg terminal","OAS, BVAL, debt-distribution screens, lease-adjusted leverage fields."],
+  ["Compustat (WRDS)","Quarterly fundamentals for peer panels."],
+  ["Rating-agency methodology papers (library)","Moody's and S&P lease-adjustment methods, so the team's adjustments follow an industry convention."]],
+ caution:"Off-balance-sheet exposure is disclosed in prose, and each company defines it differently. Every adjustment is an assumption. Keep an assumptions register from day one, or the spread result can't be defended."},
+ phases:[
+  {t:"Hidden-leverage table and spread gap for 5–6 issuers",s:["Fix the issuer set: Microsoft, Alphabet, Amazon, Meta and Oracle, plus one high-yield “neocloud” (e.g. CoreWeave) for contrast.","Build a bridge from reported to adjusted debt: debt → + lease liabilities → + leases not yet commenced → + purchase commitments and JV/SPV guarantees, each with a written inclusion rule.","Recompute leverage (debt/EBITDA) and interest coverage both ways, and map each to a synthetic rating and spread.","Compare the implied spread with the traded spread (TRACE, Baa) to get the <b>spread gap in bps</b>."],d:"Excel model with an assumptions register · 8–10 page credit memo · 10-slide deck · a one-page “hidden leverage” monitor template"},
+  {t:"Structural model and stress scenarios",s:["Merton/KMV distance-to-default on adjusted vs. reported liabilities, calibrated to equity volatility.","An AI-disappointment scenario (slower cloud growth, GPU impairments, rigid lease costs) → implied spread widening and rating migration.","A tornado chart ranking which off-balance-sheet assumption drives the gap."],d:"Python notebook · scenario workbook · memo v2 with a “what would have to be true” section"},
+  {t:"AI Credit Risk Monitor across 20–30 issuers",s:["Add data-center REITs (Equinix, Digital Realty), neoclouds, utilities with data-center load, and chipmakers.","Automate footnote extraction with Shilong 3's LLM pipeline, validated by hand.","A 2019–2027 quarterly panel of hidden leverage vs. spreads: does the gap predict spread changes?","Publish a quarterly monitor and take it to a credit PM or an insurer's investment team."],d:"Monitor (dashboard + 2-page note) · bond-level panel · practitioner review"}],
+ skills:[["Reading 10-K footnotes (ASC 842 leases, commitments, VIEs)","Credit ratios: leverage, coverage, lease-adjusted debt","Synthetic ratings and spread mapping","Excel modelling with an assumptions register","Credit memo writing"],["Merton / structural credit models","Python (pandas, NumPy, SciPy) calibration","Scenario and sensitivity analysis","Bond math: yield, spread, duration"],["LLM-assisted document extraction with validation","Bond-level panels (TRACE, FISD)","Predictive panel regression","Dashboards (Streamlit / Power BI)","Presenting to practitioners"]],
+ star:[["Built a lease- and commitment-adjusted debt model for 6 AI infrastructure issuers from 10-K footnotes; total obligations rose [X]% above reported debt for the most exposed name.","Mapped adjusted leverage and coverage to synthetic ratings; traded spreads were [X–Y] bps tighter than adjusted fundamentals implied for [N] of 6 issuers.","Co-wrote a 10-page credit memo and a one-page monitoring template in a team of 4; presented to [professor / practitioner panel]."],
+  ["Calibrated a Merton distance-to-default model to equity volatility for 6 issuers; adjusted liabilities cut distance-to-default by [X] standard deviations on average.","Stress-tested an AI revenue-disappointment scenario: estimated [X] bps of spread widening and a [one-notch] implied downgrade for [issuer].","Ranked off-balance-sheet assumptions with a tornado analysis; [leases not yet commenced] drove [X]% of the spread gap."],
+  ["Scaled the framework to [25] issuers with an LLM footnote-extraction pipeline, validated against hand-coded data at [X]% field accuracy.","Assembled a [N]-bond TRACE panel (2019–2027) and tested whether the hidden-leverage gap predicts 3-month spread changes (coefficient [x], t-stat [y]).","Published a quarterly AI Credit Risk Monitor and briefed [credit PM at X]; worked their feedback into v2.","Ran the data workstream for a 4-person team, cutting the quarterly refresh from [days] to [hours]."]],
+ stories:[
+  {q:"“Walk me through a project.” (credit S&T, credit research, insurance investments)",S:"Hyperscalers were issuing record amounts of bonds while their spreads sat near the tights, because headline leverage looked low.",T:"Test whether the market was pricing the right debt number.",A:"Read the footnotes for 6 issuers, built the reported-to-adjusted debt bridge, mapped both versions to a synthetic spread and compared them with TRACE prices.",R:"[Finding]. For a PM the takeaway is a watch list, not a short call. Close with what I'd watch next quarter."},
+  {q:"“Tell me about a judgment call with incomplete information.”",S:"The team split on whether signed-but-not-commenced leases should count as debt; there's no accounting answer.",T:"Settle it without stalling the project.",A:"Built both versions, showed how much the result moved, then picked the rule consistent with the rating agencies' lease method and disclosed it.",R:"The memo held up under questioning. Lesson: make assumptions visible instead of hiding them."}],
+ fitNotes:[["CR","The memo is a credit research note in miniature: adjusted leverage, relative value, a view."],["STC","IG desks talk spreads and new issues all day, and hyperscaler issuance is one of their biggest current themes."],["INS","The problem statement names insurers. Life insurers are the largest holders of long IG corporates, so this speaks directly to general-account teams."],["RM","Hidden exposures and tail scenarios are the core of credit risk management."]],
+ fitLow:"Weak for quant research and equities: there's little statistical modelling until Phase 3.",
+ years:["A freshman who has read a 10-K footnote, let alone built a lease-adjusted debt bridge, is rare. Good for insurer and asset-manager insight programmes, bank credit and risk roles open to first-years, and professor RA roles.","Gives a sophomore a real fixed-income talking point when nearly every peer pitches equities. Targets: fixed-income sophomore programmes, insurers' investment arms, rating agencies, bank risk.","In a credit S&T, DCM or credit research superday, being able to discuss spread vs. adjusted leverage for hyperscalers sounds like a first-year analyst. Converts well at asset managers and insurers with IG books."],
+ benefits:["Fixed income is under-represented in student clubs, so this sets a student apart immediately.","A live topic: financing the AI buildout is one of the most-discussed credit themes of 2025–26, so interviewers engage with it.","Teaches the accounting that matters (leases, commitments), which is also tested in credit and IB technicals.","Built entirely from public filings, so the memo can be shared."],
+ lev:"Strongest link is <b>Tracy 2</b>: same issuers, and the same debt numbers feed its cost-of-debt leg. <b>Shilong 3</b>'s LLM pipeline is how this scales past a handful of issuers. <b>Nan 2</b> sees the same money from the other side, because private credit is a major lender to data-center SPVs."},
+
+t2:{code:"T2",lead:"Tracy",short:"AI compute & WACC",title:"The Cost of AI Compute as a Driver of Corporate Cost of Capital",area:"Corporate finance / capital markets",diff:"3 / 5",pub:"Yes",risk:["low","Low"],
+ fit:[5,4,2,2,2,4,3,3,1,3,4,3,2,2,5,2,2,2],
+ data:{pub:[
+  ["10-K / 10-Q, earnings releases","Capex, AI-capex commentary, depreciation policy (server useful lives), lease terms, power purchase agreements."],
+  ["Cloud GPU list prices","On-demand and reserved GPU-hour prices from AWS, Azure and Google Cloud, plus marketplace prices (e.g. Vast.ai, RunPod). <b>No free historical series exists; snapshot weekly from week 1.</b>"],
+  ["EIA (free API), PJM / ERCOT","Retail and wholesale electricity prices by state, and capacity-auction results: the power-cost channel."],
+  ["FRED, French library, Damodaran","Rates, corporate yields, market premia, industry betas, equity risk premium, cost-of-capital tables."],
+  ["Semiconductor data","SIA monthly sales summaries; Nvidia and AMD results for GPU pricing and supply commentary."],
+  ["Equity prices (yfinance)","Betas."]],
+ acad:[
+  ["Bloomberg terminal","WACC function, betas, GPU rental-price indices carried on the terminal, power forwards."],
+  ["Compustat / CRSP (WRDS)","Peer betas, capex panels."],
+  ["Capital IQ / LSEG Workspace","Transcripts for AI-capex commentary; consensus capex estimates."],
+  ["Paid industry research","GPU-pricing indices and data-center cost studies. Publishers sometimes grant academic access on request."]],
+ caution:"Get the finance right. Compute and power volatility are <b>cash-flow risks</b>: they belong in the project's cash flows or its beta, not bolted onto WACC as an arbitrary premium. The strongest teams show both treatments and explain the difference, and that's the insight interviewers remember."},
+ phases:[
+  {t:"Framework plus one case study",s:["Standard WACC for one company (Oracle, Meta or Microsoft): CAPM cost of equity, after-tax cost of debt, market weights.","A data-center project model: capex, GPU refresh cycle, power, utilization, revenue per GPU-hour, financing.","Layer in the three AI drivers: compute cost per workload, power-cost sensitivity, lease-adjusted financing cost.","Compare NPV/IRR under the textbook treatment and the AI-adjusted one, and show where ignoring the drivers flatters ROI."],d:"Excel DCF · 6–8 page framework note · 10-slide deck with a tornado chart"},
+  {t:"Monte Carlo and a second company",s:["Jointly simulate GPU price decline, utilization, power prices and rates (with correlations) → a distribution of NPV and the implied hurdle rate.","Depreciation-life test: 4- vs 5- vs 6-year server lives, and reported vs. economic returns.","A contrasting firm: a leveraged neocloud vs. a hyperscaler."],d:"Python simulation notebook · memo v2: “when does the AI hurdle rate bind?”"},
+  {t:"AI hurdle-rate calculator and cross-company panel",s:["Package the framework as a reusable tool (Streamlit or an Excel front end).","A panel of 15–20 companies: AI capex vs. implied required return.","A real-options extension (the option to delay or scale compute purchases).","Take it to a corporate-development team, an infrastructure investor or a TMT banker for review."],d:"Tool · panel study · practitioner review"}],
+ skills:[["WACC / CAPM estimation","DCF and project NPV / IRR","Capex and depreciation analysis from filings","Excel financial modelling","Tornado sensitivity analysis"],["Monte Carlo simulation in Python","Correlated risk factors","Accounting judgment: useful lives, impairment","Comparative company analysis"],["Building a reusable valuation tool","Real options","Cross-sectional analysis","Client-style presentation"]],
+ star:[["Built a DCF for a [1 GW] AI data-center project from filings, cloud GPU prices and EIA power data; textbook WACC overstated project NPV by [X]%.","Designed a cost-of-capital framework adding compute cost, power sensitivity and lease-adjusted financing, documented in an 8-page methodology note.","Tornado analysis showed power cost and GPU utilization drove [X]% of NPV variance."],
+  ["Ran a 10,000-path Monte Carlo on GPU prices, utilization, power and rates; estimated a [X]% probability the project misses its hurdle rate.","Showed that stretching server depreciation from 4 to 6 years lifts reported ROIC by [X] points with no change in cash returns.","Compared a hyperscaler with a leveraged neocloud: the neocloud's effective hurdle rate was [X] bps higher."],
+  ["Shipped an interactive AI hurdle-rate calculator, used by [N classmates / sponsor].","Compared AI capex with implied required returns across [18] companies and found [finding].","Valued phased GPU purchases as a real option, worth [X]% of static NPV.","Presented to [corporate development / TMT banker]; incorporated [feedback]."]],
+ stories:[
+  {q:"“Walk me through a project.” (IB, corporate finance)",S:"Firms use one WACC for everything, but an AI data center's inputs move with rates, power prices and GPU supply.",T:"Work out whether a single discount rate misprices AI projects.",A:"Built a project DCF with real inputs, added the three AI drivers, then ran the textbook version against the adjusted one.",R:"Ignoring the drivers overstated NPV by [X]%, and most of the risk sits in cash flows, not the discount rate."},
+  {q:"“Tell me about a time you changed your mind.”",S:"My first version added a “compute risk premium” to WACC.",T:"Defend it at the midpoint review.",A:"A teammate and the professor showed it double-counted risk already in the cash flows, so I rebuilt it with cash-flow scenarios.",R:"A more defensible model, and a lesson in taking pushback well. Banks screen for exactly that."}],
+ fitNotes:[["IB","WACC, DCF and a project-valuation debate are standard IB technical questions; TMT coverage bankers live this topic."],["CF","Capital budgeting for AI is what corporate FP&A and treasury teams are doing right now."],["ER","Tech and semis analysts are asked whether AI capex earns its cost of capital."],["PE","Infrastructure and growth investors underwriting data centers use this exact model."]],
+ fitLow:"Weak for quant and rates trading: no statistical inference and little market data.",
+ years:["A freshman who can explain WACC and build a DCF with real inputs is ahead of most sophomores. Good for boutique banks, corporate finance rotations, startups and VC scout roles.","Directly usable in sophomore IB programmes and insight weeks (valuation questions), and in FP&A internships at tech companies and utilities.","The superday question “How would you value a data center?” becomes a strength. Strong for TMT and power & utilities coverage groups and for infrastructure PE."],
+ benefits:["The most direct preparation on this list for IB and corporate-finance technical interviews.","The lowest data risk: everything needed is free.","The case study reads like a banker's or corp-dev work product.","Accessible to freshmen: accounting plus Excel is enough to start."],
+ lev:"Tightly paired with <b>Tracy 1</b> (lease-adjusted debt is its cost-of-debt input) and <b>Tracy 3</b> (power and construction-cost series). <b>Shilong 3</b>'s tools can pull AI-capex commentary from transcripts at scale."},
+
+t3:{code:"T3",lead:"Tracy",short:"AI & inflation",title:"AI-Driven Productivity Gains vs. Inflationary Pressure",area:"Macro-financial research / monetary policy",diff:"4 / 5",pub:"Yes",risk:["med","Medium (scope)"],
+ fit:[1,1,5,2,2,2,2,4,2,4,1,1,3,5,1,3,1,4],
+ data:{pub:[
+  ["BLS","CPI and PPI detail (data processing and hosting, electric power, semiconductors, construction inputs); quarterly productivity and costs; annual productivity by industry, finance and insurance included."],
+  ["BEA","Private fixed investment in information-processing equipment and software; GDP by industry."],
+  ["Census","Construction spending (data-center category), and the Business Trends and Outlook Survey: biweekly AI-use rates by industry since 2023, the best free adoption measure."],
+  ["FDIC / FFIEC call reports (free API)","Banks' efficiency ratios, non-interest expense and headcount: the cleanest free data for a financial-sector use case."],
+  ["Filings and sector margins","Hyperscaler capex; bank and insurer AI statements; S&P 500 sector margins from free S&P Dow Jones and FactSet Earnings Insight summaries."],
+  ["Fed materials","FOMC minutes, Beige Book AI mentions, the SEP, and regional Fed surveys with special AI questions."]],
+ acad:[
+  ["Compustat (WRDS)","Firm-level margins, SG&A and headcount for a financial-sector panel."],
+  ["Capital IQ transcripts (WRDS)","Firm-level AI-exposure scores."],
+  ["Lightcast job-postings data","Demand for AI skills. Often available under a university licence or by academic request."],
+  ["Bloomberg","Inflation swaps, sector margin histories."]],
+ caution:"Two years of AI data is short, and the AI capex boom overlaps with tariffs, rate moves and post-pandemic normalisation. The honest deliverable is <b>“early evidence with stated identification limits”</b>, not a verdict. Narrow the financial-sector use case in week 1 (e.g. banks' back-office costs), or the project sprawls."},
+ phases:[
+  {t:"Evidence dashboard plus one financial-sector case",s:["A clean monthly/quarterly dataset: AI capex (hyperscaler capex, BEA IT investment, data-center construction) and input prices (electricity, construction, semiconductors, data services).","Channel 1, capex demand: capex growth vs. input PPIs, with lags.","Channel 2, productivity: one financial-sector case, e.g. bank efficiency ratios and headcount vs. AI adoption.","A 10-page “early evidence” note on what the data can and can't say yet."],d:"Data appendix and notebook · early-evidence report · 10-slide deck"},
+  {t:"Econometric tests",s:["Local projections or a small VAR: how input prices respond to AI-capex shocks.","Cross-industry: higher-adoption industries (BTOS) vs. productivity growth and output prices, diff-in-diff style.","Bank panel: 10-K and earnings-call AI mentions (using Shilong 3's tools) vs. change in efficiency ratio."],d:"Methods appendix · regression tables · report v2"},
+  {t:"Policy report and Fed-style scenarios",s:["A simple Phillips-curve model augmented with AI-demand and AI-productivity terms; scenarios for the rate path.","Asset-allocation implications: rates, breakevens, sector margins.","Submit as a policy brief or working paper; field a College Fed Challenge team in fall 2027."],d:"Policy report · scenario model · competition or journal submission"}],
+ skills:[["Macro data APIs (BLS, BEA, Census, FRED)","Time-series cleaning and visualisation","Bank cost-structure analysis","Research writing with stated limitations"],["Econometrics: local projections, VAR, diff-in-diff","Python statsmodels / R","Text-based adoption measures","Robustness testing"],["Macro scenario modelling","Monetary policy tools (Phillips curve, Taylor rule)","Cross-asset implications","Policy writing for non-specialists"]],
+ star:[["Assembled a [15]-series dataset linking AI capex (hyperscaler capex, data-center construction) to input prices from BLS, BEA, Census and EIA.","Found data-center construction led electricity and construction-input PPIs by [N] months (correlation [x]), consistent with a capex-demand channel.","Analysed [N] banks' call reports: efficiency ratios improved [X] bps more at high-AI-adoption banks. Wrote a 10-page early-evidence note."],
+  ["Estimated local-projection responses of PPI components to AI-capex shocks: peak effect [X] pp at [N] quarters.","Built an industry panel from Census AI-use rates and BLS productivity; higher adoption went with [X] pp faster productivity growth.","Created a text-based AI-adoption score for [N] financial firms from 10-K language and validated it against survey data."],
+  ["Extended a Phillips-curve model with AI demand and productivity terms; the scenarios implied a [X] bp difference in the 2028 policy-rate path.","Translated the scenarios into cross-asset calls (duration, breakevens, sector margins) for an asset-allocation audience.","Represented [university] in the College Fed Challenge / submitted a working paper to [journal].","Coordinated a 4-person team across data, econometrics and writing workstreams."]],
+ stories:[
+  {q:"“Walk me through a project.” (rates, macro strategy, economics)",S:"The debate is whether AI is deflationary through productivity or inflationary through capex.",T:"Turn that into something testable.",A:"Split it into two channels and measured each: capex demand against input prices, and productivity in banks against their adoption rates.",R:"[Finding]. My view is [X], and here is what would change it."},
+  {q:"“Tell me about a result that didn't support your hypothesis.”",S:"We expected a clear productivity effect in banks.",T:"Present the results honestly at the final review.",A:"The effect wasn't statistically significant. We reported that, explained why two years of data lacks power, and set out what would settle it.",R:"The panel valued the candour. Central banks and research teams screen for that integrity."}],
+ fitNotes:[["EC","This is what a Fed or bank economics RA does: assemble data, test a live policy question, write it up."],["STR","Rates desks trade the rate path, and an AI-inflation view is a genuine macro thesis."],["HF","Global-macro funds want candidates with a data-driven macro view."],["AL","Allocators and multi-asset teams set strategic weights on exactly this inflation question."]],
+ fitLow:"Weak for IB, PE and corporate finance: there's no company valuation in it.",
+ years:["Strongest freshman fit is research: Fed discovery days, professor RA roles, think tanks. It shows writing plus data, a scarce combination.","Sophomore macro and markets programmes, regional Fed internships, asset-manager strategy teams. Economic-consulting seats are mostly junior-only.","Rates S&T, macro strategy and multi-asset superdays: “What's your inflation view?” becomes a data-backed three-minute answer. Also strong for Fed RA applications after graduation."],
+ benefits:["Forces students to form and defend a macro view, which every markets interview asks for.","All data is free and official, so there's no access risk.","A direct path into economics research, the College Fed Challenge and RA roles.","Writing-heavy: builds the research-note skill most finance students lack."],
+ lev:"Shares the macro data pipeline with <b>Nan 1</b> and <b>Nan 3</b>, and the capex and power series with <b>Tracy 2</b>. <b>Shilong 3</b>'s text tools supply a firm-level AI-adoption measure."},
+
+s1:{code:"S1",lead:"Shilong",short:"Short interest",title:"Forecasting Short Interest to Understand Investor Sentiment",area:"Investment research & financial markets",diff:"2–3 / 5",pub:"Yes, from June 2021",risk:["low","Low"],
+ fit:[1,1,1,1,5,3,1,3,5,5,1,1,3,1,1,1,4,2],
+ data:{pub:[
+  ["FINRA Equity Short Interest","Twice-monthly short interest for all exchange-listed and OTC stocks, via finra.org and a free query API. <b>Exchange-listed coverage starts June 2021; earlier files are OTC-only.</b> Free history is therefore about 5 years, or roughly 125 reports."],
+  ["FINRA daily short-sale volume","Daily short-sale volume by stock: the high-frequency signal between the twice-monthly prints, and probably the best free predictor."],
+  ["Prices (yfinance / Stooq)","Daily prices and volume."],
+  ["SEC XBRL","Shares outstanding, for short interest as a percentage of float."],
+  ["Index list","S&P 500 constituents at one fixed date, as the brief recommends."]],
+ acad:[
+  ["Compustat short-interest file (WRDS)","Exchange-listed short interest going back decades, which removes the 2021 limit."],
+  ["CRSP (WRDS)","Clean returns including delistings, which fixes survivorship bias."],
+  ["S&P (Markit) Securities Finance","Borrow fees, utilization and lendable supply. It's the professional-grade predictor of short interest; available through WRDS where a school subscribes."],
+  ["OptionMetrics (WRDS)","Put/call ratios and implied volatility as sentiment features."]],
+ caution:"The naive forecast (next period's short interest equals this period's) is very hard to beat. Define success as beating it on <b>changes</b>, not levels. Align dates to FINRA's settlement and publication dates, or the model is quietly using the future. The SEC's new Form SHO short reporting has been postponed to 2028, so don't plan around it."},
+ phases:[
+  {t:"Clean panel, baseline vs. ML forecast",s:["The S&P 500 fixed at one date; a twice-monthly short-interest panel (June 2021 onward) merged with prices, volume and daily short-sale volume.","Features: lagged level and change, days-to-cover, returns, volatility, volume, and the short-volume ratio since the last settlement.","Naive and AR baselines, then linear and gradient-boosting (LightGBM) models, with time-series cross-validation.","Out-of-sample MAE and direction accuracy, plus which features matter."],d:"Reproducible notebook and data dictionary · 10-slide deck · 5-page write-up"},
+  {t:"From forecast to strategy",s:["Classify large short-interest spikes and drops (top and bottom deciles) and calibrate the probabilities.","A long/short on predicted declines vs. rises: costs included, walk-forward, reporting Sharpe, drawdown and turnover.","SHAP interpretation for a non-technical audience."],d:"Backtest report · strategy tear sheet"},
+  {t:"Small caps, squeezes, longer history",s:["Russell 3000, where short interest is higher and squeezes happen; borrow-fee data if obtainable; a longer history from Compustat.","A squeeze-risk score (high short interest + rising borrow cost + momentum), checked against past squeezes.","Hand the forecast to Shilong 2 as its short-crowding input."],d:"Extended study · squeeze-risk score · practitioner review"}],
+ skills:[["Python / pandas panel data","Time-series CV and avoiding look-ahead bias","Regression and gradient boosting (scikit-learn, LightGBM)","Evaluating models against baselines","Short-selling mechanics, days-to-cover"],["Classification and probability calibration","Backtesting with transaction costs","Sharpe, drawdown, turnover","Interpretability (SHAP)"],["Securities-lending data","Event studies","Signal research at scale","Reporting to PMs"]],
+ star:[["Built a [125]-period, 500-stock panel merging FINRA short interest, daily short-sale volume and prices, with date alignment that prevents look-ahead bias.","Trained gradient-boosting forecasts of the next short-interest change, cutting error [X]% vs. a naive baseline in walk-forward tests.","Found daily short-sale volume between reporting dates was the strongest predictor ([X]% of feature importance)."],
+  ["Turned the forecasts into a long/short strategy backtested over [2022–2026] with costs: Sharpe [x], maximum drawdown [y]%.","Classified top-decile short-interest spikes at [X]% precision, with probabilities calibrated for position sizing.","Explained the model's drivers with SHAP in a [10]-slide deck for a non-technical audience."],
+  ["Extended coverage to [3,000] stocks and [20] years using Compustat short-interest data; [finding].","Designed a squeeze-risk score from short interest, borrow fees and momentum that flagged [N] of [M] past squeezes in advance.","Fed the forecasts into a crowding model (Shilong 2), improving [metric].","Maintained the team's shared Git codebase for 4 contributors."]],
+ stories:[
+  {q:"“Walk me through a project.” (quant, equities, hedge funds)",S:"Short interest is published twice a month, with a lag.",T:"See whether it could be forecast from data available sooner.",A:"Built the panel, including daily short-sale volume, and pitted gradient boosting against a naive baseline in walk-forward tests.",R:"The model beat the baseline by [X]% on changes. The daily short volume carried most of the signal."},
+  {q:"“Tell me about a mistake.”",S:"Our first model scored an R² of 0.9.",T:"Work out why it looked too good.",A:"Found we'd aligned on settlement date, not publication date, so the model was seeing data that wasn't public yet. Re-aligned everything.",R:"Accuracy dropped to realistic levels. I'm now suspicious of any result that looks too good, and quant interviewers look for exactly that instinct."}],
+ fitNotes:[["QR","The full quant research loop: data, features, baseline, model, backtest."],["HF","Short interest is a core input for long/short equity funds: crowding and squeeze risk."],["STE","Prime brokerage and securities-lending desks price borrow from exactly this data."],["FT","A data pipeline plus an ML model is standard fintech data-science work."]],
+ fitLow:"Little relevance for IB, credit or macro roles.",
+ years:["The most freshman-friendly ML project here: clean free data and a clear baseline. Good for quant and fintech startups, data-science internships, RA roles, and trading-firm freshman programmes.","Sophomore quant and trading programmes (several prop and quant firms take sophomores), hedge-fund research internships, equity prime brokerage.","In quant and hedge-fund interviews, the look-ahead-bias story and a costed backtest build credibility. In equities S&T, it speaks the prime-brokerage language."],
+ benefits:["The lowest barrier to real ML: free data, a clear target, a clear baseline.","Teaches the honest-evaluation discipline quant firms screen for.","A natural stepping stone to Shilong 2.","A GitHub portfolio that can be shown directly."],
+ lev:"Nearly everything built here is reused by <b>Shilong 2</b>: its short-crowding measure is this dataset. The backtest harness also serves <b>Shilong 3</b>."},
+
+s2:{code:"S2",lead:"Shilong",short:"Crowding × earnings",title:"Investor Crowding, Earnings Surprises, and Stock Returns",area:"Investment research, PM & risk management",diff:"4 / 5",pub:"Partly: consensus EPS is the gap",risk:["high","Medium–high"],
+ fit:[1,2,1,1,5,5,1,4,5,5,1,1,4,1,2,2,3,3],
+ data:{pub:[
+  ["SEC Form 13F data sets","Quarterly institutional long holdings, structured, 2013 onward. Filed up to 45 days after quarter-end, so <b>use the filing date, not the quarter date</b>."],
+  ["FINRA short interest","Reused from Shilong 1; exchange-listed coverage from June 2021."],
+  ["SEC XBRL financial statement data","Actual reported EPS, enough for a standardized unexpected earnings (SUE) surprise measure with no analyst data at all."],
+  ["Earnings dates and estimates","Yahoo Finance and Nasdaq earnings pages. Usable for a small sample; fragile at scale."],
+  ["Prices and factors","yfinance or Stooq prices; Kenneth French factors for risk adjustment."]],
+ acad:[
+  ["I/B/E/S (WRDS)","Analyst consensus and actuals, the standard earnings-surprise source. <b>The single most important request.</b>"],
+  ["Thomson / Refinitiv 13F (WRDS)","Cleaned holdings with pre-2013 history."],
+  ["CRSP daily (WRDS)","Returns clean enough for an event study."],
+  ["Compustat short interest; Markit Securities Finance","Longer short history; borrow costs; investor-type splits."]],
+ caution:"Without I/B/E/S, use SUE in Phase 1; it's a legitimate academic measure. With FINRA starting in 2021, the joint free sample covers about 20 earnings seasons × 500 stocks, or roughly 10,000 events. That's enough for an event study but thin for ML. This is the project most likely to slip past Dec 15, so start the merge in week 2."},
+ phases:[
+  {t:"Event study: does crowding change the earnings reaction?",s:["Three building blocks: long crowding from 13F (holder count, concentration, change in holders), short crowding from FINRA (short interest as % of float, days-to-cover), and the surprise (SUE, or EPS vs. estimate).","Abnormal returns for days 0–1 and days 2–60 (post-earnings drift), by surprise quintile × crowding tercile.","One chart that answers the key question: do crowded beats and misses behave differently?"],d:"Merged event dataset · event-study tables and charts · 8-page write-up"},
+  {t:"Predictive model and strategy",s:["Compare crowding definitions: breadth vs. concentration vs. change; long vs. short vs. net.","A walk-forward predictive model (regression, gradient boosting) of post-earnings returns.","An earnings long/short: Sharpe, turnover, factor-adjusted alpha.","Swap in I/B/E/S if access arrives, and compare."],d:"Strategy tear sheet · robustness appendix"},
+  {t:"Scale, risk-adjust, add text",s:["Russell 3000 and a longer WRDS history; Fama–French-adjusted returns; holders split by type (hedge funds vs. passive).","Add LLM-scored tone from earnings releases or calls (Shilong 3).","Write an academic-style working paper and present it to a long/short PM."],d:"Working paper · PM presentation"}],
+ skills:[["EDGAR / 13F parsing","Multi-source merges with point-in-time dates","Event studies (abnormal returns, CARs)","Earnings-surprise measures (SUE)","Data visualisation"],["Feature engineering","Walk-forward predictive modelling","Portfolio construction, Sharpe, turnover","Robustness testing"],["Fama–French factor models","I/B/E/S, CRSP, Compustat on WRDS","Combining text and numeric signals","Academic research writing"]],
+ star:[["Merged SEC 13F holdings, FINRA short interest and XBRL earnings into a [10,000]-event dataset using point-in-time filing dates.","Ran an event study: after beats, post-earnings drift in crowded stocks was [X] pp lower than in uncrowded peers over 60 days.","Built three crowding measures (holder breadth, concentration, short % of float) and compared their explanatory power."],
+  ["Developed a gradient-boosting model of post-earnings returns with an out-of-sample rank IC of [x].","Backtested an earnings long/short: Sharpe [x] after costs, [x]% annual turnover.","Showed [short] crowding explained [X]× more of the reaction than [long] crowding."],
+  ["Extended to [3,000] stocks over 2005–2027 with I/B/E/S and CRSP; results [held / weakened] after Fama–French adjustment.","Added LLM-scored earnings-call tone, raising model IC from [x] to [y].","Wrote a [25]-page working paper and presented it to [PM at a long/short fund].","Split holders by type: hedge-fund crowding drove [X]% of the effect."]],
+ stories:[
+  {q:"“Walk me through a project.” (equity research, hedge funds, quant)",S:"Two companies beat by 10%. One pops and the other drops.",T:"Test whether investor positioning explains the difference.",A:"Measured long crowding from 13F and short crowding from FINRA, then ran an event study by surprise × crowding.",R:"[Finding]. That changes how I'd read a beat for a crowded name."},
+  {q:"“Tell me about working through a hard problem as a team.”",S:"Our three datasets ran on different calendars: quarter-end, filing date and settlement date.",T:"Teammates had built them separately, and the first merge was wrong.",A:"Proposed a shared data dictionary and a single point-in-time rule, then rebuilt the merge together.",R:"The results changed materially. We've used the same rule on every dataset since."}],
+ fitNotes:[["ER","Earnings season is an equity research analyst's peak, and knowing how positioning shapes the reaction is a practical edge."],["HF","Long/short PMs obsess over crowding and earnings setups."],["QR","Event study, predictive model and strategy: a classic quant project."],["STE","Equity sales and trading desks discuss positioning into earnings every day."],["RM","Crowding is a known risk topic: the 2007 quant quake, the 2021 squeezes."]],
+ fitLow:"Little relevance to IB, credit, macro or private markets.",
+ years:["Ambitious for freshmen, so pair them with an upperclassman. A freshman who owns the 13F pipeline still has a strong data story.","Hedge-fund and equity-research sophomore programmes, quant internships. The event study shows maturity beyond coursework.","At buy-side and ER superdays (“pitch me a stock”), talking about positioning into earnings sounds like an analyst. Quant firms value the point-in-time rigour."],
+ benefits:["The closest thing on this list to a real buy-side equity research workflow.","Teaches point-in-time discipline, which separates serious candidates.","Combines fundamentals (earnings) with flows (crowding), which is rare in student work.","Paper-quality if extended with WRDS data."],
+ lev:"Built on <b>Shilong 1</b>'s short-interest data and backtester; takes <b>Shilong 3</b>'s LLM tone features as an extension."},
+
+s3:{code:"S3",lead:"Shilong",short:"LLMs on filings",title:"Using LLMs to Extract Investment Insights from Financial Text",area:"Financial research & alternative data",diff:"3–4 / 5",pub:"Yes (filings); transcripts need access",risk:["med","Medium (quality control)"],
+ fit:[3,2,2,2,3,4,4,4,5,4,3,3,3,3,2,3,5,2],
+ data:{pub:[
+  ["SEC EDGAR","Every 10-K, 10-Q and 8-K through the full-text search, submissions and XBRL APIs. Item 1A (risk factors) and Item 7 (MD&A) are the richest sections."],
+  ["EDGAR-CORPUS (Hugging Face)","Pre-parsed 10-K sections, 1993–2020. Saves weeks of parsing."],
+  ["8-K Exhibit 99.1","Earnings press releases: a free stand-in for call transcripts."],
+  ["Loughran–McDonald dictionary","The standard financial sentiment word lists, free from Notre Dame: the traditional baseline."],
+  ["Sector classifications","S&P sector lists, or SIC codes from EDGAR as a free proxy for GICS."],
+  ["Open-weight LLMs","Llama, Qwen or Mistral on university HPC or Colab: zero API cost."]],
+ acad:[
+  ["Earnings-call transcripts","S&P Capital IQ Transcripts through WRDS, or LSEG StreetEvents. The most-requested academic text dataset."],
+  ["RavenPack (WRDS)","News analytics, where the school subscribes."],
+  ["CRSP / Compustat (WRDS)","Clean outcomes and controls."],
+  ["University AI programmes","Many universities give students API credits or enterprise LLM access. Ask before paying."]],
+ caution:"LLMs hallucinate and vary from run to run, so the project is judged on <b>validation</b>. Hand-label a 50–100 document gold set before scaling. Control cost by extracting from sections, not whole filings, on a small model, and price the run with current API rates before launching it. Returns are hard to predict from text. Volatility is more predictable and makes a safer Phase 1 target."},
+ phases:[
+  {t:"Extraction pipeline plus validation, 100–200 companies",s:["2–3 GICS sectors, 100–200 companies, 10-Ks from 2019–2024; pull Items 1A and 7.","A JSON schema of features (new risk factors, AI exposure, supply-chain risk, guidance tone, uncertainty 1–5), extracted with an LLM.","Hand-label 50 filings, measure agreement, and compare with Loughran–McDonald.","First test: do the features explain next-12-month volatility?"],d:"Pipeline code and schema · validation report · 10-slide deck"},
+  {t:"Generator–critic, scale, predictive model",s:["A critic pass that checks each extraction against quoted evidence; measure how much accuracy improves.","Scale to the S&P 500, with year-over-year change features (“what's new in this 10-K?”, the <i>Lazy Prices</i> idea).","ML model for returns or volatility: LLM features vs. the dictionary baseline, explained with SHAP."],d:"Model report · feature importance · cost vs. accuracy table"},
+  {t:"Transcripts, strategy, reusable toolkit",s:["Earnings-call transcripts if access comes through, otherwise press releases; prepared remarks vs. Q&A.","A sector-neutral long/short on the text signals.","Package the toolkit for other capstones (Tracy 1 footnotes, Nan 1 posts, Tracy 3 adoption).","Open-source release and write-up."],d:"Toolkit · strategy study · public repository"}],
+ skills:[["LLM APIs and prompt engineering","Structured extraction (JSON schemas)","EDGAR data pipelines","Annotation and inter-rater agreement","NLP baselines (dictionaries, TF-IDF)"],["Generator–critic / LLM-as-judge workflows","Feature engineering from text","ML modelling and SHAP","Cost vs. accuracy optimisation"],["Transcript analysis","Sector-neutral backtesting","Packaging and documenting software","Open-source collaboration"]],
+ star:[["Built an LLM pipeline extracting [12] structured features from [1,000] 10-K risk-factor and MD&A sections across 3 GICS sectors.","Validated against a 50-filing hand-labelled set: [X]% agreement, vs. [Y]% for a dictionary baseline.","LLM uncertainty scores explained [X]% more of next-year volatility than Loughran–McDonald sentiment."],
+  ["Added a generator–critic check that requires quoted evidence, cutting extraction errors by [X]% at [Y]% extra cost.","Scaled to the S&P 500 (about [3,000] filings) with year-over-year text-change features.","LLM features raised out-of-sample AUC from [x] to [y]; SHAP showed [feature] mattered most."],
+  ["Extended to [N] earnings-call transcripts, separating prepared remarks from analyst Q&A.","Backtested a sector-neutral text-signal strategy: Sharpe [x].","Packaged the pipeline as a toolkit adopted by [2] other capstone teams.","Published open-source code and documentation on GitHub."]],
+ stories:[
+  {q:"“Walk me through a project.” (quant, fintech, research)",S:"Analysts read hundreds of pages per company.",T:"Test whether an LLM could turn 10-Ks into model-ready numbers, and whether we could trust those numbers.",A:"Designed a schema, extracted from 1,000 sections, hand-labelled a gold set, and compared against a dictionary baseline.",R:"[X]% agreement; the LLM features beat the dictionary on volatility prediction."},
+  {q:"“Tell me about a time you caught an error.”",S:"The LLM confidently reported a guidance number that wasn't in the filing.",T:"Find out how often that happened.",A:"Added a critic step that requires a supporting quote, then measured the error rate before and after.",R:"Errors fell [X]%. It's how I think analysts should use AI at work: verify, don't trust."}],
+ fitNotes:[["FT","LLM pipelines are the fastest-growing skill request in fintech and bank data teams."],["QR","NLP and alternative-data signal research is a core quant function."],["ER","Research teams are deploying LLMs to read filings; a student who has validated one is immediately useful."],["CR","The same pipeline reads bond covenants and footnotes."]],
+ fitLow:"Weakest for pure macro trading and corporate finance.",
+ years:["AI is one area where freshmen can out-skill seniors. Good for fintech, bank technology and AI programmes, data-science internships and RA roles.","Sophomore technology and quant programmes, AI teams at asset managers and banks, research internships.","Almost every firm now asks about AI. Explaining validation, hallucination rates and cost trade-offs stands out across IB, research and the buy side, not just in tech roles."],
+ benefits:["The most transferable project on the list: every desk is adopting LLMs.","Builds a toolkit that five other capstones use.","Teaches judgment about AI output quality, which is what employers actually worry about.","Free data with an open-ended path to scale."],
+ lev:"The programme's hub. Its extraction toolkit serves <b>Tracy 1</b> (footnotes), <b>Tracy 2</b> (AI-capex commentary), <b>Tracy 3</b> (adoption scores), <b>Shilong 2</b> (earnings tone) and <b>Nan 1</b> (post classification)."},
+
+n1:{code:"N1",lead:"Nan",short:"Fed & social media",title:"Inferred Federal Reserve Policy Surprises from Social Media",area:"Macro strategy, investment research",diff:"4 / 5",pub:"Daily version yes; intraday needs terminal data",risk:["high","High (intraday data)"],
+ fit:[1,2,5,2,2,1,2,3,4,5,1,1,3,5,1,2,3,3],
+ data:{pub:[
+  ["Posts","Public archives of Truth Social posts compiled with timestamps, plus official accounts. Fed speeches, testimony and statements from federalreserve.gov; the FOMC calendar."],
+  ["Rates","Daily Treasury yields (2y, 10y), effective fed funds and SOFR from FRED; the Treasury par curve."],
+  ["Surprise benchmarks","The San Francisco Fed's published monetary-policy surprise series, for comparing social-media shocks with FOMC shocks."],
+  ["Market-implied path","CME FedWatch shows current probabilities only. Historical fed funds and SOFR futures settlements aren't free in bulk."],
+  ["ETFs as an intraday proxy","Short-Treasury ETF minute bars from free or low-cost APIs, with limited history."],
+  ["Reference paper","SSRN 7436080 for the method. SSRN blocked automated access, so it wasn't reviewed here; read it first."]],
+ acad:[
+  ["Bloomberg terminal","Historical fed funds and SOFR futures, OIS, intraday Treasury futures. <b>The key request.</b>"],
+  ["LSEG Tick History / CME DataMine","Intraday futures, via library, WRDS or academic pricing."],
+  ["TAQ (WRDS)","Intraday ETF trades."],
+  ["X API","Paid tiers only; academic access was discontinued. Rely on archives."]],
+ caution:"Identification needs exact timestamps and tight windows, because daily data mixes in all the other news. Plan Phase 1 at <b>daily frequency</b> with hand-checked high-salience posts, and upgrade to intraday in Phase 2 once terminal access is confirmed. Handle the political content neutrally: the project measures the market's response, not the merit of the posts."},
+ phases:[
+  {t:"Event database plus daily event study",s:["A timestamped database of posts about the Fed, rates or Fed personnel (2025–2026), with Fed officials' remarks as a comparison set.","Classify posts with keywords plus an LLM (rate-cut pressure, personnel and independence, criticism of a decision, other), then hand-verify.","Daily event study: 2y and 10y yield changes (and the implied path where available) on post days vs. matched days, benchmarked against FOMC surprises."],d:"Event database · classification codebook · 8-page results memo · deck"},
+  {t:"Intraday identification and decomposition",s:["30–60 minute windows around posts, using futures or ETF minute data.","Split the reaction into near-term (next meeting), path (forward guidance) and long-end effects, following the target/path factor approach.","Heterogeneity: content type, time of day, proximity to FOMC, market open vs. closed."],d:"Methods appendix · results by content type"},
+  {t:"Real-time monitor and extension",s:["A live classifier that flags posts and estimates the expected rate move within minutes: a desk-tool prototype.","Extend to other communicators (Treasury, Fed governors, ECB and BoE officials) or other assets (dollar, gold, equities).","A desk-style strategy note, reviewed by a rates strategist."],d:"Prototype · strategy note · practitioner review"}],
+ skills:[["Event-study design","Text classification (keywords + LLM)","Rates fundamentals: yield curve, fed funds, policy expectations","Data collection and codebooks"],["High-frequency identification","Fed funds / SOFR futures math","Target vs. path factor decomposition","Regression with heterogeneity"],["Real-time data pipelines","Cross-asset analysis","Desk-style strategy writing"]],
+ star:[["Built a timestamped database of [N] social-media posts on Fed policy (2025–26), classified into [4] categories with [X]% hand-verified accuracy.","Ran a daily event study: 2-year yields moved [X] bps on high-salience post days vs. [Y] bps on matched days.","Benchmarked post-driven moves against FOMC policy surprises; they equalled [X]% of a typical FOMC shock."],
+  ["Isolated [30]-minute rate reactions around [N] posts using intraday futures data.","Decomposed reactions into near-term and forward-guidance effects: [personnel] posts moved the path factor [X]× more than [rate-pressure] posts.","Showed reactions were [larger] in [pre-FOMC] windows."],
+  ["Prototyped a real-time monitor that classifies posts and estimates rate impact within [N] minutes.","Extended the analysis to [ECB/BoE] communications and to FX and equity reactions.","Wrote a desk-style strategy note reviewed by [rates strategist at X].","Managed data acquisition across Bloomberg, FRED and public archives for a 3-person team."]],
+ stories:[
+  {q:"“Walk me through a project.” (rates, macro)",S:"Markets move when a public figure posts about the Fed.",T:"Measure whether those posts change what the Fed is expected to do.",A:"Built a timestamped post database, classified it, and ran an event study on the front end vs. the long end.",R:"[Finding]. That tells a desk which headlines are noise and which ones move the path."},
+  {q:"“Tell me about an obstacle.”",S:"The intraday futures data we planned on wasn't available in October.",T:"Still deliver by December 15.",A:"Redesigned Phase 1 at daily frequency with matched control days, and booked terminal time for Phase 2.",R:"Delivered on schedule, and the daily result held up once the intraday data came in."}],
+ fitNotes:[["STR","Rates traders trade Fed headlines, so measuring headline risk is desk work."],["EC","Central-bank communication is a core topic for Fed and bank economists."],["HF","Macro funds build exactly this kind of event framework."],["QR","High-frequency event studies plus NLP: quant macro research."]],
+ fitLow:"Little relevance to IB, PE, private credit or corporate finance.",
+ years:["Topical and eye-catching. Good for Fed discovery-type programmes, RA roles and macro-focused student funds.","Sophomore markets programmes, rates and macro strategy internships, regional Fed internships.","Rates S&T and macro superdays: “What's moving the front end?” gets a data-backed answer. Strong for central-bank RA roles after graduation."],
+ benefits:["Topical and memorable: interviewers ask about it.","Teaches how the front end of the curve prices the Fed, which is essential and under-taught.","Combines NLP with macro, a rare pairing.","A route to published research, since the reference paper is recent."],
+ lev:"Shares the macro data pipeline with <b>Tracy 3</b> and <b>Nan 3</b>, and uses <b>Shilong 3</b>'s classification tools. Lighter links elsewhere."},
+
+n2:{code:"N2",lead:"Nan",short:"PE/PC replication",title:"How Private Are Private Markets? Replicating PE and Private Credit with Liquid ETFs",area:"Asset management, investment research",diff:"3–4 / 5",pub:"Mostly: headline index returns are public",risk:["med","Medium (benchmark data)"],
+ fit:[1,2,1,3,2,1,3,5,4,2,4,4,4,1,1,4,2,5],
+ data:{pub:[
+  ["Private-market benchmarks","Headline quarterly returns from the State Street Private Equity Index publications (the reference), Cambridge Associates benchmark summaries, the Cliffwater Direct Lending Index reports, and NCREIF for contrast. Check each publisher's terms; history depth varies."],
+  ["Listed proxies","Listed-PE ETFs (e.g. PSP), BDC ETFs (BIZD), loan ETFs (BKLN, SRLN), high-yield ETFs (HYG, JNK)."],
+  ["Replication building blocks","Small-cap and value (IWM, IWN, IJS), sector ETFs, Treasuries (IEF, SHY), HY and loans."],
+  ["Factors","Kenneth French size, value and profitability factors; FRED spreads and rates."]],
+ acad:[
+  ["Burgiss / MSCI (via PCRI), Preqin, PitchBook","Fund-level cash flows and NAVs. Many libraries subscribe to PitchBook."],
+  ["Bloomberg","Full benchmark histories and private-credit indices."],
+  ["WRDS","Preqin where subscribed; CRSP fund and ETF data."]],
+ caution:"Quarterly returns give only about 80–100 observations, and appraisal-based NAVs are smoothed, which makes PE look calmer than it is. <b>Un-smooth first</b> (Geltner or Getmansky–Lo–Makarov), keep the model small, and test out-of-sample."},
+ phases:[
+  {t:"Static replication plus attribution",s:["Targets: one PE and one private-credit quarterly index (published headline returns).","De-smooth, then run a constrained regression on a few ETFs (non-negative weights summing to 1, optional leverage).","Out-of-sample tracking error and attribution: equity beta, size/value, sector, credit, rates, and the <b>residual, which is the genuinely private part</b>."],d:"Replication portfolio · attribution chart · 8-page note: “how private is private?”"},
+  {t:"Dynamic rebalancing strategy",s:["Rolling or Kalman-filter weights that adapt as private-market exposures change.","Practical rules: quarterly rebalancing, turnover caps, costs.","Stress periods (2008, 2020, 2022): the replica vs. reported NAVs, and what the smoothing gap means for investors."],d:"Strategy backtest · allocator-style memo"},
+  {t:"Fund-level cross-section and a regime signal",s:["With Burgiss, Preqin or PitchBook data, replicate by vintage and strategy (buyout, growth, direct lending), and compute PME.","Condition the rebalancing on Nan 3's liquidity indicator.","A white paper for an endowment or OCIO, presented to an allocator."],d:"White paper · allocator review"}],
+ skills:[["PE and private credit fundamentals","Return de-smoothing","Constrained regression / portfolio optimisation","Factor attribution","Tracking error"],["Rolling and Kalman-filter estimation","Rebalancing strategy design","Stress testing","Allocator communication"],["Fund cash-flow metrics (PME, IRR, TVPI)","Vintage analysis","Regime-conditioned strategies","White-paper writing"]],
+ star:[["Replicated [State Street PE Index] quarterly returns with a [5]-ETF constrained portfolio: [X]% out-of-sample tracking error after de-smoothing.","Attributed [X]% of PE return variance to public equity beta, size and sector, leaving [Y]% private-specific.","Showed [X]% of private-credit returns were explained by leveraged-loan and high-yield exposure; wrote an 8-page note."],
+  ["Built a Kalman-filter rebalancing strategy that cut tracking error [X]% vs. static weights at [Y]% annual turnover.","Stress-tested 2008, 2020 and 2022: the replica fell [X]% vs. [Y]% for reported NAV, quantifying the smoothing gap.","Delivered an allocator-style memo on when public replicas can substitute for private allocations."],
+  ["Extended to [N] funds by vintage using [PitchBook / Burgiss] cash flows; computed PME against the replica.","Conditioned rebalancing on a public-market liquidity indicator, improving [metric].","Presented a white paper to [endowment / OCIO investment team].","Coordinated data-licence requests with the faculty sponsor."]],
+ stories:[
+  {q:"“Walk me through a project.” (asset management, allocators, insurance)",S:"Endowments pay 2-and-20 for private equity.",T:"Work out how much of that return you could buy for about 20 bps in ETFs.",A:"De-smoothed the index returns, fitted a constrained ETF portfolio, then attributed the returns to beta, size, sector and credit.",R:"[X]% was replicable. The residual is what the fees actually pay for."},
+  {q:"“Tell me about a time you found a flaw in the data.”",S:"The PE index showed a Sharpe ratio near 2.",T:"Check whether that was real.",A:"Recognised appraisal smoothing, applied a de-smoothing method, and volatility roughly doubled.",R:"It reversed our first conclusion. Lesson: understand how a number is produced before you use it."}],
+ fitNotes:[["AL","Endowments, pensions and OCIOs make exactly this allocation decision."],["AM","Multi-asset and solutions teams build liquid-alternative and replication products."],["INS","Insurers are among the largest private-credit buyers, so knowing what's really private is an ALM question."],["PE","GPs pitch LPs on value creation beyond beta, and this measures it."],["RM","Smoothing and hidden beta are core risk issues."]],
+ fitLow:"Weak for IB, equity research and trading roles.",
+ years:["Private markets are hard to reach as a freshman, and this is a credible way to show interest. Good for endowment and foundation internships, family offices, allocator RAs.","Sophomore asset-management programmes, insurance investment internships, OCIO and investment-consulting firms.","Allocator, AM solutions, private credit and insurance-investment superdays. “What does PE really add?” is a question LP-facing teams love."],
+ benefits:["Private markets are the fastest-growing part of asset management, so the relevance is high.","Teaches portfolio construction and factor thinking in one project.","A distinctive talking point next to peers who pitch stocks.","Extends naturally into a regime-aware strategy with Nan 3."],
+ lev:"Tightly coupled with <b>Nan 3</b>: same public data, and the indicator conditions the rebalancing. Connects to <b>Tracy 1</b> through private credit's role in data-center financing."},
+
+n3:{code:"N3",lead:"Nan",short:"Private liquidity index",title:"A Public-Market Indicator of Private-Market Liquidity and Exit Conditions",area:"Asset management, investment research",diff:"3 / 5",pub:"Yes",risk:["low","Low–medium"],
+ fit:[3,5,2,3,2,2,3,4,3,3,5,4,3,3,1,3,2,5],
+ data:{pub:[
+  ["IPO market","Jay Ritter's IPO statistics (counts and first-day returns since 1980), Renaissance Capital summaries, S-1 filing counts from EDGAR."],
+  ["Credit conditions","HY and loan ETFs (HYG, BKLN), FRED credit series (check ICE history depth), the Fed's Senior Loan Officer Survey, and the Chicago Fed's NFCI."],
+  ["Volatility and rates","VIX, the Treasury curve, term spreads."],
+  ["Listed alternatives","Alt-manager stocks (BX, KKR, APO, CG, ARES) and BDC price-to-NAV from filings: the market's real-time read on private assets."],
+  ["Validation targets","Free PitchBook–NVCA Venture Monitor and PitchBook US PE Breakdown reports (exit counts and values); Jefferies and Lazard secondary-market reviews; Cambridge distribution data."]],
+ acad:[
+  ["PitchBook / Preqin (library)","Quarterly deal, exit and distribution data. The best validation target."],
+  ["Burgiss via PCRI","Fund-level distributions (DPI) by quarter."],
+  ["Bloomberg","LSTA loan prices, CLO spreads, IPO calendar."],
+  ["Dealogic / LSEG (library)","M&A and leveraged-loan issuance volumes."]],
+ caution:"The hard part is <b>validation</b>: private exits are reported late and revised. Define the target (e.g. quarterly value of PE-backed exits, or fund distributions) before building the index, and test lead–lag honestly."},
+ phases:[
+  {t:"Indicator v1 and historical chart",s:["Choose 8–12 public series across IPOs, credit, volatility, rates and listed alt managers.","Standardise (z-scores); combine equal-weighted and with PCA; chart 2000–2026 with 2008, 2020, 2022 and 2025 annotated.","First validation: correlation with exit values from the free PitchBook reports."],d:"Indicator workbook or notebook · 8-page note with the chart · deck"},
+  {t:"Lead–lag testing and weighting",s:["Does the indicator lead exits and distributions by 1–4 quarters? Choose regression vs. simple weights, and guard against overfitting.","Nowcast the current quarter, then compare with published data when it arrives.","Separate sub-indicators for PE exits and private-credit financing."],d:"Validation report · nowcast"},
+  {t:"Monthly monitor",s:["Publish a monthly Private Markets Liquidity Monitor: a dashboard plus a one-page note.","Add secondaries pricing, BDC non-accruals and continuation-vehicle activity from public reports.","Feed Nan 2's rebalancing; pitch it to a PE firm's capital markets team or an allocator."],d:"Live monitor · practitioner review"}],
+ skills:[["Private-market exit channels (IPO, M&A, secondaries)","Composite index construction (z-scores, PCA)","Financial-conditions data","Data visualisation and annotation"],["Lead–lag and predictive regression","Nowcasting","Out-of-sample testing and overfitting control"],["Dashboard publishing","Secondary-market and BDC analysis","Practitioner-facing research notes"]],
+ star:[["Built a composite indicator of private-market exit conditions from [10] public series (IPO, credit, volatility, listed alt managers), 2000–2026.","The indicator captured the [2008, 2020, 2022] exit freezes and correlated [x] with PE-backed exit value.","Wrote an 8-page note and a 10-slide deck, presented to [professor / practitioner]."],
+  ["Found the indicator led PE exit value by [N] quarters (out-of-sample R² [x]).","Nowcast current-quarter exits at [X] vs. [Y] reported.","Split out PE-exit and private-credit financing sub-indices."],
+  ["Launched a monthly Private Markets Liquidity Monitor, read by [N subscribers / sponsor].","Added secondary-market pricing and BDC data, extending lead time by [N] months.","Provided the regime signal for a PE replication strategy (Nan 2).","Presented to [capital markets team at a PE firm]."]],
+ stories:[
+  {q:"“Walk me through a project.” (PE, capital markets)",S:"PE firms can't sell companies when the IPO window and loan markets are shut, but exit data arrives months late.",T:"Build a signal from data you can see today.",A:"Combined 10 public series into a z-score and PCA index, then tested it against reported exits.",R:"It led exits by [N] quarters. Right now it says [reading]."},
+  {q:"“Tell me about simplifying something complex.”",S:"We started with 30 candidate series.",T:"Produce something a non-specialist could use.",A:"Used PCA and a clear rule to cut to 10, and told the story in one annotated chart.",R:"The practitioner reviewer said it was the chart they'd send their boss."}],
+ fitNotes:[["PE","Exit timing and financing conditions drive every hold/sell decision."],["CM","ECM and leveraged-finance bankers watch the IPO window and the loan market daily."],["AL","LPs use this to forecast distributions and pace commitments."],["PC","Private-credit demand rises when banks and public markets pull back."]],
+ fitLow:"Weak for corporate finance and equity research.",
+ years:["Accessible and visual: a strong freshman project for PE-curious students with no route into PE yet. Good for family offices, small PE/VC firms and endowments.","Sophomore PE programmes (some firms run two-year sophomore tracks), capital-markets insight roles, allocator internships.","PE, ECM, leveraged-finance and allocator superdays: “How's the exit environment?” gets a data-backed answer. Pairs with sponsor-coverage banking as a route into PE later."],
+ benefits:["The most visual project: one chart tells the story.","Free data, so there's little risk of missing Dec 15.","Speaks to PE and capital markets, two of the most competitive recruiting tracks.","The monthly monitor becomes a living portfolio piece."],
+ lev:"Strongest link is <b>Nan 2</b>. Shares financial-conditions data with <b>Tracy 3</b> and <b>Nan 1</b>."}
+};
+
+const SECTORS=[
+ ["Investment banking & capital markets",["t2","n3","t1"],"Insight programmes and boutiques: a DCF / WACC story shows you can do the technicals.","Sophomore IB programmes: T2's valuation work is ready for technical interviews; N3 shows you follow the IPO window.","Superday: technicals plus a view on AI financing (T1/T2) or exit markets (N3)."],
+ ["Sales & trading",["t1","n1","s2"],"Trading-firm freshman programmes: a market-data project with a clear finding.","Sophomore S&T programmes: credit (T1), rates (N1, T3), equities (S1, S2).","Desk fit: you can talk spreads, the front end or positioning like someone already on the desk."],
+ ["Equity & credit research",["s2","s3","t1"],"RA roles, student funds: earnings or filings work shows analyst habits.","Research internships at mid-size banks and asset managers.","“Pitch me” questions: an earnings-positioning view (S2) or an adjusted-leverage credit view (T1)."],
+ ["Buy side: AM, hedge funds, quant",["s1","s2","s3"],"Quant and fintech startups: a GitHub repo with an honest backtest.","Sophomore quant and HF research programmes; AM insight weeks.","Signal research, walk-forward discipline, and LLM validation stories."],
+ ["Private markets & allocators",["n2","n3","t2"],"Family offices, endowments, small PE/VC: a credible sign of private-markets interest.","Sophomore PE tracks, OCIO and investment consulting, insurance investments.","LP- and GP-facing questions: what PE really adds (N2), the exit environment (N3)."],
+ ["Risk & insurance",["t1","n2","s2"],"Insurer insight programmes (several take first-years).","Insurance investment, ERM and bank risk programmes, some of which accept sophomores.","ALM and credit-risk depth: hidden leverage (T1), private-credit beta (N2), crowding risk (S2)."],
+ ["Macro, policy & economics",["t3","n1","n3"],"Fed discovery days, think tanks, economics RAs.","Regional Fed and strategy-team internships.","Macro strategy and research seats; central-bank RA roles after graduation."],
+ ["Corporate finance, fintech & data",["t2","s3","s1"],"Startups, fintech, data-science internships.","FP&A and treasury at large companies; bank AI and technology programmes.","AI-in-finance roles firm-wide; corporate development."]
+];
+
+const $=s=>document.querySelector(s);
+const esc=s=>s.replace(/&(?!amp;|lt;|gt;)/g,"&amp;");
+const ph=s=>s.replace(/\[([^\]]+)\]/g,'<span class="ph">[$1]</span>');
+const leadCls=l=>"l-"+l.toLowerCase();
+const riskPill=r=>`<span class="pill r-${r[0]}">${r[1]}</span>`;
+const pname=id=>`${P[id].lead} ${P[id].code.slice(1)}`;
+
+// summary table
+$("#summaryTbl").innerHTML=`<thead><tr><th>Project</th><th>Area</th><th>Difficulty</th><th>Public-only?</th><th>Dec 15 risk</th><th>Top-fit roles</th></tr></thead><tbody>${ORDER.map(id=>{const p=P[id];const top=p.fit.map((v,i)=>[v,i]).filter(x=>x[0]===5).map(x=>ROLES[x[1]][0]).join(", ");return `<tr><td><a href="#${id}" data-open="${id}"><span class="lead ${leadCls(p.lead)}">${pname(id)}</span></a> ${p.title}</td><td class="small">${p.area}</td><td class="num">${p.diff}</td><td class="small">${p.pub}</td><td>${riskPill(p.risk)}</td><td class="num small">${top}</td></tr>`}).join("")}</tbody>`;
+
+// chooser
+const groups={Tracy:[],Shilong:[],Nan:[]};ORDER.forEach(id=>groups[P[id].lead].push(id));
+$("#chooser").innerHTML=Object.entries(groups).map(([who,ids])=>`<div class="chipgroup"><span class="who ${leadCls(who)}">${who}</span>${ids.map(id=>`<button class="chip" id="chip-${id}" data-id="${id}" aria-pressed="false">${P[id].code.slice(1)} · ${P[id].short}</button>`).join("")}</div>`).join("");
+
+function renderProject(id){
+ const p=P[id];
+ document.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed",c.dataset.id===id?"true":"false"));
+ const phaseWhen=["Phase 1 · due Dec 15, 2026","Phase 2 · winter break, due ~Jan 20, 2027","Phase 3 · Summer 2027"];
+ const fitSorted=p.fit.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]);
+ const levRow=LEV[id];
+ $("#proj").innerHTML=`
+ <div class="projhead">
+  <div class="eyebrow"><span class="lead ${leadCls(p.lead)}">${p.lead} · Topic ${p.code.slice(1)}</span></div>
+  <h2>${p.title}</h2>
+  <div class="meta"><span>${p.area}</span><span>Difficulty <b class="num">${p.diff}</b></span><span>Public-only: ${p.pub}</span><span>Dec 15 risk ${riskPill(p.risk)}</span></div>
+ </div>
+ <div class="q"><h3><span class="qn">1</span>Data sources</h3>
+  <div class="grid2">
+   <div class="tbl"><table class="datatbl"><thead><tr><th colspan="2">Public: free to anyone</th></tr></thead><tbody>${p.data.pub.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</tbody></table></div>
+   <div class="tbl"><table class="datatbl"><thead><tr><th colspan="2">Requestable by a professor (academic licence)</th></tr></thead><tbody>${p.data.acad.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</tbody></table></div>
+  </div>
+  <div class="note warn small">${p.data.caution}</div>
+ </div>
+ <div class="q"><h3><span class="qn">2</span>Phase plan</h3>
+  <div class="grid3">${p.phases.map((ph_,i)=>`<div class="panel phase"><span class="when">${phaseWhen[i]}</span><h4>${ph_.t}</h4><ul class="tight small">${ph_.s.map(x=>`<li>${x}</li>`).join("")}</ul><p class="deliv"><b>Deliverables:</b> ${ph_.d}</p></div>`).join("")}</div>
+ </div>
+ <div class="q"><h3><span class="qn">3</span>Resume skills earned</h3>
+  <div class="grid3">${p.skills.map((sk,i)=>`<div class="panel"><h4>After Phase ${i+1}</h4><ul class="tight small">${sk.map(x=>`<li>${x}</li>`).join("")}</ul></div>`).join("")}</div>
+  <p class="small muted">Skills are cumulative: after Phase 3, the list is all three columns. List only the ones the student personally did.</p>
+ </div>
+ <div class="q"><h3><span class="qn">4</span>Example STAR resume bullets</h3>
+  <div class="grid3">${p.star.map((b,i)=>`<div class="panel"><h4>Phase ${i+1}</h4><ul class="tight small star">${b.map(x=>`<li>${ph(x)}</li>`).join("")}</ul></div>`).join("")}</div>
+ </div>
+ <div class="q"><h3><span class="qn">5</span>Interview stories</h3>
+  <div class="grid2">${p.stories.map(s=>`<div class="panel story"><h4>${s.q}</h4><dl><dt>S</dt><dd>${s.S}</dd><dt>T</dt><dd>${s.T}</dd><dt>A</dt><dd>${s.A}</dd><dt>R</dt><dd>${ph(s.R)}</dd></dl></div>`).join("")}</div>
+  <p class="small muted">Keep the walkthrough to 60–90 seconds: problem, what you built, one number, what it means for the interviewer's desk. End on what you'd do next.</p>
+ </div>
+ <div class="q"><h3><span class="qn">6</span>Fit to internship roles</h3>
+  <div class="fitbars">${fitSorted.map(([v,i])=>`<div class="fitrow"><span>${ROLES[i][1]}</span><span class="bar"><i style="width:${v*20}%"></i></span><span class="num">${v}</span></div>`).join("")}</div>
+  <ul class="tight small">${p.fitNotes.map(([r,t])=>`<li><b>${ROLES.find(x=>x[0]===r)[1]}</b>: ${t}</li>`).join("")}<li class="muted">${p.fitLow}</li></ul>
+ </div>
+ <div class="q"><h3><span class="qn">7</span>Where it helps you stand out</h3>
+  <div class="years">${["After freshman year","After sophomore year","After junior year"].map((h,i)=>`<div class="panel"><h4>${h}</h4><p class="small">${p.years[i]}</p></div>`).join("")}</div>
+ </div>
+ <div class="q"><h3><span class="qn">8</span>Top benefits of doing this one well</h3>
+  <ul class="tight">${p.benefits.map(x=>`<li>${x}</li>`).join("")}</ul>
+ </div>
+ <div class="q"><h3><span class="qn">9</span>Leverage to the other capstones</h3>
+  <p>${p.lev}</p>
+  <div class="tbl"><table class="heat"><thead><tr>${ORDER.filter(o=>o!==id).map(o=>`<th class="p">${pname(o)}</th>`).join("")}</tr></thead><tbody><tr>${ORDER.map((o,i)=>o===id?"":`<td class="s ${levRow[i]===0?"s0":"s"+(levRow[i]+2)}">${levRow[i]}</td>`).join("")}</tr></tbody></table></div>
+ </div>`;
+ try{localStorage.setItem("atlas-proj",id)}catch(e){}
+}
+
+document.addEventListener("click",e=>{
+ const c=e.target.closest(".chip");if(c){renderProject(c.dataset.id);return}
+ const o=e.target.closest("[data-open]");if(o){e.preventDefault();renderProject(o.dataset.open);$("#projects").scrollIntoView();}
+});
+
+// heatmap
+$("#heat").innerHTML=`<thead><tr><th>Role type</th>${ORDER.map(id=>`<th class="p" data-open="${id}" title="${P[id].title}"><span class="${leadCls(P[id].lead)}">${pname(id)}</span></th>`).join("")}</tr></thead><tbody>${ROLES.map((r,ri)=>`<tr><td class="role">${r[1]}</td>${ORDER.map(id=>{const v=P[id].fit[ri];return `<td class="s s${v}">${v}</td>`}).join("")}</tr>`).join("")}</tbody>`;
+
+// leverage matrix
+$("#lev").innerHTML=`<thead><tr><th>From ↓ / to →</th>${ORDER.map(id=>`<th class="p" data-open="${id}">${pname(id)}</th>`).join("")}<th class="p">Reach</th></tr></thead><tbody>${ORDER.map(id=>{const row=LEV[id];const sum=row.reduce((a,b)=>a+(b||0),0);return `<tr><td class="role"><span class="lead ${leadCls(P[id].lead)}">${pname(id)}</span> ${P[id].short}</td>${row.map(v=>v===null?`<td class="s s0">·</td>`:`<td class="s ${v===0?"s0":"s"+(v+2)}">${v}</td>`).join("")}<td class="s num"><b>${sum}</b></td></tr>`}).join("")}</tbody>`;
+
+// sector table
+$("#sectorTbl").innerHTML=`<thead><tr><th>Sector</th><th>Best projects</th><th>After freshman year</th><th>After sophomore year</th><th>After junior year</th></tr></thead><tbody>${SECTORS.map(s=>`<tr><td><b>${s[0]}</b></td><td class="num small">${s[1].map(pname).join(" · ")}</td><td class="small">${s[2]}</td><td class="small">${s[3]}</td><td class="small">${s[4]}</td></tr>`).join("")}</tbody>`;
+
+// initial project
+let start="t1";
+const h=(location.hash||"").slice(1);
+if(P[h])start=h;else{try{const s=localStorage.getItem("atlas-proj");if(s&&P[s])start=s}catch(e){}}
+renderProject(start);
+</script>
+
+</body></html>

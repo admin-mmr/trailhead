@@ -31,6 +31,11 @@ const nextConfig = {
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' }, // Google profile pics
     ],
   },
+  // public/playground/ hosts standalone static HTML pages; Next doesn't serve
+  // a folder's index.html on its own, so map the bare path to it.
+  async rewrites() {
+    return [{ source: '/playground', destination: '/playground/index.html' }]
+  },
   async headers() {
     return [
       {
