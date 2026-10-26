@@ -11,7 +11,11 @@ window.useDistrictMembersPanel = () => {
 
   const [districts, setDistricts] = React.useState([]);
   const [statusOptions, setStatusOptions] = React.useState([]);
-  const [selectedDistricts, setSelectedDistricts] = React.useState([]);
+  // Deep link: #district/Brooklyn (names URI-encoded, comma-separated)
+  const [selectedDistricts, setSelectedDistricts] = React.useState(() => {
+    const m = window.location.hash.match(/^#district\/(.+)$/);
+    return m ? m[1].split(',').map(decodeURIComponent).filter(Boolean) : [];
+  });
   const [showAllDistricts, setShowAllDistricts] = React.useState(false);
   const [members, setMembers] = React.useState([]);
   const [selectedMembers, setSelectedMembers] = React.useState(new Set());
@@ -70,6 +74,13 @@ window.useDistrictMembersPanel = () => {
     } catch {}
   };
 
+  // Keep the hash in step with the selection so the address bar is always a shareable link
+  React.useEffect(() => {
+    if (!window.location.hash.startsWith('#district')) return;
+    const tail = selectedDistricts.map(encodeURIComponent).join(',');
+    history.replaceState(null, '', '#district' + (tail ? '/' + tail : ''));
+  }, [selectedDistricts]);
+
   React.useEffect(() => {
     fetchDistricts();
     fetchStatusOptions();
@@ -90,6 +101,12 @@ window.useDistrictMembersPanel = () => {
       const data = await api('/api/district/districts');
       if (data.success) {
         setDistricts(data.districts);
+        // Canonicalise deep-linked names ("brooklyn" → "Brooklyn"), dropping unknown ones
+        const byLower = new Map(data.districts.map(d => [d.toLowerCase(), d]));
+        setSelectedDistricts(prev => {
+          const next = prev.map(d => byLower.get(d.toLowerCase())).filter(Boolean);
+          return next.length === prev.length && next.every((d, i) => d === prev[i]) ? prev : next;
+        });
         setError('');
       } else {
         setError(data.error || 'Failed to fetch districts');
