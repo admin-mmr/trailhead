@@ -113,6 +113,9 @@ _LOGIN_HTML = r"""<!DOCTYPE html>
   <p class="links">Use your MMR member portal password</p>
 </div>
 <script>
+// A deep link like /#district/Brooklyn arrives here with its hash intact (302s keep
+// the fragment), but sign-in lands on '/', so park it for index.html to restore.
+try { if (location.hash) sessionStorage.setItem('mmr_return_hash', location.hash.slice(1)); } catch (e) {}
 function oauthSignIn(provider) {
   const btn = provider === 'google' ? document.getElementById('gBtn') : document.getElementById('msBtn');
   btn.disabled = true;
