@@ -199,6 +199,7 @@ def api_config_info():
 
 @query_bp.route('/api/query/diag', methods=['GET'])
 @login_required
+@require_role('admin')
 def api_query_diagnostics():
     """Diagnostic endpoint to check database connection and configuration."""
     from db import get_db_config

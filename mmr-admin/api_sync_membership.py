@@ -20,7 +20,7 @@ import mysql.connector.errors
 
 from flask import request
 
-from auth import login_required
+from auth import login_required, require_role
 from db import query, get_conn
 from helpers import json_response
 from payment_helpers import exclude_test_payments
@@ -33,6 +33,7 @@ def register_membership_sync_routes(sync_bp):
 
     @sync_bp.route('/api/sync/membership-fees', methods=['POST'])
     @login_required
+    @require_role('admin')
     def api_sync_membership_fees():
         """
         Sync membership fee payment data from payments table to members table.
@@ -200,6 +201,7 @@ def register_membership_sync_routes(sync_bp):
 
     @sync_bp.route('/api/sync/members-lastupdated', methods=['POST'])
     @login_required
+    @require_role('admin')
     def api_sync_members_lastupdated():
         """
         Sync LastUpdated column in members table from member_log audit trail.

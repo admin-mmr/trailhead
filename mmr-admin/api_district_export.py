@@ -10,7 +10,7 @@ import zipfile
 from api_district_members import get_member_status_options
 from datetime import datetime
 from db import query
-from auth import login_required
+from auth import login_required, require_role
 
 district_export_bp = Blueprint('district_export', __name__, url_prefix='/api/district')
 
@@ -97,6 +97,7 @@ def apply_status_filter(sql, params, status_filter):
 
 @district_export_bp.route('/export-csv', methods=['POST'])
 @login_required
+@require_role('admin')
 def export_csv():
     """
     Export selected members to CSV with flexible columns.
@@ -198,6 +199,7 @@ def export_csv():
 
 @district_export_bp.route('/export-all-districts', methods=['POST'])
 @login_required
+@require_role('admin')
 def export_all_districts():
     """
     Export members from all districts as separate CSVs in a ZIP file.
@@ -273,6 +275,7 @@ def export_all_districts():
 
 @district_export_bp.route('/export-all-sheet', methods=['POST'])
 @login_required
+@require_role('admin')
 def export_all_sheet():
     """
     Export all members from all districts as a single CSV sheet.

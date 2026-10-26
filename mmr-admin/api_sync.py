@@ -18,7 +18,7 @@ import mysql.connector.errors
 
 from flask import Blueprint, request
 
-from auth import login_required
+from auth import login_required, require_role
 from db import query
 from helpers import json_response
 from sync_worker import start_sync, get_job_status, cancel_job, get_all_jobs
@@ -33,6 +33,7 @@ sync_bp = Blueprint('sync', __name__)
 
 @sync_bp.route('/api/load/<int:event_id>', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_load_event(event_id):
     """
     Trigger three-step sync:
@@ -65,6 +66,7 @@ def api_load_event(event_id):
 
 @sync_bp.route('/api/load/<event_code>/cancel', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_sync_cancel(event_code):
     """Request cancellation of a running sync job."""
     job = get_job_status(event_code)
@@ -79,6 +81,7 @@ def api_sync_cancel(event_code):
 
 @sync_bp.route('/api/load/<event_code>/status')
 @login_required
+@require_role('admin')
 def api_sync_status(event_code):
     """Get current sync job status."""
     job = get_job_status(event_code) or {'status': 'not_found', 'message': 'No sync job for this event'}
@@ -87,6 +90,7 @@ def api_sync_status(event_code):
 
 @sync_bp.route('/api/nyrr/activity')
 @login_required
+@require_role('admin')
 def api_nyrr_activity():
     """Sync Activity rail feed: process-wide NYRR rate-limit health + in-flight
     load jobs. Read-only and cheap — safe to poll every few seconds.

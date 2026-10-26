@@ -21,7 +21,7 @@ import logging
 import time
 from flask import Blueprint, request, jsonify
 from helpers import json_response
-from auth import login_required
+from auth import login_required, require_role
 from sync_jobs import launch_job, get_job, list_jobs as list_sync_jobs
 
 # Import simplified sync runners
@@ -44,6 +44,7 @@ sheets_sync_bp = Blueprint('sheets_sync', __name__)
 
 @sheets_sync_bp.route('/api/sync/export/members', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_export_members():
     """
     Export members from MySQL to Google Sheets.
@@ -57,6 +58,7 @@ def api_export_members():
 
 @sheets_sync_bp.route('/api/sync/export/payments', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_export_payments():
     """
     Export payments from MySQL to Google Sheets.
@@ -70,6 +72,7 @@ def api_export_payments():
 
 @sheets_sync_bp.route('/api/sync/export/submissions', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_export_submissions():
     """
     Export submissions from MySQL to Google Sheets.
@@ -83,6 +86,7 @@ def api_export_submissions():
 
 @sheets_sync_bp.route('/api/sync/export/transaction-meta', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_export_transaction_meta():
     """
     Export transaction metadata (Notes, UpdatedAt) from MySQL to Google Sheets.
@@ -104,6 +108,7 @@ def api_export_transaction_meta():
 
 @sheets_sync_bp.route('/api/sync/import/members', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_import_members():
     """
     Import NEW members from Google Sheets Main tab into MySQL members table.
@@ -120,6 +125,7 @@ def api_import_members():
 
 @sheets_sync_bp.route('/api/sync/import/transactions', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_import_transactions():
     """
     Import transactions from Google Sheets to MySQL.
@@ -137,6 +143,7 @@ def api_import_transactions():
 
 @sheets_sync_bp.route('/api/sync/full-sync', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_full_sync():
     """
     Full Sync: Run all 5 operations in batch sequence.
@@ -161,6 +168,7 @@ def api_full_sync():
 
 @sheets_sync_bp.route('/api/sync/last-import', methods=['GET'])
 @login_required
+@require_role('admin')
 def api_last_import():
     """
     Return the timestamp of the most recent successful import_transactions job.
@@ -189,6 +197,7 @@ def api_last_import():
 
 @sheets_sync_bp.route('/api/sync/jobs', methods=['GET'])
 @login_required
+@require_role('admin')
 def api_list_sync_jobs():
     """
     Return all known sync jobs (newest first) so the UI can restore state on mount.
@@ -221,6 +230,7 @@ _JOB_TTL_SECONDS = 300  # 5 minutes
 
 @sheets_sync_bp.route('/api/sync/status/<job_id>', methods=['GET'])
 @login_required
+@require_role('admin')
 def api_sync_status(job_id: str):
     """
     Get the status of a specific sync job.
