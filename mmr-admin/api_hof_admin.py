@@ -6,7 +6,7 @@ under the 400-line code-health limit. Routes are registered onto the
 shared ``hof_bp`` blueprint via ``register_admin_routes(bp)`` so every
 URL path is unchanged and ``from api_hof import hof_bp`` still exposes them.
 
-Admin-only routes (login_required):
+Admin-only routes (login_required + require_role('admin')):
   POST  /api/hof/series                                — create a series
   PATCH /api/hof/series/<int:series_id>/assign-events  — bulk-assign event series_id
   GET   /api/hof/events                                — list events for series editor
@@ -23,7 +23,7 @@ import logging
 
 from flask import request
 
-from auth import login_required
+from auth import login_required, require_role
 from db import query, execute
 from helpers import json_response
 
@@ -39,6 +39,7 @@ def register_admin_routes(bp):
 
     @bp.route('/api/hof/series', methods=['POST'])
     @login_required
+    @require_role('admin')
     def create_series():
         """Create a new race series."""
         body = request.get_json() or {}
@@ -66,6 +67,7 @@ def register_admin_routes(bp):
 
     @bp.route('/api/hof/series/<int:series_id>/assign-events', methods=['PATCH'])
     @login_required
+    @require_role('admin')
     def assign_events(series_id):
         """Bulk-assign nyrr_events.series_id by event_name LIKE pattern.
 
@@ -144,6 +146,7 @@ def register_admin_routes(bp):
 
     @bp.route('/api/hof/events', methods=['GET'])
     @login_required
+    @require_role('admin')
     def list_events_for_series_edit():
         """List nyrr_events for the series editor — all events, with their series assignment.
 
@@ -178,6 +181,7 @@ def register_admin_routes(bp):
 
     @bp.route('/api/hof/events/<int:event_id>/series', methods=['PATCH'])
     @login_required
+    @require_role('admin')
     def set_event_series(event_id):
         """Set (or clear) series_id on a single event.
 
@@ -198,6 +202,7 @@ def register_admin_routes(bp):
 
     @bp.route('/api/hof/events/<int:event_id>/distance', methods=['PATCH'])
     @login_required
+    @require_role('admin')
     def set_event_distance(event_id):
         """Update the distance label for a single event.
 
@@ -223,6 +228,7 @@ def register_admin_routes(bp):
 
     @bp.route('/api/hof/refresh-mmr-counts', methods=['POST'])
     @login_required
+    @require_role('admin')
     def refresh_mmr_counts():
         """Recompute mmr_runner_count from nyrr_event_runners for Completed events.
 

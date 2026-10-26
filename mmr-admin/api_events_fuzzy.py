@@ -43,6 +43,7 @@ def api_start_fuzzy_match(event_id):
 
 @events_fuzzy_bp.route('/api/events/<int:event_id>/fuzzy-match/status', methods=['GET'])
 @login_required
+@require_role('admin')
 def api_fuzzy_match_status(event_id):
     """Poll the status of a background fuzzy-match job."""
     status = get_fuzzy_status(str(event_id))

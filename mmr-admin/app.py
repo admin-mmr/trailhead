@@ -64,7 +64,7 @@ if not _ON_AZURE:
         else:
             print('  ⚠  security command not found — Keychain secrets unavailable', flush=True)
 
-from flask import Flask, send_file
+from flask import Flask, send_file, session
 
 # ---------------------------------------------------------------------------
 # Create Flask app
@@ -115,12 +115,20 @@ register_error_handlers(app)
 # Index page (the only non-blueprint route)
 # ---------------------------------------------------------------------------
 
+import auth as _auth
 from auth import auth_bp, login_required
+from auth_login_page import render_no_access
 
 
 @app.route('/')
 @login_required
 def index():
+    # Any member with a portal password can sign in (/auth/password), so a
+    # session alone is not admin. Show them a friendly page, not the admin shell.
+    if not _auth.DEV_BYPASS_AUTH:
+        email = (session.get('user') or {}).get('email', '')
+        if _auth.resolve_role(email) == 'none':
+            return render_no_access(email), 403, {'Content-Type': 'text/html'}
     template_path = os.path.join(os.path.dirname(__file__), 'templates', 'index.html')
     return send_file(template_path, mimetype='text/html')
 
