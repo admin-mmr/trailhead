@@ -72,6 +72,8 @@ MIN_ROLE_ADMIN_ROUTES = {
     ('GET', '/api/tables/<table_name>'),
     # Repoints the app's global DB connection
     ('POST', '/api/connection/set'),
+    # Bookmarkable district head-count page — member data, admins only
+    ('GET', '/district/<district>'),
 }
 
 # Routes that only need a session (no admin role). Every other non-public

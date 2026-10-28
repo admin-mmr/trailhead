@@ -144,7 +144,7 @@ async function passwordSignIn(e) {
                            password: document.getElementById('pw').value })
   }).then(r => r.json()).catch(() => ({ ok: false, error: 'Network error' }));
   btn.disabled = false; btn.textContent = 'Sign in';
-  if (r.ok) window.location = '/';
+  if (r.ok) window.location = r.next || '/';
   else showErr(r.error || 'Incorrect email or password.');
 }
 </script>
