@@ -89,6 +89,7 @@ COVERAGE: dict[tuple[str, str], str] = {
     # --- districts ---
     ('GET',  '/api/districts'):                    'test_api_smoke.py',
     ('GET',  '/api/district/districts'):           'test_api_smoke_extended.py',
+    ('GET',  '/district/<district>'):              'test_district_count.py',
     ('GET',  '/api/district/list'):                'test_api_smoke_extended.py',
     ('POST', '/api/district/export-csv'):          'test_api_smoke_extended.py',
     ('POST', '/api/district/export-all-districts'):'test_api_smoke_extended.py',

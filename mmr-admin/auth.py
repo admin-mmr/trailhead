@@ -85,6 +85,10 @@ def login_required(f):
             from flask import request as _req
             if _req.path.startswith('/api/'):
                 return json_response({'ok': False, 'error': 'Not authenticated'}, 401)
+            # Remember the page so a bookmarked link (e.g. /district/Brooklyn)
+            # lands back there after sign-in instead of on the dashboard.
+            if _req.method == 'GET':
+                session['login_next'] = _req.full_path.rstrip('?')
             return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
     # Marker for tests/test_auth_matrix.py — propagates through @wraps stacking
@@ -228,12 +232,21 @@ def auth_callback_microsoft():
     return _finish_oauth(email)
 
 
+def _pop_login_next() -> str:
+    """Post-login destination saved by login_required. Same-site paths only —
+    '//host' and '/\\host' are protocol-relative to browsers (open redirect)."""
+    nxt = session.pop('login_next', None) or '/'
+    if not nxt.startswith('/') or nxt.startswith('//') or nxt.startswith('/\\'):
+        return '/'
+    return nxt
+
+
 def _finish_oauth(email: str):
     """Common post-OAuth session setup."""
     role = get_user_role(email) or 'none'
     session['user'] = {'email': email, 'role': role}
     session.permanent = True
-    return redirect(url_for('index'))
+    return redirect(_pop_login_next())
 
 
 @auth_bp.route('/auth/password', methods=['POST'])
@@ -272,7 +285,7 @@ def auth_password():
     role = get_user_role(email) or 'none'
     session['user'] = {'email': email, 'role': role}
     session.permanent = True
-    return json_response({'ok': True, 'role': role})
+    return json_response({'ok': True, 'role': role, 'next': _pop_login_next()})
 
 
 @auth_bp.route('/logout')

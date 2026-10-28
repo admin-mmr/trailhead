@@ -59,6 +59,8 @@ MIN_ROLE_ADMIN_ROUTES = {
     ('GET', '/api/py-exec/health'),
     # Reads arbitrary config-table keys (incl. SheetsWebhookUrl) by name
     ('GET', '/api/config/get'),
+    # Bookmarkable district head-count page — member data, admins only
+    ('GET', '/district/<district>'),
 }
 
 
