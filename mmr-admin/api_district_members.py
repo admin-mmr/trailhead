@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 import os
 from datetime import datetime
 from db import query, get_enum_values
-from auth import login_required
+from auth import login_required, require_role
 
 def get_member_status_options():
     """
@@ -26,6 +26,7 @@ district_members_bp = Blueprint('district_members', __name__, url_prefix='/api/d
 
 @district_members_bp.route('/list', methods=['GET'])
 @login_required
+@require_role('admin')
 def get_district_members():
     """
     Fetch members by district with flexible column selection and sorting.
@@ -144,6 +145,7 @@ def get_district_members():
 
 @district_members_bp.route('/districts', methods=['GET'])
 @login_required
+@require_role('admin')
 def get_districts():
     """Fetch unique district list for dropdown."""
     try:
@@ -175,6 +177,7 @@ def get_districts():
 
 @district_members_bp.route('/member-status-values', methods=['GET'])
 @login_required
+@require_role('admin')
 def get_member_status_values():
     """
     Return Status ENUM values from INFORMATION_SCHEMA, shaped for the frontend dropdown.

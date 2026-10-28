@@ -328,14 +328,18 @@ const App = () => {
     if (hash.startsWith('detail/')) {
       return { view: 'detail', eventCode: hash.slice(7) };
     }
+    // "district/Brooklyn" — the panel reads the district list from the hash itself
+    if (hash.startsWith('district/')) {
+      return { view: 'district', eventCode: null, keepHash: hash };
+    }
     return { view: VALID_VIEWS.has(hash) ? hash : null, eventCode: null };
   };
 
   // Hash-based navigation: keeps back/forward and refresh in sync
-  const navigate = useCallback((v, replace = false) => {
+  const navigate = useCallback((v, replace = false, hash = v) => {
     setView(v);
     const method = replace ? 'replaceState' : 'pushState';
-    history[method](null, '', '#' + v);
+    history[method](null, '', '#' + hash);
   }, []);
 
   // Back/forward button support
@@ -363,12 +367,16 @@ const App = () => {
         if (r.data.role === 'none') {
           navigate('restricted', true);
         } else {
-          // Honour hash on refresh; fall back to payments
-          const hash = window.location.hash.slice(1);
+          // Honour hash on refresh (or the one saved across sign-in); fall back to payments
+          let hash = window.location.hash.slice(1);
+          try {
+            hash = hash || sessionStorage.getItem('mmr_return_hash') || '';
+            sessionStorage.removeItem('mmr_return_hash');
+          } catch {}
           const parsed = parseHash(hash);
           if (parsed.view) {
             if (parsed.eventCode) setSelectedEventCode(parsed.eventCode);
-            navigate(parsed.view, true);
+            navigate(parsed.view, true, parsed.keepHash || parsed.view);
           } else {
             navigate('payments', true);
           }

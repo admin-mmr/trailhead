@@ -59,8 +59,28 @@ MIN_ROLE_ADMIN_ROUTES = {
     ('GET', '/api/py-exec/health'),
     # Reads arbitrary config-table keys (incl. SheetsWebhookUrl) by name
     ('GET', '/api/config/get'),
+    # 2026-10: member PII (name, email, WeChat ID, payments). Any member with a
+    # portal password can sign in via /auth/password, so login alone is not admin.
+    ('GET', '/api/district/list'),
+    ('GET', '/api/district/districts'),
+    ('GET', '/api/district/member-status-values'),
+    ('POST', '/api/district/export-csv'),
+    ('POST', '/api/district/export-all-districts'),
+    ('POST', '/api/district/export-all-sheet'),
+    # Data browser: any table, incl. members.password_hash
+    ('GET', '/api/tables'),
+    ('GET', '/api/tables/<table_name>'),
+    # Repoints the app's global DB connection
+    ('POST', '/api/connection/set'),
     # Bookmarkable district head-count page — member data, admins only
     ('GET', '/district/<district>'),
+}
+
+# Routes that only need a session (no admin role). Every other non-public
+# route must require at least admin — the admin shell is for admins only.
+LOGIN_ONLY_ROUTES = {
+    # The shell reads the caller's role from here; must work for role 'none'.
+    ('GET', '/api/me'),
 }
 
 
@@ -112,6 +132,7 @@ def _iter_routes(app):
 def pytest_generate_tests(metafunc):
     if metafunc.function.__name__ not in (
         'test_route_requires_login', 'test_sensitive_route_requires_admin_role',
+        'test_route_requires_admin_by_default',
     ):
         return
 
@@ -128,6 +149,12 @@ def pytest_generate_tests(metafunc):
         ids = [f"{m} {p}" for m, p in routes]
         metafunc.parametrize('method,path,view_func',
                               [(m, p, by_key[(m, p)]) for m, p in routes],
+                              ids=ids)
+    elif metafunc.function.__name__ == 'test_route_requires_admin_by_default':
+        admin_routes = [r for r in routes if r not in LOGIN_ONLY_ROUTES]
+        ids = [f"{m} {p}" for m, p in admin_routes]
+        metafunc.parametrize('method,path,view_func',
+                              [(m, p, by_key[(m, p)]) for m, p in admin_routes],
                               ids=ids)
     else:
         admin_routes = [r for r in routes if r in MIN_ROLE_ADMIN_ROUTES]
@@ -166,6 +193,79 @@ def test_sensitive_route_requires_admin_role(method, path, view_func):
         f"\n  This route was flagged in the 2026-07 security audit — do not"
         f" relax its role requirement without discussing the risk."
     )
+
+
+def test_route_requires_admin_by_default(method, path, view_func):
+    """
+    Every non-public route must require at least admin, unless it is listed
+    in LOGIN_ONLY_ROUTES. A session is not enough: /auth/password signs in
+    any member with a portal password (role 'none').
+
+    FAIL = a new route has @login_required but no @require_role('admin').
+    FIX  = add @require_role('admin') after @login_required, or add the route
+           to LOGIN_ONLY_ROUTES if a non-admin genuinely needs it.
+    """
+    min_role = getattr(view_func, '_auth_min_role', None)
+    assert min_role in ('admin', 'super_admin'), (
+        f"\n\n  Route {method} {path} has no @require_role('admin')."
+        f"\n  Non-admin members can sign in to mmr-admin, so login alone"
+        f"\n  is not authorization. Add @require_role('admin'), or list the"
+        f"\n  route in LOGIN_ONLY_ROUTES if a non-admin really needs it."
+    )
+
+
+def test_login_only_routes_still_exist():
+    app = _load_app()
+    live = {(m, p) for m, p, _ in _iter_routes(app)}
+    stale = LOGIN_ONLY_ROUTES - live
+    assert not stale, f"LOGIN_ONLY_ROUTES references routes that no longer exist: {stale}"
+
+
+@pytest.fixture
+def real_auth_client():
+    """Test client with DEV_BYPASS_AUTH off, so the decorators actually run."""
+    app = _load_app()
+    import auth
+    with patch.object(auth, 'DEV_BYPASS_AUTH', False):
+        yield app.test_client()
+
+
+def _sign_in(client, email):
+    with client.session_transaction() as sess:
+        sess['user'] = {'email': email, 'role': 'none'}
+
+
+def test_index_shows_no_access_page_for_non_admin(real_auth_client):
+    _sign_in(real_auth_client, 'member@example.com')
+    with patch('auth.get_user_role', return_value=None):
+        resp = real_auth_client.get('/')
+    assert resp.status_code == 403
+    body = resp.get_data(as_text=True)
+    assert 'No admin access' in body
+    assert 'member@example.com' in body
+    assert '/logout' in body
+
+
+def test_index_escapes_email_on_no_access_page(real_auth_client):
+    _sign_in(real_auth_client, '<script>x</script>@example.com')
+    with patch('auth.get_user_role', return_value=None):
+        body = real_auth_client.get('/').get_data(as_text=True)
+    assert '<script>x</script>' not in body
+
+
+def test_index_serves_shell_for_admin(real_auth_client):
+    _sign_in(real_auth_client, 'someone@example.com')
+    with patch('auth.get_user_role', return_value='admin'):
+        resp = real_auth_client.get('/')
+    assert resp.status_code == 200
+    assert 'No admin access' not in resp.get_data(as_text=True)
+
+
+def test_district_list_denies_non_admin_member(real_auth_client):
+    _sign_in(real_auth_client, 'member@example.com')
+    with patch('auth.get_user_role', return_value=None):
+        resp = real_auth_client.get('/api/district/list')
+    assert resp.status_code == 403
 
 
 def test_public_routes_still_exist(app=None):

@@ -72,6 +72,7 @@ def api_version():
 
 @data_bp.route('/api/connection/config')
 @login_required
+@require_role('admin')
 def api_connection_config():
     """Get current database connection config (redacted password)."""
     cfg = get_db_config()
@@ -81,6 +82,7 @@ def api_connection_config():
 
 @data_bp.route('/api/connection/presets')
 @login_required
+@require_role('admin')
 def api_connection_presets():
     """Get available connection presets."""
     presets_info = {}
@@ -96,6 +98,7 @@ def api_connection_presets():
 
 @data_bp.route('/api/connection/set', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_connection_set():
     """Update database connection config."""
     data = request.json or {}
@@ -146,6 +149,7 @@ def api_connection_set():
 
 @data_bp.route('/api/log')
 @login_required
+@require_role('admin')
 def api_log():
     """Recent processing log entries."""
     limit = request.args.get('limit', 50, type=int)
@@ -175,6 +179,7 @@ def _load_table_groups() -> dict:
 
 @data_bp.route('/api/tables')
 @login_required
+@require_role('admin')
 def api_tables():
     """List all tables in the database, annotated with group membership."""
     rows = query("""
@@ -200,6 +205,7 @@ def api_tables():
 
 @data_bp.route('/api/tables/<table_name>')
 @login_required
+@require_role('admin')
 def api_table_data(table_name):
     """Browse any table with pagination."""
     # Whitelist table names to prevent SQL injection
@@ -280,6 +286,7 @@ def api_table_data(table_name):
 
 @data_bp.route('/api/user-settings/<table_name>', methods=['GET'])
 @login_required
+@require_role('admin')
 def api_get_user_settings(table_name):
     """Get user's saved column visibility for a table."""
     user = session.get('user', {})
@@ -305,6 +312,7 @@ def api_get_user_settings(table_name):
 
 @data_bp.route('/api/user-settings/<table_name>', methods=['PUT'])
 @login_required
+@require_role('admin')
 def api_save_user_settings(table_name):
     """Save user's column visibility for a table."""
     user = session.get('user', {})

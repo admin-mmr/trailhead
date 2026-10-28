@@ -31,6 +31,7 @@ RUNNER_HISTORY_CACHE_TTL = 3600  # 1 hour
 
 @runners_bp.route('/api/runners/search')
 @login_required
+@require_role('admin')
 def api_runners_search():
     """
     Fuzzy-search the members table by name for manual NYRR runner matching.
@@ -159,6 +160,7 @@ def api_unmatch_runner(runner_row_id):
 
 @runners_bp.route('/api/runner/<runner_id>/history')
 @login_required
+@require_role('admin')
 def api_runner_history(runner_id):
     """Get runner's race history from NYRR API (cached 1 hour)."""
     from nyrr_api import NyrrApiClient

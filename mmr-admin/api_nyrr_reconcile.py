@@ -20,7 +20,7 @@ import logging
 
 from flask import Blueprint, request
 
-from auth import login_required
+from auth import login_required, require_role
 from db import query, execute
 from helpers import json_response
 from nyrr_api import NyrrApiClient
@@ -45,6 +45,7 @@ COMPLETE_THRESHOLD = 0.99
 
 @nyrr_reconcile_bp.route('/api/nyrr/reconcile')
 @login_required
+@require_role('admin')
 def api_nyrr_reconcile_list():
     """Return per-event DB counts for all past events (no NYRR API calls)."""
     rows = query("""
@@ -96,6 +97,7 @@ def api_nyrr_reconcile_list():
 
 @nyrr_reconcile_bp.route('/api/nyrr/reconcile/<int:event_id>/probe', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_nyrr_reconcile_probe(event_id):
     """
     Hit NYRR API to get live finisher + MMR counts for one event.
@@ -237,6 +239,7 @@ def _reconcile_event_mmr(client: NyrrApiClient, event_id: int, event_code: str) 
 
 @nyrr_reconcile_bp.route('/api/nyrr/reconcile/<int:event_id>/tag-mmr', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_nyrr_tag_mmr_one(event_id):
     """Re-tag MMR runners for one event via teams/teamRunners. No full re-sync."""
     rows = query("SELECT id, event_code FROM nyrr_events WHERE id = %s", [event_id])
@@ -264,6 +267,7 @@ def api_nyrr_tag_mmr_one(event_id):
 
 @nyrr_reconcile_bp.route('/api/nyrr/reconcile/tag-mmr-batch', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_nyrr_tag_mmr_batch():
     """
     Re-tag MMR across many past events.

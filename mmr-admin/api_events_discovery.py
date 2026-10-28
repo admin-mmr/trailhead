@@ -8,7 +8,7 @@ import re
 import requests
 from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify
-from auth import login_required
+from auth import login_required, require_role
 from db import execute, query
 
 events_discovery_bp = Blueprint('events_discovery', __name__)
@@ -20,6 +20,7 @@ NYRR_UPCOMING_API_KEY = os.environ.get("NYRR_HAKU_API_KEY", "")
 
 @events_discovery_bp.route('/api/discover/reconcile-slugs', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_reconcile_slugs():
     """Bug L: scan past-date rows whose event_code is still slug-form and
     resolve them to canonical NYRR eventCodes via events/search.
@@ -122,6 +123,7 @@ def discover_current_events():
 
 @events_discovery_bp.route('/api/discover', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_discover_events():
     """
     Discover upcoming events from NYRR's events/search API and insert into
@@ -236,6 +238,7 @@ def discover_upcoming_events(start_date=None, end_date=None,
 
 @events_discovery_bp.route('/api/discover-upcoming', methods=['POST'])
 @login_required
+@require_role('admin')
 def api_discover_upcoming():
     """Fetch upcoming/announced races from NYRR's public Haku widget."""
     try:

@@ -30,6 +30,7 @@ TEAM_CODE = 'MMR'
 
 @events_bp.route('/api/events')
 @login_required
+@require_role('admin')
 def api_events():
     """List all NYRR events with optional filters."""
     status = request.args.get('status')
@@ -83,6 +84,7 @@ def api_events():
 
 @events_bp.route('/api/events/<int:event_id>')
 @login_required
+@require_role('admin')
 def api_event_detail(event_id):
     """Single event detail with live runner counts."""
     rows = query("SELECT * FROM nyrr_events WHERE id = %s", [event_id])
@@ -112,6 +114,7 @@ def api_event_detail(event_id):
 
 @events_bp.route('/api/events/by-code/<event_code>')
 @login_required
+@require_role('admin')
 def api_event_detail_by_code(event_code):
     """Single event detail looked up by event_code string."""
     rows = query("SELECT * FROM nyrr_events WHERE event_code = %s", [event_code.upper()])
@@ -136,6 +139,7 @@ def api_event_detail_by_code(event_code):
 
 @events_bp.route('/api/events/<int:event_id>/runners')
 @login_required
+@require_role('admin')
 def api_event_runners(event_id):
     """Runners for an event with optional filters."""
     team = request.args.get('team')
@@ -184,6 +188,7 @@ def api_event_runners(event_id):
 
 @events_bp.route('/api/stats')
 @login_required
+@require_role('admin')
 def api_stats():
     """Dashboard summary stats with live runner counts."""
     # Get event counts and status breakdown
@@ -219,6 +224,7 @@ def api_stats():
 
 @events_bp.route('/api/stats/years')
 @login_required
+@require_role('admin')
 def api_stats_years():
     """Available event years."""
     rows = query("""

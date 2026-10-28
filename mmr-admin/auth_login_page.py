@@ -1,9 +1,12 @@
 """Login-page HTML + renderer, extracted from auth.py to satisfy the LOC limit.
 
 render_login() injects disabled-state markers for unconfigured OAuth providers.
+render_no_access() is the page a signed-in non-admin (role 'none') sees at /.
 Reads provider config from auth_config (shared, no circular import with auth).
 """
 from __future__ import annotations
+
+import html as _html
 
 from auth_config import (
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, MS_CLIENT_ID, MS_CLIENT_SECRET,
@@ -110,6 +113,9 @@ _LOGIN_HTML = r"""<!DOCTYPE html>
   <p class="links">Use your MMR member portal password</p>
 </div>
 <script>
+// A deep link like /#district/Brooklyn arrives here with its hash intact (302s keep
+// the fragment), but sign-in lands on '/', so park it for index.html to restore.
+try { if (location.hash) sessionStorage.setItem('mmr_return_hash', location.hash.slice(1)); } catch (e) {}
 function oauthSignIn(provider) {
   const btn = provider === 'google' ? document.getElementById('gBtn') : document.getElementById('msBtn');
   btn.disabled = true;
@@ -155,3 +161,40 @@ def render_login(error: str = '') -> str:
         html = html.replace('<div class="err" id="err"></div>',
                             f'<div class="err show" id="err">{error}</div>')
     return html
+
+
+_NO_ACCESS_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>NYRR Data Viewer — No admin access</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+         background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 100%);
+         min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+    .card{background:#fff;border-radius:24px;box-shadow:0 25px 60px rgba(0,0,0,.4);
+          padding:40px 36px;width:100%;max-width:400px;text-align:center}
+    h1{font-size:20px;font-weight:700;color:#0f172a;margin-bottom:12px}
+    p{font-size:14px;color:#475569;line-height:1.5;margin-bottom:10px}
+    a.btn{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:12px;
+          background:#4f46e5;color:#fff;font-size:14px;font-weight:500;text-decoration:none}
+    a.link{color:#4f46e5}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>No admin access</h1>
+    <p>You are signed in as <strong>__email__</strong>, but this account is not an MMR admin.</p>
+    <p>Members can manage their membership at <a class="link" href="https://my.mmrunners.org">my.mmrunners.org</a>.
+       If you need admin access, ask a club admin to add you.</p>
+    <a class="btn" href="/logout">Sign out</a>
+  </div>
+</body>
+</html>"""
+
+
+def render_no_access(email: str) -> str:
+    """Friendly 403 page for a signed-in user with no admin role."""
+    return _NO_ACCESS_HTML.replace('__email__', _html.escape(email or 'an unknown account'))

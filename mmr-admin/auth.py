@@ -105,6 +105,13 @@ def _is_hardcoded_super_admin(email: str) -> bool:
     return email in super_admins
 
 
+def resolve_role(email: str) -> str:
+    """Current role for email: hardcoded super_admins first, then admin_users, else 'none'."""
+    if _is_hardcoded_super_admin(email):
+        return 'super_admin'
+    return get_user_role(email) or 'none'
+
+
 def require_role(min_role: str):
     """
     Decorator to require a minimum role.
